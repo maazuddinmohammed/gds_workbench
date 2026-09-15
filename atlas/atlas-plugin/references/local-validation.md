@@ -2,7 +2,7 @@
 
 After each authored phase or coherent batch, validate the complete effective result: bound Snapshot plus all pending records overlaid by canonical key. Repeat affected checks after repairs. Phase completion requires structural checks and a review of meaning; it does not trigger Stage or Apply.
 
-Workbench and `scripts/atlas-local.js` use the same [validation runner](../workbench/validation/run.js). The [validation index](../docs/validation-index.md) lists each rule family, code location, test and enforcement status. Reports say which checks ran, were skipped, need review or remain server-only.
+Workbench and `scripts/atlas-local.js` use the same [validation runner](../workbench/validation/run.js). Reports say which checks ran, were skipped, need review or remain server-only.
 
 ## Structural checks
 
@@ -45,25 +45,6 @@ Confirm changes match the user's [update selection](working-method.md#existing-w
 The shared quality module checks supplied decision/evidence references, consistency and coverage warnings. A separate decision file is optional: without one it reports `review_required`, and the agent reviews definitions, grain, relationship basis and task evidence. No extra Assertion or per-Entity sidecar is required merely to clear validation. Metadata-only relationship inference is allowed and labeled; measured claims need their actual counts/evidence. SQL is optional under policy, never an automatic prerequisite. Follow [query scope](query-scope.md) if SQL evidence is needed.
 
 Deterministic record checks run without a decision file: Analysis measurements must be complete and their counts/result must reconcile; actual endpoints, applied scope, keys, locks and references still follow their structural contracts. Citation-specific checks need the chosen evidence basis: a cited Analysis must align with that relationship and support its declared cardinality, and cited notes/Assertions must exist and apply. Physical overlap alone does not establish that an Analysis describes the same business grain. With no explicit citation, review that choice; do not invent a link, require SQL, or create a decision file just to make validation pass.
-
-## Implementation organization and review
-
-| Code area | Responsibility |
-|---|---|
-| `validation/run.js` | Common browser/CLI assembly and explicit check coverage. |
-| `validation/common.js` | Published schemas, canonical/unique keys, protection and overlay mechanics using `core.js`. |
-| `validation/metadata.js` | Metadata references, ownership, table constraints and Object/Attribute locks. |
-| `validation/model.js` | Model graph, scope, supports, relationships, Binding and dependent record contracts. |
-| `validation/model-policy.js` | Key/audit/naming rules, parent lineage, membership, Binding retarget and default Mapping document structure. |
-| `validation/sql.js` | Separate transformation and governed-validation SQL contracts; no execution. |
-| `model-quality.js` | Bound decision/evidence checks and modeling-coverage warnings. |
-| `workspace.js` / helper | Input files, hashes, evidence/report storage and concurrency checks. |
-| `ui/validation.js` | Findings, coverage and navigation; no domain rules. |
-| Backend/database | Authoritative authorization, validation and storage constraints. |
-
-Keep cohesive rule families together. Pure validators return bounded structured findings; adapters own files and the UI displays results. Shared serialization remains compatible with the helper, extension and Python. Do not add one file per field or copy rule implementations into workflow/UI files.
-
-Maintain the [code index](../docs/validation-index.md) as checks change: **rule ID, check/reason, code/function, layer, test, status**. Preserve coverage during refactors. Add meaningful valid/invalid cross-record tests, and distinguish automated checks from review guidance and server-only enforcement.
 
 ## Run and repair
 

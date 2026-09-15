@@ -7,6 +7,8 @@ description: Start or resume Atlas, resolve Tenant and working directory, and ro
 
 Establish context and load the selected workflow. This entry skill does not own modeling methods, snapshot refresh policy or the submission lifecycle.
 
+First, open or reuse the bundled Workbench using the [startup launcher](../../references/working-method.md#current-initialization-capabilities). Do this on every Atlas start/resume, including read-only requests or when no workflow, Tenant or Snapshot is selected yet. Do not wait for setup questions or data readiness; the app can open without a workspace. Reuse an already open Atlas Workbench rather than creating duplicate tabs.
+
 ## Establish only missing context
 
 1. Follow the shared [working method](../../references/working-method.md#initialize-or-resume). Resolve Tenant and an absolute working directory, reusing valid saved context unless the user changes it. Only when neither supplied nor valid saved directory is available, announce the actual current directory and use it. An invalid supplied path requires correction. Do not begin workspace setup without a resolved directory.
@@ -17,19 +19,25 @@ Establish context and load the selected workflow. This entry skill does not own 
 
 ## Select one workflow
 
-| Request | Instructions to load |
+Show these workflow choices when no workflow is selected. Guided and Grill Me are separate choices, not a hidden submenu.
+
+| Workflow choice / request | Instructions to load |
 |---|---|
-| Change physical metadata, Copy settings or focused Process settings | [Metadata authoring](../atlas-metadata-authoring/SKILL.md). |
-| Improve descriptions or inferred data types | [Metadata enrichment](../atlas-metadata-enrichment/SKILL.md); Model needed only for Model-scoped enrichment. |
-| Logical model build | Resolve [Guided versus Grill Me](../../references/working-method.md#build-workflow-routing), then load the chosen Logical skill. |
-| Gold / Dimensional model build | Resolve the same build choice, then load the chosen Dimensional skill. |
-| Register Silver/Gold target metadata, optionally produce DDL | [Target registration](../atlas-target-registration/SKILL.md). |
-| Match modeled Entities/Attributes to registered targets | [Entity Binding](../atlas-entity-binding/SKILL.md). |
-| Define transformation instructions | [Mapping](../atlas-mapping/SKILL.md). |
-| Generate transformation code from Mapping | [Code Generation](../atlas-code-generation/SKILL.md); [first release](../../references/release-scope.md) generates SQL and preserves existing Python. |
-| Author meaningful technical/functional checks | [Validation](../atlas-validation/SKILL.md). |
-| Register generated files in Process Groups with runtime details | [Process metadata](../atlas-process-metadata/SKILL.md). |
-| Investigation or other request outside those workflows | [Custom](../atlas-custom/SKILL.md); derive required inputs from its outcome. |
+| Metadata authoring — physical metadata, Copy or focused Process settings | [Metadata authoring](../atlas-metadata-authoring/SKILL.md). |
+| Metadata enrichment — descriptions and inferred data types | [Metadata enrichment](../atlas-metadata-enrichment/SKILL.md); Model needed only for Model-scoped enrichment. |
+| Logical build — Guided | [Logical Guided](../atlas-logical-build-guided/SKILL.md). |
+| Logical build — Grill Me | [Logical Grill Me](../atlas-logical-build-grill-me/SKILL.md). |
+| Dimensional / Gold build — Guided | [Dimensional Guided](../atlas-dimensional-build-guided/SKILL.md). |
+| Dimensional / Gold build — Grill Me | [Dimensional Grill Me](../atlas-dimensional-build-grill-me/SKILL.md). |
+| Target registration — Silver/Gold metadata and optional DDL | [Target registration](../atlas-target-registration/SKILL.md). |
+| Entity binding — match Entities/Attributes to registered targets | [Entity Binding](../atlas-entity-binding/SKILL.md). |
+| Mapping — transformation instructions | [Mapping](../atlas-mapping/SKILL.md). |
+| Code generation — transformation code from Mapping | [Code Generation](../atlas-code-generation/SKILL.md); [first release](../../references/release-scope.md) generates SQL and preserves existing Python. |
+| Validation — technical/functional checks | [Validation](../atlas-validation/SKILL.md). |
+| Process metadata — register generated files and runtime details | [Process metadata](../atlas-process-metadata/SKILL.md). |
+| Custom — investigation or other requests | [Custom](../atlas-custom/SKILL.md); derive required inputs from its outcome. |
+
+If a request says only Logical or Gold build, resolve [Guided versus Grill Me](../../references/working-method.md#build-workflow-routing). A named mode already supplies the selection. Treat “drill me” as a conversational alias for Grill Me; keep the displayed name Grill Me and use the same dedicated skill. State the selected operation and mode together, such as “Logical build — Guided”, never only “Build” or “Guided”.
 
 For registration, Binding, Mapping, Code or Validation, resolve Logical/Silver versus Dimensional/Gold from the request/context; ask only if ambiguous. Several requested workflows can form one journey, but run each under its own prerequisites and completion boundary. Naming a later workflow does not approve Apply or execution.
 
@@ -37,7 +45,7 @@ For registration, Binding, Mapping, Code or Validation, resolve Logical/Silver v
 
 1. Let the selected workflow decide which Metadata/Model Snapshots are required and when they must be fresh. Use the shared [snapshot rules](../../references/working-method.md#snapshot-use) and readers; do not fetch both blindly, refresh per task or install over pending work.
 2. Establish/reuse saved context through the [Atlas runtime](../../docs/runtime-guide.md). Use `session-init`, `task-select`/`task-add`, `model-select` and `sql-policy` as needed; never point legacy GDS helpers at `.atlas`.
-3. For authoring/review or an explicit request, open/reuse the local Workbench after the selected workflow's readiness checks using its verified launcher. A simple read-only explanation does not require a launch. Follow the shared initialization capability notes; do not invent a localhost server or port. Resume the selected folder rather than opening another workspace for every task.
+3. With Workbench already open, have the user select or reconnect the resolved working directory when `.atlas` is ready. Follow the shared initialization capability notes; do not invent a localhost server or port. Resume the selected folder rather than opening another workspace for every task.
 4. State the resolved workflow/context and continue with its instructions in the current conversation. Use one task per meaningful authoring outcome; simple explanations need no task. Snapshot identities and handoff/progress follow the working method, without an extra handoff file.
 
 Reading another `SKILL.md` is instruction routing, not a portable skill-call API or a new agent/session. Direct workflow entry uses the same context checks and must not loop through initialization again. Load only the selected skill and relevant references. See the [user guide](../../docs/user-guide.md) for exact prompts and choices.

@@ -81,7 +81,7 @@ def test_apply_needs_stage_server_review_and_separate_approval(tmp_path: Path) -
         "status": "validated",
         "candidate_digest": "b" * 64,
         "error_count": 0,
-        "action_review": {"actions": []},
+        "action_review": [],
     }
     result = tmp_path / "result.json"
     result.write_text(json.dumps(response))
@@ -122,13 +122,15 @@ def test_changed_files_and_unknown_stage_block_approval(tmp_path: Path) -> None:
     path, operation = prepare(root)
     staged_fixture(path, operation)
     response: dict[str, Any] = {
+        "schema_version": "1.0",
         "metadata_change_set_id": operation["draft"]["id"],
         "tenant_id": 1,
         "draft_revision": 1,
         "valid": True,
         "status": "validated",
         "candidate_digest": "b" * 64,
-        "action_review": {},
+        "error_count": 0,
+        "action_review": [],
     }
     result = tmp_path / "result.json"
     result.write_text(json.dumps(response))

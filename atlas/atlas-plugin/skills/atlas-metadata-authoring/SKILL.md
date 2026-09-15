@@ -5,8 +5,6 @@ description: Create or update an existing Tenant's editable physical metadata, i
 
 # Metadata authoring
 
-
-
 Produce the metadata changes needed for the user's outcome. A request to change one Copy setting does not require a complete ingestion setup. Preserve explicit scope and existing authorization.
 
 Focused Process corrections can stay here. For registering applied generated artifacts with their runtime locations and dependencies, use [Process metadata](../atlas-process-metadata/SKILL.md); both workflows share the same table/editing contracts.
@@ -16,7 +14,7 @@ Focused Process corrections can stay here. For registering applied generated art
 1. Follow the [working method](../../references/working-method.md) when starting or resuming work; reuse it if already loaded. Resolve the Tenant and absolute working directory. Consult [atlas terminology](../../references/terminology.md) when a domain term is unclear.
 2. Metadata authoring requires a Metadata Snapshot, not a Model by default. Use the shared [Snapshot guide](../../references/snapshots/metadata.md). Fetch fresh context when starting this workflow, then reuse the baseline and local Change Set through its related tasks and edits. Preserve unfinished work on resume; require Model context only when the request needs it.
 3. Use [intake and examples](references/intake-and-examples.md) for missing authoring decisions. Ask related questions together. SQL policy/environment are needed only when SQL evidence access is relevant.
-4. Start or reuse the local Workbench for the resolved workspace after input preparation, using a verified available launcher. If unavailable, report that limitation.
+4. Connect the resolved working directory in the Workbench opened at startup. If launch or directory access failed, report that limitation.
 
 ## Select the relevant references
 

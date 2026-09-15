@@ -8,7 +8,8 @@
     "limits": {
       "select_records": 200,
       "upsert_batch_records": 200
-    }
+    },
+    "output": "Workspace commands accept --output-file <new .atlas/temp/name.json>: one JSON document; diagnostics on stderr; existing files are preserved."
   },
   "commands": {
     "command-contract": {
@@ -22,127 +23,127 @@
       "mutates": true
     },
     "status": {
-      "usage": "status --session <working-directory>",
+      "usage": "status --session <working-directory> [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": false
     },
     "owner-add": {
-      "usage": "owner-add --session <working-directory> --tenant-id <verified-id> --tenant <verified-code>",
+      "usage": "owner-add --session <working-directory> --tenant-id <verified-id> --tenant <verified-code> [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "model-select": {
-      "usage": "model-select --session <working-directory> --model-id <verified-id> --model-name <name>",
+      "usage": "model-select --session <working-directory> --model-id <verified-id> --model-name <name> [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "task-add": {
-      "usage": "task-add --session <working-directory> --outcome <short-outcome> [--workflow <skill-name>]",
+      "usage": "task-add --session <working-directory> --outcome <short-outcome> [--workflow <skill-name>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "task-select": {
-      "usage": "task-select --session <working-directory> --task <UUID>",
+      "usage": "task-select --session <working-directory> --task <UUID> [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "task-update": {
-      "usage": "task-update --session <working-directory> [--task <UUID>] --expected-digest <task-file-sha256> (--progress <text>|--file <replacement-task-json>)",
+      "usage": "task-update --session <working-directory> [--task <UUID>] --expected-digest <task-file-sha256> (--progress <text>|--file <replacement-task-json>) [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "sql-policy": {
-      "usage": "sql-policy --session <working-directory> --policy never|essential|proactive [--environment dev|qa|stg|prod]",
+      "usage": "sql-policy --session <working-directory> --policy never|essential|proactive [--environment dev|qa|stg|prod] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "inspect": {
-      "usage": "inspect --session <working-directory> --area metadata|model [--owner <tenant-id>]",
+      "usage": "inspect --session <working-directory> --area metadata|model [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": false
     },
     "describe": {
-      "usage": "describe --session <working-directory> --area metadata|model --dataset <name> [--detail compact|full] [--owner <tenant-id>]",
+      "usage": "describe --session <working-directory> --area metadata|model --dataset <name> [--detail compact|full] [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": false
     },
     "select": {
-      "usage": "select --session <working-directory> --area metadata|model --dataset <name> --where <JSON-object> [--limit <1..200>] [--owner <tenant-id>] [--view snapshot|effective]",
+      "usage": "select --session <working-directory> --area metadata|model --dataset <name> --where <JSON-object> [--limit <1..200>] [--owner <tenant-id>] [--view snapshot|effective] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": false
     },
     "copy": {
-      "usage": "copy --session <working-directory> --area metadata|model --dataset <name> --where <JSON-object> --expected-digest <sha256|empty> [--owner <tenant-id>]",
+      "usage": "copy --session <working-directory> --area metadata|model --dataset <name> --where <JSON-object> --expected-digest <sha256|empty> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "upsert": {
-      "usage": "upsert --session <working-directory> --area metadata|model --dataset <name> --record <JSON-object> --expected-digest <sha256|empty> [--owner <tenant-id>]",
+      "usage": "upsert --session <working-directory> --area metadata|model --dataset <name> --record <JSON-object> --expected-digest <sha256|empty> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "upsert-batch": {
-      "usage": "upsert-batch --session <working-directory> --area metadata|model --changes <dataset-to-record-array-JSON> --expected-digest <sha256|empty> [--owner <tenant-id>]",
+      "usage": "upsert-batch --session <working-directory> --area metadata|model --changes <dataset-to-record-array-JSON> --expected-digest <sha256|empty> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "discard": {
-      "usage": "discard --session <working-directory> --area metadata|model --dataset <name> --key <canonical-key-JSON> --expected-digest <sha256|empty> [--owner <tenant-id>]",
+      "usage": "discard --session <working-directory> --area metadata|model --dataset <name> --key <canonical-key-JSON> --expected-digest <sha256|empty> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "review": {
-      "usage": "review --session <working-directory> --area metadata|model [--owner <tenant-id>]",
+      "usage": "review --session <working-directory> --area metadata|model [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": false
     },
     "validate": {
-      "usage": "validate --session <working-directory> --area metadata|model [--owner <tenant-id>] [--task <UUID>]",
+      "usage": "validate --session <working-directory> --area metadata|model [--owner <tenant-id>] [--task <UUID>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "accept": {
-      "usage": "accept --session <working-directory> --area metadata|model --digest <reviewed-sha256> --backend-profile production|local|azureLocalTest --endpoint-sha256 <safe-backend-identity> [--owner <tenant-id>]",
+      "usage": "accept --session <working-directory> --area metadata|model --digest <reviewed-sha256> [--backend-file <check-result.json> | --backend-profile production|local|azureLocalTest --endpoint-sha256 <safe-backend-identity>] [--draft-file <server-response.json>] [--prepare-stage true] [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "draft-cache": {
-      "usage": "draft-cache --session <working-directory> --area metadata|model --id <verified-change-set-UUID> --revision <nonnegative-integer> --status active|validated [--validation-failed true] [--owner <tenant-id>]",
+      "usage": "draft-cache --session <working-directory> --area metadata|model [--file <server-response.json> | --id <verified-change-set-UUID> --revision <nonnegative-integer> --status active|validated] [--validation-failed true] [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "prepare-stage-request": {
-      "usage": "prepare-stage-request --session <working-directory> --area metadata|model [--owner <tenant-id>]",
+      "usage": "prepare-stage-request --session <working-directory> --area metadata|model [--draft-file <server-response.json>] [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "operation-record": {
-      "usage": "operation-record --session <working-directory> --area metadata|model --checkpoint validation|apply-approval|apply --file <curated-authoritative-result-json> [--review-digest <sha256>] [--owner <tenant-id>]",
+      "usage": "operation-record --session <working-directory> --area metadata|model --checkpoint validation|apply-approval|apply [--file <server-response.json>] [--review-digest <sha256> | --digest-from-operation true] [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "snapshot-install": {
-      "usage": "snapshot-install --session <working-directory> --area metadata|model --archive <downloaded-zip> --snapshot-id <UUID> --size-bytes <integer> --sha256 <sha256> [--owner <tenant-id>]",
+      "usage": "snapshot-install --session <working-directory> --area metadata|model --archive <downloaded-zip> --snapshot-id <UUID> --size-bytes <integer> --sha256 <sha256> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "generate-dbml": {
-      "usage": "generate-dbml --session <working-directory> --area model [--model-type full|conceptual|logical|dimensional] [--include-submodels true|false]",
+      "usage": "generate-dbml --session <working-directory> --area model [--model-type full|conceptual|logical|dimensional] [--include-submodels true|false] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "profile-plan": {
-      "usage": "profile-plan --session <working-directory> --plan-file <planning-input-json> [--task <UUID>]",
+      "usage": "profile-plan --session <working-directory> --plan-file <planning-input-json> [--task <UUID>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "analysis-plan": {
-      "usage": "analysis-plan --session <working-directory> --plan-file <planning-input-json> [--task <UUID>]",
+      "usage": "analysis-plan --session <working-directory> --plan-file <planning-input-json> [--task <UUID>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     },
     "profile-results": {
-      "usage": "profile-results --session <working-directory> --plan-file <generated-plan-json> --results-file <curated-aggregates-json> --expected-digest <sha256|empty> [--task <UUID>]",
+      "usage": "profile-results --session <working-directory> --plan-file <generated-plan-json> --results-file <curated-aggregates-json> --expected-digest <sha256|empty> [--task <UUID>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     }

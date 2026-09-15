@@ -66,4 +66,4 @@ jobs:
         shell: powershell
         run: |
           $env:ATLAS_POWERSHELL = (Get-Command powershell.exe).Source
-          uv run --frozen --project mcp_server python -m pytest -c mcp_server/pyproject.toml tests/atlas/test_native_parity.py tests/atlas/test_profiling_native.py tests/atlas/test_native_quality.py tests/atlas/test_native_policy.py tests/atlas/test_native_sql.py -q
+          uv run --frozen --project mcp_server python -m pytest -c mcp_server/pyproject.toml tests/atlas/test_native_parity.py tests/atlas/test_profiling_native.py tests/atlas/test_native_quality.py tests/atlas/test_native_policy.py tests/atlas/test_native_sql.py tests/atlas/test_handoff.py -q

@@ -15,7 +15,8 @@ User authorized the complete agreed first release and local validation. Work inc
 - [x] Validation index, executable helper contracts and user guide.
 - [x] Plugin/extension packaging and artifacts.
 - [x] Native validation parity: missing Metadata owners, task Snapshot bindings, cross-owner key contracts and generated SQL checks. Optional modeling evidence remains optional; deterministic record checks run independently.
-- [x] Relevant complete regression suites, types/lint, synthetic lifecycle and package checks. Final Atlas suite: 53 passed, including 22 native PowerShell cases; combined GDS/Atlas JavaScript: 197 passed; legacy plugin Python: 352 passed. No skipped cases. Plugin ZIP rebuilt and source parity verified after the follow-up.
+- [x] Catalog/startup follow-up: owner target catalog in evidence SQL, direct Guided/Grill Me menu choices, immediate Workbench startup, removal of two unused design files. Focused planner/MCP SQL checks: 58 passed; all 14 skills validate; startup instruction simulations passed.
+- [x] Relevant complete regression suites, types/lint, synthetic lifecycle and package checks. Final Atlas suite: 53 passed, including 22 native PowerShell cases; combined GDS/Atlas JavaScript: 205 passed; legacy plugin Python: 352 passed in the original implementation run. No skipped cases. Plugin ZIP rebuilt and source parity verified after the follow-up.
 
 ## Ownership
 

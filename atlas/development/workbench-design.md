@@ -1,22 +1,22 @@
 # atlas Workbench design
 
-Implemented local Workbench, following the approved layout below. Covers workspace opening, local draft ownership, table interaction, DBML inputs and code boundaries. Automated DOM/file-contract checks pass; native browser visual and directory-picker verification remains outstanding.
+Implemented local Workbench using the approved table and comparison-panel layout. Covers workspace opening, local draft ownership, table interaction, DBML inputs and code boundaries. Automated DOM/file-contract checks pass; native browser visual and directory-picker verification remains outstanding.
 
 ## Responsibilities
 
-Workbench lets users inspect Snapshots and review/edit the same local Change Sets used by the agent. The [working method](../references/working-method.md#workspace-records) owns workspace layout and identity. The [Change Set lifecycle](../references/change-set-lifecycle.md) owns approval, Stage and Apply; this document defines the local interface behavior.
+Workbench lets users inspect Snapshots and review/edit the same local Change Sets used by the agent. The [working method](../atlas-plugin/references/working-method.md#workspace-records) owns workspace layout and identity. The [Change Set lifecycle](../atlas-plugin/references/change-set-lifecycle.md) owns approval, Stage and Apply; this document defines the local interface behavior.
 
 Atlas opens bundled HTML in Chrome/Edge using explicit directory access; it has no local web server. It reads files, edits pending records, validates locally and generates DBML. Acceptance/manifest preparation belong to local helpers, Stage to the extension, and server validation/Apply to governed MCP tools. Workbench shows retained operation status without adding submission controls.
 
 ## Open or resume a workspace
 
-1. Atlas resolves context and prepares the required inputs using the selected workflow. Opening Workbench does not select another workflow or fetch Snapshots by itself.
-2. Open or reuse Workbench. Choose **Open working directory** and select the folder containing `.atlas`, not `.atlas` itself. The browser may require a fresh directory-access gesture; do not promise automatic reconnection.
+1. Atlas opens or reuses Workbench immediately at startup, before resolving context or preparing inputs. The empty app needs no workflow or Snapshot; opening it does not select a workflow or fetch Snapshots.
+2. Once the working directory and `.atlas` context are ready, choose **Open working directory** and select that folder, not `.atlas` itself. The browser may require a fresh directory-access gesture; do not promise automatic reconnection.
 3. Read `.atlas/session.json`, then the available Snapshot manifests/catalogs and local draft inventory. Verify Tenant/Model identity and Snapshot integrity using shared rules. Folder names are not identity evidence.
 4. Show the working path, Tenant, Model when selected, current workflow/task when present, and applicable SQL policy/environment. These values describe saved context; they do not prove current server authorization, freshness or lock ownership.
 5. Resume the existing local view and drafts. Follow the shared resume/new-work decision when intent is unclear; opening the app does not create a new task or session.
 
-One primary Tenant and at most one active Model belong to each working directory. Other Models use separate directories. Model-derived Metadata work can use [additional owner roots](../references/workspace-contract.md#model-derived-metadata-owners) in this same directory. Show a separate **Metadata owner** selector when several are available; keep the primary Tenant/Model context visible and unchanged. Missing optional folders are valid; create only what the work needs.
+One primary Tenant and at most one active Model belong to each working directory. Other Models use separate directories. Model-derived Metadata work can use [additional owner roots](../atlas-plugin/references/workspace-contract.md#model-derived-metadata-owners) in this same directory. Show a separate **Metadata owner** selector when several are available; keep the primary Tenant/Model context visible and unchanged. Missing optional folders are valid; create only what the work needs.
 
 | State | Workbench behavior |
 |---|---|
@@ -32,10 +32,10 @@ The implementation retains GDS's Chrome/Edge File System Access approach. Other 
 
 ## Shared local drafts
 
-- Read the effective result: immutable Snapshot records plus complete proposed records keyed by their canonical identities. Use the shared [Metadata](../references/snapshots/metadata.md) and [Model](../references/snapshots/model.md) guides for format and access.
+- Read the effective result: immutable Snapshot records plus complete proposed records keyed by their canonical identities. Use the shared [Metadata](../atlas-plugin/references/snapshots/metadata.md) and [Model](../atlas-plugin/references/snapshots/model.md) guides for format and access.
 - **Save local changes** writes the proposal to the same Change Set files the agent uses. It does not update a Snapshot, Stage a server draft or Apply changes.
 - **Remove local change** removes that proposal: an existing record returns to its Snapshot value; a newly proposed record disappears from the draft. It does not delete an applied record.
-- Apply [record protection](../references/record-state.md) before enabling edits and show the reason when a record is read-only. Existing natural-key renames follow the manual correction policy. Backend validation remains authoritative.
+- Apply [record protection](../atlas-plugin/references/record-state.md) before enabling edits and show the reason when a record is read-only. Existing natural-key renames follow the manual correction policy. Backend validation remains authoritative.
 - Before saving, compare the loaded file/context versions with disk. If the agent or another window changed them, preserve the unsaved input and show a conflict; never overwrite silently. Save failures must not be presented as success.
 - Before closing an edited record, changing directories or reloading, resolve unsaved input with **Save**, **Discard**, or **Cancel**. Save may still require conflict resolution.
 - Content changes invalidate affected validation/review evidence according to its bindings. A saved edit does not remain approved merely because the task still says “reviewed.”
@@ -46,7 +46,7 @@ The implementation retains GDS's Chrome/Edge File System Access approach. Other 
 
 Present observed local and server states separately: saved locally, locally validated, reviewed, staged, server validated and applied. Each state needs its actual content/version binding or receipt. Editing task progress cannot establish a successful operation. Historical evidence may remain visible without being valid for the current draft.
 
-Tasks remain short outcome/progress/evidence records, not a required sequence of UI stages. Keep durable validation reports, approvals and submission receipts outside disposable `.atlas/temp/`; tasks link to that evidence under the [workspace contract](../references/workspace-contract.md). Metadata reports/status bind the selected owner; switching owners cannot reuse another owner's approval or hide an uncertain operation.
+Tasks remain short outcome/progress/evidence records, not a required sequence of UI stages. Keep durable validation reports, approvals and submission receipts outside disposable `.atlas/temp/`; tasks link to that evidence under the [workspace contract](../atlas-plugin/references/workspace-contract.md). Metadata reports/status bind the selected owner; switching owners cannot reuse another owner's approval or hide an uncertain operation.
 
 ## First-release acknowledgement
 
@@ -54,7 +54,7 @@ The user reviews/edits local records and actual findings in Workbench, then ackn
 
 ## Validation boundary
 
-Workbench uses shared schemas, normalization, serialization and local validation rules. It must report which checks ran and whether the evidence still matches the current files. See [local validation](../references/local-validation.md); do not duplicate domain rules here.
+Workbench uses shared schemas, normalization, serialization and local validation rules. It must report which checks ran and whether the evidence still matches the current files. See [local validation](../atlas-plugin/references/local-validation.md); do not duplicate domain rules here.
 
 “Local Change Set validation” checks proposed records and their effective graph. It is distinct from running the business Validation Checks authored by the Validation workflow. Browser and CLI call `validation/run.js`; both report skipped checks and remaining human/server responsibilities. Model validation aggregates every registered owner's applied Metadata baseline, rejects conflicting physical records, and keeps owner-specific pending Metadata out of Model context. Substantive Model authoring requires the registered owner Snapshots; context-only reads can report a missing owner as a warning.
 
@@ -62,9 +62,7 @@ Workbench uses shared schemas, normalization, serialization and local validation
 
 Keep the overall layout, glassy shell, **Validate locally** action and validation-report flow. The user approved this table and comparison-panel layout for implementation.
 
-![Static table and comparison-panel design with synthetic data](assets/workbench-table-preview.png)
-
-This is the approved static design preview, not a runtime screenshot. The implementation replaces the earlier 10px data/9px headers with readable relative sizing, a near-solid table, explicit value labels and a closable side comparison panel. Column selection/resizing, keyboard controls, owner selection and DBML text preview are implemented. DOM tests verify interaction and content; browser URL policy prevented runtime visual, zoom and native directory-picker verification. Those checks remain explicit release-verification limits.
+The implementation replaces the earlier 10px data/9px headers with readable relative sizing, a near-solid table, explicit value labels and a closable side comparison panel. Column selection/resizing, keyboard controls, owner selection and DBML text preview are implemented. DOM tests verify interaction and content; browser URL policy prevented runtime visual, zoom and native directory-picker verification. Those checks remain explicit release-verification limits.
 
 | Concern | Agreed behavior |
 |---|---|
@@ -118,13 +116,13 @@ Refactor by responsibility while preserving the existing shared logic and static
 | `ui/validation.js` | Existing report summary, finding filters and navigation to affected records. |
 | `workspace.js` | File access, Snapshot verification, draft persistence/conflict checks and report/export storage. No screen rendering. |
 | `core.js` | Existing canonical keys, normalization, serialization, overlay and change classification shared with other consumers. |
-| `metadata.js`, `model.js`, `validation/`, `model-quality.js` | Area adapters and reusable validation/quality rules. Follow the shared [validation organization and review index](../references/local-validation.md#implementation-organization-and-review); no copied rules inside UI modules. |
+| `metadata.js`, `model.js`, `validation/`, `model-quality.js` | Area adapters and reusable validation/quality rules. Follow the shared [validation organization and review index](validation-index.md#implementation-organization); no copied rules inside UI modules. |
 | `dbml.js` | Pure effective-Model-to-DBML conversion; no DOM, filesystem access or separate merge logic. |
 | `ui-state.js`, `styles.css` | Existing UI eligibility helpers and presentation styles. Split further only when a concrete concern needs an independent home. |
 
 This separation does not require a new UI framework, table library, local server or per-field component system. Frontend checks support feedback; backend authorization and validation remain authoritative. Shared serialization must remain compatible with CLI, extension and Python consumers.
 
-See the [Workbench code map](../workbench/README.md) and [validation index](validation-index.md) for exact modules and rule tests. The static browser packaging and canonical serialization remain shared with the helper and extension.
+See the [Workbench code map](workbench-code-map.md) and [validation index](validation-index.md) for exact modules and rule tests. The static browser packaging and canonical serialization remain shared with the helper and extension.
 
 ## Reuse and required adaptations
 

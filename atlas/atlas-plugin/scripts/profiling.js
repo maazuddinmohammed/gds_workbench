@@ -174,7 +174,9 @@ function planProfiling(metadata, scope, plan) {
       ["tenant_code", "system_code", "connection_code"].every((field) => norm(row[field]) === norm(object[field])));
     const tenant = (metadata.tenant ?? []).find((row) => active(row) && norm(row.tenant_code) === norm(object.tenant_code));
     if (!connection || !tenant) throw Error("Object placement is not active in Metadata.");
-    const relation = [source ? connection.foreign_catalog : tenant.tenant_catalog,
+    const catalogOwners = (metadata.tenant ?? []).filter((row) => active(row) && norm(row.tenant_code) === norm(object.source_tenant_code));
+    if (!source && catalogOwners.length !== 1) throw Error("Object catalog owner is not uniquely active in Metadata.");
+    const relation = [source ? connection.foreign_catalog : catalogOwners[0].tenant_catalog,
       source ? object.fc_object_schema : object.object_schema,
       source ? object.fc_object_name : object.object_name].map(quote).join(".");
     const allMembers = attributes.filter((row) => key(row) === key(object)).sort((a, b) =>

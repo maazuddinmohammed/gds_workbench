@@ -9,7 +9,63 @@ function fixture(count = 3) {
   const object = {tenant_code:'OWNER',system_code:'CRM',connection_code:'SRC',object_schema:'dbo',object_name:'Customer',source_tenant_code:'OWNER',zone_code:'source',fc_object_schema:'remote',fc_object_name:'Customer',batch_attribute_name:'Batch'};
   return {object, metadata:{source_object:[object], source_attribute:Array.from({length:count}, (_,i) => ({...object, attribute_name:i === 0 ? 'Batch' : `Value${i}`,fc_attribute_name:i === 0 ? 'Batch' : `Value${i}`,attribute_ordinal_position:i+1,attribute_data_type:'STRING'})),tenant:[{tenant_code:'OWNER',tenant_catalog:'owner'}],connection:[{tenant_code:'OWNER',system_code:'CRM',connection_code:'SRC',foreign_catalog:'foreign'}]}};
 }
+
+function sharedStoreFixture() {
+  const {metadata} = fixture();
+  const object = {tenant_code:'STORE',system_code:'GDS',connection_code:'LAKE',object_schema:'bronze`crm',object_name:'Cust`omer',source_tenant_code:'OWNER',zone_code:'bronze',batch_attribute_name:null};
+  metadata.tenant[0].tenant_catalog = 'target`catalog';
+  metadata.tenant.push({tenant_code:'STORE',tenant_catalog:'wrong_store_catalog'});
+  metadata.connection.push({tenant_code:'STORE',system_code:'GDS',connection_code:'LAKE',is_global_data_store:true});
+  metadata.bronze_object = [object];
+  metadata.bronze_attribute = [{...object,attribute_name:'CustomerID',attribute_ordinal_position:1,attribute_data_type:'BIGINT'}];
+  const key = Object.fromEntries(['tenant_code','system_code','connection_code','object_schema','object_name'].map(field => [field,object[field]]));
+  return {object,metadata,plan:{batches:{},probes:[{id:'customer_key',kind:'key',object:key,columns:['CustomerID']}]}};
+}
 const batch = {systems:[{source_tenant_code:'OWNER',system_code:'CRM',batch_ids:['11','10','10']}]};
+
+test('Bronze queries use the source owner target catalog and quote every physical component', () => {
+  const {object,metadata,plan} = sharedStoreFixture();
+  const relation = '`target``catalog`.`bronze``crm`.`Cust``omer`';
+  const profile = planProfiling(metadata,[object],{}).queries[0];
+  const [analysis] = planAnalysis(metadata,[object],plan);
+  assert.equal(profile.relation,relation);
+  for (const query of [profile,analysis]) {
+    assert.ok(query.sql.includes(`FROM ${relation}`));
+    assert.ok(!query.sql.includes('wrong_store_catalog'));
+  }
+  assert.equal(profile.object.tenant_code,'STORE');
+  assert.equal(analysis.endpoints[0].object.tenant_code,'STORE');
+});
+
+for (const invalid of ['missing owner','inactive owner','missing owner code','null catalog','empty catalog','blank catalog']) {
+  test(`Bronze queries reject ${invalid} instead of using the GDS placement catalog`, () => {
+    const {object,metadata,plan} = sharedStoreFixture();
+    if (invalid === 'missing owner') metadata.tenant.shift();
+    else if (invalid === 'inactive owner') metadata.tenant[0].is_active = false;
+    else if (invalid === 'missing owner code') delete object.source_tenant_code;
+    else metadata.tenant[0].tenant_catalog = {'null catalog':null,'empty catalog':'','blank catalog':'  '}[invalid];
+    assert.throws(() => planProfiling(metadata,[object],{}), /catalog|owner|Tenant|coordinate/i);
+    assert.throws(() => planAnalysis(metadata,[object],plan), /catalog|owner|Tenant|coordinate/i);
+  });
+}
+
+test('Source queries retain registered foreign catalog coordinates instead of the target catalog', () => {
+  const {object,metadata} = fixture();
+  object.batch_attribute_name = null;
+  object.fc_object_schema = 'remote`schema';
+  object.fc_object_name = 'Cust`omer';
+  metadata.connection[0].foreign_catalog = 'foreign`catalog';
+  const key = Object.fromEntries(['tenant_code','system_code','connection_code','object_schema','object_name'].map(field => [field,object[field]]));
+  const plan = {batches:{},probes:[{id:'source_key',kind:'key',object:key,columns:['Value1']}]};
+  const profile = planProfiling(metadata,[object],{}).queries[0];
+  const [analysis] = planAnalysis(metadata,[object],plan);
+  const relation = '`foreign``catalog`.`remote``schema`.`Cust``omer`';
+  assert.equal(profile.relation,relation);
+  for (const query of [profile,analysis]) assert.ok(query.sql.includes(`FROM ${relation}`));
+  metadata.connection[0].foreign_catalog = '';
+  assert.throws(() => planProfiling(metadata,[object],{}), /catalog|coordinate/i);
+  assert.throws(() => planAnalysis(metadata,[object],plan), /catalog|coordinate/i);
+});
 
 test('batch lists stay complete across bounded groups and produce deterministic SQL', () => {
   const {object,metadata} = fixture(71);

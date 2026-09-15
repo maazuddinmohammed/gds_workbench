@@ -642,7 +642,10 @@
       let status = "Local operation";
       if (value.validation?.outcome === "valid") status = "Locally validated";
       if (value.acknowledgement?.source === "conversation") status = "Reviewed batch";
-      if (value.stage?.fingerprintVerified === true) status = "Staged receipt recorded";
+      const stage = value.stage;
+      const conflictingStageProof = stage && Object.hasOwn(stage, "fingerprint_verified") && Object.hasOwn(stage, "fingerprintVerified") &&
+        stage.fingerprint_verified !== stage.fingerprintVerified;
+      if (!conflictingStageProof && (stage?.fingerprint_verified === true || stage?.fingerprintVerified === true)) status = "Staged receipt recorded";
       if (value.server_validation?.valid === true) status = "Server validation recorded";
       if (value.server_validation?.valid === false) status = "Server validation failed";
       if (value.apply?.applied === true && value.apply.status === "applied") status = "Applied receipt recorded";

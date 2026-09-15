@@ -107,7 +107,8 @@ export interface McpToolClient {
 
 export interface StageApprovedManifestInput {
   manifestPath: string;
-  expectedDigest: string;
+  expectedDigest?: string;
+  outputFile?: string;
   recoverOnly?: boolean;
 }
 
@@ -125,21 +126,21 @@ export interface StageRunnerDependencies {
 }
 
 export interface StageReceipt {
-  schemaVersion: "1.0";
+  schema_version: "1.0";
   status: "staged";
-  taskId: string;
-  operationId: string;
-  ownerTenantId: number;
-  ownerRoot: string;
+  task_id: string;
+  operation_id: string;
+  owner_tenant_id: number;
+  owner_root: string;
   backend: BackendIdentity;
   area: Area;
-  changeSetId: string;
-  startingRevision: number;
-  resultingRevision: number;
-  acceptedDigest: string;
-  stageFingerprint: string;
-  fingerprintVerified: true;
-  datasets: Array<{ dataset: string; recordCount: number }>;
+  change_set_id: string;
+  starting_revision: number;
+  draft_revision: number;
+  accepted_digest: string;
+  stage_fingerprint: string;
+  fingerprint_verified: true;
+  datasets: Array<{ dataset: string; record_count: number }>;
 }
 
 export class StageRunnerError extends Error {

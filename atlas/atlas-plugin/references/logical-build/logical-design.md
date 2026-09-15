@@ -53,6 +53,6 @@ For consequential consolidation or complex models, use a focused independent rev
 
 ## Compatibility notes
 
-These rules combine automated structural/policy checks with agent review of business meaning. Atlas quality checks permit supported metadata-derived inference and optional Assertions; they reject contradictory claimed measurements. Never invent evidence to clear a finding. See the [validation index](../../docs/validation-index.md) for enforcement boundaries.
+These rules combine automated structural/policy checks with agent review of business meaning. Atlas quality checks permit supported metadata-derived inference and optional Assertions; they reject contradictory claimed measurements. Never invent evidence to clear a finding. See the [local validation](../local-validation.md) for enforcement boundaries.
 
 Business grouping follows the subject-view approach described in [Oracle Data Modeler](https://docs.oracle.com/en/database/oracle/sql-developer-data-modeler/19.2/dmdug/data-modeler-concepts-usage.html). Generated calendars have precedent in [Microsoft date-table guidance](https://learn.microsoft.com/en-us/power-bi/guidance/model-date-tables); Power BI-specific time-intelligence requirements are not automatically Logical Model rules.

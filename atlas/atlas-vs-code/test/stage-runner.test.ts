@@ -1054,7 +1054,7 @@ describe("stageApprovedManifest", () => {
     );
 
     expect(staged).toEqual([{ dataset: "source_object", records: [] }]);
-    expect(receipt.datasets).toEqual([{ dataset: "source_object", recordCount: 0 }]);
+    expect(receipt.datasets).toEqual([{ dataset: "source_object", record_count: 0 }]);
   });
 
   test("stages one approved Metadata request without returning payload records", async () => {
@@ -1103,17 +1103,17 @@ describe("stageApprovedManifest", () => {
     );
 
     expect(receipt).toEqual({
-      taskId:TASK,operationId:OP,ownerTenantId:17,ownerRoot:".",backend:BACKEND,
-      schemaVersion: "1.0",
+      task_id:TASK,operation_id:OP,owner_tenant_id:17,owner_root:".",backend:BACKEND,
+      schema_version: "1.0",
       status: "staged",
       area: "metadata",
-      changeSetId: CHANGE_SET_ID,
-      startingRevision: 1,
-      resultingRevision: 2,
-      acceptedDigest,
-      stageFingerprint: expectedFingerprint.fingerprint,
-      fingerprintVerified: true,
-      datasets: [{ dataset: "source_object", recordCount: 1 }],
+      change_set_id: CHANGE_SET_ID,
+      starting_revision: 1,
+      draft_revision: 2,
+      accepted_digest: acceptedDigest,
+      stage_fingerprint: expectedFingerprint.fingerprint,
+      fingerprint_verified: true,
+      datasets: [{ dataset: "source_object", record_count: 1 }],
     });
     expect(JSON.stringify(receipt)).not.toContain("Customer");
     expect(calls.map(([name]) => name)).toEqual([
@@ -1273,7 +1273,7 @@ describe("stageApprovedManifest", () => {
       { mcp, workspaceRoots: [workspace] },
     );
 
-    expect(receipt.resultingRevision).toBe(2);
+    expect(receipt.draft_revision).toBe(2);
     expect(calls.map(([name]) => name)).toEqual([
       "list_tenants",
       "get_metadata_change_set",
@@ -1451,7 +1451,7 @@ describe("stageApprovedManifest", () => {
       { mcp, workspaceRoots: [prepared.workspace] },
     );
 
-    expect(receipt.resultingRevision).toBe(3);
+    expect(receipt.draft_revision).toBe(3);
     expect(calls.filter(([name]) => name === "stage_metadata_change_set")).toHaveLength(1);
     expect(calls.filter(([name]) => name === "commit_metadata_stage_batch")).toHaveLength(1);
   });
@@ -1566,7 +1566,7 @@ describe("stageApprovedManifest", () => {
     );
 
     expect(receipt.area).toBe("model");
-    expect(receipt.resultingRevision).toBe(4);
+    expect(receipt.draft_revision).toBe(4);
     expect(calls.map(([name]) => name).includes("list_tenants")).toBe(false);
   });
 
@@ -1597,7 +1597,7 @@ describe("stageApprovedManifest", () => {
       { mcp, workspaceRoots: [workspace] },
     );
 
-    expect(receipt.datasets).toEqual([{ dataset: "model_details", recordCount: 1 }]);
+    expect(receipt.datasets).toEqual([{ dataset: "model_details", record_count: 1 }]);
   });
 
   test("binds the local digest to the authoritative fingerprint after server normalization", async () => {
@@ -1633,9 +1633,9 @@ describe("stageApprovedManifest", () => {
       { mcp, workspaceRoots: [workspace] },
     );
 
-    expect(receipt.acceptedDigest).toBe(acceptedDigest);
-    expect(receipt.stageFingerprint).toBe(normalizedFingerprint.fingerprint);
-    expect(receipt.fingerprintVerified).toBe(true);
+    expect(receipt.accepted_digest).toBe(acceptedDigest);
+    expect(receipt.stage_fingerprint).toBe(normalizedFingerprint.fingerprint);
+    expect(receipt.fingerprint_verified).toBe(true);
   });
 
   test("rejects a self-consistent fingerprint with a noncanonical dataset order", async () => {
@@ -1831,7 +1831,7 @@ describe("stageApprovedManifest", () => {
       { mcp, workspaceRoots: [workspace] },
     );
 
-    expect(receipt.resultingRevision).toBe(4);
+    expect(receipt.draft_revision).toBe(4);
     expect(JSON.parse(Buffer.concat(fragments).toString("utf8"))).toEqual(records);
     const receiptBytes = Buffer.byteLength(JSON.stringify(receipt), "utf8");
     expect(Buffer.byteLength(payload, "utf8")).toBeGreaterThan(1_000_000);
@@ -1937,7 +1937,7 @@ describe("Atlas operation isolation",()=>{
     const reportBytes=JSON.stringify(report);await writeFile(reportFile,reportBytes);op.validation.report_sha256=createHash("sha256").update(reportBytes).digest("hex");op.acknowledgement.report_sha256=op.validation.report_sha256;await writeFile(opFile,JSON.stringify(op));
     const stateFile=join(fixture.session,".atlas/session.json");const state=JSON.parse(await readFile(stateFile,"utf8"));state.metadata_owners["23"]=owner;state.operations.metadata["23"]=OP_PATH;await writeFile(stateFile,JSON.stringify(state));
     const receipt=await stageApprovedManifest({manifestPath:fixture.manifestPath,expectedDigest:fixture.acceptedDigest},{workspaceRoots:[fixture.workspace],mcp:successfulMetadataClient(23,"OTHER")});
-    expect(receipt.ownerTenantId).toBe(23);expect(receipt.ownerRoot).toBe(owner.root);
+    expect(receipt.owner_tenant_id).toBe(23);expect(receipt.owner_root).toBe(owner.root);
     expect(JSON.parse(await readFile(stateFile,"utf8")).tenant.id).toBe(17);
   });
 });
@@ -1958,7 +1958,7 @@ describe("read-only uncertain Stage recovery",()=>{
     if(changed)await expect(stageApprovedManifest({...input,recoverOnly:true},{workspaceRoots:[fixture.workspace],mcp})).rejects.toMatchObject({code:"RECOVERY_UNPROVEN"});
     else {
       const result=await stageApprovedManifest({...input,recoverOnly:true},{workspaceRoots:[fixture.workspace],mcp});
-      expect(result.resultingRevision).toBe(2);
+      expect(result.draft_revision).toBe(2);
       const op=JSON.parse(await readFile(join(fixture.session,OP_PATH),"utf8"));
       expect(op.stage.recovered).toBe(true);expect(op.draft.revision).toBe(2);
     }
@@ -1969,5 +1969,26 @@ describe("read-only uncertain Stage recovery",()=>{
     await updateOperation(fixture.session,op=>{op.stage_attempt={status:"unknown",accepted_digest:fixture.acceptedDigest};});
     await expect(stageApprovedManifest({manifestPath:fixture.manifestPath,expectedDigest:fixture.acceptedDigest,recoverOnly:true},
       {workspaceRoots:[fixture.workspace],mcp:successfulMetadataClient()})).rejects.toMatchObject({code:"RECOVERY_UNPROVEN"});
+  });
+});
+
+
+describe("operation-derived Stage digest", () => {
+  test("stages using the manifest and bound accepted operation without digest transcription", async () => {
+    const fixture = await metadataRequest([{ tenant_code: "DEMO", system_code: "CRM", connection_code: "MAIN", object_schema: "dbo", object_name: "Customer" }]);
+    const receipt = await stageApprovedManifest({ manifestPath: fixture.manifestPath }, { workspaceRoots: [fixture.workspace], mcp: successfulMetadataClient() });
+    expect(receipt.accepted_digest).toBe(fixture.acceptedDigest);
+    expect(receipt.operation_id).toBe(OP);
+    expect(JSON.parse(await readFile(join(fixture.session, OP_PATH), "utf8")).stage).toMatchObject({ operation_id: OP, accepted_digest: fixture.acceptedDigest });
+  });
+
+  test.each(["explicit mismatch", "changed payload", "changed acknowledgement"])("rejects %s with no server I/O", async reason => {
+    const fixture = await metadataRequest([{ tenant_code: "DEMO", system_code: "CRM", connection_code: "MAIN", object_schema: "dbo", object_name: "Customer" }]);
+    if (reason === "changed payload") await writeFile(join(fixture.session, "metadata-change-set/source_object.json"), "[]");
+    if (reason === "changed acknowledgement") await updateOperation(fixture.session, operation => { operation.acknowledgement.digest = "a".repeat(64); });
+    let calls = 0;
+    await expect(stageApprovedManifest({ manifestPath: fixture.manifestPath, ...(reason === "explicit mismatch" ? { expectedDigest: "0".repeat(64) } : {}) },
+      { workspaceRoots: [fixture.workspace], mcp: { async callTool() { calls++; return {}; } } })).rejects.toMatchObject({ code: reason === "changed acknowledgement" ? "LOCAL_STATE_MISMATCH" : "DIGEST_MISMATCH" });
+    expect(calls).toBe(0);
   });
 });

@@ -15,8 +15,8 @@ exports.run = async () => {
   const record = status => fs.writeFileSync(resultPath, JSON.stringify({
     status, vscodeVersion: vscode.version, check, checks,
   }));
-  const invoke = async input => {
-    const result = await vscode.lm.invokeTool('atlas_stageApprovedManifest', {
+  const invoke = async (input, name = 'atlas_stageApprovedManifest') => {
+    const result = await vscode.lm.invokeTool(name, {
       input, toolInvocationToken: undefined,
     });
     assert.equal(result.content.length, 1);
@@ -35,7 +35,8 @@ exports.run = async () => {
     assert.ok((await vscode.commands.getCommands()).includes('atlasStageRunner.check'));
     const tool = vscode.lm.tools.find(item => item.name === 'atlas_stageApprovedManifest');
     assert.ok(tool, 'Stage tool was not registered');
-    assert.deepEqual(tool.inputSchema.required, ['manifestPath', 'expectedDigest']);
+    assert.ok(vscode.lm.tools.find(item => item.name === 'atlas_checkStageRunner'), 'Check tool was not registered');
+    assert.deepEqual(tool.inputSchema.required, ['manifestPath']);
     checks.push(check);
     // VS Code's own API tests use this context key for confirmation-free fixture invocations.
     // Only the disposable profile created by run-vscode-host.mjs has global auto-approve enabled.
@@ -43,8 +44,8 @@ exports.run = async () => {
     check = 'missing manifest text receipt';
     assert.deepEqual(await invoke({ manifestPath: path.join(workspace, 'missing.stage-request.json'),
       expectedDigest: '0'.repeat(64) }), {
-      schemaVersion: '1.0', status: 'failed', code: 'MANIFEST_NOT_FOUND',
-      message: 'Stage request manifest was not found.', stageStarted: false, legacyFallbackAllowed: true,
+      schema_version: '1.0', status: 'failed', code: 'MANIFEST_NOT_FOUND',
+      message: 'Stage request manifest was not found.', stage_started: false, legacy_fallback_allowed: true,
     });
     checks.push(check);
     for (const scenario of ['direct', 'chunked', 'changed-digest', 'lost-write', 'bad-fingerprint']) {
@@ -55,13 +56,24 @@ exports.run = async () => {
         await vscode.workspace.getConfiguration('atlas.stageRunner').update(
           'localUrl', server.endpoint, vscode.ConfigurationTarget.Global);
         const input = { ...fixture.input };
+        if (scenario === 'direct') {
+          const temporary = path.join(workspace, '.atlas/temp');
+          fs.mkdirSync(temporary, { recursive: true });
+          const outputFile = path.join(temporary, 'ready.json');
+          const ready = await invoke({ outputFile }, 'atlas_checkStageRunner');
+          assert.deepEqual(ready, { schema_version: '1.0', status: 'ready', backend: fixture.backend });
+          assert.deepEqual(JSON.parse(fs.readFileSync(outputFile, 'utf8')), ready);
+          checks.push('readiness tool and one-document export');
+          delete input.expectedDigest;
+          input.outputFile = path.join(temporary, 'stage.json');
+        }
         if (scenario === 'changed-digest') input.expectedDigest = '0'.repeat(64);
         const receipt = await invoke(input);
         assert.deepEqual(server.state.errors, []);
         if (scenario === 'changed-digest') {
           assert.equal(receipt.status, 'failed');
           assert.equal(receipt.code, 'DIGEST_MISMATCH');
-          assert.equal(receipt.stageStarted, false);
+          assert.equal(receipt.stage_started, false);
           assert.equal(server.state.calls.length, 0, 'Changed approval must not contact MCP');
         } else {
           assert.equal(server.state.revision, 2);
@@ -69,8 +81,8 @@ exports.run = async () => {
             'Transferred records must exactly match the synthetic approved files');
           if (scenario === 'lost-write' || scenario === 'bad-fingerprint') {
             assert.equal(receipt.status, 'failed');
-            assert.equal(receipt.stageStarted, true);
-            assert.equal(receipt.legacyFallbackAllowed, false);
+            assert.equal(receipt.stage_started, true);
+            assert.equal(receipt.legacy_fallback_allowed, false);
             if (scenario === 'lost-write') {
               assert.equal(receipt.code, 'MCP_OUTCOME_UNKNOWN');
               assert.equal(server.state.calls.filter(name => name === 'stage_metadata_change_set').length, 1);
@@ -79,13 +91,17 @@ exports.run = async () => {
             }
           } else {
             assert.deepEqual(receipt, {
-              taskId:fixture.task,operationId:fixture.operation,ownerTenantId:17,ownerRoot:'.',backend:fixture.backend,
-              schemaVersion: '1.0', status: 'staged', area: 'metadata', changeSetId: ID,
-              startingRevision: 1, resultingRevision: 2, acceptedDigest: input.expectedDigest,
-              stageFingerprint: server.state.fingerprint, fingerprintVerified: true,
-              datasets: [{ dataset: 'source_object', recordCount: fixture.records.length }],
+              task_id:fixture.task,operation_id:fixture.operation,owner_tenant_id:17,owner_root:'.',backend:fixture.backend,
+              schema_version: '1.0', status: 'staged', area: 'metadata', change_set_id: ID,
+              starting_revision: 1, draft_revision: 2, accepted_digest: fixture.input.expectedDigest,
+              stage_fingerprint: server.state.fingerprint, fingerprint_verified: true,
+              datasets: [{ dataset: 'source_object', record_count: fixture.records.length }],
             });
             assert.ok(!JSON.stringify(receipt).includes('Fixture_'), 'Payload rows must stay out of the receipt');
+            if (scenario === 'direct') {
+              assert.deepEqual(JSON.parse(fs.readFileSync(input.outputFile, 'utf8')), receipt);
+              checks.push('operation digest and Stage export');
+            }
             const chunkCalls = server.state.calls.filter(name => name === 'put_metadata_stage_chunk');
             assert.equal(chunkCalls.length, scenario === 'chunked' ? 2 : 0);
           }

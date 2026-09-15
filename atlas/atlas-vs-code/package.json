@@ -2,7 +2,7 @@
   "name": "atlas-stage-runner",
   "displayName": "Atlas Stage Runner",
   "description": "Deterministically stages approved Atlas Change Sets without placing payloads in model context.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "gds-workbench",
   "license": "UNLICENSED",
   "private": true,
@@ -28,6 +28,7 @@
     }
   },
   "activationEvents": [
+    "onLanguageModelTool:atlas_checkStageRunner",
     "onLanguageModelTool:atlas_stageApprovedManifest",
     "onCommand:atlasStageRunner.check"
   ],
@@ -40,6 +41,23 @@
       }
     ],
     "languageModelTools": [
+      {
+        "name": "atlas_checkStageRunner",
+        "displayName": "Check Atlas Stage Runner",
+        "modelDescription": "Read-only readiness check. Returns the configured backend profile and endpoint fingerprint directly; no URLs, credentials or tenant records. Use before local Accept to bind the correct backend.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "atlasCheckStageRunner",
+        "inputSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "outputFile": {
+              "type": "string",
+              "description": "Optional absolute path for one JSON receipt in the workspace .atlas/temp directory. Must be a new .json file; existing files are never replaced."
+            }
+          }
+        }
+      },
       {
         "name": "atlas_stageApprovedManifest",
         "displayName": "Stage Approved Atlas Change Set",
@@ -57,16 +75,19 @@
             "expectedDigest": {
               "type": "string",
               "pattern": "^[0-9a-f]{64}$",
-              "description": "Exact local Change Set digest acknowledged by the user."
+              "description": "Optional expected digest. Omit to use the accepted digest bound to this manifest and its acknowledged operation; explicit mismatches fail."
             },
             "recoverOnly": {
               "type": "boolean",
               "description": "Read-only recovery of an uncertain Stage: verify saved intended hashes against the governed draft and fingerprint. Never replay writes."
+            },
+            "outputFile": {
+              "type": "string",
+              "description": "Optional absolute path for one JSON receipt in the workspace .atlas/temp directory. Must be a new .json file; existing files are never replaced."
             }
           },
           "required": [
-            "manifestPath",
-            "expectedDigest"
+            "manifestPath"
           ]
         }
       }
@@ -98,7 +119,7 @@
     "test": "vitest run",
     "check": "tsc --noEmit",
     "compile": "npm run check && node esbuild.mjs",
-    "package:vsix": "npm run compile && vsce package --no-dependencies --skip-license --out ../dist/atlas-stage-runner-0.1.0.vsix",
+    "package:vsix": "npm run compile && vsce package --no-dependencies --skip-license --out ../dist/atlas-stage-runner-0.1.1.vsix",
     "test:host": "node test/run-vscode-host.mjs"
   },
   "devDependencies": {

@@ -3,7 +3,7 @@ name: atlas-logical-build-guided
 description: Build or refine a logical model through the guided Profiling, Analysis, Conceptual and Logical phases. Use when Atlas selects Guided logical build or the user requests that sequence; collaborative Grill Me modeling has its own skill.
 ---
 
-# Logical build — guided
+# Logical build — Guided
 
 This skill owns the guided sequence. Load shared topic methods as each phase needs them; interview behavior belongs to the separate Grill Me skill.
 

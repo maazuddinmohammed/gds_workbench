@@ -40,7 +40,11 @@ def test_archive_round_trip_and_reproducibility(tmp_path: Path) -> None:
         for name, content in expected.items():
             assert archive.read(name) == content
         assert "atlas/docs/user-guide.md" in expected
-        assert "atlas/docs/assets/workbench-table-preview.png" in expected
+        assert "atlas/docs/assets/workbench-table-preview.png" not in expected
+        assert "atlas/docs/workbench-design.md" not in expected
+        assert "atlas/docs/extension-design.md" not in expected
+        assert "atlas/docs/validation-index.md" not in expected
+        assert "atlas/workbench/README.md" not in expected
         assert "atlas/mcp.json" in expected
         assert "atlas/scripts/atlas-local.js" in expected
         assert "atlas/workbench/validation/run.js" in expected

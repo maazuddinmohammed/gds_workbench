@@ -4,15 +4,17 @@ Shared operating rules. Use the [Atlas runtime guide](../docs/runtime-guide.md) 
 
 ## Initialize or resume
 
+On every Atlas start/resume, open or reuse Workbench immediately through the [verified launcher](#current-initialization-capabilities), even for read-only work or an undecided workflow. Opening the empty app needs no Tenant, Model, session or Snapshot. Reuse an open instance; resolve and connect the working directory as setup progresses.
+
 1. Resolve Tenant name/code. Offer MCP `list_tenants` when the user asks for accessible choices.
 2. Resolve an absolute working directory before setup. Reuse a valid saved directory unless the user selects another. If neither a supplied nor valid saved directory is available, state that the actual current directory will be used and continue. An invalid supplied path requires correction, not silent fallback.
 3. Show relevant existing atlas context and unfinished work. Follow a clear request; ask "Resume this task or start new work?" only when existing unfinished work makes intent unclear. Preserve unfinished artifacts.
 4. Resolve the workflow before asking for Model or SQL selections. Reuse valid saved choices.
 5. Ask for a Model only when the workflow/request needs it; list applicable choices when requested. A working directory has one primary Tenant and at most one active Model. Model-derived Metadata changes for other owners stay in that directory in [separate owner subtrees](workspace-contract.md#model-derived-metadata-owners). A different primary Tenant or Model uses another working directory; never silently replace existing identity or drafts.
-6. When evidence queries are relevant, resolve SQL policy: Never, Essential, Proactive. Essential resolves blocking gaps; Proactive also permits useful investigation. When needed, use selected environment or `dev`; choices are `dev`, `qa`, `stg`, `prod`.
-7. The workflow identifies its required snapshots. Prepare current inputs without replacing snapshots beneath pending work. For authoring/review or an explicit request, open/reuse the local Workbench after readiness checks using a supported launcher. A simple read-only explanation can proceed without launching it.
+6. When evidence queries are relevant, resolve SQL policy: Never, Essential, Proactive. Essential resolves blocking gaps; Proactive also permits useful investigation. When needed, use selected environment or `dev`; choices are `dev`, `qa`, `stg`, `prod`. Every `execute_databricks_sql` call follows [query scope](query-scope.md), including the registered catalog lookup and three-part physical table names.
+7. The workflow identifies its required snapshots. Prepare current inputs without replacing snapshots beneath pending work. Connect the resolved `.atlas` working directory in the already open Workbench; browser directory access may require the user's gesture.
 
-The [Atlas entry skill](../skills/atlas/SKILL.md) routes metadata authoring, metadata enrichment, logical build, target registration, entity binding, mapping, Gold build, code generation, validation, process metadata, and [Custom](../skills/atlas-custom/SKILL.md). Custom derives its requirements from the requested outcome; it does not expand tool permissions.
+The [Atlas entry skill](../skills/atlas/SKILL.md) lists all selectable workflows, including separate Guided and Grill Me choices for Logical and Dimensional/Gold builds. [Custom](../skills/atlas-custom/SKILL.md) derives its requirements from the requested outcome; it does not expand tool permissions.
 
 ## Current initialization capabilities
 
@@ -31,9 +33,9 @@ The shared procedure above owns question order and choices; the governed MCP con
 
 Set saved SQL choices with `sql-policy --session <path> --policy never|essential|proactive [--environment dev|qa|stg|prod]`. The selected skill still owns its Snapshot, scope and prerequisite checks. The [runtime guide](../docs/runtime-guide.md) describes owner registration, input binding and actual helper limits.
 
-Open Workbench once for new authoring context and reuse it. Workbench Refresh rereads local files, not remote snapshots. Report an unavailable launcher or incompatible workspace format without claiming initialization succeeded; independent read-only discussion can continue.
+Launch Workbench at startup, then reuse it across tasks and workflow changes. Workbench Refresh rereads local files, not remote snapshots. Report an unavailable launcher or incompatible workspace format without claiming initialization succeeded; independent read-only discussion can continue.
 
-Sources: `mcp_server/gds_etl_workbench/tools/tenants/{list_tenants,get_tenant_details}.py`, `tools/modeling/model_details.py`; GDS `contracts/local-helper.json`, `scripts/gds-local.js`, `scripts/open-workbench.sh` and `workbench/workspace.js`.
+Sources: `mcp_server/gds_etl_workbench/tools/tenants/{list_tenants,get_tenant_details}.py`, `tools/modeling/model_details.py`; Atlas `contracts/local-helper.json`, `scripts/atlas-local.js`, `scripts/open-workbench.sh`, `scripts/open-workbench.ps1` and `workbench/workspace.js`.
 
 ## Build workflow routing
 
@@ -44,7 +46,7 @@ For Logical Build or Gold (Dimensional) Build, use the requested approach. If mi
 | Logical | [atlas-logical-build-guided](../skills/atlas-logical-build-guided/SKILL.md) | [atlas-logical-build-grill-me](../skills/atlas-logical-build-grill-me/SKILL.md) |
 | Dimensional / Gold | [atlas-dimensional-build-guided](../skills/atlas-dimensional-build-guided/SKILL.md) | [atlas-dimensional-build-grill-me](../skills/atlas-dimensional-build-grill-me/SKILL.md) |
 
-Atlas's entry skill resolves the selection, then loads the selected workflow's instructions and passes the existing context. This is instruction routing, not an assumed portable skill-calling API. Direct selection is also valid. Shared references supply domain rules; Guided does not load interview instructions. Legacy "custom logical build" wording means Grill Me here; top-level Custom remains a different workflow. Dimensional skills share their own design rules and eligible Silver context; do not substitute Logical normalization or Input Scope rules. 
+Atlas's entry skill resolves the selection, then loads the selected workflow's instructions and passes the existing context. This is instruction routing, not an assumed portable skill-calling API. Direct selection is also valid. Shared references supply domain rules; Guided does not load interview instructions. “Drill me” and legacy “custom logical build” wording mean Grill Me here; top-level Custom remains a different workflow. Dimensional skills share their own design rules and eligible Silver context; do not substitute Logical normalization or Input Scope rules.
 
 ## Workspace records
 
@@ -73,7 +75,7 @@ Create only what the work needs. The [workspace file contract](workspace-contrac
 - Temporary archives/scripts/intermediates use `.atlas/temp/`. Material needed for resumption or approval must have durable storage before cleanup.
 - A question or simple read need not create a task. Substantial authoring uses one task per meaningful outcome, not one per tool call.
 
-Reuse this workspace across workflows and tasks for its primary Tenant/Model. Workbench opens the working-directory root, containing `.atlas` and the sibling data folders. Users and agents edit the same local Change Set files; Snapshot files remain immutable. Metadata owner selection resolves its subtree and independent operation evidence without changing the Model context. See the [Workbench workspace design](../docs/workbench-design.md) for opening, resuming and handling concurrent local edits.
+Reuse this workspace across workflows and tasks for its primary Tenant/Model. Workbench opens the working-directory root, containing `.atlas` and the sibling data folders. Users and agents edit the same local Change Set files; Snapshot files remain immutable. Metadata owner selection resolves its subtree and independent operation evidence without changing the Model context. See the [Workbench guide](../docs/user-guide.md#workbench) for opening, resuming and handling concurrent local edits.
 
 ## Snapshot use
 
@@ -165,7 +167,7 @@ Each topic has one maintained rule source. Skills route to it; repeated reminder
 | Modeled naming, surrogate keys or audit columns | [Naming](model/naming.md) and [keys/audit](model/keys-and-audit.md). |
 | Record fields, keys, value meanings or metric formulas | The affected dataset guide: [Profile](model/profiling-profile.md), [Analysis](model/analysis-result.md), [Conceptual](model/conceptual.md), [Logical](model/logical.md), [Dimensional](model/dimensional.md), [Assertions](model/assertions.md), [Binding](model/binding.md), [Mapping](model/mapping.md), [Code](model/generated-code.md), [Validation](model/validation.md), or a Metadata table page. |
 | Review, Stage, server validation and Apply | [Change Set lifecycle](change-set-lifecycle.md). |
-| Workbench folder access, workspace context, resume and local editing behavior | [Workbench design](../docs/workbench-design.md); this working method owns workspace identity and record placement. |
-| Extension module boundaries and behavior-preserving refactor | [Extension design](../docs/extension-design.md); invocation and submission rules remain in the Change Set lifecycle. |
+| Workbench folder access, workspace context, resume and local editing behavior | [Workbench guide](../docs/user-guide.md#workbench); this working method owns workspace identity and record placement. |
+| Stage Runner readiness, invocation and recovery | [Change Set lifecycle](change-set-lifecycle.md); host setup is in the [runtime guide](../docs/runtime-guide.md). |
 
 The backend's shared record schemas remain the machine contract. Dataset guides document that contract and its meaning; schema changes require updating/checking the affected guide and consumers. These guides are maintained alongside the code; they are not automatically generated. Resolve known implementation/guidance conflicts explicitly rather than copying competing advice into each skill.

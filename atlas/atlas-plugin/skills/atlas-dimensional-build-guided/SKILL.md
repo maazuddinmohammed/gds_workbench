@@ -3,7 +3,7 @@ name: atlas-dimensional-build-guided
 description: Build or refine a dimensional model from applied Logical Mapping and eligible Silver contributions through business process, grain, dimensions, facts and quality review. Use for Guided Gold modeling; collaborative Grill Me modeling has its own skill.
 ---
 
-# Dimensional build — guided
+# Dimensional build — Guided
 
 Follow [Dimensional context](../../references/dimensional-build/context.md), then use this sequence. Reuse existing work and explicit user decisions; do not run the Grill Me interview or repeat Logical Build's phase chain.
 

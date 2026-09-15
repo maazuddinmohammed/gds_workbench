@@ -578,25 +578,38 @@ function Validate-Changes([hashtable]$Options) {
 function Accept-Changes([hashtable]$Options) {
     $context = Get-ChangeContext $Options
     if ($Options.digest -cnotmatch $script:AtlasDigest -or (Get-WorkspaceDigest $context) -cne $Options.digest) { Fail 'Acknowledged digest does not match local files.' }
-    if (@('production', 'local', 'azureLocalTest') -cnotcontains $Options['backend-profile'] -or $Options['endpoint-sha256'] -cnotmatch $script:AtlasDigest) { Fail 'Supply safe backend identity from Check Stage Runner.' }
+    $backend = [ordered]@{profile = $Options['backend-profile']; endpoint_sha256 = $Options['endpoint-sha256']}
+    if ($Options['backend-file']) {
+        if ($Options.ContainsKey('backend-profile') -or $Options.ContainsKey('endpoint-sha256')) { Fail 'Use --backend-file or explicit backend flags, not both.' }
+        $check = Read-AtlasResponse $Options['backend-file']
+        if ((Get-Property $check 'schema_version') -isnot [string] -or (Get-Property $check 'schema_version') -cne '1.0' -or (Get-Property $check 'status') -cne 'ready' -or -not (Test-AtlasObject (Get-Property $check 'backend'))) { Fail 'Backend check did not return readiness.' }
+        $backend = [ordered]@{profile = Get-Property $check.backend 'profile'; endpoint_sha256 = Get-Property $check.backend 'endpoint_sha256'}
+    }
+    if (@('production', 'local', 'azureLocalTest') -cnotcontains $backend.profile -or [string]$backend.endpoint_sha256 -cnotmatch $script:AtlasDigest) { Fail 'Supply safe backend identity from Check Stage Runner.' }
+    if ($Options.ContainsKey('prepare-stage') -and $Options['prepare-stage'] -cne 'true') { Fail '--prepare-stage must be true when supplied.' }
     $validation = Validate-Changes $Options
     if (-not $validation.valid) { Fail 'Fix local validation findings before acknowledgement.' }
     $stateDocument = Read-SessionDocument $context.Session; $prior = $null
     try { $prior = Read-AtlasOperation $context.Session $stateDocument.value $context.Area $context.Owner }
     catch { if ($_.Exception.Message -cne 'A digest-bound acknowledgement is required first.') { throw } }
     if ($null -ne $prior) {
-        if ((Get-Property $prior.value 'stage_attempt') -and -not (Get-Property $prior.value 'stage')) { Fail 'Prior Stage result is uncertain; inspect it before accepting another operation.' }
+        if ((Get-Property (Get-Property $prior.value 'stage_attempt') 'status') -ceq 'unknown') { Fail 'Prior Stage result is uncertain; inspect it before accepting another operation.' }
         if ((Get-Property $prior.value 'stage') -and -not (Get-Property $prior.value 'apply') -and -not (Get-Property (Get-Property $prior.value 'draft') 'validation_failed')) { Fail 'Previous Stage needs validation/Apply or explicit reconciliation before new acceptance.' }
     }
+    $priorValue = Get-Property $prior 'value'
+    $priorDraft = if (Get-Property $priorValue 'apply') { $null } else { Get-Property $priorValue 'draft' }
+    $draft = if ((Get-Property $priorDraft 'validation_failed') -eq $true -or (Get-Property $priorValue 'local_digest') -ceq $Options.digest) { $priorDraft } else { $null }
+    if ($Options['draft-file']) { $draft = Resolve-AtlasServerDraft $Options $context.Owner $context.State $priorDraft $Options.digest }
+    if ($Options['prepare-stage'] -ceq 'true' -and (-not $draft -or $draft.status -cne 'active' -or @((Read-Pending $context).Keys).Count -eq 0)) { Fail 'Preparing Stage requires an active verified server draft and local datasets; supply --draft-file or accept first, then cache the draft.' }
     $id = [Guid]::NewGuid().ToString(); $relative = '.atlas/tasks/' + $context.TaskId + '.evidence/' + $id + '.json'
     $savedReport = '.atlas/tasks/' + $context.TaskId + '.evidence/' + $id + '.validation.json'
     $report = Read-WorkspaceJson $context.Session $validation.report
     $reportHash = Write-WorkspaceJson $context.Session $savedReport $report.value
     $operation = [ordered]@{schema_version = '1.0'; id = $id; task_id = $context.TaskId; area = $context.Area; owner = $context.Owner;
-        backend = [ordered]@{profile = $Options['backend-profile']; endpoint_sha256 = $Options['endpoint-sha256']}; inputs = $validation.inputs;
+        backend = $backend; inputs = $validation.inputs;
         local_digest = $Options.digest; validation = [ordered]@{outcome = 'valid'; report_path = $savedReport; report_sha256 = $reportHash; checks = $validation.checks};
         acknowledgement = [ordered]@{source = 'conversation'; at = [DateTimeOffset]::UtcNow.ToString('o'); digest = $Options.digest; report_sha256 = $reportHash}}
-    if ($null -ne $prior -and (Get-Property (Get-Property $prior.value 'draft') 'validation_failed')) { $operation.draft = $prior.value.draft }
+    if ($draft) { $operation.draft = $draft }
     [void](Write-WorkspaceJson $context.Session $relative $operation)
     $operations = Get-Property $stateDocument.value 'operations'
     if ($null -eq $operations) { $operations = @{}; Set-Property $stateDocument.value 'operations' $operations }
@@ -607,23 +620,46 @@ function Accept-Changes([hashtable]$Options) {
         Set-Property $metadata ([string]$context.Owner.id) $relative
     }
     [void](Write-WorkspaceJson $context.Session '.atlas/session.json' $stateDocument.value $stateDocument.digest)
-    return [ordered]@{operation = $id; path = $relative; task = $context.TaskId; digest = $Options.digest}
+    $result = [ordered]@{operation_id = $id; task_id = $context.TaskId; accepted_digest = $Options.digest; operation = $id; path = $relative; task = $context.TaskId; digest = $Options.digest}
+    if ($Options['prepare-stage'] -ceq 'true') {
+        $prepareOptions = $Options.Clone(); [void]$prepareOptions.Remove('draft-file')
+        $prepared = Prepare-StageRequest $prepareOptions
+        foreach ($key in $prepared.Keys) { $result[$key] = $prepared[$key] }
+    }
+    return $result
+}
+
+function Resolve-AtlasServerDraft([hashtable]$Options, $Owner, $State, $Previous, [string]$AcceptedDigest) {
+    if ($Options['file'] -or $Options['draft-file']) {
+        foreach ($name in @('id', 'revision', 'status', 'validation-failed')) {
+            if ($Options.ContainsKey($name)) { Fail 'Use a draft response file or explicit draft flags, not both.' }
+        }
+        $file = if ($Options['draft-file']) { $Options['draft-file'] } else { $Options['file'] }
+        $response = ConvertTo-AtlasServerResponse (Read-AtlasResponse $file) $Options.area $Owner (Get-Property (Get-Property $State 'model') 'id')
+        $id = $response.change_set_id; $revision = $response.draft_revision; $status = Get-Property $response 'status'
+        if ($revision -lt 1) { Fail 'Server draft responses require a positive revision.' }
+    }
+    else {
+        $id = $Options.id; [double]$revision = 0; $status = $Options.status
+        if (-not [double]::TryParse($Options.revision, [ref]$revision)) { Fail 'Invalid server draft identity/revision/status.' }
+    }
+    if ([string]$id -cnotmatch $script:AtlasUuid -or -not (Test-SafeJsonInteger $revision) -or @('active', 'validated') -cnotcontains $status) { Fail 'Invalid server draft identity/revision/status.' }
+    if ($Previous -and $Previous.id -cne $id) { Fail 'Operation cannot be rebound to another server draft.' }
+    if ($Previous -and $revision -lt $Previous.revision) { Fail 'Server revision cannot go backwards.' }
+    $validationFailed = ((Get-Property $Previous 'validation_failed') -is [bool] -and (Get-Property $Previous 'validation_failed') -eq $true) -or $Options['validation-failed'] -ceq 'true'
+    $digest = if ($validationFailed -and $Previous -and (Get-Property $Previous 'digest')) { $Previous.digest } else { $AcceptedDigest }
+    $draft = [ordered]@{id = $id; revision = $revision; status = $status; digest = $digest}
+    if ($validationFailed) { $draft.validation_failed = $true }
+    return $draft
 }
 
 function Set-DraftCache([hashtable]$Options) {
     $root = Resolve-Session $Options; $state = Read-SessionState $root; $owner = Get-AtlasOwner $state $Options.area $Options['owner']
     $document = Read-AtlasOperation $root $state $Options.area $owner; $operation = $document.value
-    [double]$revision = 0
-    if ($Options.id -cnotmatch $script:AtlasUuid -or -not [double]::TryParse($Options.revision, [ref]$revision) -or
-        -not (Test-SafeJsonInteger $revision) -or @('active', 'validated') -cnotcontains $Options.status) { Fail 'Invalid server draft identity/revision/status.' }
-    $draft = Get-Property $operation 'draft'
-    if ($draft -and ($draft.id -cne $Options.id -or $revision -lt $draft.revision)) { Fail 'Operation cannot rebind draft identity or go backwards in revision.' }
-    $draftDigest = if ($draft) { $draft.digest } else { $operation.local_digest }
-    $draft = [ordered]@{id = $Options.id; revision = $revision; status = $Options.status; digest = $draftDigest}
-    if ($Options['validation-failed'] -ceq 'true') { $draft.validation_failed = $true }
+    $draft = Resolve-AtlasServerDraft $Options $owner $state (Get-Property $operation 'draft') $operation.local_digest
     Set-Property $operation 'draft' $draft
     [void](Write-WorkspaceJson $root $document.relative $operation $document.digest)
-    return [ordered]@{operation = $operation.id; draft = $draft}
+    return [ordered]@{operation_id = $operation.id; change_set_id = $draft.id; draft_revision = $draft.revision; operation = $operation.id; draft = $draft}
 }
 
 function Assert-OperationInputs([string]$Root, $Operation) {
@@ -645,9 +681,16 @@ function Prepare-StageRequest([hashtable]$Options) {
     $context = Get-ChangeContext $Options; $document = Read-AtlasOperation $context.Session $context.State $context.Area $context.Owner; $operation = $document.value
     if ((Get-WorkspaceDigest $context) -cne $operation.local_digest) { Fail 'Local files changed after acknowledgement.' }
     Assert-OperationInputs $context.Session $operation
+    if ((Get-Property (Get-Property $operation 'stage_attempt') 'status') -ceq 'unknown') { Fail 'Stage result is uncertain; inspect before retrying.' }
+    if ($Options['draft-file']) {
+        $draft = Resolve-AtlasServerDraft $Options $context.Owner $context.State (Get-Property $operation 'draft') $operation.local_digest
+        if ($draft.status -cne 'active') { Fail 'Stage requires an active server draft.' }
+        Set-Property $operation 'draft' $draft
+        [void](Write-WorkspaceJson $context.Session $document.relative $operation $document.digest)
+        $document = Read-AtlasOperation $context.Session $context.State $context.Area $context.Owner; $operation = $document.value
+    }
     $draft = Get-Property $operation 'draft'
-    if (-not $draft -or $draft.status -cne 'active') { Fail 'Cache the active server draft before preparing Stage.' }
-    if ((Get-Property $operation 'stage_attempt') -and -not (Get-Property $operation 'stage')) { Fail 'Stage result is uncertain; inspect before retrying.' }
+    if (-not $draft -or $draft.status -cne 'active') { Fail 'Supply --draft-file with the active server draft, or cache it before preparing Stage.' }
     $pending = Read-Pending $context; $names = @($pending.Keys | Sort-Object)
     if ($names.Count -eq 0) { Fail 'No local datasets to Stage.' }
     $relative = '.atlas/tasks/' + $operation.task_id + '.evidence/' + $operation.id + '.stage-request.json'
@@ -671,21 +714,32 @@ function Prepare-StageRequest([hashtable]$Options) {
     $hash = Write-WorkspaceJson $context.Session $relative $manifest $expected
     Set-Property $operation 'stage_request' ([ordered]@{path = $relative; sha256 = $hash})
     [void](Write-WorkspaceJson $context.Session $document.relative $operation $document.digest)
-    return [ordered]@{manifest = $file; accepted_digest = $operation.local_digest; operation = $operation.id; dataset_count = $names.Count}
+    return [ordered]@{stage_manifest_path = $file; operation_id = $operation.id; task_id = $operation.task_id;
+        change_set_id = $draft.id; draft_revision = $draft.revision; manifest = $file; accepted_digest = $operation.local_digest; operation = $operation.id; dataset_count = $names.Count}
 }
 
 function Record-Operation([hashtable]$Options) {
     $root = Resolve-Session $Options; $state = Read-SessionState $root; $owner = Get-AtlasOwner $state $Options.area $Options['owner']
     $document = Read-AtlasOperation $root $state $Options.area $owner; $operation = $document.value; $draft = Get-Property $operation 'draft'
     if (-not $draft) { Fail 'Operation has no bound server draft.' }
-    $response = Read-Json ([IO.Path]::GetFullPath((Require-Option $Options 'file'))) 'Governed operation result'
-    $changeId = if ($Options.area -ceq 'metadata') { Get-Property $response 'metadata_change_set_id' } else { Get-Property $response 'model_change_set_id' }
+    if ($Options.ContainsKey('digest-from-operation') -and ($Options['digest-from-operation'] -cne 'true' -or $Options.checkpoint -cne 'apply-approval' -or $Options.ContainsKey('review-digest'))) { Fail 'Use --digest-from-operation true only for Apply approval, instead of --review-digest.' }
+    $modelId = Get-Property (Get-Property $state 'model') 'id'
+    if ($Options['file']) { $response = ConvertTo-AtlasServerResponse (Read-AtlasResponse $Options['file']) $Options.area $owner $modelId }
+    elseif ($Options.checkpoint -ceq 'apply-approval' -and (Get-Property $operation 'server_validation')) {
+        $saved = Read-WorkspaceJson $root $operation.server_validation.path
+        if ($saved.digest -cne $operation.server_validation.sha256 -or (Get-Property $saved.value 'area') -cne $Options.area -or (Get-Property $saved.value 'owner_tenant_id') -ne $owner.id) { Fail 'Server review changed or belongs to another owner.' }
+        if ($Options.area -ceq 'model' -and -not (Test-Property $saved.value 'model_id')) { Set-Property $saved.value 'model_id' $modelId }
+        $response = ConvertTo-AtlasServerResponse $saved.value $Options.area $owner $modelId
+    }
+    else { Fail '--file is required for a server validation or Apply result.' }
+    $changeId = $response.change_set_id
     $correctOwner = if ($Options.area -ceq 'metadata') { (Get-Property $response 'tenant_id') -eq $owner.id } else { (Get-Property $response 'model_id') -eq $state.model.id }
     if ($changeId -cne $draft.id -or (Get-Property $response 'draft_revision') -ne $draft.revision -or -not $correctOwner) { Fail 'Server result does not match the bound owner/draft/revision.' }
-    $stage = Get-Property $operation 'stage'
-    if (-not $stage -or (Get-Property $stage 'status') -cne 'staged' -or (Get-Property $stage 'fingerprintVerified') -ne $true -or (Get-Property $stage 'acceptedDigest') -cne $operation.local_digest -or
-        (Get-Property $stage 'changeSetId') -cne $draft.id -or (Get-Property $stage 'resultingRevision') -ne $draft.revision -or [string](Get-Property $stage 'stageFingerprint') -cnotmatch $script:AtlasDigest -or
+    $stage = ConvertTo-AtlasStageReceipt (Get-Property $operation 'stage')
+    if (-not $stage -or (Get-Property $stage 'status') -cne 'staged' -or ((Get-Property $stage 'fingerprint_verified') -isnot [bool] -or (Get-Property $stage 'fingerprint_verified') -ne $true) -or (Get-Property $stage 'accepted_digest') -cne $operation.local_digest -or
+        (Get-Property $stage 'change_set_id') -cne $draft.id -or (-not (Test-SafeJsonInteger (Get-Property $stage 'draft_revision')) -or (Get-Property $stage 'draft_revision') -ne $draft.revision) -or [string](Get-Property $stage 'stage_fingerprint') -cnotmatch $script:AtlasDigest -or
         (Get-Property (Get-Property $operation 'stage_attempt') 'status') -ceq 'unknown') { Fail 'Resolve and verify Stage before recording server validation or Apply.' }
+    Set-Property $operation 'stage' $stage
     if ((Get-Property $operation 'apply') -and $Options.checkpoint -cne 'apply') { Fail 'Applied operation history cannot return to an earlier checkpoint.' }
     if ($Options.checkpoint -ceq 'apply-approval') {
         $contextOptions = $Options.Clone(); $contextOptions.task = $operation.task_id
@@ -694,9 +748,11 @@ function Record-Operation([hashtable]$Options) {
     }
     switch ($Options.checkpoint) {
         'validation' {
-            if ((Get-Property $response 'valid') -isnot [bool] -or ($response.valid -and ([string](Get-Property $response 'candidate_digest') -cnotmatch $script:AtlasDigest -or $response.status -cne 'validated')) -or @('active', 'validated') -cnotcontains (Get-Property $response 'status')) { Fail 'Invalid server validation result.' }
+            if ((Get-Property $response 'valid') -isnot [bool] -or ($response.valid -and ([string](Get-Property $response 'candidate_digest') -cnotmatch $script:AtlasDigest -or $response.status -cne 'validated' -or (Get-Property $response 'error_count') -ne 0)) -or
+                @('active', 'validated') -cnotcontains (Get-Property $response 'status') -or -not (Test-SafeJsonInteger (Get-Property $response 'error_count')) -or (Get-Property $response 'action_review') -isnot [Array]) { Fail 'Invalid server validation result.' }
             $relative = '.atlas/tasks/' + $operation.task_id + '.evidence/' + $operation.id + '.server-validation.json'
             $saved = [ordered]@{area = $Options.area; owner_tenant_id = $owner.id; change_set_id = $changeId}
+            if ($Options.area -ceq 'metadata') { $saved.tenant_id = $owner.id } else { $saved.model_id = $modelId }
             foreach ($key in @('schema_version', 'draft_revision', 'valid', 'status', 'candidate_digest', 'error_count', 'action_review', 'validated_at', 'expires_at')) {
                 if (Test-Property $response $key) { $saved[$key] = Get-Property $response $key }
             }
@@ -708,13 +764,17 @@ function Record-Operation([hashtable]$Options) {
         }
         'apply-approval' {
             $validation = Get-Property $operation 'server_validation'
-            if (-not (Get-Property $validation 'valid') -or $Options['review-digest'] -cne $validation.sha256) { Fail 'Separate Apply acknowledgement must bind the current complete server review.' }
-            if ((Read-WorkspaceJson $root $validation.path).digest -cne $validation.sha256) { Fail 'Server review changed.' }
+            $reviewDigest = if ($Options['digest-from-operation'] -ceq 'true') { Get-Property $validation 'sha256' } else { $Options['review-digest'] }
+            if (-not (Get-Property $validation 'valid') -or $reviewDigest -cne $validation.sha256) { Fail 'Separate Apply acknowledgement must bind the current complete server review.' }
+            $savedReview = Read-WorkspaceJson $root $validation.path
+            if ($savedReview.digest -cne $validation.sha256) { Fail 'Server review changed.' }
+            if ((Get-Property $response 'valid') -isnot [bool] -or (Get-Property $response 'valid') -ne $true -or (Get-Property $response 'status') -cne 'validated' -or
+                (Get-Property $response 'candidate_digest') -cne $validation.candidate_digest -or (ConvertTo-StableJson (Get-Property $response 'action_review')) -cne (ConvertTo-StableJson (Get-Property $savedReview.value 'action_review'))) { Fail 'Apply acknowledgement must use the current complete server review.' }
             Set-Property $operation 'apply_approval' ([ordered]@{source = 'conversation'; at = [DateTimeOffset]::UtcNow.ToString('o'); review_sha256 = $validation.sha256; revision = $draft.revision; candidate_digest = $validation.candidate_digest})
         }
         'apply' {
             $approval = Get-Property $operation 'apply_approval'
-            if ((Get-Property $response 'applied') -ne $true -or (Get-Property $response 'status') -cne 'applied' -or ($Options.area -ceq 'metadata' -and (Get-Property $response 'valid') -ne $true) -or -not $approval -or
+            if ((Get-Property $response 'applied') -isnot [bool] -or (Get-Property $response 'applied') -ne $true -or (Get-Property $response 'status') -cne 'applied' -or ($Options.area -ceq 'metadata' -and ((Get-Property $response 'valid') -isnot [bool] -or (Get-Property $response 'valid') -ne $true)) -or -not $approval -or
                 (Get-Property $response 'candidate_digest') -cne $approval.candidate_digest) { Fail 'Apply result does not match a separately approved validated candidate.' }
             $applied = [ordered]@{applied = $true; status = 'applied'; draft_revision = $response.draft_revision; candidate_digest = $response.candidate_digest;
                 applied_at = Get-Property $response 'applied_at'; action_count = Get-Property $response 'action_count'}
@@ -734,7 +794,7 @@ function Record-Operation([hashtable]$Options) {
         Set-Property $latest.value 'refresh_required' $markers
         [void](Write-WorkspaceJson $root '.atlas/session.json' $latest.value $latest.digest)
     }
-    return [ordered]@{operation = $operation.id; checkpoint = $Options.checkpoint; refresh_required = $isApplied}
+    return [ordered]@{operation_id = $operation.id; change_set_id = $draft.id; draft_revision = $draft.revision; operation = $operation.id; checkpoint = $Options.checkpoint; refresh_required = $isApplied}
 }
 
 function Install-Snapshot([hashtable]$Options) {

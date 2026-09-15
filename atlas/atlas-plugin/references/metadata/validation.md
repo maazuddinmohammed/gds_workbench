@@ -1,6 +1,6 @@
 # Metadata validation
 
-This reference explains Metadata checks. The shared Atlas validator implements local schema, key, reference, ownership and protection checks; the [validation index](../../docs/validation-index.md) maps rule IDs to code and tests. Live authorization and state remain server responsibilities.
+This reference explains Metadata checks. The shared Atlas validator implements local schema, key, reference, ownership and protection checks; [local validation](../local-validation.md) distinguishes automated checks from review and server enforcement. Live authorization and state remain server responsibilities.
 
 Use the shared [local validation sequence](../local-validation.md) after authoring. This page owns Metadata-specific checks; [record state](../record-state.md) owns locked/unlocked/inactive behavior.
 

@@ -228,7 +228,10 @@ function Plan-Profiling($Metadata, $Scope, $Plan) {
         $connection = @((Get-Property $Metadata 'connection') | Where-Object { ((Get-Active $_) -ne $false) -and (Get-ProfileKey $_ '' @('tenant_code','system_code','connection_code')) -ceq (Get-ProfileKey $object '' @('tenant_code','system_code','connection_code')) }) | Select-Object -First 1
         $tenant = @((Get-Property $Metadata 'tenant') | Where-Object { ((Get-Active $_) -ne $false) -and (Get-ProfileKey $_ '' @('tenant_code')) -ceq (Get-ProfileKey $object '' @('tenant_code')) }) | Select-Object -First 1
         if ($null -eq $connection -or $null -eq $tenant) { Fail 'Object placement is not active in Metadata.' }
-        $coords = if ($source) { @($connection.foreign_catalog,$object.fc_object_schema,$object.fc_object_name) } else { @($tenant.tenant_catalog,$object.object_schema,$object.object_name) }
+        $catalogOwners = @((Get-Property $Metadata 'tenant') | Where-Object { ((Get-Active $_) -ne $false) -and
+            (Normalize-Value 'metadata' 'tenant_code' $_.tenant_code) -ceq (Normalize-Value 'metadata' 'tenant_code' (Get-Property $object 'source_tenant_code')) })
+        if (-not $source -and $catalogOwners.Count -ne 1) { Fail 'Object catalog owner is not uniquely active in Metadata.' }
+        $coords = if ($source) { @($connection.foreign_catalog,$object.fc_object_schema,$object.fc_object_name) } else { @($catalogOwners[0].tenant_catalog,$object.object_schema,$object.object_name) }
         $relation = (@($coords | ForEach-Object { Quote-ProfileName $_ }) -join '.')
         $allMembers = @($attributes | Where-Object { (Get-ProfileKey $_) -ceq $objectKey } | Sort-Object { [int](Get-Property $_ 'attribute_ordinal_position') }, { [string](Get-Property $_ 'attribute_name') })
         if ($allMembers.Count -eq 0 -or $allMembers.Count -gt 2000) { Fail 'Object requires 1-2000 active Attributes.' }

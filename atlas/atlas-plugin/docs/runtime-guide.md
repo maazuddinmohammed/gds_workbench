@@ -1,13 +1,13 @@
 # Local runtime
 
-Run from the installed `atlas` plugin directory. `--session` always means the user's working directory containing `.atlas`, never the plugin source directory. Node.js 20+ is the main runtime; Snapshot ZIP installation also requires Python 3.12+. Windows PowerShell 5.1 provides the native fallback. Commands do not connect to databases or execute SQL.
+Run from the installed `atlas` plugin directory. `--session` always means the user's working directory containing `.atlas`, never the plugin source directory. Node.js 20+ is the main runtime; Snapshot ZIP installation also requires Python 3.12+. Windows PowerShell 5.1 provides the native fallback. Local helpers do not connect to databases or execute SQL. Install the matching Stage Runner VSIX in VS Code for governed submission; its connection is separate from MCP.
 
 ```sh
 node scripts/atlas-local.js command-contract
 node scripts/atlas-local.js command-contract --command session-init
 ```
 
-The [machine command contract](../contracts/local-helper.json) lists exact arguments and limits. Use structured argument arrays for JSON/text; do not interpolate them into shell code. On Windows invoke `powershell.exe -NoProfile -File scripts/atlas-local.ps1 <command> ...` when Node is unavailable.
+The [machine command contract](../contracts/local-helper.json) lists exact arguments and limits. Commands that require an existing session accept `--output-file <new .atlas/temp/name.json>` to save one JSON result document; existing files are preserved and diagnostics stay separate. Use structured argument arrays for JSON/text; do not interpolate them into shell code. On Windows invoke `powershell.exe -NoProfile -File scripts/atlas-local.ps1 <command> ...` when Node is unavailable.
 
 ## Initialize and resume
 
@@ -39,7 +39,7 @@ A baseline conflict while unapplied work exists requires explicit three-way revi
 
 ## Workbench and DBML
 
-Use `bash scripts/open-workbench.sh` or `scripts/open-workbench.ps1`. This opens the bundled static app in Chrome/Edge; it does not start a server. Select the working directory in the browser, then reload local files after agent edits. Existing owners and operation status remain visible.
+At every Atlas start/resume, immediately open or reuse Workbench with `bash scripts/open-workbench.sh` or `scripts/open-workbench.ps1`. No Tenant, Model, workflow or Snapshot is required to open it. This opens the bundled static app in Chrome/Edge; it does not start a server. Once `.atlas` is ready, select the working directory in the browser, then reload local files after agent edits. Existing owners and operation status remain visible.
 
 `generate-dbml --session <path> --area model` validates and renders the complete effective Model. It replaces `model-dbml` only after inputs remain unchanged; previous exports are retained in `.atlas/temp`. The browser uses the same merger and structural validation. DBML generation is not proof of business modeling quality.
 
@@ -85,4 +85,4 @@ Creation DDL and transformation SQL are agent-authored using the relevant workfl
 
 ## Review and submission
 
-Follow the [shared lifecycle](../references/change-set-lifecycle.md). Operation evidence, validation reports and Stage manifests stay under `.atlas/tasks/<task>.evidence/`; temporary downloads and query intermediates belong under `.atlas/temp/`. Do not hand-edit operation receipts or use narrative task progress as proof of approval.
+Follow the [complete submission sequence](../references/change-set-lifecycle.md#complete-submission-sequence): Check Stage Runner → local acknowledgement → resolve draft → accept/prepare → Stage → server validation → separate Apply approval → Apply. Use its exact commands and direct response files; do not copy digests or curate JSON fields manually. Operation evidence, validation reports and Stage manifests stay under `.atlas/tasks/<task>.evidence/`; temporary downloads and query intermediates belong under `.atlas/temp/`. Do not hand-edit operation receipts or use narrative task progress as proof of approval.

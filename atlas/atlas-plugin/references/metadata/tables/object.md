@@ -25,6 +25,8 @@ This section owns the distinction for all workflows. Snapshot Object records alr
 
 Source Objects use their actual owned non-GDS Connection, so owner and physical Tenant match. Bronze, Silver and Gold use the owner's explicitly configured GDS Connection; owner and physical Tenant **may match or differ**.
 
+For `execute_databricks_sql`, Bronze/Silver/Gold catalog lookup uses `source_tenant_code` → `tenant.tenant_catalog`; Connection placement does not select the catalog. Source uses the Connection's foreign catalog. Follow the shared [query coordinate rules](../../query-scope.md#resolve-coordinates-and-access); retain the physical natural key in records.
+
 For a single-origin Silver/Gold target, source_tenant_code retains the actual source/data Tenant established by input provenance. Resolve that Tenant's configured GDS Connection for physical placement. Do not substitute the source Connection, the Model Tenant or the physical GDS Tenant merely because it is convenient. An existing target retains its registered owner; mixed targets follow the explicit choice below.
 
 For a Silver Object combining data from several Tenants, the user may choose the GDS Connection's Tenant as its source_tenant_code. This makes owner and physical Tenant equal when that Tenant is authorized to own the Object and its configured GDS Connection is this exact Connection. Treat this as an explicit ownership choice for the mixed target, not an automatic rule for all downstream Objects. Input provenance still needs to be retained.

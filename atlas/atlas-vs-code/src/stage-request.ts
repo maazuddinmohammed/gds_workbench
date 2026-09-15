@@ -48,13 +48,13 @@ export async function readRequest(
 ): Promise<ApprovedRequest> {
   if (
     !isObject(input) ||
-    !hasExactKeys(input, input.recoverOnly === undefined ? ["manifestPath", "expectedDigest"] : ["manifestPath", "expectedDigest", "recoverOnly"]) ||
+    Object.keys(input).some((key) => !["manifestPath", "expectedDigest", "recoverOnly", "outputFile"].includes(key)) ||
     (input.recoverOnly !== undefined && typeof input.recoverOnly !== "boolean") ||
     typeof input.manifestPath !== "string" ||
     input.manifestPath.length > MAX_PATH_CHARACTERS ||
     !isAbsolute(input.manifestPath) ||
-    typeof input.expectedDigest !== "string" ||
-    !SHA256.test(input.expectedDigest) ||
+    (input.expectedDigest !== undefined && (typeof input.expectedDigest !== "string" || !SHA256.test(input.expectedDigest))) ||
+    (input.outputFile !== undefined && typeof input.outputFile !== "string") ||
     workspaceRoots.length < 1 ||
     workspaceRoots.length > 32 ||
     workspaceRoots.some(
@@ -163,7 +163,7 @@ export async function readRequest(
   ) {
     fail("MANIFEST_INVALID", "Stage request target is invalid.");
   }
-  if (request.accepted_digest !== input.expectedDigest) {
+  if (input.expectedDigest !== undefined && request.accepted_digest !== input.expectedDigest) {
     fail("DIGEST_MISMATCH", "Expected digest does not match the approved Stage request.");
   }
   if (!isObject(request.operation) || !hasExactKeys(request.operation, ["id", "path"]) ||
@@ -322,7 +322,7 @@ export async function readRequest(
   }
   if (!primaryInput) fail("SNAPSHOT_MISMATCH", "The operation does not bind the Stage Snapshot.");
   const changeSetDirectory = await safePath(session, `${ownerRoot === "." ? "" : ownerRoot + "/"}${request.area}-change-set`, "LOCAL_CHANGE_SET_INVALID", true);
-  if ((await workspaceDigest(changeSetDirectory, MAX_LOCAL_PAYLOAD_BYTES[request.area])) !== input.expectedDigest) {
+  if ((await workspaceDigest(changeSetDirectory, MAX_LOCAL_PAYLOAD_BYTES[request.area])) !== request.accepted_digest) {
     fail("DIGEST_MISMATCH", "Local Change Set changed after user acknowledgement.");
   }
   await verifySnapshotBinding(request, session);

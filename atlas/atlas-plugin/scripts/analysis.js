@@ -33,7 +33,9 @@ function resolveEndpoint(metadata, scope, endpoint, masked) {
   const tenants = (metadata.tenant ?? []).filter((row) => active(row) && norm(row.tenant_code) === norm(object.tenant_code));
   if (connections.length !== 1 || tenants.length !== 1) throw Error("Object placement is not uniquely active in Metadata.");
   if (source && connections[0].has_foreign_catalog === false) throw Error("Source Object requires a registered foreign catalog.");
-  const relation = [source ? connections[0].foreign_catalog : tenants[0].tenant_catalog,
+  const catalogOwners = (metadata.tenant ?? []).filter((row) => active(row) && norm(row.tenant_code) === norm(object.source_tenant_code));
+  if (!source && catalogOwners.length !== 1) throw Error("Object catalog owner is not uniquely active in Metadata.");
+  const relation = [source ? connections[0].foreign_catalog : catalogOwners[0].tenant_catalog,
     source ? object.fc_object_schema : object.object_schema,
     source ? object.fc_object_name : object.object_name].map(quote).join(".");
   const allAttributes = [...(metadata.source_attribute ?? []), ...(metadata.bronze_attribute ?? [])];

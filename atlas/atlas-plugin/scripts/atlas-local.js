@@ -16,6 +16,7 @@ const workbenchAreas = {
 };
 const workbenchDbml = require("../workbench/dbml.js");
 const qualityFiles = require("./model-quality-files.js");
+const evidence = require("./operation-evidence.js");
 
 const stateFiles = require("./workspace-state.js");
 const HELPER_CONTRACT_PATH = path.resolve(__dirname, "..", "contracts", "local-helper.json");
@@ -1065,7 +1066,15 @@ function validateChangeSet(options) {
 function acceptChangeSet(options) {
   const context = changeSetContext(options);
   if (!stateFiles.digest.test(options.digest ?? "") || workspaceDigest(context) !== options.digest) fail("Acknowledged digest does not match local files.");
-  if (!["production", "local", "azureLocalTest"].includes(options["backend-profile"]) || !stateFiles.digest.test(options["endpoint-sha256"] ?? "")) fail("Supply safe backend identity from Check Stage Runner.");
+  let backend = {profile: options["backend-profile"], endpoint_sha256: options["endpoint-sha256"]};
+  if (options["backend-file"]) {
+    if (options["backend-profile"] !== undefined || options["endpoint-sha256"] !== undefined) fail("Use --backend-file or explicit backend flags, not both.");
+    const check = evidence.readResponse(path.resolve(options["backend-file"]));
+    if (check.schema_version !== "1.0" || check.status !== "ready" || !stateFiles.object(check.backend)) fail("Backend check did not return readiness.");
+    backend = {profile: check.backend.profile, endpoint_sha256: check.backend.endpoint_sha256};
+  }
+  if (!["production", "local", "azureLocalTest"].includes(backend.profile) || !stateFiles.digest.test(backend.endpoint_sha256 ?? "")) fail("Supply safe backend identity from Check Stage Runner.");
+  if (options["prepare-stage"] !== undefined && options["prepare-stage"] !== "true") fail("--prepare-stage must be true when supplied.");
   const validation = validateChangeSet(options);
   if (!validation.valid) fail("Fix local validation findings before acknowledgement.");
   const stateDocument = stateFiles.session(context.session);
@@ -1074,13 +1083,17 @@ function acceptChangeSet(options) {
   catch (error) { if (error.message !== "A digest-bound acknowledgement is required first.") throw error; }
   if (prior?.value.stage_attempt?.status === "unknown") fail("Prior Stage result is uncertain; inspect it before accepting another operation.");
   if (prior?.value.stage && !prior.value.apply && !prior.value.draft?.validation_failed) fail("Previous Stage needs validation/Apply or explicit reconciliation before new acceptance.");
+  const priorDraft = prior?.value.apply ? undefined : prior?.value.draft;
+  let draft = priorDraft?.validation_failed || prior?.value.local_digest === options.digest ? priorDraft : undefined;
+  if (options["draft-file"]) draft = resolveServerDraft(options, context, priorDraft, options.digest);
+  if (options["prepare-stage"] === "true" && (!draft || draft.status !== "active" || !Object.keys(readPending(context)).length)) fail("Preparing Stage requires an active verified server draft and local datasets; supply --draft-file or accept first, then cache the draft.");
   const id = crypto.randomUUID(), relative = `.atlas/tasks/${context.taskId}.evidence/${id}.json`;
   const reportHash = fileDigest(stateFiles.safePath(context.session, validation.report));
   const operation = {schema_version: "1.0", id, task_id: context.taskId, area: options.area, owner: context.owner,
-    backend: {profile: options["backend-profile"], endpoint_sha256: options["endpoint-sha256"]}, inputs: validation.inputs,
+    backend, inputs: validation.inputs,
     local_digest: options.digest, validation: {outcome: "valid", report_path: validation.report, report_sha256: reportHash, checks: validation.checks},
     acknowledgement: {source: "conversation", at: new Date().toISOString(), digest: options.digest, report_sha256: reportHash},
-    ...(prior?.value.draft?.validation_failed ? {draft: prior.value.draft} : {})};
+    ...(draft ? {draft} : {})};
   // Preserve an immutable copy for each operation; later validation reports can change.
   const savedReport = `.atlas/tasks/${context.taskId}.evidence/${id}.validation.json`;
   stateFiles.write(context.session, savedReport, stateFiles.read(context.session, validation.report).value);
@@ -1092,20 +1105,32 @@ function acceptChangeSet(options) {
   if (options.area === "model") stateDocument.value.operations.model = relative;
   else { stateDocument.value.operations.metadata ??= {}; stateDocument.value.operations.metadata[String(context.owner.id)] = relative; }
   stateFiles.write(context.session, ".atlas/session.json", stateDocument.value, stateDocument.digest);
-  return {operation: id, path: relative, task: context.taskId, digest: options.digest};
+  const result = {operation_id: id, task_id: context.taskId, accepted_digest: options.digest, operation: id, path: relative, task: context.taskId, digest: options.digest};
+  return options["prepare-stage"] === "true" ? {...result, ...prepareStageRequest({...options, "draft-file": undefined})} : result;
+}
+
+function resolveServerDraft(options, context, previous, acceptedDigest) {
+  let id, revision, status;
+  if (options.file || options["draft-file"]) {
+    if (["id", "revision", "status", "validation-failed"].some((name) => options[name] !== undefined)) fail("Use a draft response file or explicit draft flags, not both.");
+    const response = evidence.serverResponse(evidence.readResponse(path.resolve(options["draft-file"] ?? options.file)), options.area, context.owner, context.state.model?.id);
+    if (response.draft_revision < 1) fail("Server draft response requires a positive draft revision.");
+    id = response.change_set_id; revision = response.draft_revision; status = response.status;
+  } else { id = options.id; revision = Number(options.revision); status = options.status; }
+  if (!stateFiles.uuid.test(id ?? "") || !Number.isSafeInteger(revision) || revision < 0 || !["active", "validated"].includes(status)) fail("Invalid server draft identity/revision/status.");
+  if (previous && previous.id !== id) fail("Operation cannot be rebound to another server draft.");
+  if (previous && revision < previous.revision) fail("Server revision cannot go backwards.");
+  const failedRetry = previous?.validation_failed === true || options["validation-failed"] === "true";
+  return {id, revision, status, digest: failedRetry ? previous?.digest ?? acceptedDigest : acceptedDigest,
+    ...(failedRetry ? {validation_failed: true} : {})};
 }
 
 function cacheServerDraft(options) {
   const root = requireSessionPath(options.session), state = readSessionState(root), owner = stateFiles.owner(state, options.area, options.owner);
   const document = stateFiles.operation(root, state, options.area, owner), operation = document.value;
-  const revision = Number(options.revision);
-  if (!stateFiles.uuid.test(options.id ?? "") || !Number.isSafeInteger(revision) || revision < 0 || !["active", "validated"].includes(options.status)) fail("Invalid server draft identity/revision/status.");
-  if (operation.draft && operation.draft.id !== options.id) fail("Operation cannot be rebound to another server draft.");
-  if (operation.draft && revision < operation.draft.revision) fail("Server revision cannot go backwards.");
-  operation.draft = {id: options.id, revision, status: options.status, digest: operation.draft?.digest ?? operation.local_digest,
-    ...(options["validation-failed"] === "true" ? {validation_failed: true} : {})};
+  operation.draft = resolveServerDraft(options, {owner, state}, operation.draft, operation.local_digest);
   stateFiles.write(root, document.relative, operation, document.digest);
-  return {operation: operation.id, draft: operation.draft};
+  return {operation_id: operation.id, change_set_id: operation.draft.id, draft_revision: operation.draft.revision, operation: operation.id, draft: operation.draft};
 }
 
 function assertOperationInputs(root, operation) {
@@ -1121,11 +1146,19 @@ function assertOperationInputs(root, operation) {
 }
 
 function prepareStageRequest(options) {
-  const context = changeSetContext(options), document = stateFiles.operation(context.session, context.state, options.area, context.owner), operation = document.value;
+  const context = changeSetContext(options);
+  let document = stateFiles.operation(context.session, context.state, options.area, context.owner), operation = document.value;
   if (workspaceDigest(context) !== operation.local_digest) fail("Local files changed after acknowledgement.");
   assertOperationInputs(context.session, operation);
-  if (!operation.draft || operation.draft.status !== "active") fail("Cache the active server draft before preparing Stage.");
   if (operation.stage_attempt?.status === "unknown") fail("Stage result is uncertain; inspect before retrying.");
+  if (options["draft-file"]) {
+    const draft = resolveServerDraft(options, context, operation.draft, operation.local_digest);
+    if (draft.status !== "active") fail("Stage requires an active server draft.");
+    operation.draft = draft;
+    stateFiles.write(context.session, document.relative, operation, document.digest);
+    document = stateFiles.operation(context.session, context.state, options.area, context.owner); operation = document.value;
+  }
+  if (!operation.draft || operation.draft.status !== "active") fail("Supply --draft-file with the active server draft, or cache it before preparing Stage.");
   const pending = readPending(context), names = Object.keys(pending).sort();
   if (!names.length) fail("No local datasets to Stage.");
   const relative = `.atlas/tasks/${operation.task_id}.evidence/${operation.id}.stage-request.json`;
@@ -1141,7 +1174,9 @@ function prepareStageRequest(options) {
   stateFiles.write(context.session, relative, manifest, existing ? stateFiles.read(context.session, relative).digest : "absent");
   operation.stage_request = {path: relative, sha256: fileDigest(stateFiles.safePath(context.session, relative))};
   stateFiles.write(context.session, document.relative, operation, document.digest);
-  return {manifest: stateFiles.safePath(context.session, relative), accepted_digest: operation.local_digest, operation: operation.id, dataset_count: names.length};
+  return {stage_manifest_path: stateFiles.safePath(context.session, relative), operation_id: operation.id, task_id: operation.task_id,
+    change_set_id: operation.draft.id, draft_revision: operation.draft.revision,
+    manifest: stateFiles.safePath(context.session, relative), accepted_digest: operation.local_digest, operation: operation.id, dataset_count: names.length};
 }
 
 function aggregatePlan(options, kind) {
@@ -1195,10 +1230,36 @@ async function main() {
   if (!commands[command]) fail(`Unknown Atlas command: ${command}.`);
   const contract = readJsonFile(HELPER_CONTRACT_PATH, "Local helper command contract").commands[command];
   const allowed = new Set([...contract.usage.matchAll(/--([a-z0-9-]+)/g)].map((match) => match[1]));
+  if (contract.session_required) allowed.add("output-file");
   // Explicit task selection is valid for local authoring commands; it never changes operation ownership.
   if (["copy", "upsert", "upsert-batch", "discard", "review", "accept", "generate-dbml"].includes(command)) allowed.add("task");
   for (const option of Object.keys(options)) if (!allowed.has(option)) fail(`Unsupported option --${option} for ${command}. Read command-contract.`);
-  process.stdout.write(`${JSON.stringify(await commands[command](options))}\n`);
+  let outputTarget;
+  if (options["output-file"]) {
+    const root = requireSessionPath(options.session);
+    const relative = path.relative(root, path.resolve(root, options["output-file"])).split(path.sep).join("/");
+    if (!relative.startsWith(".atlas/temp/") || !relative.endsWith(".json")) fail("--output-file must be a new JSON file under .atlas/temp/.");
+    const file = stateFiles.safePath(root, relative, true);
+    if (fs.existsSync(file)) fail("--output-file already exists; choose a new file.");
+    outputTarget = {root, relative};
+  }
+  let result = await commands[command](options);
+  if (outputTarget) {
+    let temporary;
+    try {
+      const file = stateFiles.safePath(outputTarget.root, outputTarget.relative);
+      temporary = `${file}.${crypto.randomUUID()}.tmp`;
+      fs.writeFileSync(temporary, `${JSON.stringify(result)}\n`, {flag: "wx", mode: 0o600});
+      stateFiles.safePath(outputTarget.root, outputTarget.relative);
+      fs.linkSync(temporary, file); // Atomic new-file publication; never replace another result.
+    } catch {
+      result = {...result, receipt_export: {status: "failed", code: "RECEIPT_EXPORT_FAILED",
+        message: "Result export failed; the command outcome above is unchanged. Use its returned result; do not repeat the operation."}};
+    } finally {
+      if (temporary) { try { fs.unlinkSync(temporary); } catch {} }
+    }
+  }
+  process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
 if (require.main === module) main().catch((error) => {
@@ -1287,11 +1348,20 @@ function recordOperation(options) {
   const session = requireSessionPath(options.session), state = readSessionState(session), owner = stateFiles.owner(state, options.area, options.owner);
   const document = stateFiles.operation(session, state, options.area, owner), operation = document.value;
   if (!operation.draft) fail("Operation has no bound server draft.");
-  const response = readJsonFile(path.resolve(options.file ?? ""), "Governed operation result");
-  const changeId = response.metadata_change_set_id ?? response.model_change_set_id;
+  if (options["digest-from-operation"] !== undefined && (options["digest-from-operation"] !== "true" || options.checkpoint !== "apply-approval" || options["review-digest"] !== undefined)) fail("Use --digest-from-operation true only for Apply approval, instead of --review-digest.");
+  let response;
+  if (options.file) response = evidence.serverResponse(evidence.readResponse(path.resolve(options.file)), options.area, owner, state.model?.id);
+  else if (options.checkpoint === "apply-approval" && operation.server_validation) {
+    const saved = stateFiles.read(session, operation.server_validation.path);
+    if (saved.digest !== operation.server_validation.sha256 || saved.value.area !== options.area || saved.value.owner_tenant_id !== owner.id) fail("Server review changed or belongs to another owner.");
+    response = evidence.serverResponse({...saved.value, ...(options.area === "model" && saved.value.model_id === undefined ? {model_id: state.model?.id} : {})}, options.area, owner, state.model?.id);
+  } else fail("--file is required for a server validation or Apply result.");
+  const changeId = response.change_set_id;
   if (changeId !== operation.draft.id || response.draft_revision !== operation.draft.revision ||
       (options.area === "metadata" ? response.tenant_id !== owner.id : response.model_id !== state.model?.id)) fail("Server result does not match the bound owner/draft/revision.");
-  if (!operation.stage || operation.stage.status !== "staged" || operation.stage.fingerprintVerified !== true || operation.stage.acceptedDigest !== operation.local_digest || operation.stage.changeSetId !== operation.draft.id || operation.stage.resultingRevision !== operation.draft.revision || !stateFiles.digest.test(operation.stage.stageFingerprint ?? "") || operation.stage_attempt?.status === "unknown") fail("Resolve and verify Stage before recording server validation or Apply.");
+  const stage = evidence.stageReceipt(operation.stage);
+  if (!stage || stage.status !== "staged" || stage.fingerprint_verified !== true || stage.accepted_digest !== operation.local_digest || stage.change_set_id !== operation.draft.id || stage.draft_revision !== operation.draft.revision || !stateFiles.digest.test(stage.stage_fingerprint ?? "") || operation.stage_attempt?.status === "unknown") fail("Resolve and verify Stage before recording server validation or Apply.");
+  operation.stage = stage;
   if (operation.apply && options.checkpoint !== "apply") fail("Applied operation evidence cannot return to an earlier checkpoint.");
   if (options.checkpoint === "apply-approval") {
     const context = changeSetContext({...options, task: operation.task_id});
@@ -1299,9 +1369,11 @@ function recordOperation(options) {
     assertOperationInputs(session, operation);
   }
   if (options.checkpoint === "validation") {
-    if (typeof response.valid !== "boolean" || (response.valid && (!stateFiles.digest.test(response.candidate_digest ?? "") || response.status !== "validated")) || !["active", "validated"].includes(response.status)) fail("Invalid server validation result.");
+    if (typeof response.valid !== "boolean" || (response.valid && (!stateFiles.digest.test(response.candidate_digest ?? "") || response.status !== "validated" || response.error_count !== 0)) || !["active", "validated"].includes(response.status) ||
+        !Number.isSafeInteger(response.error_count) || response.error_count < 0 || !Array.isArray(response.action_review)) fail("Invalid server validation result.");
     const relative = `.atlas/tasks/${operation.task_id}.evidence/${operation.id}.server-validation.json`;
     const saved = {schema_version: response.schema_version, area: options.area, owner_tenant_id: owner.id,
+      ...(options.area === "metadata" ? {tenant_id: owner.id} : {model_id: state.model.id}),
       change_set_id: changeId, draft_revision: response.draft_revision, valid: response.valid, status: response.status,
       candidate_digest: response.candidate_digest, error_count: response.error_count,
       action_review: response.action_review, validated_at: response.validated_at, expires_at: response.expires_at};
@@ -1312,8 +1384,12 @@ function recordOperation(options) {
     operation.draft.status = response.status;
     operation.draft.validation_failed = !response.valid;
   } else if (options.checkpoint === "apply-approval") {
-    if (!operation.server_validation?.valid || options["review-digest"] !== operation.server_validation.sha256) fail("Separate Apply acknowledgement must bind the current complete server review.");
-    if (stateFiles.read(session, operation.server_validation.path).digest !== operation.server_validation.sha256) fail("Server review changed.");
+    const reviewDigest = options["digest-from-operation"] === "true" ? operation.server_validation?.sha256 : options["review-digest"];
+    if (!operation.server_validation?.valid || reviewDigest !== operation.server_validation.sha256) fail("Separate Apply acknowledgement must bind the current complete server review.");
+    const savedReview = stateFiles.read(session, operation.server_validation.path);
+    if (savedReview.digest !== operation.server_validation.sha256) fail("Server review changed.");
+    if (response.valid !== true || response.status !== "validated" || response.candidate_digest !== operation.server_validation.candidate_digest ||
+        stableStringify(response.action_review) !== stableStringify(savedReview.value.action_review)) fail("Apply acknowledgement must use the current complete server review.");
     operation.apply_approval = {source: "conversation", at: new Date().toISOString(), review_sha256: operation.server_validation.sha256,
       revision: operation.draft.revision, candidate_digest: operation.server_validation.candidate_digest};
   } else if (options.checkpoint === "apply") {
@@ -1332,7 +1408,8 @@ function recordOperation(options) {
     }
     stateFiles.write(session, ".atlas/session.json", latest.value, latest.digest);
   }
-  return {operation: operation.id, checkpoint: options.checkpoint, refresh_required: Boolean(operation.apply)};
+  return {operation_id: operation.id, change_set_id: operation.draft.id, draft_revision: operation.draft.revision,
+    operation: operation.id, checkpoint: options.checkpoint, refresh_required: Boolean(operation.apply)};
 }
 
 function importProfileResults(options) {

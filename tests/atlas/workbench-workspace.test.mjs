@@ -111,3 +111,23 @@ test('operation pointer survives task switch and keeps uncertain Stage visible',
  const operationPath='.atlas/tasks/00000000-0000-4000-8000-000000000002.evidence/00000000-0000-4000-8000-000000000003.json';evidence.file('00000000-0000-4000-8000-000000000003.json',JSON.stringify({schema_version:'1.0',id:'00000000-0000-4000-8000-000000000003',task_id:'00000000-0000-4000-8000-000000000002',area:'metadata',owner:{id:1,code:'T',root:'.'},local_digest:'0'.repeat(64),stage_attempt:{status:'unknown'}}));
  state(root,{operations:{metadata:{1:operationPath}}});const ws=await connect(root),operation=await ws.loadOperation('metadata');assert.equal(operation.uncertain,true);assert.equal(operation.historical,true);assert.match(operation.status,/unknown/);
 });
+
+
+test('operation status accepts canonical and legacy Stage proof but never conflicting fields',async()=>{
+ const root=workspace();snapshot(root,'metadata',[source]);
+ const task='00000000-0000-4000-8000-000000000002',id='00000000-0000-4000-8000-000000000003';
+ const evidence=root.entries.get('.atlas').entries.get('tasks').directory(`${task}.evidence`);
+ const operationPath=`.atlas/tasks/${task}.evidence/${id}.json`;
+ state(root,{operations:{metadata:{1:operationPath}}});const ws=await connect(root);
+ for(const [stage,verified] of [
+   [{fingerprint_verified:true},true], [{fingerprintVerified:true},true],
+   [{fingerprint_verified:true,fingerprintVerified:true},true],
+   [{fingerprint_verified:false,fingerprintVerified:true},false],
+   [{fingerprint_verified:true,fingerprintVerified:false},false],
+   [{fingerprint_verified:true,fingerprintVerified:null},false],
+   [{fingerprint_verified:false},false], [{},false],
+ ]) {
+   evidence.file(`${id}.json`,JSON.stringify({schema_version:'1.0',id,task_id:task,area:'metadata',owner:{id:1,code:'T',root:'.'},local_digest:'0'.repeat(64),stage}));
+   assert.equal((await ws.loadOperation('metadata')).status,verified?'Staged receipt recorded':'Local operation');
+ }
+});

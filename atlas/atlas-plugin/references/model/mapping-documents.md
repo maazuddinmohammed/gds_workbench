@@ -143,7 +143,7 @@ ERP receives its own documents using the actual ERP source columns and the same 
 
 ## Document quality checks
 
-These extend the structural checks in [Mapping records](mapping.md). Template/reference checks run locally; grain, transformation fidelity and business meaning require agent review. The [validation index](../../docs/validation-index.md) distinguishes enforcement.
+These extend the structural checks in [Mapping records](mapping.md). Template/reference checks run locally; grain, transformation fidelity and business meaning require agent review. The [local validation](../local-validation.md) distinguishes enforcement.
 
 | Rule | Check / reason |
 |---|---|

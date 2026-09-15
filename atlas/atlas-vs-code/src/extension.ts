@@ -7,7 +7,7 @@ import {
 } from "./auth.js";
 import { createStageMcpClient } from "./mcp-client.js";
 import { resolveStageProfile } from "./profile.js";
-import { failureReceipt } from "./receipt.js";
+import { exportReceipt, failureReceipt } from "./receipt.js";
 import {
   stageApprovedManifest,
   StageRunnerError,
@@ -15,6 +15,7 @@ import {
 } from "./stage-runner.js";
 
 const TOOL_NAME = "atlas_stageApprovedManifest";
+interface CheckInput { outputFile?: string }
 
 const getMicrosoftSession: MicrosoftSessionGetter = async (
   providerId,
@@ -64,6 +65,7 @@ class StageApprovedManifestTool
     token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
     let stageStarted = false;
+    let receipt: Awaited<ReturnType<typeof stageApprovedManifest>> | ReturnType<typeof failureReceipt>;
     let mcp: Awaited<ReturnType<typeof createStageMcpClient>> | undefined;
     try {
       if (!vscode.workspace.isTrusted) {
@@ -91,7 +93,7 @@ class StageApprovedManifestTool
               )
           : undefined;
       mcp = await createStageMcpClient(profile, tokenSupplier);
-      const receipt = await stageApprovedManifest(options.input, {
+      receipt = await stageApprovedManifest(options.input, {
         mcp,
         workspaceRoots: roots,
         backend: { profile: profile.name, endpoint_sha256: createHash("sha256").update(profile.endpoint.href).digest("hex") },
@@ -100,25 +102,31 @@ class StageApprovedManifestTool
           stageStarted = true;
         },
       });
-      return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart(JSON.stringify(receipt)),
-      ]);
     } catch (error) {
-      return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart(JSON.stringify(failureReceipt(error, stageStarted))),
-      ]);
+      receipt = failureReceipt(error, stageStarted);
     } finally {
       // Cleanup cannot replace the authoritative Stage receipt or trigger a retry.
       await mcp?.close().catch(() => undefined);
     }
+    return new vscode.LanguageModelToolResult([new vscode.LanguageModelTextPart(JSON.stringify(
+      await exportReceipt(receipt, options.input?.outputFile, vscode.workspace.isTrusted ? workspaceRoots() : []),
+    ))]);
   }
 }
 
-async function checkStageRunner(): Promise<{ profile: string; endpoint_sha256: string } | undefined> {
+async function checkStageRunner(input: CheckInput = {}, token?: vscode.CancellationToken) {
   let mcp: Awaited<ReturnType<typeof createStageMcpClient>> | undefined;
-  let profile: ReturnType<typeof configuredProfile> | undefined;
+  let receipt: { schema_version: "1.0"; status: "ready"; backend: { profile: string; endpoint_sha256: string } } | ReturnType<typeof failureReceipt>;
   try {
-    profile = configuredProfile();
+    if (!vscode.workspace.isTrusted) throw new StageRunnerError("WORKSPACE_UNTRUSTED", "Trust the Atlas workspace before checking Stage Runner.");
+    if (!workspaceRoots().length) throw new StageRunnerError("INVALID_INPUT", "Open the Atlas workspace before checking Stage Runner.");
+    if (token?.isCancellationRequested) throw new StageRunnerError("CANCELLED", "Stage Runner check was cancelled.");
+    if (input === null || typeof input !== "object" || Array.isArray(input) ||
+        Object.keys(input).some(key => key !== "outputFile") ||
+        (input.outputFile !== undefined && typeof input.outputFile !== "string")) {
+      throw new StageRunnerError("INVALID_INPUT", "Stage Runner check input is invalid.");
+    }
+    const profile = configuredProfile();
     const endpoint = profile.endpoint;
     const tokenSupplier =
       profile.authentication === "microsoft"
@@ -140,23 +148,40 @@ async function checkStageRunner(): Promise<{ profile: string; endpoint_sha256: s
       throw new StageRunnerError("MCP_RESPONSE_INVALID", "GDS MCP check returned no tenant list.");
     }
     const identity = { profile: profile.name, endpoint_sha256: createHash("sha256").update(endpoint.href).digest("hex") };
-    await vscode.window.showInformationMessage(`Atlas Stage Runner is ready (${profile.name}). Backend: ${identity.endpoint_sha256}`);
-    return identity;
+    receipt = { schema_version: "1.0", status: "ready", backend: identity };
   } catch (error) {
-    const receipt = failureReceipt(error, false);
-    await vscode.window.showErrorMessage(
-      `Atlas Stage Runner${profile === undefined ? "" : ` (${profile.name})`}: ${receipt.code}. ${receipt.message}`,
-    );
+    receipt = failureReceipt(error, false);
   } finally {
-    // The connection check has already reported its result.
+    // Cleanup cannot replace a readiness or failure result.
     await mcp?.close().catch(() => undefined);
+  }
+  return exportReceipt(receipt, input?.outputFile, vscode.workspace.isTrusted ? workspaceRoots() : []);
+}
+
+class CheckStageRunnerTool implements vscode.LanguageModelTool<CheckInput> {
+  prepareInvocation(): vscode.PreparedToolInvocation {
+    return { invocationMessage: "Checking Atlas Stage Runner readiness…" };
+  }
+  async invoke(options: vscode.LanguageModelToolInvocationOptions<CheckInput>, token: vscode.CancellationToken) {
+    return new vscode.LanguageModelToolResult([new vscode.LanguageModelTextPart(
+      JSON.stringify(await checkStageRunner(options.input, token)),
+    )]);
   }
 }
 
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.lm.registerTool(TOOL_NAME, new StageApprovedManifestTool()),
-    vscode.commands.registerCommand("atlasStageRunner.check", checkStageRunner),
+    vscode.lm.registerTool("atlas_checkStageRunner", new CheckStageRunnerTool()),
+    vscode.commands.registerCommand("atlasStageRunner.check", async () => {
+      const receipt = await checkStageRunner();
+      if (receipt.status === "ready") {
+        await vscode.window.showInformationMessage(`Atlas Stage Runner is ready (${receipt.backend.profile}). Backend: ${receipt.backend.endpoint_sha256}`);
+      } else {
+        await vscode.window.showErrorMessage(`Atlas Stage Runner: ${receipt.code}. ${receipt.message}`);
+      }
+      return receipt;
+    }),
   );
 }
 

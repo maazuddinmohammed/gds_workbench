@@ -1,21 +1,47 @@
-# Atlas 0.1.0 local verification
+# Atlas 0.1.1 local verification
 
-Verified 15 September 2026. Local implementation and artifacts only; no deployment, external writes, Databricks execution or populated-database changes.
+Verified 15 September 2026. Artifacts are ready for installation; nothing was deployed, published or written to external systems.
 
-## Delivered
+## This release
 
-- Portable Agent Plugins 1.0 package: 14 skills, compact shared references, templates and user/runtime guides.
-- Workspace/session/tasks, separate Metadata-owner roots, Snapshot installation, local drafts, input-bound validation and separate review/Stage/Apply evidence.
-- Deterministic batch-aware profiling/analysis planning, bounded aggregate import, shared effective-graph validation and Snapshot-plus-draft DBML.
-- Readable Workbench with local editing, Snapshot/proposal comparison and modular validation files.
-- Modular Stage Runner, including direct/chunked/large-Code submission and read-only recovery of uncertain Stage writes.
-- Required backend contracts: Process Group dependency order, repeated Copy order, key/audit alignment, protected Bindings and governed Mapping consumer context.
+- First-class `atlas_checkStageRunner` returns readiness and safe backend identity.
+- Accept can import the actual draft response and prepare the Stage manifest in one invocation.
+- Preparation imports or verifies cached draft evidence; Stage still checks current server state.
+- Stage reads the acknowledged digest from its operation. Apply approval can use the saved review without a copied digest or extra input file.
+- Local evidence uses canonical identifiers and accepts existing supported server/legacy aliases. Conflicting aliases fail.
+- Helpers and extension tools can export exactly one JSON document. Existing files are protected; optional export failures preserve the operation outcome.
+- Operation checkpoints accept exact governed responses or supported MCP envelopes, without a curated intermediate file.
+- Logical and Dimensional/Gold Guided and Grill Me are explicit starter choices. The user guide is shorter; developer documentation and the preview image are excluded from the plugin.
+- Every workflow uses the shared submission procedure. Domain references retain detailed contracts through progressive disclosure.
 
-DDL and transformation code are agent-authored using the supplied rules/templates, matching the existing plugin approach. The plugin does not silently synchronize code files from Snapshots. New Python generation and new Member-table support remain outside the agreed first release; existing records are preserved.
+The prior catalog/startup changes remain included: evidence SQL uses the physical owner's `tenant_catalog`, and Atlas opens/reuses Workbench at startup before setup questions.
 
-## Results
+## Current verification
 
 Counts describe separate suites, not a deduplicated total. Focused reruns are not added to their containing suites.
+
+| Check | Result |
+|---|---|
+| Atlas workspace, lifecycle, profiling, native fallback and packaging | 66 passed; no skips |
+| Existing GDS plus Atlas Workbench/planner JavaScript | 206 passed; no skips |
+| Atlas Stage Runner | 114 passed; TypeScript and bundle passed |
+| Packaged VS Code extension host | 9 checks passed against a disposable loopback fixture |
+| Skill structure | All 14 skills passed validation |
+| Python Ruff, formatting and Pyright | Passed; zero type errors |
+| Whitespace | Passed |
+| Release archives | Version 0.1.1 and integrity verified; plugin matches a fresh deterministic source build; VSIX bundle/README match source |
+
+Native cases ran with PowerShell 7.5.2. CI includes the shared handoff cases for Windows PowerShell 5.1; this host does not verify that exact runtime.
+
+New regressions cover direct Metadata/Model responses, malformed or concatenated JSON, conflicting identifiers, invalid scope/types, changed acknowledged files, changed server review, separate Apply approval, output overwrite/path protection, failed optional export, and re-accepting changed content before Stage. Failed-validation recovery keeps its separate earlier-draft binding.
+
+A separate instruction review exercised approved Metadata enrichment followed by Stage without Apply, then a later explicit Apply. Both paths use exact response files and operation-bound evidence. This was an instruction review, not a live server execution.
+
+See the [validation code index](development/validation-index.md) for modular rule implementations and tests. Static checks do not prove business meaning or runtime SQL semantics; server authorization, locks and revision checks remain authoritative.
+
+## Earlier verification of unchanged components
+
+These results come from the complete implementation run, not a rerun for this plugin/extension update:
 
 | Suite | Result |
 |---|---|
@@ -23,52 +49,24 @@ Counts describe separate suites, not a deduplicated total. Focused reruns are no
 | Deployment packaging | 61 passed |
 | Web frontend | 375 passed; types and production build passed |
 | Notebook source on Python 3.12 | 161 passed |
-| Extracted notebook artifact probes on Python 3.12 | 3 passed |
-| Existing GDS plus Atlas Workbench/planner JavaScript | 197 passed, no skips |
-| Atlas Stage Runner | 103 passed; TypeScript and bundle passed |
-| Packaged VS Code extension host | 7 checks passed |
-| Native PowerShell fallback | 22 passed on PowerShell 7.5.2, no skips |
-| Atlas workspace/lifecycle/profiling/package Python suite | 53 passed, no skips; includes native cases above |
-| Existing GDS plugin Python regression suite | 352 passed, no skips, with PowerShell available |
-| Python Ruff/Pyright, whitespace | Passed for changed backend/MCP source and new Atlas Python helpers/tests; zero final type errors |
+| Extracted notebook artifact probes | 3 passed |
+| Existing GDS plugin Python regression suite | 352 passed with PowerShell available |
 
-Database tests used only repository-created disposable PostgreSQL containers with random credentials, databases and per-run sentinels. The full backend run used the approved local Docker fixture path; no existing service or supplied DSN was substituted.
+Database tests used only fixture-created disposable PostgreSQL containers, random credentials/databases and per-run sentinels. No existing database was substituted.
 
-Final package verification compares the delivered ZIP byte-for-byte with a fresh deterministic source build. An intermediate stale archive was rebuilt after final formatting; the final combined suite passes against the rebuilt artifact.
+Earlier synthetic instruction reviews covered metadata enrichment, Logical modeling with SQL Never, and selective code regeneration. The smaller-model review reached 18/18 after clarification; the stronger-model review scored 17/18 before final corrections. These are limited subjective reviews, not execution tests or general model benchmarks.
 
-## What the tests cover
+## Limits
 
-- Owner/Model isolation; absolute safe paths; archive traversal/symlink rejection; Snapshot hashes and revision fences; preservation of unrelated pending edits.
-- Effective Snapshot-plus-draft graphs; schema/key/reference/lock validation; source coverage; naming, surrogate/audit policy and truthful optional evidence.
-- Batched SQL and type handling; masked-column exclusion; bounded groups; exact input/query/result bindings; complete aggregate coverage and metric consistency.
-- Approval/digest/revision binding; server-review evidence; separate Apply approval; uncertain Stage recovery without write replay; rollback-safe Snapshot/DBML replacement.
-- Deterministic plugin packaging, source/archive equality, manifest/skill contracts, packaged links and required assets.
-
-See the [validation code index](atlas-plugin/docs/validation-index.md) for rule-to-file/function/test mappings. Static SQL checks do not prove runtime SQL semantics; agent/user review remains necessary for business meaning and model quality. Live authorization, locks and server state are revalidated by the backend.
-
-## Validation parity follow-up
-
-A subsequent comparison with GDS found four native PowerShell gaps not covered by the first suite. The fallback now checks missing registered Metadata owners, declared task Snapshot bindings, cross-owner key-contract agreement and generated SQL policy. Regression cases reproduce the original omissions and require the same rejection through Node and PowerShell, including local acknowledgement.
-
-Independent Metadata work is not blocked by an unrelated missing owner's Snapshot. Existing SQL/Python artifacts and inactive records remain preserved. Decision files, SQL evidence queries and Assertions stay optional: record/graph and Analysis-count checks run directly; checks about a chosen citation use the declared evidence. SQL parity cases also exercise quoting, temporary stages and Unicode identifier casing under English and Turkish locales.
-
-The final 53-case Atlas suite passed against the rebuilt plugin ZIP; all 197 combined GDS/Atlas JavaScript cases passed. Ruff, formatting, Pyright and whitespace checks passed. Backend and extension source did not change in this follow-up; their results above are from the complete implementation run.
-
-## Instruction dry runs
-
-Three synthetic tasks were reviewed with a smaller model and a stronger model: metadata-only enrichment, Logical modeling under SQL Never, and selective code regeneration with locks/manual edits. The smaller model's review improved from 14/18 to 18/18 after clarifying the instructions. The stronger model scored 17/18 before final documentation corrections. These are limited, subjective instruction reviews, not execution tests or a general model-quality benchmark. Raw prompts/transcripts were not retained.
-
-## Verification limits
-
-- Windows PowerShell 5.1 was unavailable on this macOS host. Its CI parity job is configured; the local native run used PowerShell 7.5.2.
-- Browser URL policy blocked local-page automation. Workbench DOM/interaction tests passed, but native directory-picker permissions, zoom and visual rendering need manual browser verification. The restriction was not bypassed.
-- The existing frontend build reports a bundle-size warning; the build succeeds.
-- No live Databricks or deployed-backend end-to-end run was performed. Existing installations need the separate [backend compatibility review](../docs/atlas-backend-compatibility.md).
+- No live Databricks or deployed-backend end-to-end execution was performed. Existing installations still need the separate [backend compatibility review](../docs/atlas-backend-compatibility.md).
+- Workbench DOM/interaction tests passed. Browser policy prevented local-page automation; directory permissions, zoom and visual rendering still need manual browser verification.
+- The earlier web frontend build succeeded with a bundle-size warning.
+- New Python generation and new Member-table support remain outside the agreed first release; existing records are preserved.
 
 ## Artifacts
 
-- [Plugin ZIP](dist/atlas-agent-plugin-0.1.0.zip)
-- [Stage Runner VSIX](dist/atlas-stage-runner-0.1.0.vsix)
-- [MCP backend ZIP](../mcp_server/dist/gds-mcp-appservice-atlas-0.1.0.zip)
+- [Atlas plugin ZIP](dist/atlas-agent-plugin-0.1.1.zip)
+- [Atlas Stage Runner VSIX](dist/atlas-stage-runner-0.1.1.vsix)
+- [Previously built MCP backend ZIP](../mcp_server/dist/gds-mcp-appservice-atlas-0.1.0.zip)
 
-Artifacts were rebuilt locally. They have not been installed, published or deployed by this work.
+Superseded Atlas 0.1.0 ZIP/VSIX files were removed. Install the matching 0.1.1 plugin and extension together. No installation or deployment was performed here.

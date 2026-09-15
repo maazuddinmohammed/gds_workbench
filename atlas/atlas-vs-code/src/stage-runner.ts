@@ -172,11 +172,11 @@ export async function stageApprovedManifest(
     }
     const refreshed = await readRequest(input, dependencies.workspaceRoots, dependencies.backend);
     if (refreshed.operationSha256 !== approved.operationSha256 || stableStringify(refreshed.request) !== stableStringify(request)) fail("MANIFEST_CHANGED", "Approval changed during recovery.");
-    const receipt: StageReceipt = {schemaVersion:"1.0",status:"staged",taskId:request.task,operationId:request.operation.id,
-      ownerTenantId:request.owner.id,ownerRoot:request.owner.root,backend:request.backend,area:request.area,
-      changeSetId:request.target.change_set_id,startingRevision:request.target.starting_revision,resultingRevision:revision,
-      acceptedDigest:request.accepted_digest,stageFingerprint:fingerprint,fingerprintVerified:true,
-      datasets:recovered.map(change=>({dataset:change.dataset,recordCount:change.records.length}))};
+    const receipt: StageReceipt = {schema_version:"1.0",status:"staged",task_id:request.task,operation_id:request.operation.id,
+      owner_tenant_id:request.owner.id,owner_root:request.owner.root,backend:request.backend,area:request.area,
+      change_set_id:request.target.change_set_id,starting_revision:request.target.starting_revision,draft_revision:revision,
+      accepted_digest:request.accepted_digest,stage_fingerprint:fingerprint,fingerprint_verified:true,
+      datasets:recovered.map(change=>({dataset:change.dataset,record_count:change.records.length}))};
     await saveOperation(approved,{draft:{id:request.target.change_set_id,revision,status:"active",digest:request.accepted_digest},
       stage:{...receipt,received_at:new Date().toISOString(),recovered:true},
       stage_attempt:{...attempt,status:"verified",completed_at:new Date().toISOString()}});
@@ -224,7 +224,7 @@ export async function stageApprovedManifest(
   if (stableStringify(refreshed.request) !== stableStringify(request) || refreshed.operationSha256 !== approved.operationSha256) {
     fail("MANIFEST_CHANGED", "Stage request changed while preparing to write.");
   }
-  const resultingRevision = await executeStage(
+  const draft_revision = await executeStage(
     request,
     dependencies.mcp,
     target,
@@ -237,35 +237,35 @@ export async function stageApprovedManifest(
       dependencies.onWriteStart?.();
     },
   );
-  const stageFingerprint = verifyStageFingerprint(
+  const stage_fingerprint = verifyStageFingerprint(
     request,
     scopeId,
-    resultingRevision,
+    draft_revision,
     changes,
     await dependencies.mcp.callTool(`get_${request.area}_change_set_fingerprint`, target),
   );
   const receipt: StageReceipt = {
-    schemaVersion: "1.0",
+    schema_version: "1.0",
     status: "staged",
-    taskId: request.task,
-    operationId: request.operation.id,
-    ownerTenantId: request.owner.id,
-    ownerRoot: request.owner.root,
+    task_id: request.task,
+    operation_id: request.operation.id,
+    owner_tenant_id: request.owner.id,
+    owner_root: request.owner.root,
     backend: request.backend,
     area: request.area,
-    changeSetId: request.target.change_set_id,
-    startingRevision: request.target.starting_revision,
-    resultingRevision,
-    acceptedDigest: request.accepted_digest,
-    stageFingerprint,
-    fingerprintVerified: true,
+    change_set_id: request.target.change_set_id,
+    starting_revision: request.target.starting_revision,
+    draft_revision,
+    accepted_digest: request.accepted_digest,
+    stage_fingerprint,
+    fingerprint_verified: true,
     datasets: changes.map((change) => ({
       dataset: change.dataset,
-      recordCount: change.records.length,
+      record_count: change.records.length,
     })),
   };
   await saveOperation(approved, {
-    draft: { id: request.target.change_set_id, revision: resultingRevision, status: "active", digest: request.accepted_digest },
+    draft: { id: request.target.change_set_id, revision: draft_revision, status: "active", digest: request.accepted_digest },
     stage: { ...receipt, received_at: new Date().toISOString() },
     stage_attempt: { status: "verified", accepted_digest: request.accepted_digest, completed_at: new Date().toISOString() } });
   return receipt;

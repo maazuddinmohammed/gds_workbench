@@ -58,7 +58,7 @@ function activatedTool() {
   activate({ subscriptions } as Vscode.ExtensionContext);
   expect(mocks.registerTool.mock.calls[0]?.[0]).toBe("atlas_stageApprovedManifest");
   expect(mocks.registerCommand.mock.calls[0]?.[0]).toBe("atlasStageRunner.check");
-  expect(subscriptions).toHaveLength(2);
+  expect(subscriptions).toHaveLength(3);
   return mocks.registerTool.mock.calls[0]![1] as Vscode.LanguageModelTool<object>;
 }
 
@@ -92,7 +92,7 @@ describe("VS Code tool boundary", () => {
       return { callTool: mocks.callTool, close: mocks.close };
     });
     mocks.callTool.mockResolvedValue({ tenants: [] });
-    mocks.stage.mockResolvedValue({ status: "staged", fingerprintVerified: true });
+    mocks.stage.mockResolvedValue({ status: "staged", fingerprint_verified: true });
     const tool = activatedTool();
 
     if (operation === "check") {
@@ -114,7 +114,7 @@ describe("VS Code tool boundary", () => {
     if (reason === "untrusted") mocks.workspace.isTrusted = false;
     if (reason === "no workspace") mocks.workspace.workspaceFolders = [];
     const result = await activatedTool().invoke({ input, toolInvocationToken: undefined }, token(reason === "cancelled"));
-    expect(receiptFrom(result)).toMatchObject({ status: "failed", stageStarted: false });
+    expect(receiptFrom(result)).toMatchObject({ status: "failed", stage_started: false });
     expect(mocks.createClient).not.toHaveBeenCalled();
     expect(mocks.stage).not.toHaveBeenCalled();
   });
@@ -126,14 +126,14 @@ describe("VS Code tool boundary", () => {
     });
     const result = await activatedTool().invoke({ input, toolInvocationToken: undefined }, token());
     expect(receiptFrom(result)).toMatchObject({
-      status: "failed", stageStarted: started, legacyFallbackAllowed: !started,
+      status: "failed", stage_started: started, legacy_fallback_allowed: !started,
     });
     expect(mocks.stage).toHaveBeenCalledOnce();
     expect(mocks.close).toHaveBeenCalledOnce();
   });
 
   test("returns only the receipt and closes the connection after success", async () => {
-    const receipt = { status: "staged", fingerprintVerified: true };
+    const receipt = { status: "staged", fingerprint_verified: true };
     mocks.stage.mockResolvedValue(receipt);
     const result = await activatedTool().invoke({ input, toolInvocationToken: undefined }, token());
     expect(receiptFrom(result)).toEqual(receipt);
@@ -142,7 +142,7 @@ describe("VS Code tool boundary", () => {
 
   test.each([false, true])("preserves the Stage receipt when cleanup fails (staged=%s)", async (staged) => {
     mocks.close.mockRejectedValue(new Error("private cleanup detail"));
-    if (staged) mocks.stage.mockResolvedValue({ status: "staged", fingerprintVerified: true });
+    if (staged) mocks.stage.mockResolvedValue({ status: "staged", fingerprint_verified: true });
     else mocks.stage.mockRejectedValue(new StageMcpError("MCP_OUTCOME_UNKNOWN", "Verify before retrying."));
 
     const result = await activatedTool().invoke({ input, toolInvocationToken: undefined }, token());
@@ -157,7 +157,7 @@ describe("VS Code tool boundary", () => {
     mocks.close.mockRejectedValue(new Error("private cleanup detail"));
     activatedTool();
 
-    await expect(mocks.registerCommand.mock.calls[0]![1]()).resolves.toMatchObject({profile:"local",endpoint_sha256:expect.stringMatching(/^[0-9a-f]{64}$/)});
+    await expect(mocks.registerCommand.mock.calls[0]![1]()).resolves.toMatchObject({status:"ready",backend:{profile:"local",endpoint_sha256:expect.stringMatching(/^[0-9a-f]{64}$/)}});
 
     expect(mocks.information).toHaveBeenCalledOnce();
     expect(mocks.error).not.toHaveBeenCalled();
@@ -179,8 +179,39 @@ describe("VS Code tool boundary", () => {
     await mocks.registerCommand.mock.calls[0]![1]();
 
     expect(mocks.error).toHaveBeenCalledWith(
-      "Atlas Stage Runner (local): MCP_DNS_FAILED. GDS MCP DNS lookup failed.",
+      "Atlas Stage Runner: MCP_DNS_FAILED. GDS MCP DNS lookup failed.",
     );
     expect(mocks.close).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe("first-class Stage Runner check", () => {
+  test("returns only readiness and backend identity through one JSON text part", async () => {
+    mocks.callTool.mockResolvedValue({ tenants: [{ tenant_id: 17, tenant_code: "PRIVATE" }] });
+    activatedTool();
+    const tool = mocks.registerTool.mock.calls.find(call => call[0] === "atlas_checkStageRunner")![1] as Vscode.LanguageModelTool<object>;
+    const receipt = receiptFrom(await tool.invoke({ input: {}, toolInvocationToken: undefined }, token()));
+    expect(receipt).toEqual({ schema_version: "1.0", status: "ready", backend: { profile: "local", endpoint_sha256: expect.stringMatching(/^[0-9a-f]{64}$/) } });
+    expect(JSON.stringify(receipt)).not.toMatch(/PRIVATE|127\.0\.0\.1|http/);
+    expect(mocks.callTool).toHaveBeenCalledExactlyOnceWith("list_tenants", { page_size: 1 });
+    expect(mocks.information).not.toHaveBeenCalled();
+    expect(mocks.stage).not.toHaveBeenCalled();
+  });
+
+  test.each(["untrusted", "cancelled", "missing workspace"])("rejects %s before check I/O", async reason => {
+    if (reason === "untrusted") mocks.workspace.isTrusted = false;
+    if (reason === "missing workspace") mocks.workspace.workspaceFolders = [];
+    activatedTool();
+    const tool = mocks.registerTool.mock.calls.find(call => call[0] === "atlas_checkStageRunner")![1] as Vscode.LanguageModelTool<object>;
+    expect(receiptFrom(await tool.invoke({ input: {}, toolInvocationToken: undefined }, token(reason === "cancelled")))).toMatchObject({ schema_version: "1.0", status: "failed", stage_started: false });
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+
+  test("preserves successful Stage when an optional receipt export fails", async () => {
+    mocks.stage.mockResolvedValue({ schema_version: "1.0", status: "staged", fingerprint_verified: true });
+    const result = await activatedTool().invoke({ input: { ...input, outputFile: "/workspace/.atlas/session.json" }, toolInvocationToken: undefined }, token());
+    expect(receiptFrom(result)).toMatchObject({ status: "staged", fingerprint_verified: true, receipt_export: { code: "RECEIPT_EXPORT_FAILED" } });
+    expect(mocks.stage).toHaveBeenCalledOnce();
   });
 });

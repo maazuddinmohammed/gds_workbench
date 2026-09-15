@@ -21,7 +21,7 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 | `project_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the Project. Reference: [project](project.md). |
 | `tenant_name` | string; minLength=1; maxLength=200; pattern=\S; required | Name identifying the Tenant. |
 | `tenant_description` | string; required; null allowed | Plain-language description of the Tenant. |
-| `tenant_catalog` | string; minLength=1; maxLength=255; required | Primary data catalog assigned to the Tenant. |
+| `tenant_catalog` | string; minLength=1; maxLength=255; required | Target data catalog assigned to this Tenant. Used in qualified Databricks evidence queries for its owned Bronze/Silver/Gold Objects. |
 | `gds_admin_catalog` | string; minLength=1; maxLength=255; required | Catalog containing administrative GDS metadata for the Tenant. |
 | `gds_connection_tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required; null allowed | Tenant code owning the optional GDS data-store Connection. Reference: [connection](connection.md). |
 | `gds_connection_system_code` | string; minLength=1; maxLength=100; pattern=\S; required; null allowed | System code of the optional GDS data-store Connection for the Tenant. Reference: [connection](connection.md). |
@@ -44,6 +44,7 @@ Use the selected Tenant for metadata ownership. Object.source_tenant_code identi
 - tenant_visibility is a fixed field enum: global or private. Visibility does not grant write authority.
 - The optional gds_connection_tenant_code, gds_connection_system_code, and gds_connection_code identify one configured Connection; all three are present together or null together.
 - Bronze/Silver/Gold placement uses the owner's configured active GDS Connection, even when its placement Tenant differs from the owner.
+- For Databricks evidence SQL, match the Object's `source_tenant_code` to this Tenant and use `tenant_catalog`, not `gds_admin_catalog` or the shared Connection Tenant's catalog. Source uses its foreign catalog. Follow [query scope](../../query-scope.md#resolve-coordinates-and-access).
 
 ## Checks before reuse
 

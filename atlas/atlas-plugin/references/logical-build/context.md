@@ -6,7 +6,7 @@ Shared entry for Guided and Grill Me. This page owns input readiness; each skill
 2. Show existing session context and unfinished work. Ask "Continue this session or start new work?" unless already answered. Preserve unfinished drafts and their Tenant/Model bindings.
 3. Show available Metadata/Model Snapshot identities, Model revision and known refresh requirements. Ask "Fetch fresh snapshots or use the existing snapshots?" unless already answered. Fetch missing required inputs before dependent work.
 4. Follow the [Metadata](../snapshots/metadata.md) and [Model](../snapshots/model.md) guides for acquisition, placement and reading. Reconcile pending work before baseline replacement; reuse does not override identity or freshness conflicts.
-5. Resolve requested Objects from applied Model Input Scope without changing membership. Follow catalog prerequisites. Start/reuse Workbench through its verified launcher.
+5. Resolve requested Objects from applied Model Input Scope without changing membership. Follow catalog prerequisites. Connect the resolved directory in the already open Workbench.
 6. Read [record-state rules](../record-state.md) before authoring. Identify protected and inactive records; locked active inputs may still be read and used.
 7. At a new build, show effective [naming](../model/naming.md) and [key/audit policy](../model/keys-and-audit.md). Reuse approved choices; ask only about missing or conflicting settings. Missing audit types/nullability need the actual Model template, not guesses.
 

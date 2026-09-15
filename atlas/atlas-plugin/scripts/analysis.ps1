@@ -37,8 +37,11 @@ function Resolve-AnalysisEndpoint($Metadata, $Scope, $Endpoint, $Masked) {
         (Normalize-Value 'metadata' 'object_name' $_.tenant_code) -ceq (Normalize-Value 'metadata' 'object_name' $object.tenant_code) })
     if ($connections.Count -ne 1 -or $tenants.Count -ne 1) { Fail 'Object placement is not uniquely active in Metadata.' }
     if ($source -and (Get-Property $connections[0] 'has_foreign_catalog') -eq $false) { Fail 'Source Object requires a registered foreign catalog.' }
+    $catalogOwners = @((Get-Property $Metadata 'tenant') | Where-Object { ((Get-Active $_) -ne $false) -and
+        (Normalize-Value 'metadata' 'tenant_code' $_.tenant_code) -ceq (Normalize-Value 'metadata' 'tenant_code' (Get-Property $object 'source_tenant_code')) })
+    if (-not $source -and $catalogOwners.Count -ne 1) { Fail 'Object catalog owner is not uniquely active in Metadata.' }
     $coordinates = if ($source) { @($connections[0].foreign_catalog,$object.fc_object_schema,$object.fc_object_name) }
-        else { @($tenants[0].tenant_catalog,$object.object_schema,$object.object_name) }
+        else { @($catalogOwners[0].tenant_catalog,$object.object_schema,$object.object_name) }
     $relation = ($coordinates | ForEach-Object { Quote-ProfileName $_ }) -join '.'
     $allAttributes = @((Get-Property $Metadata 'source_attribute')) + @((Get-Property $Metadata 'bronze_attribute'))
     $attributes = New-Object System.Collections.ArrayList

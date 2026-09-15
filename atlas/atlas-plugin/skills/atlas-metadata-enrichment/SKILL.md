@@ -5,8 +5,6 @@ description: Improve existing Object descriptions, Attribute descriptions and in
 
 # Metadata enrichment
 
-
-
 Improve the meaning and inferred types of selected metadata. A Model may supply selection and evidence; enrichment itself writes Metadata records only.
 
 | Record | Fields this workflow may change |
@@ -23,7 +21,7 @@ Compare against the incoming effective records so earlier pending authoring edit
    - Tenant/System selection: establish the Zone and exact scope before writing. Distinguish an originating System from the physical GDS System holding Bronze Objects; use verified Object Mapping provenance where applicable.
    - Model selection: read active applied Model Input Scope, then resolve its exact Object keys in Metadata. Use the returned Zones; a Model is not required for the Tenant/System route. Scope visibility alone does not authorize metadata writes.
 3. Prepare a fresh [Metadata Snapshot](../../references/snapshots/metadata.md) at entry for fresh work; preserve/reconcile an existing baseline and draft. Also use a [Model Snapshot](../../references/snapshots/model.md) when Model Input Scope is the selector. Accumulate related local work against these bound inputs.
-4. Read the selected Object/Attribute schemas and actual records. Follow [record state](../../references/record-state.md), including Object protection of its Attributes; record what cannot be changed. Start/reuse Workbench through its verified available launcher.
+4. Read the selected Object/Attribute schemas and actual records. Follow [record state](../../references/record-state.md), including Object protection of its Attributes; record what cannot be changed. Connect the resolved directory in the already open Workbench.
 
 ## Enrich each Object and its selected Attributes
 
@@ -31,7 +29,7 @@ Use the shared [quality procedure and examples](../../references/metadata/enrich
 
 1. **Collect context.** Read Tenant and System descriptions, System Type, actual Connection description/type, existing Object/Attribute descriptions, column names/types and relevant supplied documentation or glossary definitions.
 2. **Understand the Object.** Establish its business subject, purpose and what one row represents. Examine keys, dates, status fields, measures, relationships and relevant expressions. Treat names as clues; retain unresolved meanings explicitly.
-3. **Resolve material gaps.** Name the uncertainty first, then use existing evidence or permitted targeted SQL/profile checks. Respect masking and actual query coordinates. SQL Never uses existing metadata/docs; missing evidence must not become a fabricated fact.
+3. **Resolve material gaps.** Name the uncertainty first, then use existing evidence or permitted targeted SQL/profile checks under [query scope](../../references/query-scope.md), including catalog qualification and masking. SQL Never uses existing metadata/docs; missing evidence must not become a fabricated fact.
 4. **Draft the Object description.** Explain its subject and row meaning, adding supported lifecycle or usage distinctions. Omit generic Zone/storage wording and lists that merely repeat the schema. Unknown grain is not an invitation to guess it.
 5. **Draft Attribute descriptions.** Describe each field within that Object's meaning: its role and, when supported, units, code meanings, time semantics or relationship. Distinguish similarly named concepts such as billed customer and recipient.
 6. **Infer Attribute types.** Follow the shared [type procedure](../../references/metadata/enrichment-quality.md#infer-types-with-evidence): use meaning, applicable declarations, expressions and optional data evidence. Keep physical attribute_data_type unchanged.

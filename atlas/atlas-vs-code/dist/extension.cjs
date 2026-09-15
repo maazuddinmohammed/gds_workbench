@@ -3875,49 +3875,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative2, options, skipNormalization) {
+    function resolveComponent(base, relative3, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse3(serialize(base, options), options);
-        relative2 = parse3(serialize(relative2, options), options);
+        relative3 = parse3(serialize(relative3, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative2.scheme) {
-        target.scheme = relative2.scheme;
-        target.userinfo = relative2.userinfo;
-        target.host = relative2.host;
-        target.port = relative2.port;
-        target.path = removeDotSegments(relative2.path || "");
-        target.query = relative2.query;
+      if (!options.tolerant && relative3.scheme) {
+        target.scheme = relative3.scheme;
+        target.userinfo = relative3.userinfo;
+        target.host = relative3.host;
+        target.port = relative3.port;
+        target.path = removeDotSegments(relative3.path || "");
+        target.query = relative3.query;
       } else {
-        if (relative2.userinfo !== void 0 || relative2.host !== void 0 || relative2.port !== void 0) {
-          target.userinfo = relative2.userinfo;
-          target.host = relative2.host;
-          target.port = relative2.port;
-          target.path = removeDotSegments(relative2.path || "");
-          target.query = relative2.query;
+        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
+          target.userinfo = relative3.userinfo;
+          target.host = relative3.host;
+          target.port = relative3.port;
+          target.path = removeDotSegments(relative3.path || "");
+          target.query = relative3.query;
         } else {
-          if (!relative2.path) {
+          if (!relative3.path) {
             target.path = base.path;
-            if (relative2.query !== void 0) {
-              target.query = relative2.query;
+            if (relative3.query !== void 0) {
+              target.query = relative3.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative2.path[0] === "/") {
-              target.path = removeDotSegments(relative2.path);
+            if (relative3.path[0] === "/") {
+              target.path = removeDotSegments(relative3.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative2.path;
+                target.path = "/" + relative3.path;
               } else if (!base.path) {
-                target.path = relative2.path;
+                target.path = relative3.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative2.query;
+            target.query = relative3.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3925,7 +3925,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative2.fragment;
+      target.fragment = relative3.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -7432,7 +7432,7 @@ __export(extension_exports, {
   deactivate: () => deactivate
 });
 module.exports = __toCommonJS(extension_exports);
-var import_node_crypto4 = require("node:crypto");
+var import_node_crypto5 = require("node:crypto");
 var vscode = __toESM(require("vscode"), 1);
 
 // src/auth.ts
@@ -18992,6 +18992,11 @@ function resolveStageProfile(name, localUrl) {
   return { name, endpoint, authentication: "none" };
 }
 
+// src/receipt.ts
+var import_node_crypto4 = require("node:crypto");
+var import_promises2 = require("node:fs/promises");
+var import_node_path2 = require("node:path");
+
 // src/stage-contract.ts
 var import_node_crypto = require("node:crypto");
 
@@ -19145,7 +19150,7 @@ function containedBy(path, root) {
   return child === "" || !child.startsWith(`..${import_node_path.sep}`) && child !== ".." && !(0, import_node_path.isAbsolute)(child);
 }
 async function readRequest(input, workspaceRoots2, backend) {
-  if (!isObject4(input) || !hasExactKeys(input, input.recoverOnly === void 0 ? ["manifestPath", "expectedDigest"] : ["manifestPath", "expectedDigest", "recoverOnly"]) || input.recoverOnly !== void 0 && typeof input.recoverOnly !== "boolean" || typeof input.manifestPath !== "string" || input.manifestPath.length > MAX_PATH_CHARACTERS || !(0, import_node_path.isAbsolute)(input.manifestPath) || typeof input.expectedDigest !== "string" || !SHA256.test(input.expectedDigest) || workspaceRoots2.length < 1 || workspaceRoots2.length > 32 || workspaceRoots2.some(
+  if (!isObject4(input) || Object.keys(input).some((key) => !["manifestPath", "expectedDigest", "recoverOnly", "outputFile"].includes(key)) || input.recoverOnly !== void 0 && typeof input.recoverOnly !== "boolean" || typeof input.manifestPath !== "string" || input.manifestPath.length > MAX_PATH_CHARACTERS || !(0, import_node_path.isAbsolute)(input.manifestPath) || input.expectedDigest !== void 0 && (typeof input.expectedDigest !== "string" || !SHA256.test(input.expectedDigest)) || input.outputFile !== void 0 && typeof input.outputFile !== "string" || workspaceRoots2.length < 1 || workspaceRoots2.length > 32 || workspaceRoots2.some(
     (root) => typeof root !== "string" || root.length > MAX_PATH_CHARACTERS || !(0, import_node_path.isAbsolute)(root)
   )) {
     fail2("INVALID_INPUT", "Manifest path or expected digest is invalid.");
@@ -19210,7 +19215,7 @@ async function readRequest(input, workspaceRoots2, backend) {
   if (request.area === "metadata" && (typeof request.target.tenant_code !== "string" || request.target.tenant_code.trim().length < 1 || request.target.tenant_code.length > 100) || request.area === "model" && (!Number.isSafeInteger(request.target.model_id) || Number(request.target.model_id) < 1 || typeof request.target.model_name !== "string" || request.target.model_name.trim().length < 1 || request.target.model_name.length > 200 || !Number.isSafeInteger(request.target.model_revision) || Number(request.target.model_revision) < 1)) {
     fail2("MANIFEST_INVALID", "Stage request target is invalid.");
   }
-  if (request.accepted_digest !== input.expectedDigest) {
+  if (input.expectedDigest !== void 0 && request.accepted_digest !== input.expectedDigest) {
     fail2("DIGEST_MISMATCH", "Expected digest does not match the approved Stage request.");
   }
   if (!isObject4(request.operation) || !hasExactKeys(request.operation, ["id", "path"]) || typeof request.operation.id !== "string" || !UUID2.test(request.operation.id) || !isObject4(request.owner) || !hasExactKeys(request.owner, ["id", "code", "root"]) || !Number.isSafeInteger(request.owner.id) || request.owner.id < 1 || typeof request.owner.code !== "string" || !request.owner.code.trim() || request.owner.code.length > 100 || !isObject4(request.backend) || !hasExactKeys(request.backend, ["profile", "endpoint_sha256"]) || !["production", "local", "azureLocalTest"].includes(request.backend.profile) || typeof request.backend.endpoint_sha256 !== "string" || !SHA256.test(request.backend.endpoint_sha256) || stableStringify(request.backend) !== stableStringify(backend)) {
@@ -19331,7 +19336,7 @@ async function readRequest(input, workspaceRoots2, backend) {
   }
   if (!primaryInput) fail2("SNAPSHOT_MISMATCH", "The operation does not bind the Stage Snapshot.");
   const changeSetDirectory = await safePath(session, `${ownerRoot === "." ? "" : ownerRoot + "/"}${request.area}-change-set`, "LOCAL_CHANGE_SET_INVALID", true);
-  if (await workspaceDigest(changeSetDirectory, MAX_LOCAL_PAYLOAD_BYTES[request.area]) !== input.expectedDigest) {
+  if (await workspaceDigest(changeSetDirectory, MAX_LOCAL_PAYLOAD_BYTES[request.area]) !== request.accepted_digest) {
     fail2("DIGEST_MISMATCH", "Local Change Set changed after user acknowledgement.");
   }
   await verifySnapshotBinding(request, session);
@@ -19919,21 +19924,21 @@ async function stageApprovedManifest(input, dependencies) {
     const refreshed2 = await readRequest(input, dependencies.workspaceRoots, dependencies.backend);
     if (refreshed2.operationSha256 !== approved.operationSha256 || stableStringify(refreshed2.request) !== stableStringify(request)) fail2("MANIFEST_CHANGED", "Approval changed during recovery.");
     const receipt2 = {
-      schemaVersion: "1.0",
+      schema_version: "1.0",
       status: "staged",
-      taskId: request.task,
-      operationId: request.operation.id,
-      ownerTenantId: request.owner.id,
-      ownerRoot: request.owner.root,
+      task_id: request.task,
+      operation_id: request.operation.id,
+      owner_tenant_id: request.owner.id,
+      owner_root: request.owner.root,
       backend: request.backend,
       area: request.area,
-      changeSetId: request.target.change_set_id,
-      startingRevision: request.target.starting_revision,
-      resultingRevision: revision,
-      acceptedDigest: request.accepted_digest,
-      stageFingerprint: fingerprint,
-      fingerprintVerified: true,
-      datasets: recovered.map((change) => ({ dataset: change.dataset, recordCount: change.records.length }))
+      change_set_id: request.target.change_set_id,
+      starting_revision: request.target.starting_revision,
+      draft_revision: revision,
+      accepted_digest: request.accepted_digest,
+      stage_fingerprint: fingerprint,
+      fingerprint_verified: true,
+      datasets: recovered.map((change) => ({ dataset: change.dataset, record_count: change.records.length }))
     };
     await saveOperation(approved, {
       draft: { id: request.target.change_set_id, revision, status: "active", digest: request.accepted_digest },
@@ -19983,7 +19988,7 @@ async function stageApprovedManifest(input, dependencies) {
   if (stableStringify(refreshed.request) !== stableStringify(request) || refreshed.operationSha256 !== approved.operationSha256) {
     fail2("MANIFEST_CHANGED", "Stage request changed while preparing to write.");
   }
-  const resultingRevision = await executeStage(
+  const draft_revision = await executeStage(
     request,
     dependencies.mcp,
     target,
@@ -20003,35 +20008,35 @@ async function stageApprovedManifest(input, dependencies) {
       dependencies.onWriteStart?.();
     }
   );
-  const stageFingerprint = verifyStageFingerprint(
+  const stage_fingerprint = verifyStageFingerprint(
     request,
     scopeId,
-    resultingRevision,
+    draft_revision,
     changes,
     await dependencies.mcp.callTool(`get_${request.area}_change_set_fingerprint`, target)
   );
   const receipt = {
-    schemaVersion: "1.0",
+    schema_version: "1.0",
     status: "staged",
-    taskId: request.task,
-    operationId: request.operation.id,
-    ownerTenantId: request.owner.id,
-    ownerRoot: request.owner.root,
+    task_id: request.task,
+    operation_id: request.operation.id,
+    owner_tenant_id: request.owner.id,
+    owner_root: request.owner.root,
     backend: request.backend,
     area: request.area,
-    changeSetId: request.target.change_set_id,
-    startingRevision: request.target.starting_revision,
-    resultingRevision,
-    acceptedDigest: request.accepted_digest,
-    stageFingerprint,
-    fingerprintVerified: true,
+    change_set_id: request.target.change_set_id,
+    starting_revision: request.target.starting_revision,
+    draft_revision,
+    accepted_digest: request.accepted_digest,
+    stage_fingerprint,
+    fingerprint_verified: true,
     datasets: changes.map((change) => ({
       dataset: change.dataset,
-      recordCount: change.records.length
+      record_count: change.records.length
     }))
   };
   await saveOperation(approved, {
-    draft: { id: request.target.change_set_id, revision: resultingRevision, status: "active", digest: request.accepted_digest },
+    draft: { id: request.target.change_set_id, revision: draft_revision, status: "active", digest: request.accepted_digest },
     stage: { ...receipt, received_at: (/* @__PURE__ */ new Date()).toISOString() },
     stage_attempt: { status: "verified", accepted_digest: request.accepted_digest, completed_at: (/* @__PURE__ */ new Date()).toISOString() }
   });
@@ -20039,19 +20044,60 @@ async function stageApprovedManifest(input, dependencies) {
 }
 
 // src/receipt.ts
-function failureReceipt(error2, stageStarted) {
+function failureReceipt(error2, stage_started) {
   const safe = error2 instanceof StageRunnerError || error2 instanceof StageMcpError || error2 instanceof StageAuthenticationError ? { code: error2.code, message: error2.message } : error2 instanceof StageProfileError ? { code: "PROFILE_INVALID", message: error2.message } : {
     code: "INTERNAL_ERROR",
     message: "Atlas Stage Runner could not complete the operation."
   };
   return {
-    schemaVersion: "1.0",
+    schema_version: "1.0",
     status: "failed",
     code: safe.code,
     message: safe.message,
-    stageStarted,
-    legacyFallbackAllowed: !stageStarted
+    stage_started,
+    legacy_fallback_allowed: !stage_started
   };
+}
+async function exportReceipt(receipt, outputFile, roots) {
+  if (outputFile === void 0) return receipt;
+  let temporary;
+  try {
+    if (typeof outputFile !== "string" || outputFile.length > 4096 || !(0, import_node_path2.isAbsolute)(outputFile) || !outputFile.endsWith(".json")) throw new Error("invalid output");
+    let destination;
+    for (const root of roots) {
+      const lexical = (0, import_node_path2.relative)(root, outputFile);
+      if ((0, import_node_path2.isAbsolute)(lexical) || lexical.split(import_node_path2.sep).some((part) => !part || part === ".." || part === ".")) continue;
+      const parts = lexical.split(import_node_path2.sep);
+      const atlasIndex = parts.indexOf(".atlas");
+      if (atlasIndex < 0 || parts[atlasIndex + 1] !== "temp" || atlasIndex + 2 >= parts.length) continue;
+      let directory = await (0, import_promises2.realpath)(root);
+      for (const part of parts.slice(0, -1)) {
+        directory = (0, import_node_path2.join)(directory, part);
+        const stat = await (0, import_promises2.lstat)(directory);
+        if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("invalid directory");
+      }
+      if (await (0, import_promises2.realpath)(directory) !== directory) throw new Error("changed directory");
+      destination = (0, import_node_path2.join)(directory, parts.at(-1));
+      break;
+    }
+    if (!destination) throw new Error("outside receipt directory");
+    const bytes = Buffer.from(`${JSON.stringify(receipt, null, 2)}
+`, "utf8");
+    if (bytes.length > 32 * 1024) throw new Error("receipt limit");
+    temporary = (0, import_node_path2.join)((0, import_node_path2.dirname)(destination), `.atlas-receipt-${(0, import_node_crypto4.randomUUID)()}.tmp`);
+    await (0, import_promises2.writeFile)(temporary, bytes, { flag: "wx", mode: 384 });
+    if (await (0, import_promises2.realpath)((0, import_node_path2.dirname)(destination)) !== (0, import_node_path2.dirname)(destination)) throw new Error("changed directory");
+    await (0, import_promises2.link)(temporary, destination);
+    return receipt;
+  } catch {
+    return { ...receipt, receipt_export: {
+      status: "failed",
+      code: "RECEIPT_EXPORT_FAILED",
+      message: "Receipt export failed. Use a new .json path in an existing workspace .atlas/temp directory; the operation outcome above is unchanged."
+    } };
+  } finally {
+    if (temporary) await (0, import_promises2.unlink)(temporary).catch(() => void 0);
+  }
 }
 
 // src/extension.ts
@@ -20089,6 +20135,7 @@ var StageApprovedManifestTool = class {
   }
   async invoke(options, token) {
     let stageStarted = false;
+    let receipt;
     let mcp;
     try {
       if (!vscode.workspace.isTrusted) {
@@ -20112,32 +20159,36 @@ var StageApprovedManifestTool = class {
         forceNewSession
       ) : void 0;
       mcp = await createStageMcpClient(profile, tokenSupplier);
-      const receipt = await stageApprovedManifest(options.input, {
+      receipt = await stageApprovedManifest(options.input, {
         mcp,
         workspaceRoots: roots,
-        backend: { profile: profile.name, endpoint_sha256: (0, import_node_crypto4.createHash)("sha256").update(profile.endpoint.href).digest("hex") },
+        backend: { profile: profile.name, endpoint_sha256: (0, import_node_crypto5.createHash)("sha256").update(profile.endpoint.href).digest("hex") },
         isCancellationRequested: () => token.isCancellationRequested,
         onWriteStart: () => {
           stageStarted = true;
         }
       });
-      return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart(JSON.stringify(receipt))
-      ]);
     } catch (error2) {
-      return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart(JSON.stringify(failureReceipt(error2, stageStarted)))
-      ]);
+      receipt = failureReceipt(error2, stageStarted);
     } finally {
       await mcp?.close().catch(() => void 0);
     }
+    return new vscode.LanguageModelToolResult([new vscode.LanguageModelTextPart(JSON.stringify(
+      await exportReceipt(receipt, options.input?.outputFile, vscode.workspace.isTrusted ? workspaceRoots() : [])
+    ))]);
   }
 };
-async function checkStageRunner() {
+async function checkStageRunner(input = {}, token) {
   let mcp;
-  let profile;
+  let receipt;
   try {
-    profile = configuredProfile();
+    if (!vscode.workspace.isTrusted) throw new StageRunnerError("WORKSPACE_UNTRUSTED", "Trust the Atlas workspace before checking Stage Runner.");
+    if (!workspaceRoots().length) throw new StageRunnerError("INVALID_INPUT", "Open the Atlas workspace before checking Stage Runner.");
+    if (token?.isCancellationRequested) throw new StageRunnerError("CANCELLED", "Stage Runner check was cancelled.");
+    if (input === null || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some((key) => key !== "outputFile") || input.outputFile !== void 0 && typeof input.outputFile !== "string") {
+      throw new StageRunnerError("INVALID_INPUT", "Stage Runner check input is invalid.");
+    }
+    const profile = configuredProfile();
     const endpoint = profile.endpoint;
     const tokenSupplier = profile.authentication === "microsoft" ? (forceNewSession) => acquireMicrosoftAccessToken(
       endpoint,
@@ -20150,22 +20201,38 @@ async function checkStageRunner() {
     if (result === null || typeof result !== "object" || !Array.isArray(result.tenants)) {
       throw new StageRunnerError("MCP_RESPONSE_INVALID", "GDS MCP check returned no tenant list.");
     }
-    const identity = { profile: profile.name, endpoint_sha256: (0, import_node_crypto4.createHash)("sha256").update(endpoint.href).digest("hex") };
-    await vscode.window.showInformationMessage(`Atlas Stage Runner is ready (${profile.name}). Backend: ${identity.endpoint_sha256}`);
-    return identity;
+    const identity = { profile: profile.name, endpoint_sha256: (0, import_node_crypto5.createHash)("sha256").update(endpoint.href).digest("hex") };
+    receipt = { schema_version: "1.0", status: "ready", backend: identity };
   } catch (error2) {
-    const receipt = failureReceipt(error2, false);
-    await vscode.window.showErrorMessage(
-      `Atlas Stage Runner${profile === void 0 ? "" : ` (${profile.name})`}: ${receipt.code}. ${receipt.message}`
-    );
+    receipt = failureReceipt(error2, false);
   } finally {
     await mcp?.close().catch(() => void 0);
   }
+  return exportReceipt(receipt, input?.outputFile, vscode.workspace.isTrusted ? workspaceRoots() : []);
 }
+var CheckStageRunnerTool = class {
+  prepareInvocation() {
+    return { invocationMessage: "Checking Atlas Stage Runner readiness\u2026" };
+  }
+  async invoke(options, token) {
+    return new vscode.LanguageModelToolResult([new vscode.LanguageModelTextPart(
+      JSON.stringify(await checkStageRunner(options.input, token))
+    )]);
+  }
+};
 function activate(context) {
   context.subscriptions.push(
     vscode.lm.registerTool(TOOL_NAME, new StageApprovedManifestTool()),
-    vscode.commands.registerCommand("atlasStageRunner.check", checkStageRunner)
+    vscode.lm.registerTool("atlas_checkStageRunner", new CheckStageRunnerTool()),
+    vscode.commands.registerCommand("atlasStageRunner.check", async () => {
+      const receipt = await checkStageRunner();
+      if (receipt.status === "ready") {
+        await vscode.window.showInformationMessage(`Atlas Stage Runner is ready (${receipt.backend.profile}). Backend: ${receipt.backend.endpoint_sha256}`);
+      } else {
+        await vscode.window.showErrorMessage(`Atlas Stage Runner: ${receipt.code}. ${receipt.message}`);
+      }
+      return receipt;
+    })
   );
 }
 function deactivate() {

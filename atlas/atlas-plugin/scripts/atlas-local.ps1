@@ -1,4 +1,5 @@
-param([string]$Command)
+param([string]$AtlasCommand)
+$Command = $AtlasCommand
 $RemainingArguments = $args
 
 Set-StrictMode -Version 2.0
@@ -2626,6 +2627,7 @@ function Generate-LocalDbml([hashtable]$Options) {
 . (Join-Path $PSScriptRoot 'model-policy.ps1')
 . (Join-Path $PSScriptRoot 'sql-validation.ps1')
 . (Join-Path $PSScriptRoot 'workspace-native.ps1')
+. (Join-Path $PSScriptRoot 'operation-evidence.ps1')
 
 try {
     $options = Parse-Options $RemainingArguments
@@ -2634,6 +2636,19 @@ try {
     foreach ($match in [regex]::Matches($definition.usage, '--([a-z0-9-]+)')) { $allowed[$match.Groups[1].Value] = $true }
     if (@('copy', 'upsert', 'upsert-batch', 'discard', 'review', 'accept', 'generate-dbml') -ccontains $Command) { $allowed.task = $true }
     foreach ($option in $options.Keys) { if (-not $allowed.ContainsKey($option)) { Fail "Unsupported option --$option for $Command. Read command-contract." } }
+    $outputTarget = $null
+    if ($options['output-file']) {
+        $root = Resolve-Session $options
+        $path = if ([IO.Path]::IsPathRooted($options['output-file'])) { [IO.Path]::GetFullPath($options['output-file']) } else { [IO.Path]::GetFullPath((Join-Path $root $options['output-file'])) }
+        $prefix = $root.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        $comparison = if ([IO.Path]::DirectorySeparatorChar -eq '\') { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+        if (-not $path.StartsWith($prefix, $comparison)) { Fail '--output-file must be a new JSON file under .atlas/temp/.' }
+        $relative = $path.Substring($prefix.Length).Replace('\', '/')
+        if (-not $relative.StartsWith('.atlas/temp/', [StringComparison]::Ordinal) -or -not $relative.EndsWith('.json', [StringComparison]::Ordinal)) { Fail '--output-file must be a new JSON file under .atlas/temp/.' }
+        $file = Resolve-WorkspacePath $root $relative $true
+        if (Test-Path -LiteralPath $file) { Fail '--output-file already exists; choose a new file.' }
+        $outputTarget = [ordered]@{root = $root; relative = $relative}
+    }
     switch ($Command) {
         'command-contract' { $output = Get-CommandContract $options }
         'session-init' { $output = Initialize-Session $options }
@@ -2663,6 +2678,25 @@ try {
         'profile-plan' { . (Join-Path $PSScriptRoot 'profiling.ps1'); $output = New-AggregatePlan $options 'profiling' }
         'analysis-plan' { . (Join-Path $PSScriptRoot 'analysis.ps1'); $output = New-AggregatePlan $options 'analysis' }
         default { Fail "Unknown Atlas command: $Command." }
+    }
+    if ($outputTarget) {
+        $temporary = $null
+        try {
+            $file = Resolve-WorkspacePath $outputTarget.root $outputTarget.relative
+            $temporary = $file + '.' + [Guid]::NewGuid().ToString() + '.tmp'
+            $bytes = $script:Utf8NoBom.GetBytes((ConvertTo-GdsJson $output) + "`n")
+            $stream = [IO.File]::Open($temporary, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+            try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
+            [void](Resolve-WorkspacePath $outputTarget.root $outputTarget.relative)
+            [IO.File]::Move($temporary, $file) # Atomic new-file publication; never replace another result.
+        }
+        catch {
+            Set-Property $output 'receipt_export' ([ordered]@{status = 'failed'; code = 'RECEIPT_EXPORT_FAILED';
+                message = 'Result export failed; the command outcome above is unchanged. Use its returned result; do not repeat the operation.'})
+        }
+        finally {
+            if ($temporary) { try { [IO.File]::Delete($temporary) } catch {} }
+        }
     }
     [Console]::Out.WriteLine((ConvertTo-GdsJson $output))
     exit 0
