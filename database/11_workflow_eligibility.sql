@@ -489,6 +489,7 @@ AS $list_code_generation_target_context$
                    'attribute_mappings', attribute_mappings.documents
                ) AS mapping_context,
                jsonb_build_object(
+                   'consumer_context_version', 'atlas-1',
                    'target', jsonb_build_object(
                        'source_tenant_id', source_tenant.tenant_id,
                        'source_tenant_code', source_tenant.tenant_code,
@@ -507,6 +508,13 @@ AS $list_code_generation_target_context$
                        'object_name', target.object_name,
                        'object_description', target_object.object_description,
                        'zone_code', target.zone_code,
+                       'batch_attribute_name', target_object.batch_attribute_name,
+                       'audit_columns_template', CASE complete.modeled_entity_type
+                           WHEN 'logical_entity' THEN mapping_model.silver_model_audit_columns_template
+                           ELSE mapping_model.gold_model_audit_columns_template END,
+                       'technical_columns_template', CASE complete.modeled_entity_type
+                           WHEN 'dimensional_entity' THEN mapping_model.gold_model_technical_columns_template
+                           ELSE NULL END,
                        'attributes', target_attributes.documents
                    ),
                    'physical_sources', physical_sources.documents,
@@ -515,6 +523,7 @@ AS $list_code_generation_target_context$
                    'attribute_mappings', attribute_mappings.documents
                ) AS source_context
           FROM complete_target AS complete
+          JOIN model.model AS mapping_model ON mapping_model.model_id = complete.model_id
           JOIN eligible_target AS target
             ON target.model_id = complete.model_id
            AND target.object_id = complete.object_id
@@ -541,6 +550,12 @@ AS $list_code_generation_target_context$
                          'attribute_inferred_data_type', attribute.attribute_inferred_data_type,
                          'attribute_nullability', attribute.attribute_nullability,
                          'attribute_description', attribute.attribute_description,
+                         'fc_attribute_name', attribute.fc_attribute_name,
+                         'attribute_custom_code', attribute.attribute_custom_code,
+                         'is_surrogate_key', attribute.is_surrogate_key,
+                         'is_natural_key', attribute.is_natural_key,
+                         'is_meta_data', attribute.is_meta_data,
+                         'is_masking_required', attribute.is_masking_required,
                          'is_active', attribute.is_active,
                          'is_locked', attribute.is_locked
                      ) ORDER BY attribute.attribute_ordinal_position, attribute.attribute_id),
@@ -569,6 +584,10 @@ AS $list_code_generation_target_context$
                              'object_schema', source_object.object_schema,
                              'object_name', source_object.object_name,
                              'object_description', source_object.object_description,
+                             'fc_object_schema', source_object.fc_object_schema,
+                             'fc_object_name', source_object.fc_object_name,
+                             'foreign_catalog', source_connection.foreign_catalog,
+                             'batch_attribute_name', source_object.batch_attribute_name,
                              'zone_code', lower(btrim(zone.zone_code)),
                              'is_active', source_object.is_active,
                              'is_locked', source_object.is_locked,
@@ -579,11 +598,65 @@ AS $list_code_generation_target_context$
                      ) ORDER BY mapping.source_system_dependency_order,
                                 mapping.source_system_id,
                                 source.mapping_order NULLS LAST,
-                                source.source_mapping_id), '[]'::JSONB) AS documents
+                                source.source_mapping_id, source_object.object_id), '[]'::JSONB) AS documents
                 FROM active_mapping AS mapping
-                CROSS JOIN LATERAL workflow.list_mapping_source_objects(
-                    mapping.model_id, mapping.object_id,
-                    mapping.modeled_entity_type, mapping.source_system_id
+                CROSS JOIN LATERAL (
+                    WITH supported AS MATERIALIZED (
+                        SELECT * FROM workflow.list_mapping_source_objects(
+                            mapping.model_id, mapping.object_id,
+                            mapping.modeled_entity_type, mapping.source_system_id
+                        )
+                    ), named AS (
+                        SELECT named_object.value AS identity
+                          FROM jsonb_array_elements(CASE
+                              WHEN jsonb_typeof(mapping.mapping_transformation_document -> 'source_objects') = 'array'
+                              THEN mapping.mapping_transformation_document -> 'source_objects'
+                              ELSE '[]'::JSONB END) AS named_object
+                        UNION
+                        SELECT named_attribute.value AS identity
+                          FROM workflow.mapping_attribute AS mapped_attribute
+                         CROSS JOIN LATERAL jsonb_array_elements(CASE
+                              WHEN jsonb_typeof(mapped_attribute.attribute_mapping_transformation_document -> 'source_attributes') = 'array'
+                              THEN mapped_attribute.attribute_mapping_transformation_document -> 'source_attributes'
+                              ELSE '[]'::JSONB END) AS named_attribute
+                         WHERE mapped_attribute.mapping_object_id = mapping.mapping_object_id
+                           AND mapped_attribute.attribute_mapping_status = 'active'
+                    )
+                    SELECT source_mapping_id, role, rationale, mapping_order, is_locked,
+                           source_object_id, scope_is_locked, scope_is_active
+                      FROM supported
+                    UNION ALL
+                    SELECT NULL::BIGINT, 'lookup'::TEXT, 'Referenced by applied Mapping.'::TEXT, NULL::INTEGER,
+                           FALSE, lookup.object_id, FALSE, TRUE
+                      FROM workflow.list_model_object_eligibility(mapping.model_id) AS lookup
+                      JOIN core.connection AS lookup_connection
+                        ON lookup_connection.connection_id = lookup.connection_id
+                      JOIN core.tenant AS lookup_tenant
+                        ON lookup_tenant.tenant_id = lookup_connection.tenant_id
+                      JOIN core.system AS lookup_system
+                        ON lookup_system.system_id = lookup_connection.system_id
+                     WHERE NOT EXISTS (SELECT 1 FROM supported WHERE source_object_id = lookup.object_id)
+                       AND EXISTS (
+                           SELECT 1 FROM named
+                            WHERE lower(btrim(identity ->> 'tenant_code')) = lower(btrim(lookup_tenant.tenant_code))
+                              AND lower(btrim(identity ->> 'system_code')) = lower(btrim(lookup_system.system_code))
+                              AND lower(btrim(identity ->> 'connection_code')) = lower(btrim(lookup_connection.connection_code))
+                              AND lower(btrim(identity ->> 'object_schema')) = lower(btrim(lookup.object_schema))
+                              AND lower(btrim(identity ->> 'object_name')) = lower(btrim(lookup.object_name))
+                       )
+                       AND (
+                           lookup.object_id = mapping.object_id
+                           OR (lookup.is_model_input_eligible AND EXISTS (
+                               SELECT 1 FROM model.model_input_scope AS input
+                                WHERE input.model_id = mapping.model_id
+                                  AND input.object_id = lookup.object_id AND input.is_active
+                           ))
+                           OR ((lookup.is_logical_mapping_target_eligible OR lookup.is_dimensional_mapping_target_eligible)
+                               AND EXISTS (SELECT 1 FROM workflow.model_object_binding AS binding
+                                   WHERE binding.model_id = mapping.model_id
+                                     AND binding.object_id = lookup.object_id
+                                     AND binding.model_object_binding_status = 'active'))
+                       )
                 ) AS source
                 JOIN core.object AS source_object
                   ON source_object.object_id = source.source_object_id
@@ -603,6 +676,18 @@ AS $list_code_generation_target_context$
                                'attribute_inferred_data_type', attribute.attribute_inferred_data_type,
                                'attribute_nullability', attribute.attribute_nullability,
                                'attribute_description', attribute.attribute_description,
+                               'fc_attribute_name', attribute.fc_attribute_name,
+                               'attribute_custom_code', attribute.attribute_custom_code,
+                               'is_surrogate_key', attribute.is_surrogate_key,
+                               'is_natural_key', attribute.is_natural_key,
+                               'is_meta_data', attribute.is_meta_data,
+                               'is_masking_required', attribute.is_masking_required,
+                         'fc_attribute_name', attribute.fc_attribute_name,
+                         'attribute_custom_code', attribute.attribute_custom_code,
+                         'is_surrogate_key', attribute.is_surrogate_key,
+                         'is_natural_key', attribute.is_natural_key,
+                         'is_meta_data', attribute.is_meta_data,
+                         'is_masking_required', attribute.is_masking_required,
                                'is_active', attribute.is_active,
                                'is_locked', attribute.is_locked
                            ) ORDER BY attribute.attribute_ordinal_position, attribute.attribute_id),
@@ -685,6 +770,10 @@ AS $list_code_generation_target_context$
                                      ),
                                  'target_attribute_id', target_attribute.attribute_id,
                                  'target_attribute_name', target_attribute.attribute_name,
+                                 'modeled_attribute_name', coalesce(
+                                     logical_attribute.logical_attribute_name,
+                                     dimensional_attribute.dimensional_attribute_name
+                                 ),
                                  'target_attribute_ordinal_position',
                                      target_attribute.attribute_ordinal_position,
                                  'transformation',
@@ -707,6 +796,10 @@ AS $list_code_generation_target_context$
                  AND attribute_binding.model_object_binding_id =
                      mapping.model_object_binding_id
                  AND attribute_binding.model_attribute_binding_status = 'active'
+                LEFT JOIN workflow.logical_attribute AS logical_attribute
+                  ON logical_attribute.logical_attribute_id = attribute_binding.logical_attribute_id
+                LEFT JOIN workflow.dimensional_attribute AS dimensional_attribute
+                  ON dimensional_attribute.dimensional_attribute_id = attribute_binding.dimensional_attribute_id
                 JOIN core.attribute AS target_attribute
                   ON target_attribute.attribute_id = attribute_binding.attribute_id
                  AND target_attribute.object_id = mapping.object_id

@@ -56,6 +56,7 @@ EXPECTED_PUBLIC_TOOLS = {
     "archive_model_change_set",
     "inspect_metadata",
     "read_model_section",
+    "read_mapping_context",
     "execute_databricks_sql",
     "describe_model_dataset",
     "create_model_snapshot",
@@ -127,11 +128,11 @@ def model_description_server() -> MCPServer[None]:
 
 
 @pytest.mark.asyncio
-async def test_public_surface_is_exactly_37_focused_tools() -> None:
+async def test_public_surface_is_exactly_38_focused_tools() -> None:
     names = {tool.name for tool in await list_tools()}
 
     assert names == EXPECTED_PUBLIC_TOOLS
-    assert len(names) == 37
+    assert len(names) == 38
     assert (
         not {
             "get_model",

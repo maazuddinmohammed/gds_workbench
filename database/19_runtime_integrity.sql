@@ -421,7 +421,15 @@ BEGIN
                ) IS NOT TRUE
     );
 
-    schema_shape_ok := NOT EXISTS (
+    schema_shape_ok := EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'core' AND table_name = 'process_group'
+           AND column_name = 'process_group_dependency_order'
+           AND data_type = 'integer' AND is_nullable = 'NO'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'core.copy'::regclass AND conname = 'uq_copy_group_order'
+    ) AND NOT EXISTS (
         SELECT 1
           FROM unnest(ARRAY[
                    'reference.system_type',

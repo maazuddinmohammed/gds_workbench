@@ -170,6 +170,7 @@ SELECT process_group_id,
        zone_id,
        process_group_name,
        process_group_description,
+       process_group_dependency_order,
        copy_group_id,
        is_active
   FROM core.process_group

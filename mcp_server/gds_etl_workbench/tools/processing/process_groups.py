@@ -17,6 +17,7 @@ type ZoneCode = Literal["source", "bronze", "silver", "gold"]
 _LIST_SQL: LiteralString = """
 SELECT process_group.process_group_id,
        process_group.process_group_name,
+       process_group.process_group_dependency_order,
        left(process_group.process_group_description, 2000)
            AS process_group_description,
        process_group.copy_group_id,
@@ -51,6 +52,7 @@ SELECT process_group.process_group_id,
 _GROUP_SQL: LiteralString = """
 SELECT process_group.process_group_id,
        process_group.process_group_name,
+       process_group.process_group_dependency_order,
        left(process_group.process_group_description, 2000)
            AS process_group_description,
        process_group.copy_group_id,
@@ -119,6 +121,7 @@ class ContractModel(BaseModel):
 class ProcessGroupSummary(ContractModel):
     process_group_id: int = Field(gt=0)
     process_group_name: str = Field(min_length=1, max_length=200)
+    process_group_dependency_order: int = Field(gt=0, le=2_147_483_647)
     process_group_description: str | None = Field(default=None, max_length=2000)
     copy_group_id: int = Field(gt=0)
     copy_group_name: str = Field(min_length=1, max_length=200)

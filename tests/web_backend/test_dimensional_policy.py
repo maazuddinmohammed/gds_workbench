@@ -171,7 +171,7 @@ def _attribute_records(
     return next(change.records for change in changes if change.dataset == "dimensional_attribute")
 
 
-def test_projection_adds_dimension_surrogate_and_audit_after_business_attributes() -> None:
+def test_projection_adds_dimension_surrogate_before_business_and_audit() -> None:
     entity = _entity()
     business = _business_attribute()
     changes = (
@@ -194,13 +194,13 @@ def test_projection_adds_dimension_surrogate_and_audit_after_business_attributes
     attributes = _attribute_records(projected)
 
     assert [item["dimensional_attribute_name"] for item in attributes] == [
-        "Customer Name",
         "Customer Dimension key",
+        "Customer Name",
         "Loaded At",
     ]
     assert [item["dimensional_attribute_role"] for item in attributes] == [
-        "descriptor",
         "technical",
+        "descriptor",
         "audit",
     ]
     assert [item["dimensional_attribute_ordinal_position"] for item in attributes] == [
@@ -208,7 +208,7 @@ def test_projection_adds_dimension_surrogate_and_audit_after_business_attributes
         2,
         3,
     ]
-    assert attributes[1]["dimensional_attribute_key_role"] == "surrogate"
+    assert attributes[0]["dimensional_attribute_key_role"] == "surrogate"
     assert all(item["sources"] == [] for item in attributes[1:])
 
 
@@ -233,14 +233,14 @@ def test_projection_adds_type_2_columns_only_when_dimension_historizes() -> None
 
     attributes = _attribute_records(projected)
     assert [item["dimensional_attribute_name"] for item in attributes] == [
-        "Customer Name",
         "Customer Dimension key",
+        "Customer Name",
         "Effective From",
         "Effective To",
         "Is Current",
         "Loaded At",
     ]
-    assert [item["dimensional_attribute_role"] for item in attributes[1:5]] == [
+    assert [item["dimensional_attribute_role"] for item in [attributes[0], *attributes[2:5]]] == [
         "technical",
         "technical",
         "technical",
@@ -292,6 +292,7 @@ def test_projection_covers_applied_active_and_new_active_entities() -> None:
         ("Account Dimension", "Account Dimension key"),
         ("Account Dimension", "Loaded At"),
         ("Sales Fact", "Loaded At"),
+        ("Sales Fact", "Sales Fact key"),
     }
 
 
@@ -525,11 +526,17 @@ def test_foreign_key_projection_binds_role_aware_endpoints_and_nullability() -> 
         item for item in attributes if item["dimensional_entity_name"] == "Sales Fact"
     ]
     assert [item["dimensional_attribute_name"] for item in fact_attributes] == [
+        "Sales Fact key",
         "Source Customer ID",
         "Bill To Customer key",
         "Loaded At",
     ]
-    assert [item["dimensional_attribute_ordinal_position"] for item in fact_attributes] == [1, 2, 3]
+    assert [item["dimensional_attribute_ordinal_position"] for item in fact_attributes] == [
+        1,
+        2,
+        3,
+        4,
+    ]
     assert relationship["from_dimensional_attribute_name"] == "Bill To Customer key"
     assert relationship["to_dimensional_attribute_name"] == "Customer Dimension key"
     assert relationship["dimensional_relationship_is_optional"] is True

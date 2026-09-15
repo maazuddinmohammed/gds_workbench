@@ -130,6 +130,7 @@ class ExportRepository:
                         "zone_code": "bronze",
                         "process_group_name": "CRM bronze",
                         "process_group_description": None,
+                        "process_group_dependency_order": 1,
                         "copy_group_name": "CRM daily",
                         "is_active": True,
                     },

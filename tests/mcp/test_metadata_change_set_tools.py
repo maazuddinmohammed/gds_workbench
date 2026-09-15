@@ -358,6 +358,7 @@ async def test_stage_metadata_change_set_stages_multiple_datasets_with_one_revis
                     "zone_code": "bronze",
                     "process_group_name": "LOAD_CUSTOMERS",
                     "process_group_description": None,
+                    "process_group_dependency_order": 1,
                     "copy_group_name": "CUSTOMERS",
                     "is_active": True,
                 }

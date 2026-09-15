@@ -101,15 +101,17 @@ def test_projection_adds_policy_columns_to_new_and_applied_active_entities() -> 
     )
     attributes = _attribute_records(projected)
 
-    assert len(attributes) == 5
+    assert len(attributes) == 6
     audit = [item for item in attributes if item["logical_attribute_is_audit_column"]]
-    assert {(item["logical_entity_name"], item["logical_attribute_name"]) for item in audit} == {
+    assert {
+        (item["logical_entity_name"], item["logical_attribute_name"]) for item in audit
+    } == {
         ("Account", "Created At"),
         ("Account", "Updated At"),
         ("Customer", "Created At"),
         ("Customer", "Updated At"),
     }
-    assert {item["logical_attribute_ordinal_position"] for item in audit} == {2, 3}
+    assert {item["logical_attribute_ordinal_position"] for item in audit} == {2, 3, 4}
     assert all(item["sources"] == [] for item in audit)
 
 
@@ -158,3 +160,62 @@ def test_projection_rejects_invalid_template_without_partial_output() -> None:
             applied=None,
             raw_template={"schema_version": "1.0", "columns": [], "extra": True},
         )
+
+
+def test_source_system_provenance_retains_sources_and_natural_key_membership() -> None:
+    from gds_etl_workbench.domain.modeling_records import (
+        AttributePhysicalSourceRecord,
+        PhysicalAttributeKey,
+    )
+
+    provenance = _business_attribute("Customer").model_copy(
+        update={
+            "logical_attribute_name": "SourceSystemID",
+            "logical_attribute_is_audit_column": True,
+            "sources": (
+                AttributePhysicalSourceRecord(
+                    support_source_type="attribute",
+                    source_attribute=PhysicalAttributeKey(
+                        tenant_code="GDS",
+                        system_code="GDS",
+                        connection_code="Lake",
+                        object_schema="bronze",
+                        object_name="Customer",
+                        attribute_name="SourceSystemID",
+                    ),
+                    source_order=1,
+                    rationale="Registered originating System.",
+                    status="active",
+                    is_locked=False,
+                ),
+            ),
+        }
+    )
+    result = project_logical_audit_policy(
+        changes=(
+            StageModelChange(
+                dataset="logical_attribute",
+                records=[provenance.model_dump(mode="json")],
+            ),
+        ),
+        applied=LogicalSection(
+            submodels=(),
+            entities=(_entity("Customer"),),
+            attributes=(),
+            relationships=(),
+        ),
+        raw_template={
+            "schema_version": "1.0",
+            "columns": [
+                {
+                    "semantic_name": "SourceSystemID",
+                    "data_type": "bigint",
+                    "nullable": False,
+                    "definition": None,
+                }
+            ],
+        },
+    )
+    record = _attribute_records(result)[0]
+    assert record["logical_attribute_is_natural_key"] is True
+    assert record["sources"] == provenance.model_dump(mode="json")["sources"]

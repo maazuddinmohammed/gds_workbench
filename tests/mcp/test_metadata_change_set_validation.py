@@ -700,6 +700,7 @@ def _process_group() -> dict[str, object]:
         "zone_code": "bronze",
         "process_group_name": "BRONZE_LOAD",
         "process_group_description": None,
+        "process_group_dependency_order": 1,
         "copy_group_name": "CUSTOMERS",
         "is_active": True,
     }

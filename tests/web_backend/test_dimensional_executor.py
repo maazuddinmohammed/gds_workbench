@@ -950,7 +950,7 @@ async def test_one_shot_projects_gold_policy_then_foreign_key_once(
     )
 
     assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert result.staged_record_count == 10
+    assert result.staged_record_count == 11
     assert database.isolations == [ReadIsolation.REPEATABLE_READ]
     assert authorizer.calls == [(7, ToolPolicy.TENANT_MODEL_WRITE)]
     request = agent.requests[0]
@@ -984,7 +984,7 @@ async def test_one_shot_projects_gold_policy_then_foreign_key_once(
     assert relationship_change.records[0]["to_dimensional_attribute_name"] == (
         "Customer Dimension key"
     )
-    assert handoff.final_events[-1].finding_count == 10
+    assert handoff.final_events[-1].finding_count == 11
     assert lifecycle.failed is None
 
 

@@ -206,6 +206,26 @@ def project_dimensional_gold_policy(
         if entity.dimensional_entity_status != "active":
             continue
         entity_attributes = [record for key, record in attributes.items() if key[0] == entity_key]
+        is_new_entity = entity_key not in {_entity_key(row) for row in baseline.entities}
+        if is_new_entity or any(
+            row.dimensional_attribute_key_role == "surrogate"
+            and row.dimensional_attribute_ordinal_position == 1
+            for row in entity_attributes
+        ):
+            # Reserve ordinal 1 for the own key; retain business relative order.
+            business = sorted(
+                (
+                    row
+                    for row in entity_attributes
+                    if row.dimensional_attribute_key_role != "surrogate"
+                ),
+                key=lambda row: (row.dimensional_attribute_ordinal_position, _attribute_key(row)),
+            )
+            for ordinal, row in enumerate(business, start=2):
+                desired = row.model_copy(update={"dimensional_attribute_ordinal_position": ordinal})
+                attributes[_attribute_key(desired)] = desired
+                projected.append(desired)
+            entity_attributes = [row for key, row in attributes.items() if key[0] == entity_key]
         business_ordinal = max(
             (
                 record.dimensional_attribute_ordinal_position
@@ -222,7 +242,7 @@ def project_dimensional_gold_policy(
                 for record in entity_attributes
             )
         specifications: list[tuple[GoldPolicyColumn, Literal["technical", "audit"], str]] = []
-        if entity.dimensional_entity_type == "dimension":
+        if entity.dimensional_entity_type == "dimension" or is_new_entity:
             try:
                 surrogate = GoldPolicyColumn(
                     semantic_name=technical.dimension_surrogate_key.semantic_name_template.format(
@@ -241,7 +261,7 @@ def project_dimensional_gold_policy(
                     "definition fits 2000 characters. Preserve the frozen policy."
                 ) from None
             specifications.append((surrogate, "technical", "surrogate"))
-            if any(
+            if entity.dimensional_entity_type == "dimension" and any(
                 record.dimensional_attribute_change_behavior == "historize"
                 and record.dimensional_attribute_role not in ("technical", "audit")
                 and record.dimensional_attribute_status == "active"
@@ -267,21 +287,45 @@ def project_dimensional_gold_policy(
         for offset, (column, role, key_role) in enumerate(specifications, start=1):
             key = (entity_key, normalize_model_key_value(column.semantic_name))
             existing = attributes.get(key)
+            if key_role == "surrogate":
+                ordinal = (
+                    1
+                    if is_new_entity
+                    else (
+                        existing.dimensional_attribute_ordinal_position
+                        if existing is not None
+                        else policy_ordinal_base + 1
+                    )
+                )
+            else:
+                ordinal = (
+                    policy_ordinal_base + offset - (1 if specifications[0][2] == "surrogate" else 0)
+                )
             desired = _policy_attribute(
                 entity=entity,
                 column=column,
                 role=role,
                 key_role=key_role,
-                ordinal=policy_ordinal_base + offset,
+                ordinal=ordinal,
                 existing=existing,
             )
             if existing != desired:
                 projected.append(desired)
             attributes[key] = desired
+            if key_role == "surrogate":
+                policy_ordinal_base = max(
+                    policy_ordinal_base, desired.dimensional_attribute_ordinal_position
+                )
 
     changed_attribute_by_key = {_attribute_key(record): record for record in changed_attributes}
     for record in projected:
         changed_attribute_by_key[_attribute_key(record)] = record
+    applied_attributes = {_attribute_key(record): record for record in baseline.attributes}
+    changed_attribute_by_key = {
+        key: record
+        for key, record in changed_attribute_by_key.items()
+        if applied_attributes.get(key) != record
+    }
 
     output: list[StageModelChange] = []
     for dataset in (
@@ -490,7 +534,18 @@ def project_dimensional_foreign_key_policy(
             start=1,
         ):
             reordered = record.model_copy(
-                update={"dimensional_attribute_ordinal_position": next_ordinal + offset}
+                update={
+                    "dimensional_attribute_ordinal_position": (
+                        record.dimensional_attribute_ordinal_position
+                        if record.dimensional_attribute_key_role == "surrogate"
+                        else next_ordinal
+                        + offset
+                        - sum(
+                            item.dimensional_attribute_key_role == "surrogate"
+                            for item in technical_attributes
+                        )
+                    )
+                }
             )
             key = _attribute_key(reordered)
             applied_record = applied_attributes.get(key)
@@ -590,7 +645,9 @@ def _policy_attribute(
         != normalize_model_key_value(column.data_type)
         or existing.dimensional_attribute_is_nullable != column.nullable
         or existing.dimensional_attribute_key_role != key_role
-        or existing.sources
+        or (
+            existing.sources and normalize_model_key_value(column.semantic_name) != "sourcesystemid"
+        )
     ):
         raise DimensionalProjectionConflictError(
             "A configured Gold policy column conflicts with an existing Attribute."
@@ -617,7 +674,7 @@ def _policy_attribute(
         dimensional_attribute_is_locked=(
             existing.dimensional_attribute_is_locked if existing is not None else False
         ),
-        sources=(),
+        sources=(existing.sources if existing is not None else ()),
     )
     if existing is not None and existing.dimensional_attribute_is_locked and existing != desired:
         raise DimensionalProjectionConflictError("A locked Gold policy column cannot be projected.")

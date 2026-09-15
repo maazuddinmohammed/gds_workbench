@@ -515,6 +515,7 @@ SELECT tenant.tenant_code,
        zone.zone_code,
        process_group.process_group_name,
        process_group.process_group_description,
+       process_group.process_group_dependency_order,
        copy_group.copy_group_name,
        process_group.is_active
   FROM core.process_group AS process_group

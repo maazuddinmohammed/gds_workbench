@@ -323,6 +323,7 @@ def _raw_rows() -> dict[str, list[dict[str, object]]]:
                     "zone_id": 21,
                     "process_group_name": "bronze_load",
                     "process_group_description": None,
+                    "process_group_dependency_order": 1,
                     "copy_group_id": 60,
                     "is_active": True,
                 }

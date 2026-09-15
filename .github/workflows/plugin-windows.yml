@@ -8,6 +8,8 @@ on:
       - "plugins/v2/**"
       - "plugins/build_gds_v2_plugin_zip.py"
       - "tests/plugin_v2/**"
+      - "atlas/**"
+      - "tests/atlas/**"
       - ".github/workflows/plugin-windows.yml"
 
 permissions:
@@ -60,3 +62,8 @@ jobs:
         run: >-
           uv run --frozen --project mcp_server python -m pytest
           -c mcp_server/pyproject.toml tests/plugin_v2 -q
+      - name: Test Atlas native workspace parity with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $env:ATLAS_POWERSHELL = (Get-Command powershell.exe).Source
+          uv run --frozen --project mcp_server python -m pytest -c mcp_server/pyproject.toml tests/atlas/test_native_parity.py tests/atlas/test_profiling_native.py tests/atlas/test_native_quality.py tests/atlas/test_native_policy.py tests/atlas/test_native_sql.py -q

@@ -1113,3 +1113,30 @@ def test_adding_mapping_system_keeps_prior_code_as_stale_until_regenerated() -> 
     assert any(
         issue.dataset == "generated_code_source_system" for issue in checked_code.issues
     )
+
+
+def test_parent_retarget_cannot_change_locked_child_physical_identity() -> None:
+    graph = complete_model_graph()
+    graph["model_attribute_binding"][0]["model_attribute_binding_is_locked"] = True
+    rebound = {**graph["model_object_binding"][0], "object_name": "MovedOrder"}
+    target = (*tuple(value.casefold() for value in SILVER_ORDER[:4]), "movedorder")
+    scope = complete_physical_scope()
+    attributes = {(*target, "orderid"), (*target, "customerid")}
+    scope = replace(
+        scope,
+        objects=scope.objects | {target},
+        attributes=scope.attributes | attributes,
+        logical_mapping_target_objects=scope.logical_mapping_target_objects | {target},
+        logical_mapping_target_attributes=scope.logical_mapping_target_attributes
+        | attributes,
+    )
+    result = validate_future_graph(
+        snapshot=snapshot_from_graph(graph),
+        staged_documents={"model_object_binding": [rebound]},
+        physical_scope=scope,
+    )
+    assert not result.valid
+    assert any(
+        issue.code == "binding_reassignment_unsupported" for issue in result.issues
+    )
+    assert any(issue.code == "record_locked" for issue in result.issues)

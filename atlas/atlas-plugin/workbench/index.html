@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <title>atlas Workbench</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div id="workbench-root" class="app-shell" aria-live="off"></div>
+
+    <dialog id="row-editor-dialog" class="row-editor-dialog" aria-labelledby="row-editor-title">
+      <form id="row-editor-form" class="dialog-form">
+        <div class="dialog-heading">
+          <div>
+            <span id="row-editor-eyebrow" class="eyebrow">Change Set record</span>
+            <h2 id="row-editor-title">Edit draft</h2>
+            <p id="row-editor-key" class="dialog-key"></p>
+          </div>
+          <button id="close-row-editor" type="button" class="icon-button" aria-label="Close editor">×</button>
+        </div>
+        <div id="row-editor-fields" class="row-editor-fields"></div>
+        <p id="row-editor-message" class="dialog-message" role="alert"></p>
+        <div class="dialog-actions">
+          <span>Writes only to this workspace's local Change Set.</span>
+          <button id="cancel-row-editor" type="button" class="button">Cancel</button>
+          <button id="save-row-editor" type="submit" class="button button-primary">Save changes</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="unsaved-dialog" class="unsaved-dialog" aria-labelledby="unsaved-title">
+      <h2 id="unsaved-title">Save local changes?</h2><p>Your record contains unsaved edits.</p>
+      <div class="detail-actions"><button id="unsaved-save" class="button button-primary">Save</button><button id="unsaved-discard" class="button">Discard</button><button id="unsaved-cancel" class="button" autofocus>Cancel</button></div>
+    </dialog>
+    <script src="unicode.js"></script>
+    <script src="core.js"></script>
+    <script src="validation/common.js"></script>
+    <script src="validation/metadata.js"></script>
+    <script src="validation/sql.js"></script>
+    <script src="validation/model.js"></script>
+    <script src="metadata.js"></script>
+    <script src="model.js"></script>
+    <script src="workspace.js"></script>
+    <script src="dbml.js"></script>
+    <script src="ui-state.js"></script>
+    <script src="model-quality.js"></script>
+    <script src="validation/model-policy.js"></script>
+    <script src="validation/run.js"></script>
+    <script src="ui/text.js"></script>
+    <script src="ui/records.js"></script>
+    <script src="ui/validation.js"></script>
+    <script src="ui/editor.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

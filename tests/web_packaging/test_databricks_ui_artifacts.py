@@ -94,6 +94,7 @@ NOTEBOOK_PACKAGE_EXCLUSIONS = {
             "tools/modeling/model_details.py",
             "tools/modeling/model_input_scope.py",
             "tools/modeling/read_model_section.py",
+            "tools/modeling/read_mapping_context.py",
             "tools/snapshots/archive.py",
             "tools/snapshots/metadata/archive.py",
             "tools/snapshots/metadata/describe_metadata_dataset.py",

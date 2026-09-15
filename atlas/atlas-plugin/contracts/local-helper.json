@@ -1,0 +1,150 @@
+{
+  "schema_version": "1.0",
+  "runtime": {
+    "node": "Node.js 20+",
+    "powershell": "Windows PowerShell 5.1 native fallback",
+    "snapshot_zip": "Python 3.12+ for Node; native ZIP extraction on PowerShell",
+    "session": "Absolute working directory containing .atlas/session.json",
+    "limits": {
+      "select_records": 200,
+      "upsert_batch_records": 200
+    }
+  },
+  "commands": {
+    "command-contract": {
+      "usage": "command-contract [--command <name>]",
+      "session_required": false,
+      "mutates": false
+    },
+    "session-init": {
+      "usage": "session-init --root <absolute-directory> --tenant <verified-code> --tenant-id <positive-id> [--model-id <id> --model-name <name>] [--policy never|essential|proactive --environment dev|qa|stg|prod]",
+      "session_required": false,
+      "mutates": true
+    },
+    "status": {
+      "usage": "status --session <working-directory>",
+      "session_required": true,
+      "mutates": false
+    },
+    "owner-add": {
+      "usage": "owner-add --session <working-directory> --tenant-id <verified-id> --tenant <verified-code>",
+      "session_required": true,
+      "mutates": true
+    },
+    "model-select": {
+      "usage": "model-select --session <working-directory> --model-id <verified-id> --model-name <name>",
+      "session_required": true,
+      "mutates": true
+    },
+    "task-add": {
+      "usage": "task-add --session <working-directory> --outcome <short-outcome> [--workflow <skill-name>]",
+      "session_required": true,
+      "mutates": true
+    },
+    "task-select": {
+      "usage": "task-select --session <working-directory> --task <UUID>",
+      "session_required": true,
+      "mutates": true
+    },
+    "task-update": {
+      "usage": "task-update --session <working-directory> [--task <UUID>] --expected-digest <task-file-sha256> (--progress <text>|--file <replacement-task-json>)",
+      "session_required": true,
+      "mutates": true
+    },
+    "sql-policy": {
+      "usage": "sql-policy --session <working-directory> --policy never|essential|proactive [--environment dev|qa|stg|prod]",
+      "session_required": true,
+      "mutates": true
+    },
+    "inspect": {
+      "usage": "inspect --session <working-directory> --area metadata|model [--owner <tenant-id>]",
+      "session_required": true,
+      "mutates": false
+    },
+    "describe": {
+      "usage": "describe --session <working-directory> --area metadata|model --dataset <name> [--detail compact|full] [--owner <tenant-id>]",
+      "session_required": true,
+      "mutates": false
+    },
+    "select": {
+      "usage": "select --session <working-directory> --area metadata|model --dataset <name> --where <JSON-object> [--limit <1..200>] [--owner <tenant-id>] [--view snapshot|effective]",
+      "session_required": true,
+      "mutates": false
+    },
+    "copy": {
+      "usage": "copy --session <working-directory> --area metadata|model --dataset <name> --where <JSON-object> --expected-digest <sha256|empty> [--owner <tenant-id>]",
+      "session_required": true,
+      "mutates": true
+    },
+    "upsert": {
+      "usage": "upsert --session <working-directory> --area metadata|model --dataset <name> --record <JSON-object> --expected-digest <sha256|empty> [--owner <tenant-id>]",
+      "session_required": true,
+      "mutates": true
+    },
+    "upsert-batch": {
+      "usage": "upsert-batch --session <working-directory> --area metadata|model --changes <dataset-to-record-array-JSON> --expected-digest <sha256|empty> [--owner <tenant-id>]",
+      "session_required": true,
+      "mutates": true
+    },
+    "discard": {
+      "usage": "discard --session <working-directory> --area metadata|model --dataset <name> --key <canonical-key-JSON> --expected-digest <sha256|empty> [--owner <tenant-id>]",
+      "session_required": true,
+      "mutates": true
+    },
+    "review": {
+      "usage": "review --session <working-directory> --area metadata|model [--owner <tenant-id>]",
+      "session_required": true,
+      "mutates": false
+    },
+    "validate": {
+      "usage": "validate --session <working-directory> --area metadata|model [--owner <tenant-id>] [--task <UUID>]",
+      "session_required": true,
+      "mutates": true
+    },
+    "accept": {
+      "usage": "accept --session <working-directory> --area metadata|model --digest <reviewed-sha256> --backend-profile production|local|azureLocalTest --endpoint-sha256 <safe-backend-identity> [--owner <tenant-id>]",
+      "session_required": true,
+      "mutates": true
+    },
+    "draft-cache": {
+      "usage": "draft-cache --session <working-directory> --area metadata|model --id <verified-change-set-UUID> --revision <nonnegative-integer> --status active|validated [--validation-failed true] [--owner <tenant-id>]",
+      "session_required": true,
+      "mutates": true
+    },
+    "prepare-stage-request": {
+      "usage": "prepare-stage-request --session <working-directory> --area metadata|model [--owner <tenant-id>]",
+      "session_required": true,
+      "mutates": true
+    },
+    "operation-record": {
+      "usage": "operation-record --session <working-directory> --area metadata|model --checkpoint validation|apply-approval|apply --file <curated-authoritative-result-json> [--review-digest <sha256>] [--owner <tenant-id>]",
+      "session_required": true,
+      "mutates": true
+    },
+    "snapshot-install": {
+      "usage": "snapshot-install --session <working-directory> --area metadata|model --archive <downloaded-zip> --snapshot-id <UUID> --size-bytes <integer> --sha256 <sha256> [--owner <tenant-id>]",
+      "session_required": true,
+      "mutates": true
+    },
+    "generate-dbml": {
+      "usage": "generate-dbml --session <working-directory> --area model [--model-type full|conceptual|logical|dimensional] [--include-submodels true|false]",
+      "session_required": true,
+      "mutates": true
+    },
+    "profile-plan": {
+      "usage": "profile-plan --session <working-directory> --plan-file <planning-input-json> [--task <UUID>]",
+      "session_required": true,
+      "mutates": true
+    },
+    "analysis-plan": {
+      "usage": "analysis-plan --session <working-directory> --plan-file <planning-input-json> [--task <UUID>]",
+      "session_required": true,
+      "mutates": true
+    },
+    "profile-results": {
+      "usage": "profile-results --session <working-directory> --plan-file <generated-plan-json> --results-file <curated-aggregates-json> --expected-digest <sha256|empty> [--task <UUID>]",
+      "session_required": true,
+      "mutates": true
+    }
+  }
+}

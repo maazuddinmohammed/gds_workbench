@@ -743,6 +743,7 @@ def test_stage_metadata_change_set_replaces_multiple_documents_with_one_revision
             "zone_code": "bronze",
             "process_group_name": "LOAD_CUSTOMERS",
             "process_group_description": None,
+            "process_group_dependency_order": 1,
             "copy_group_name": "CUSTOMERS",
             "is_active": True,
         }
@@ -2715,6 +2716,19 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
     tenant_code = "CHANGE_SET_TENANT_ALL_APPLY"
     gds_tenant_code = "GLOBAL_ALL_APPLY"
     documents = _all_apply_documents(tenant_code, gds_tenant_code)
+    # Two distinct source mappings in one Copy Group may share order 1.
+    documents["source_object"].append(
+        {**documents["source_object"][0], "object_name": "source_customers_again"}
+    )
+    documents["ingestion_object_mapping"].append(
+        {
+            **documents["ingestion_object_mapping"][0],
+            "source_object_name": "source_customers_again",
+        }
+    )
+    documents["copy"].append(
+        {**documents["copy"][0], "source_object_name": "source_customers_again"}
+    )
     for zone in ("source", "bronze", "silver", "gold"):
         documents[f"{zone}_attribute"][0].update(
             attribute_data_type="STRING", attribute_inferred_data_type="BIGINT", is_locked=True
@@ -2938,6 +2952,7 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
                        JOIN core.copy_group AS copy_group
                          ON copy_group.copy_group_id = copy.copy_group_id
                       WHERE copy_group.tenant_id = %s
+                        AND copy.copy_source_order = 1
                    ) AS copies,
                    (SELECT count(*) FROM core.process_group WHERE tenant_id = %s) AS process_groups,
                    (
@@ -2962,16 +2977,16 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
         ).fetchone()
         connection.rollback()
 
-    assert applied == {"applied": True, "denial_code": None, "action_count": 16}
+    assert applied == {"applied": True, "denial_code": None, "action_count": 19}
     assert counts == {
-        "objects": 4,
+        "objects": 5,
         "attributes": 4,
-        "object_mappings": 1,
+        "object_mappings": 2,
         "attribute_mappings": 1,
         "copy_groups": 1,
         "member_groups": 1,
         "controls": 1,
-        "copies": 1,
+        "copies": 2,
         "process_groups": 1,
         "processes": 1,
     }
@@ -3288,6 +3303,7 @@ def _all_apply_documents(
                 "zone_code": "bronze",
                 "process_group_name": "CUSTOMER_PROCESS",
                 "process_group_description": "Customer process",
+                "process_group_dependency_order": 1,
                 "copy_group_name": "CUSTOMERS",
                 "is_active": True,
             }

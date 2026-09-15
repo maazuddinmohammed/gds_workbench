@@ -398,7 +398,7 @@ CREATE TABLE core.copy (
     copy_source_file_pattern TEXT,
     copy_source_file_delimiter VARCHAR(20),
     source_file_type_id BIGINT,
-    copy_source_order INTEGER NOT NULL,
+    copy_source_order INTEGER NOT NULL DEFAULT 1 CHECK (copy_source_order > 0),
     source_data_operation_id BIGINT NOT NULL,
     target_data_operation_id BIGINT NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -423,10 +423,7 @@ CREATE TABLE core.copy (
         target_data_operation_id
     ) REFERENCES reference.data_operation (data_operation_id) ON DELETE NO ACTION,
     CONSTRAINT uq_copy_group_mapping
-        UNIQUE (copy_group_id, ingestion_object_mapping_id),
-    CONSTRAINT uq_copy_group_order
-        UNIQUE (copy_group_id, copy_source_order)
-        DEFERRABLE INITIALLY IMMEDIATE
+        UNIQUE (copy_group_id, ingestion_object_mapping_id)
 );
 
 CREATE TABLE core.process_group (
@@ -436,6 +433,8 @@ CREATE TABLE core.process_group (
     zone_id BIGINT NOT NULL,
     process_group_name VARCHAR(200) NOT NULL,
     process_group_description TEXT,
+    process_group_dependency_order INTEGER NOT NULL DEFAULT 1
+        CHECK (process_group_dependency_order > 0),
     copy_group_id BIGINT NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -268,8 +268,7 @@ BEGIN
 
     v_actor := ('principal:' || v_decision.principal_id::TEXT)::VARCHAR(255);
     SET CONSTRAINTS
-        core.uq_attribute_object_ordinal,
-        core.uq_copy_group_order
+        core.uq_attribute_object_ordinal
     DEFERRED;
 
     v_expected_count :=
@@ -947,15 +946,18 @@ BEGIN
         AS record (
             tenant_code VARCHAR(100), system_code VARCHAR(100), zone_code VARCHAR(30),
             process_group_name VARCHAR(200), process_group_description TEXT,
+            process_group_dependency_order INTEGER,
             copy_group_name VARCHAR(200), is_active BOOLEAN
         )
     )
     INSERT INTO core.process_group AS target (
         tenant_id, system_id, zone_id, process_group_name,
-        process_group_description, copy_group_id, is_active, created_by, updated_by
+        process_group_description, process_group_dependency_order,
+        copy_group_id, is_active, created_by, updated_by
     )
     SELECT tenant.tenant_id, system.system_id, zone.zone_id,
            records.process_group_name, records.process_group_description,
+           records.process_group_dependency_order,
            copy_group.copy_group_id, records.is_active, v_actor, v_actor
       FROM records
       JOIN core.tenant AS tenant
@@ -974,6 +976,7 @@ BEGIN
         tenant_id, system_id, zone_id, (lower(btrim(process_group_name)))
     ) DO UPDATE SET
         process_group_description = EXCLUDED.process_group_description,
+        process_group_dependency_order = EXCLUDED.process_group_dependency_order,
         copy_group_id = EXCLUDED.copy_group_id,
         is_active = EXCLUDED.is_active,
         updated_time = v_now,

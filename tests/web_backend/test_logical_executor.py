@@ -777,7 +777,7 @@ async def test_one_shot_projects_audit_columns_then_hands_off_once() -> None:
     )
 
     assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert result.staged_record_count == 4
+    assert result.staged_record_count == 5
     assert database.isolations == [ReadIsolation.REPEATABLE_READ]
     assert authorizer.calls == [(7, ToolPolicy.TENANT_MODEL_WRITE)]
     request = agent.requests[0]
@@ -797,8 +797,9 @@ async def test_one_shot_projects_audit_columns_then_hands_off_once() -> None:
     assert [record["logical_attribute_name"] for record in attribute_change.records] == [
         "Created At",
         "Customer Id",
+        "CustomerID",
     ]
-    assert handoff.final_events[-1].finding_count == 4
+    assert handoff.final_events[-1].finding_count == 5
     assert lifecycle.failed is None
     assert [
         (event.sequence, event.stage) for event in (*lifecycle.events, *handoff.final_events)

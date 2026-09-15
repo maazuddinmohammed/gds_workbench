@@ -12,12 +12,6 @@ from typing import TYPE_CHECKING, Any, cast, overload
 from uuid import UUID
 
 import pytest
-from mcp import Client
-from mcp.server.mcpserver import MCPServer
-from mcp.types import TextContent
-from psycopg import sql
-from psycopg.types.json import Jsonb
-
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
@@ -51,6 +45,9 @@ from gds_etl_workbench.tools.modeling.model_details import register_list_models_
 from gds_etl_workbench.tools.modeling.model_input_scope import (
     register_get_model_input_scope_tool,
 )
+from gds_etl_workbench.tools.modeling.read_mapping_context import (
+    register_read_mapping_context_tool,
+)
 from gds_etl_workbench.tools.modeling.read_model_section import (
     register_read_model_section_tool,
 )
@@ -62,6 +59,12 @@ from gds_etl_workbench.tools.snapshots.model.get_model_snapshot import (
     register_create_model_snapshot_tool,
 )
 from gds_etl_workbench.tools.snapshots.storage import SnapshotKind
+from mcp import Client
+from mcp.server.mcpserver import MCPServer
+from mcp.types import TextContent
+from psycopg import sql
+from psycopg.types.json import Jsonb
+
 from tests.mcp.model_test_fixtures import (
     complete_model_graph,
 )
@@ -395,7 +398,9 @@ async def test_get_model_change_set_persists_parent_and_batch_expiry_once(
     await database.open()
     try:
         async with Client(server) as client:
-            created = await client.call_tool("create_model_change_set", {"model_id": model_id})
+            created = await client.call_tool(
+                "create_model_change_set", {"model_id": model_id}
+            )
             assert created.is_error is False
             change_set_id = created.structured_content["model_change_set_id"]
             begun = await client.call_tool(
@@ -488,7 +493,9 @@ async def test_stage_model_change_set_persists_expiry_before_rejecting_mutation(
     await database.open()
     try:
         async with Client(server) as client:
-            created = await client.call_tool("create_model_change_set", {"model_id": model_id})
+            created = await client.call_tool(
+                "create_model_change_set", {"model_id": model_id}
+            )
             assert created.is_error is False
             change_set_id = created.structured_content["model_change_set_id"]
             with postgres_database.connect_owner() as connection:
@@ -576,12 +583,20 @@ async def test_concurrent_model_change_set_create_is_one_idempotent_draft(
                 client.call_tool("create_model_change_set", {"model_id": model_id}),
             )
             assert all(result.is_error is False for result in results)
-            assert sorted(result.structured_content["created"] for result in results) == [
+            assert sorted(
+                result.structured_content["created"] for result in results
+            ) == [
                 False,
                 True,
             ]
             assert (
-                len({result.structured_content["model_change_set_id"] for result in results}) == 1
+                len(
+                    {
+                        result.structured_content["model_change_set_id"]
+                        for result in results
+                    }
+                )
+                == 1
             )
     finally:
         await database.close()
@@ -650,7 +665,9 @@ async def test_create_expiry_clock_is_captured_after_waiting_for_the_draft_lock(
                     """,
                     (initial_id,),
                 ).fetchone()
-                lock_time = blocker.execute("SELECT clock_timestamp() AS current_time").fetchone()
+                lock_time = blocker.execute(
+                    "SELECT clock_timestamp() AS current_time"
+                ).fetchone()
                 assert lock_time is not None
                 blocker.execute(
                     """
@@ -1039,9 +1056,15 @@ async def test_model_stage_batch_runs_through_validate_and_apply(
             profiling_records = staged["profiling_profile"]
             profiling_chunk_sha256 = canonical_records_sha256(profiling_records)
             normalized_profiling = validate_model_stage_changes(
-                [StageModelChange(dataset="profiling_profile", records=profiling_records)]
+                [
+                    StageModelChange(
+                        dataset="profiling_profile", records=profiling_records
+                    )
+                ]
             )["profiling_profile"]
-            assert profiling_chunk_sha256 != canonical_records_sha256(normalized_profiling)
+            assert profiling_chunk_sha256 != canonical_records_sha256(
+                normalized_profiling
+            )
             profiling_batch_sha256 = stage_batch_sha256([profiling_chunk_sha256])
             profiling_begun = await client.call_tool(
                 "begin_model_stage_batch",
@@ -1205,7 +1228,9 @@ async def test_model_stage_batch_runs_through_validate_and_apply(
                 },
             )
             assert validated.is_error is False
-            assert validated.structured_content["valid"] is True, validated.structured_content
+            assert validated.structured_content["valid"] is True, (
+                validated.structured_content
+            )
             applied = await client.call_tool(
                 "apply_model_change_set",
                 {
@@ -1286,7 +1311,9 @@ async def test_model_stage_batch_reassembles_generated_code_json_fragments(
         payload[unicode_offset + 1 :],
     ]
     assert len(payload) > MAX_MODEL_STAGE_CHUNK_BYTES
-    assert all(0 < len(fragment) <= MAX_MODEL_STAGE_CHUNK_BYTES for fragment in fragments)
+    assert all(
+        0 < len(fragment) <= MAX_MODEL_STAGE_CHUNK_BYTES for fragment in fragments
+    )
     chunk_hashes = [hashlib.sha256(fragment).hexdigest() for fragment in fragments]
 
     database = postgres_database.create_runtime_adapter()
@@ -1309,7 +1336,9 @@ async def test_model_stage_batch_reassembles_generated_code_json_fragments(
     await database.open()
     try:
         async with Client(server) as client:
-            created = await client.call_tool("create_model_change_set", {"model_id": model_id})
+            created = await client.call_tool(
+                "create_model_change_set", {"model_id": model_id}
+            )
             assert created.is_error is False
             change_set_id = created.structured_content["model_change_set_id"]
             begun = await client.call_tool(
@@ -1393,7 +1422,9 @@ async def test_model_stage_batch_reassembles_generated_code_json_fragments(
         metadata = row["input_metadata"]
         assert "payload_fragment_base64" not in metadata
         assert "payload_fragment" not in metadata
-        assert metadata["payload_fragment_base64_characters"] == len(base64.b64encode(fragment))
+        assert metadata["payload_fragment_base64_characters"] == len(
+            base64.b64encode(fragment)
+        )
 
 
 @pytest.mark.asyncio
@@ -1577,6 +1608,14 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
         retention_hours=24,
         max_archive_bytes=16 * 1024 * 1024,
     )
+    register_read_mapping_context_tool(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+        cursor_signing_key=b"development-only-key-32-bytes-long",
+    )
     register_read_model_section_tool(
         server,
         database=database,
@@ -1671,7 +1710,9 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
             assert descriptor["model_id"] == model_id
             assert descriptor["model_revision"] == 2
             assert descriptor["content_type"] == "application/zip"
-            snapshot_counts, serialized = _snapshot_archive(snapshot_store.archive_content["model"])
+            snapshot_counts, serialized = _snapshot_archive(
+                snapshot_store.archive_content["model"]
+            )
             dbml_result = await client.call_tool(
                 "export_model_dbml",
                 {
@@ -1702,7 +1743,9 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
                 {"model_id": model_id},
             )
             assert rename_change_set.is_error is False
-            rename_change_set_id = rename_change_set.structured_content["model_change_set_id"]
+            rename_change_set_id = rename_change_set.structured_content[
+                "model_change_set_id"
+            ]
             rename_stage = await client.call_tool(
                 "stage_model_change_set",
                 {
@@ -1769,7 +1812,9 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
                 {"model_id": model_id},
             )
             assert invalid_eligibility.is_error is False
-            invalid_eligibility_id = invalid_eligibility.structured_content["model_change_set_id"]
+            invalid_eligibility_id = invalid_eligibility.structured_content[
+                "model_change_set_id"
+            ]
             non_bronze_profile = deepcopy(staged["profiling_profile"][0])
             non_bronze_profile.update(
                 {
@@ -2342,7 +2387,8 @@ def _replace_codes(value: object, *, code_prefix: str = "MODEL_TOOL") -> object:
     if isinstance(value, dict):
         mapping = cast(dict[object, object], value)
         replaced_mapping: dict[object, object] = {
-            key: _replace_codes(item, code_prefix=code_prefix) for key, item in mapping.items()
+            key: _replace_codes(item, code_prefix=code_prefix)
+            for key, item in mapping.items()
         }
         return replaced_mapping
     if isinstance(value, list):
@@ -2363,7 +2409,9 @@ def _snapshot_archive(content: bytes) -> tuple[dict[str, int], str]:
         assert manifest["snapshot_kind"] == "model"
         assert manifest["database_ids_included"] is False
         for definition in DATASETS:
-            rows = archive.read(f"model-snapshot/{definition.rows_path}").decode("utf-8")
+            rows = archive.read(f"model-snapshot/{definition.rows_path}").decode(
+                "utf-8"
+            )
             counts[definition.name] = len(rows.splitlines())
             serialized.append(rows)
     return counts, "".join(serialized)
@@ -2384,7 +2432,9 @@ def _assert_dbml_archive(content: bytes) -> None:
         assert manifest["snapshot_kind"] == "dbml"
         assert manifest["counts"]["dbml_file_count"] == 5
         logical = archive.read("model-dbml/files/logical_complete.dbml").decode()
-        dimensional = archive.read("model-dbml/files/dimensional_complete.dbml").decode()
+        dimensional = archive.read(
+            "model-dbml/files/dimensional_complete.dbml"
+        ).decode()
         assert 'Table "Order"' in logical
         assert "Ref logical_relationship_1:" in logical
         assert 'Table "SalesFact"' in dimensional
@@ -2393,6 +2443,37 @@ def _assert_dbml_archive(content: bytes) -> None:
 
 
 async def _assert_focused_reads(client: Client, model_id: int) -> None:
+    mapping = await client.call_tool(
+        "read_mapping_context",
+        {
+            "model_id": model_id,
+            "modeled_entity_type": "logical_entity",
+            "modeled_entity_name": "Order",
+            "component": "source_systems",
+        },
+    )
+    assert not mapping.is_error
+    assert mapping.structured_content is not None
+    mapping_result = mapping.structured_content
+    assert mapping_result["records"][0]["source_system_value"] > 0
+    bound_request = {
+        "model_id": model_id,
+        "modeled_entity_type": "logical_entity",
+        "modeled_entity_name": "Order",
+        "component": "target_metadata",
+        "expected_model_revision": mapping_result["model_revision"],
+        "expected_context_digest": mapping_result["context_digest"],
+    }
+    target = await client.call_tool("read_mapping_context", bound_request)
+    assert not target.is_error
+    assert target.structured_content is not None
+    assert (
+        "is_surrogate_key" in target.structured_content["records"][0]["attributes"][0]
+    )
+    stale = await client.call_tool(
+        "read_mapping_context", {**bound_request, "expected_context_digest": "0" * 64}
+    )
+    assert stale.is_error
     expected_counts = {
         "profiling_profile": 1,
         "analysis_result": 1,

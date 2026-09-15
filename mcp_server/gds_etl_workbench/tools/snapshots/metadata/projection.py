@@ -311,6 +311,7 @@ def project_id_free_rows(
         {
             **process_group_key(row["process_group_id"]),
             "process_group_description": row["process_group_description"],
+            "process_group_dependency_order": row["process_group_dependency_order"],
             "copy_group_name": copy_group_by_id[row["copy_group_id"]]["copy_group_name"],
             "is_active": row["is_active"],
         }

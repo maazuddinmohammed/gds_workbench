@@ -258,6 +258,7 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "archive_model_change_set",
         "inspect_metadata",
         "read_model_section",
+        "read_mapping_context",
         "execute_databricks_sql",
         "describe_model_dataset",
         "create_model_snapshot",
@@ -600,7 +601,7 @@ def test_health_routes_are_anonymous() -> None:
     ready_body = ready.json()
     assert ready_body["status"] == "ready"
     assert ready_body["mcp_server_version"] == "0.2.0"
-    assert ready_body["tool_count"] == 37
+    assert ready_body["tool_count"] == 38
     assert "tool_contract_sha256" not in ready_body
 
 

@@ -69,6 +69,17 @@ DECLARE
         'application.persist_profiling_results(uuid,uuid,character varying,bigint,bigint,jsonb)'
     ];
 BEGIN
+    IF NOT (EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'core' AND table_name = 'process_group'
+           AND column_name = 'process_group_dependency_order'
+           AND data_type = 'integer' AND is_nullable = 'NO'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'core.copy'::regclass AND conname = 'uq_copy_group_order'
+    )) THEN
+        RAISE EXCEPTION 'Atlas Process Group / Copy order compatibility is unavailable';
+    END IF;
     IF to_regclass('application.metadata_enrichment_result') IS NULL OR NOT EXISTS (
         SELECT 1 FROM information_schema.columns
          WHERE table_schema = 'application' AND table_name = 'workflow_run'

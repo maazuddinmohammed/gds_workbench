@@ -39,6 +39,7 @@ from gds_etl_workbench.tools.modeling.model_details import register_list_models_
 from gds_etl_workbench.tools.modeling.model_input_scope import (
     register_get_model_input_scope_tool,
 )
+from gds_etl_workbench.tools.modeling.read_mapping_context import register_read_mapping_context_tool
 from gds_etl_workbench.tools.modeling.read_model_section import (
     register_read_model_section_tool,
 )
@@ -193,6 +194,15 @@ def create_mcp_server(
         audit=audit,
         cursor_signing_key=settings.cursor_signing_key,
     )
+    register_read_mapping_context_tool(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+        cursor_signing_key=settings.cursor_signing_key,
+    )
+
     register_execute_databricks_sql_tool(
         server,
         database=cast(DatabricksConnectionDatabase, database),
