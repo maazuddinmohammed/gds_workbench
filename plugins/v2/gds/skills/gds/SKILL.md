@@ -37,6 +37,6 @@ Full considers every eligible input; Selected covers named inputs. Counts are ne
 6. Follow `references/server-handoff.md` and `references/staging.md`: bind draft cache, run `prepare-stage-request`, then `gds_stageApprovedManifest` with path/digest only. Never read Stage payloads or pending server rows. Show authoritative actions; ask separately for Apply approval.
 7. Apply once, mark Snapshot stale, release a lock acquired here, and refresh before dependent work.
 
-DBML is a display export, not validation or review evidence. Never generate, regenerate, read, or inspect DBML unless the user explicitly asks.
+Never generate, read, inspect or use DBML. Use Model records. Direct exports to Workbench's user-only **Generate DBML**; display exports are not validation/review evidence.
 
 Workbench: `references/workbench.md`. Platform boundaries: `references/platform-lifecycle.md`.

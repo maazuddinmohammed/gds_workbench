@@ -11,7 +11,7 @@ from re import fullmatch
 from typing import Annotated, Any, Literal, LiteralString
 
 from mcp.server.mcpserver import Context, MCPServer
-from mcp.types import ToolAnnotations
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
@@ -131,7 +131,7 @@ def register_execute_databricks_sql_tool(
             ),
         ] = "dev",
         schema_version: Literal["1.0"] = "1.0",
-    ) -> ExecuteDatabricksSqlResult:
+    ) -> Annotated[CallToolResult, ExecuteDatabricksSqlResult]:
         try:
             batch = validate_databricks_sql(sql)
             principal = identity_provider.request_principal(ctx.request_context.request)
@@ -167,7 +167,7 @@ def register_execute_databricks_sql_tool(
                 max_rows=max_rows,
                 timeout_seconds=timeout_seconds,
             )
-            return ExecuteDatabricksSqlResult(
+            result = ExecuteDatabricksSqlResult(
                 connection_id=connection_id,
                 environment_code=values.environment_code or environment_code,
                 statement_count=len(batch.statements),
@@ -177,6 +177,12 @@ def register_execute_databricks_sql_tool(
                 row_count=len(execution.rows),
                 rows_truncated=execution.rows_truncated,
                 cells_truncated=execution.cells_truncated,
+            )
+            # Keep the schema and text-only clients compatible without the SDK's
+            # default indentation multiplying the size of profiling matrices.
+            return CallToolResult(
+                content=[TextContent(type="text", text=result.model_dump_json())],
+                structured_content=result.model_dump(mode="json"),
             )
         except AuthenticationError as error:
             raise SafeToolError(f"{error.public_code}: {error.message}") from None

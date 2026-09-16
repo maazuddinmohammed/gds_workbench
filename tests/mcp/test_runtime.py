@@ -262,7 +262,6 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "execute_databricks_sql",
         "describe_model_dataset",
         "create_model_snapshot",
-        "export_model_dbml",
         "describe_metadata_dataset",
         "create_metadata_snapshot",
     ]
@@ -280,8 +279,6 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
     assert tools_by_name["archive_model_change_set"].annotations.destructive_hint is True
     assert tools_by_name["create_model_snapshot"].annotations is not None
     assert tools_by_name["create_model_snapshot"].annotations.idempotent_hint is False
-    assert tools_by_name["export_model_dbml"].annotations is not None
-    assert tools_by_name["export_model_dbml"].annotations.idempotent_hint is False
     assert all(
         tool.meta
         == {
@@ -601,7 +598,7 @@ def test_health_routes_are_anonymous() -> None:
     ready_body = ready.json()
     assert ready_body["status"] == "ready"
     assert ready_body["mcp_server_version"] == "0.2.0"
-    assert ready_body["tool_count"] == 38
+    assert ready_body["tool_count"] == 37
     assert "tool_contract_sha256" not in ready_body
 
 

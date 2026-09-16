@@ -1,6 +1,6 @@
 """Natural-key downstream input schemas, projected from the existing DTOs."""
 
-from typing import Any
+from typing import Any, cast
 
 CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
     "mapping": {
@@ -2586,3 +2586,64 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
         },
     },
 }
+
+
+# The applied consumer view includes registered execution coordinates and flags.
+# Keep the two workflows' repeated JSON-schema definitions in sync here.
+def _extend_sql_context_schema(schema: Any) -> None:
+    if isinstance(schema, list):
+        for child in cast(list[Any], schema):
+            _extend_sql_context_schema(child)
+    elif isinstance(schema, dict):
+        schema = cast(dict[str, Any], schema)
+        properties = schema.get("properties")
+        title = schema.get("title")
+        if isinstance(properties, dict):
+            properties = cast(dict[str, Any], properties)
+            nullable_text = {"type": ["string", "null"]}
+            if title == "SqlPhysicalAttribute":
+                properties.update(
+                    {
+                        "fc_attribute_name": nullable_text,
+                        "attribute_custom_code": nullable_text,
+                        "population": {"enum": ["database", "framework", "mapping"]},
+                        **{
+                            name: {"type": "boolean"}
+                            for name in (
+                                "is_surrogate_key",
+                                "is_natural_key",
+                                "is_meta_data",
+                                "is_masking_required",
+                            )
+                        },
+                    }
+                )
+            elif title == "SqlTargetMetadata":
+                properties.update(
+                    {
+                        "batch_attribute_name": nullable_text,
+                        "audit_columns_template": {"type": ["object", "null"]},
+                        "technical_columns_template": {"type": ["object", "null"]},
+                    }
+                )
+            elif title == "SqlSourceObject":
+                properties.update(
+                    {
+                        name: nullable_text
+                        for name in (
+                            "fc_object_schema",
+                            "fc_object_name",
+                            "foreign_catalog",
+                            "batch_attribute_name",
+                        )
+                    }
+                )
+            elif title == "SqlSourceSystem":
+                properties["source_system_value"] = {"type": "integer", "minimum": 1}
+            elif title == "SqlAttributeTransformation":
+                properties["modeled_attribute_name"] = {"type": ["string", "null"]}
+        for child in tuple(schema.values()):
+            _extend_sql_context_schema(child)
+
+
+_extend_sql_context_schema(CONTRACTS)

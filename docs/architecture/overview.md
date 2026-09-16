@@ -42,9 +42,11 @@ instructions contain only shared safety and dependency rules.
 - Tenant, Model, Metadata, and Model-section reads;
 - complete Metadata and Model Snapshots;
 - Metadata and Model Change Set lifecycles;
-- five governed Tenant Lock operations;
-- deterministic DBML projection; and
+- five governed Tenant Lock operations; and
 - bounded Databricks SQL preflight.
+
+DBML generation remains a local browser Workbench display export from the effective
+Snapshot plus pending Change Set.
 
 It exposes no foundational CRUD, individual model-graph mutation, direct lock
 toggle, arbitrary PostgreSQL, secret-returning, file-upload, or code-execution

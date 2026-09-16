@@ -211,6 +211,7 @@ def validate_future_graph(
         return _failed(staged, "uniqueness", candidate_digest, uniqueness_issues)
 
     reference_issues: list[ModelValidationIssue] = []
+    _validate_binding_reassignment(effective, staged, reference_issues)
     _validate_references(future, reference_issues)
     _validate_active_dependencies(
         future,
@@ -646,6 +647,48 @@ def _validate_physical_scope(
                     )
 
 
+def _validate_binding_reassignment(
+    applied: Mapping[str, tuple[Any, ...]],
+    staged: Mapping[str, tuple[Any, ...]],
+    issues: list[ModelValidationIssue],
+) -> None:
+    """Payload identities cannot safely retarget the physical-key Apply upserts."""
+    for dataset in ("model_object_binding", "model_attribute_binding"):
+        definition = CHANGE_SET_DATASETS_BY_NAME[dataset]
+        existing = {_canonical_key(definition, row): row for row in applied[dataset]}
+        for changed in staged.get(dataset, ()):
+            original = existing.get(_canonical_key(definition, changed))
+            if original is None:
+                continue
+            retargeted = (
+                _physical_object_key(original) != _physical_object_key(changed)
+                if dataset == "model_object_binding"
+                else normalize_model_key_value(original.attribute_name)
+                != normalize_model_key_value(changed.attribute_name)
+            )
+            if retargeted:
+                _issue(
+                    issues,
+                    "binding_reassignment_unsupported",
+                    dataset,
+                    definition.canonical_key,
+                    "Existing Binding targets cannot be reassigned by a Change Set. "
+                    "Preserve the assignment and request a governed operator correction.",
+                )
+                if dataset == "model_object_binding" and any(
+                    _entity_key(child) == _entity_key(original)
+                    and child.model_attribute_binding_is_locked
+                    for child in applied["model_attribute_binding"]
+                ):
+                    _issue(
+                        issues,
+                        "record_locked",
+                        "model_attribute_binding",
+                        ("attribute_name",),
+                        "Retargeting the parent would change a locked Attribute Binding's target.",
+                    )
+
+
 def _validate_bindings(
     future: Mapping[str, tuple[Any, ...]],
     catalog: PhysicalModelCatalog,
@@ -682,17 +725,17 @@ def _validate_bindings(
                 "Bound target Object is not eligible for its modeled layer.",
             )
         all_entity_targets[entity] = target
-        if record.model_object_binding_status != "active":
-            continue
         if target in active_physical_targets:
             _issue(
                 issues,
                 "binding_target_conflict",
                 "model_object_binding",
                 ("object_name",),
-                "An active physical Object can bind to only one modeled Entity.",
+                "A physical Object assignment remains reserved across Binding statuses.",
             )
         active_physical_targets.add(target)
+        if record.model_object_binding_status != "active":
+            continue
         entity_targets[entity] = target
 
     attribute_targets: dict[ModeledAttributeKey, PhysicalAttributeNaturalKey] = {}
@@ -722,6 +765,15 @@ def _validate_bindings(
                 "attribute_name",
                 "Bound target Attribute is not eligible for its modeled layer.",
             )
+        if target in active_physical_attributes:
+            _issue(
+                issues,
+                "binding_target_conflict",
+                "model_attribute_binding",
+                ("attribute_name",),
+                "A physical Attribute assignment remains reserved across Binding statuses.",
+            )
+        active_physical_attributes.add(target)
         if record.model_attribute_binding_status != "active":
             continue
         if historical and target in catalog.attributes:
@@ -735,15 +787,6 @@ def _validate_bindings(
                 "An active Attribute Binding requires an active Object Binding.",
             )
             continue
-        if target in active_physical_attributes:
-            _issue(
-                issues,
-                "binding_target_conflict",
-                "model_attribute_binding",
-                ("attribute_name",),
-                "An active physical Attribute can bind to only one modeled Attribute.",
-            )
-        active_physical_attributes.add(target)
         attribute_targets[_attribute_key(record)] = cast(PhysicalAttributeNaturalKey, target)
 
     active_modeled_attributes = {

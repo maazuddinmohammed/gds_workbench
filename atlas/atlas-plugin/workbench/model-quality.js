@@ -221,7 +221,9 @@
       issue(warnings, "source_shaped_model", "logical_entity", null,
         "All Entities have one physical Object support and all business Attributes have one physical source. Review grain and dependencies; this does not prove copying or require splitting.");
     if (metrics.isolated_entities.length) issue(warnings, "isolated_entities", "logical_entity", null,
-      "Some Entities have no cross-entity relationship. Review missing evidence; isolated reference Entities can be intentional.");
+      "Some Entities have no cross-entity relationship. Ask the user whether they are intentionally standalone or a supported relationship is missing; do not invent joins.");
+    if (metrics.connected_components > 1) issue(warnings, "disconnected_components", "logical_entity", null,
+      "Logical Entities form separate connected groups. Ask the user whether these groups are intentionally separate or evidence supports a relationship between them; do not invent joins.");
     const metadataAttributes = new Map();
     if (metadataMap instanceof Map) for (const state of metadataMap.values())
       for (const record of state.effective || state.baseline || [])

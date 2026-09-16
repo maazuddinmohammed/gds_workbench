@@ -11,6 +11,8 @@ Use Node.js 20+ and Python 3.12+ for the main local runtime. A native Windows Po
 
 Install the ZIP through an Agent Plugins 1.0-compatible host. Install the companion VSIX in VS Code, configure its intended matching backend and run **Atlas: Check Stage Runner**. The backend must support Atlas's Process Group order, Mapping context reader and associated validation changes; existing installations need the [operator compatibility review](../docs/atlas-backend-compatibility.md). Backend deployment is separate.
 
+Atlas 0.1.2 uses the unchanged Stage Runner 0.1.1 VSIX. Deploy the new MCP package to remove the server DBML tool and enable compact SQL responses; installing the plugin alone cannot change the deployed server.
+
 Build from the repository root:
 
 ```sh

@@ -505,7 +505,6 @@ DATASETS = (
         True,
         CopyRecord,
         COPY_KEY,
-        unique_constraints=((*COPY_GROUP_KEY, "copy_source_order"),),
         references=(
             _reference(COPY_GROUP_KEY, "copy_group", COPY_GROUP_KEY),
             _reference(OBJECT_MAPPING_KEY, "ingestion_object_mapping", OBJECT_MAPPING_KEY),

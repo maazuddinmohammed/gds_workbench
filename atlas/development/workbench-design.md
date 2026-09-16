@@ -98,7 +98,7 @@ The input is **Model Snapshot plus all saved Model Change Set records**, merged 
 6. Verify the saved inputs still match before publishing the export. If they changed during generation, discard the candidate output and report that regeneration is needed. Bind the manifest to the exact inputs used.
 7. Show the generated file list and readable DBML text, with **Copy** and **Download** actions. Label it **Snapshot + local changes**. Preserve the existing export manifest/file management; changed inputs make an older export out of date.
 
-Atlas retains the shared overlay/renderer and exports to `model-dbml/`. Browser and CLI now validate the full effective graph before rendering, bind inputs before rendering, and recheck them before publishing. An overlay failure cannot silently become Snapshot-only output. Unknown Conceptual cardinality produces an annotation without a misleading connector.
+Atlas retains the shared overlay/renderer and exports to `model-dbml/` only through the user's Workbench action. The browser validates the full effective graph, binds inputs before rendering, and rechecks them before publishing. There is no Atlas CLI or MCP export command; agents do not generate or consume DBML. An overlay failure cannot silently become Snapshot-only output. Unknown Conceptual cardinality produces an annotation without a misleading connector.
 
 The browser keeps managed-file backups under `.atlas/temp/` and restores prior output if publication fails; CLI prepares a candidate directory and restores its previous directory on failure. Neither path declares a successful export after detecting changed inputs. Browser multi-file writes cannot be an atomic filesystem transaction; the manifest and rollback checks make this limitation explicit.
 

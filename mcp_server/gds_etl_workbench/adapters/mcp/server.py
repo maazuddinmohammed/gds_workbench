@@ -43,9 +43,6 @@ from gds_etl_workbench.tools.modeling.read_mapping_context import register_read_
 from gds_etl_workbench.tools.modeling.read_model_section import (
     register_read_model_section_tool,
 )
-from gds_etl_workbench.tools.snapshots.dbml.get_model_dbml import (
-    register_export_model_dbml_tool,
-)
 from gds_etl_workbench.tools.snapshots.metadata.describe_metadata_dataset import (
     register_describe_metadata_dataset_tool,
 )
@@ -219,17 +216,6 @@ def create_mcp_server(
         audit=audit,
     )
     register_create_model_snapshot_tool(
-        server,
-        database=database,
-        identity_provider=identity_provider,
-        authorizer=authorizer,
-        audit=audit,
-        store=shared_snapshot_store,
-        download_ttl_seconds=settings.metadata_snapshot_download_ttl_seconds,
-        retention_hours=settings.metadata_snapshot_retention_hours,
-        max_archive_bytes=settings.metadata_snapshot_max_archive_bytes,
-    )
-    register_export_model_dbml_tool(
         server,
         database=database,
         identity_provider=identity_provider,

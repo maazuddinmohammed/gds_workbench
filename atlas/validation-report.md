@@ -1,72 +1,58 @@
-# Atlas 0.1.1 local verification
+# Atlas 0.1.2 local verification
 
-Verified 15 September 2026. Artifacts are ready for installation; nothing was deployed, published or written to external systems.
+Verified 16 September 2026. Packages rebuilt locally; nothing deployed, published or executed against live Databricks.
 
-## This release
+## Changes
 
-- First-class `atlas_checkStageRunner` returns readiness and safe backend identity.
-- Accept can import the actual draft response and prepare the Stage manifest in one invocation.
-- Preparation imports or verifies cached draft evidence; Stage still checks current server state.
-- Stage reads the acknowledged digest from its operation. Apply approval can use the saved review without a copied digest or extra input file.
-- Local evidence uses canonical identifiers and accepts existing supported server/legacy aliases. Conflicting aliases fail.
-- Helpers and extension tools can export exactly one JSON document. Existing files are protected; optional export failures preserve the operation outcome.
-- Operation checkpoints accept exact governed responses or supported MCP envelopes, without a curated intermediate file.
-- Logical and Dimensional/Gold Guided and Grill Me are explicit starter choices. The user guide is shorter; developer documentation and the preview image are excluded from the plugin.
-- Every workflow uses the shared submission procedure. Domain references retain detailed contracts through progressive disclosure.
+- Removed MCP `export_model_dbml`, its renderer/archive/contracts and registration. The public catalog now contains 37 tools.
+- Removed Atlas CLI/native DBML generation. User Workbench export still combines the Snapshot with saved local changes. Agents use structured Model records, never DBML.
+- Logical Guided and Grill Me share explicit relationship review. Supported FKs require relationship records; isolated Entities and disconnected groups require a user keep/connect decision. No invented joins or changes to locked records.
+- Local/native graph checks flag both isolated Entities and disconnected components. Intentional standalone structures remain valid.
+- SQL responses use compact JSON text with unchanged structured results and output schema. SQL calculations, batch filters, row limits and authorization rules are unchanged.
+- Profiling imports the canonical aggregate result directly. Checks cover column names, coverage, bindings, truncation, indexes and metrics before writes. Curated input remains supported. Native numeric coercion is rejected; environment spelling follows MCP's case-insensitive comparison.
+- Optional `max_attributes_per_query` accepts 1–50, default 50. Smaller groups preserve Object/batch scope. Guides use one response copy, bounded progress and automatic profile import.
 
-The prior catalog/startup changes remain included: evidence SQL uses the physical owner's `tenant_catalog`, and Atlas opens/reuses Workbench at startup before setup questions.
+## Response-size finding
 
-## Current verification
+An in-memory MCP client called the real registered tool with a fake executor returning 50 synthetic Attribute rows and 14 metric columns. No warehouse or real data was used.
 
-Counts describe separate suites, not a deduplicated total. Focused reruns are not added to their containing suites.
+| Measurement | Before | After |
+|---|---:|---:|
+| Text JSON bytes | 10,129 | 4,612 |
+| Serialized MCP result bytes | 15,843 | 9,499 |
+
+Results are lossless: about 54% less text and 40% fewer serialized bytes. Text and structured copies remain available for [MCP client compatibility](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#structured-content); Atlas consumes only one.
+
+This demonstrates avoidable serialization overhead, not the cause of the reported live error or a measured query speedup. Host limits, accumulated context and unusually large results still require the exact host error/logs to distinguish. Smaller groups are available for recovery; successful unrelated groups need not rerun.
+
+## Verification
+
+Counts describe separate suites, not an additive total. Focused reruns cover final changes.
 
 | Check | Result |
 |---|---|
-| Atlas workspace, lifecycle, profiling, native fallback and packaging | 66 passed; no skips |
-| Existing GDS plus Atlas Workbench/planner JavaScript | 206 passed; no skips |
-| Atlas Stage Runner | 114 passed; TypeScript and bundle passed |
-| Packaged VS Code extension host | 9 checks passed against a disposable loopback fixture |
-| Skill structure | All 14 skills passed validation |
-| Python Ruff, formatting and Pyright | Passed; zero type errors |
-| Whitespace | Passed |
-| Release archives | Version 0.1.1 and integrity verified; plugin matches a fresh deterministic source build; VSIX bundle/README match source |
-
-Native cases ran with PowerShell 7.5.2. CI includes the shared handoff cases for Windows PowerShell 5.1; this host does not verify that exact runtime.
-
-New regressions cover direct Metadata/Model responses, malformed or concatenated JSON, conflicting identifiers, invalid scope/types, changed acknowledged files, changed server review, separate Apply approval, output overwrite/path protection, failed optional export, and re-accepting changed content before Stage. Failed-validation recovery keeps its separate earlier-draft binding.
-
-A separate instruction review exercised approved Metadata enrichment followed by Stage without Apply, then a later explicit Apply. Both paths use exact response files and operation-bound evidence. This was an instruction review, not a live server execution.
-
-See the [validation code index](development/validation-index.md) for modular rule implementations and tests. Static checks do not prove business meaning or runtime SQL semantics; server authorization, locks and revision checks remain authoritative.
-
-## Earlier verification of unchanged components
-
-These results come from the complete implementation run, not a rerun for this plugin/extension update:
-
-| Suite | Result |
-|---|---|
-| MCP/backend, including disposable PostgreSQL integration | 2,552 passed |
+| MCP/backend, including disposable PostgreSQL integration | 2,546 passed |
+| Atlas workspace, lifecycle, profiling, native fallback and packaging | 74 passed in the full run; 2 new index cases and final compatibility cases passed in focused reruns (76 collected cases covered) |
+| Existing GDS plus Atlas Workbench/planner JavaScript | 209 passed |
+| Legacy GDS Python | 350 passed initially; 2 documentation-policy checks updated and passed; final packaging/docs rerun passed all 37 cases |
 | Deployment packaging | 61 passed |
-| Web frontend | 375 passed; types and production build passed |
-| Notebook source on Python 3.12 | 161 passed |
-| Extracted notebook artifact probes | 3 passed |
-| Existing GDS plugin Python regression suite | 352 passed with PowerShell available |
+| Skill structure and Markdown references | All 14 skills and links/anchors passed |
+| Python Ruff, formatting and Pyright | Passed; zero type errors |
+| Whitespace and independent review | Passed; native index coercion found during review was fixed and tested |
+| Release archives | Integrity and deterministic source equality verified; removed MCP DBML code absent |
 
-Database tests used only fixture-created disposable PostgreSQL containers, random credentials/databases and per-run sentinels. No existing database was substituted.
+Database tests used fixture-created disposable PostgreSQL containers with random credentials/databases and per-run sentinels. The sandbox initially blocked Docker; the approved local retry passed. No existing database was used.
 
-Earlier synthetic instruction reviews covered metadata enrichment, Logical modeling with SQL Never, and selective code regeneration. The smaller-model review reached 18/18 after clarification; the stronger-model review scored 17/18 before final corrections. These are limited subjective reviews, not execution tests or general model benchmarks.
+Native tests ran with PowerShell 7.5.2. Windows CI now includes profiling importer cases; this host did not execute Windows PowerShell 5.1. Browser DBML overlay/export tests passed. Stage Runner source is unchanged; its previously verified 0.1.1 VSIX remains compatible.
 
-## Limits
+See the [validation code index](development/validation-index.md) for modular rule implementations. Static graph checks expose missing connections; they do not prove business semantics.
 
-- No live Databricks or deployed-backend end-to-end execution was performed. Existing installations still need the separate [backend compatibility review](../docs/atlas-backend-compatibility.md).
-- Workbench DOM/interaction tests passed. Browser policy prevented local-page automation; directory permissions, zoom and visual rendering still need manual browser verification.
-- The earlier web frontend build succeeded with a bundle-size warning.
-- New Python generation and new Member-table support remain outside the agreed first release; existing records are preserved.
+## Packages
 
-## Artifacts
+- [Atlas plugin 0.1.2](dist/atlas-agent-plugin-0.1.2.zip)
+- [MCP backend update](../mcp_server/dist/gds-mcp-appservice-atlas-0.1.2.zip)
+- [Compatible Stage Runner 0.1.1](dist/atlas-stage-runner-0.1.1.vsix) — unchanged; no extension reinstall required for this release.
 
-- [Atlas plugin ZIP](dist/atlas-agent-plugin-0.1.1.zip)
-- [Atlas Stage Runner VSIX](dist/atlas-stage-runner-0.1.1.vsix)
-- [Previously built MCP backend ZIP](../mcp_server/dist/gds-mcp-appservice-atlas-0.1.0.zip)
+The legacy GDS ZIP and checked-in Databricks UI/notebook upload packages were also rebuilt from current sources. The superseded Atlas 0.1.1 plugin ZIP was removed.
 
-Superseded Atlas 0.1.0 ZIP/VSIX files were removed. Install the matching 0.1.1 plugin and extension together. No installation or deployment was performed here.
+Deploy the MCP update to remove its DBML tool and enable compact responses. Installing Atlas alone does not update the server. Existing installations still require the separate [backend compatibility review](../docs/atlas-backend-compatibility.md).

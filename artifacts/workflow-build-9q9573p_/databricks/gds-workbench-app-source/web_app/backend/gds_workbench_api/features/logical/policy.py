@@ -97,7 +97,62 @@ def project_logical_audit_policy(
     for entity_key, entity in sorted(entities.items()):
         if entity.logical_entity_status != "active":
             continue
-        entity_attributes = [record for key, record in attributes.items() if key[0] == entity_key]
+        entity_attributes: list[LogicalAttributeRecord] = [
+            record for key, record in attributes.items() if key[0] == entity_key
+        ]
+        # Existing tables retain their approved key/ordinal contract. New tables
+        # get an own generated key without relabelling the source business key.
+        if entity_key not in {_entity_key(row) for row in baseline.entities} or any(
+            row.logical_attribute_is_surrogate_key and row.logical_attribute_ordinal_position == 1
+            for row in entity_attributes
+        ):
+            surrogates = [
+                row for row in entity_attributes if row.logical_attribute_is_surrogate_key
+            ]
+            if len(surrogates) > 1:
+                raise InvalidRequestError("A new Logical Entity needs one own surrogate key.")
+            if surrogates:
+                surrogate = surrogates[0]
+                if surrogate.sources or surrogate.logical_attribute_is_nullable:
+                    raise InvalidRequestError(
+                        "An own generated surrogate cannot have physical sources."
+                    )
+            else:
+                name = f"{entity.logical_entity_name}ID"
+                if (entity_key, normalize_model_key_value(name)) in attributes:
+                    raise InvalidRequestError(
+                        "The generated key name conflicts with a business Attribute."
+                    )
+                surrogate = LogicalAttributeRecord(
+                    logical_entity_name=entity.logical_entity_name,
+                    logical_attribute_name=name,
+                    logical_attribute_definition=(
+                        f"Generated identifier for {entity.logical_entity_name}."
+                    ),
+                    logical_attribute_data_type="BIGINT",
+                    logical_attribute_is_nullable=False,
+                    logical_attribute_is_primary_key=True,
+                    logical_attribute_is_natural_key=False,
+                    logical_attribute_is_surrogate_key=True,
+                    logical_attribute_ordinal_position=1,
+                    logical_attribute_is_audit_column=False,
+                    logical_attribute_status="active",
+                    logical_attribute_is_locked=False,
+                    sources=(),
+                )
+            ordered = [
+                surrogate,
+                *sorted(
+                    (row for row in entity_attributes if row != surrogate),
+                    key=lambda row: (row.logical_attribute_ordinal_position, _attribute_key(row)),
+                ),
+            ]
+            entity_attributes = []
+            for ordinal, row in enumerate(ordered, start=1):
+                desired = row.model_copy(update={"logical_attribute_ordinal_position": ordinal})
+                attributes[_attribute_key(desired)] = desired
+                projected.append(desired)
+                entity_attributes.append(desired)
         next_ordinal = 1 + max(
             (
                 record.logical_attribute_ordinal_position
@@ -122,6 +177,12 @@ def project_logical_audit_policy(
     changed_attribute_by_key = {_attribute_key(record): record for record in changed_attributes}
     for record in projected:
         changed_attribute_by_key[_attribute_key(record)] = record
+    applied_attributes = {_attribute_key(record): record for record in baseline.attributes}
+    changed_attribute_by_key = {
+        key: record
+        for key, record in changed_attribute_by_key.items()
+        if applied_attributes.get(key) != record
+    }
 
     output: list[StageModelChange] = []
     for dataset in (
@@ -184,7 +245,9 @@ def _policy_attribute(
         or normalize_model_key_value(existing.logical_attribute_data_type)
         != normalize_model_key_value(column.data_type)
         or existing.logical_attribute_is_nullable != column.nullable
-        or existing.sources
+        or (
+            existing.sources and normalize_model_key_value(column.semantic_name) != "sourcesystemid"
+        )
     ):
         raise InvalidRequestError(
             "A configured Logical audit column conflicts with an existing Attribute."
@@ -195,8 +258,12 @@ def _policy_attribute(
         logical_attribute_definition=column.definition or column.semantic_name,
         logical_attribute_data_type=column.data_type,
         logical_attribute_is_nullable=column.nullable,
-        logical_attribute_is_primary_key=False,
-        logical_attribute_is_natural_key=False,
+        logical_attribute_is_primary_key=(
+            existing.logical_attribute_is_primary_key if existing else False
+        ),
+        logical_attribute_is_natural_key=(
+            existing.logical_attribute_is_natural_key if existing else False
+        ),
         logical_attribute_is_surrogate_key=False,
         logical_attribute_ordinal_position=ordinal,
         logical_attribute_is_audit_column=True,
@@ -204,7 +271,7 @@ def _policy_attribute(
         logical_attribute_is_locked=(
             existing.logical_attribute_is_locked if existing is not None else False
         ),
-        sources=(),
+        sources=(existing.sources if existing is not None else ()),
     )
     if existing is not None and existing.logical_attribute_is_locked and existing != desired:
         raise InvalidRequestError("A locked Logical audit column cannot be projected.")

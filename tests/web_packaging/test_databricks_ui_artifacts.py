@@ -112,7 +112,6 @@ NOTEBOOK_PACKAGE_EXCLUSIONS = {
             "diagnostics",
             "tools/ingestion",
             "tools/processing",
-            "tools/snapshots/dbml",
             "tools/tenants",
         },
     ),

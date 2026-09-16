@@ -417,7 +417,10 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
         Add-QIssue $warnings 'source_shaped_model' 'logical_entity' $null 'All Entities have one physical Object support and all business Attributes have one physical source. Review grain and dependencies; this does not prove copying or require splitting.'
     }
     if ($metrics.isolated_entities.Count -gt 0) {
-        Add-QIssue $warnings 'isolated_entities' 'logical_entity' $null 'Some Entities have no cross-entity relationship. Review missing evidence; isolated reference Entities can be intentional.'
+        Add-QIssue $warnings 'isolated_entities' 'logical_entity' $null 'Some Entities have no cross-entity relationship. Ask the user whether they are intentionally standalone or a supported relationship is missing; do not invent joins.'
+    }
+    if ($metrics.connected_components -gt 1) {
+        Add-QIssue $warnings 'disconnected_components' 'logical_entity' $null 'Logical Entities form separate connected groups. Ask the user whether these groups are intentionally separate or evidence supports a relationship between them; do not invent joins.'
     }
     $metadataAttributes = @{}
     foreach ($state in $MetadataStates) {

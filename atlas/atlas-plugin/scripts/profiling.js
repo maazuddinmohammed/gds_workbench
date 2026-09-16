@@ -132,9 +132,11 @@ function buildQuery(relation, attributes, batch) {
 
 function planProfiling(metadata, scope, plan) {
   if (!plan || Array.isArray(plan) || typeof plan !== "object" ||
-      Object.keys(plan).some((field) => !["systems", "objects", "selected_objects"].includes(field))) {
-    throw Error("Profiling plan accepts systems, objects and selected_objects only.");
+      Object.keys(plan).some((field) => !["systems", "objects", "selected_objects", "max_attributes_per_query"].includes(field))) {
+    throw Error("Profiling plan accepts systems, objects, selected_objects and max_attributes_per_query only.");
   }
+  const maxAttributes = Object.hasOwn(plan, "max_attributes_per_query") ? plan.max_attributes_per_query : 50;
+  if (!Number.isInteger(maxAttributes) || maxAttributes < 1 || maxAttributes > 50) throw Error("max_attributes_per_query must be an integer from 1 to 50.");
   const assignments = {};
   for (const level of ["systems", "objects"]) {
     const rows = plan[level] ?? [];
@@ -212,7 +214,7 @@ function planProfiling(metadata, scope, plan) {
       key: {...ownKey(object), attribute_name: row.attribute_name}}));
     if (new Set(projected.map((row) => norm(row.name))).size !== projected.length) throw Error("Attribute SQL coordinates are ambiguous.");
     for (let offset = 0; offset < projected.length;) {
-      let count = Math.min(50, projected.length - offset);
+      let count = Math.min(maxAttributes, projected.length - offset);
       let chunk, sql;
       do { chunk = projected.slice(offset, offset + count); sql = buildQuery(relation, chunk, filter); }
       while (sql.length > 100000 && --count > 0);

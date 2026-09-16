@@ -217,58 +217,23 @@ def test_snapshot_install_checks_hash_and_archive_paths(tmp_path: Path) -> None:
     assert run("inspect", "--session", str(root), "--area", "metadata")["id"] == snapshot_id
 
 
-def test_dbml_cli_validates_effective_graph_and_preserves_previous_export_on_failure(
-    tmp_path: Path,
-) -> None:
+def test_agent_runtime_does_not_expose_or_read_user_dbml(tmp_path: Path) -> None:
     root = workspace(tmp_path)
-    snapshot = root / "model/model-snapshot"
-    entity: dict[str, Any] = {
-        "logical_entity_name": "Customer",
-        "logical_entity_status": "active",
-        "logical_entity_type": "master",
-        "logical_entity_dependency_order": 1,
-        "submodels": [],
-        "sources": [],
-    }
-    attribute: dict[str, Any] = {
-        "logical_entity_name": "Customer",
-        "logical_attribute_name": "CustomerID",
-        "logical_attribute_status": "active",
-        "logical_attribute_data_type": "BIGINT",
-        "logical_attribute_ordinal_position": 1,
-        "logical_attribute_is_nullable": False,
-        "logical_attribute_is_primary_key": True,
-        "logical_attribute_is_natural_key": False,
-        "logical_attribute_is_surrogate_key": True,
-        "logical_attribute_is_audit_column": False,
-        "sources": [],
-    }
-    (snapshot / "data/logical_entity.jsonl").write_text(json.dumps(entity) + "\n")
-    (snapshot / "data/logical_attribute.jsonl").write_text(json.dumps(attribute) + "\n")
-    fixtures.write_snapshot_manifest(
-        snapshot, kind="model", snapshot_id="model-snapshot-01", model_revision=8
-    )
-    pending = root / "model-change-set"
-    pending.mkdir()
-    new_attribute = {
-        **attribute,
-        "logical_attribute_name": "CustomerName",
-        "logical_attribute_data_type": "STRING",
-        "logical_attribute_ordinal_position": 2,
-        "logical_attribute_is_primary_key": False,
-        "logical_attribute_is_surrogate_key": False,
-    }
-    (pending / "logical_attribute.json").write_text(json.dumps([new_attribute]))
-    result = run("generate-dbml", "--session", str(root), "--area", "model")
-    exported = root / "model-dbml/logical_complete.dbml"
-    before = exported.read_text()
-    assert "CustomerID" in before and "CustomerName" in before
-    manifest = json.loads(Path(result["manifest"]).read_text())
-    assert manifest["draft_digest"] == result["draft_digest"]
-    assert {item["area"] for item in manifest["inputs"]} == {"model", "metadata"}
-    (pending / "logical_attribute.json").write_text(json.dumps([new_attribute, new_attribute]))
+    export = root / "model-dbml"
+    export.mkdir()
+    # User-owned exports are opaque to the agent runtime, including their manifest.
+    manifest = export / "manifest.json"
+    diagram = export / "logical_complete.dbml"
+    manifest.write_text("User-owned export; deliberately not JSON.")
+    diagram.write_text("Table Customer { CustomerID bigint }")
+    before = {path.name: path.read_bytes() for path in export.iterdir()}
+
+    assert "generate-dbml" not in run("command-contract")["commands"]
+    run("command-contract", "--command", "generate-dbml", success=False)
     run("generate-dbml", "--session", str(root), "--area", "model", success=False)
-    assert exported.read_text() == before
+    run("status", "--session", str(root))
+    run("inspect", "--session", str(root), "--area", "model")
+    assert {path.name: path.read_bytes() for path in export.iterdir()} == before
 
 
 def test_cli_validation_report_matches_workbench_owner_and_evidence_contract(

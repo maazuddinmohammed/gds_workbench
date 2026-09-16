@@ -15,7 +15,7 @@ fresh-install schema, not migrations.
 | Azure Database for PostgreSQL Flexible Server 18 | GDS application database |
 | Linux Azure App Service plan and web app | Runs the Python 3.14 MCP server |
 | Azure Key Vault | Holds the database DSN and cursor-signing key |
-| Azure Storage account and private Blob container | Stores temporary Metadata, Model, and DBML ZIP snapshots |
+| Azure Storage account and private Blob container | Stores temporary Metadata and Model ZIP snapshots |
 | Microsoft Entra app registration and App Service Authentication | Authenticates VS Code and other MCP clients |
 
 Databricks is optional. Deploy/configure it only if you intend to use
@@ -223,8 +223,8 @@ explicit custom selections and previously frozen runs remain unchanged.
 2. Use StorageV2, Standard LRS for development, TLS 1.2 or later.
 3. Disable anonymous Blob access.
 4. Open **Containers** and create `snapshots` with **Private** access.
-5. Under **Lifecycle management**, add deletion rules for `metadata/`,
-   `model/`, and `dbml/` after at least 24 hours.
+5. Under **Lifecycle management**, add deletion rules for `metadata/` and
+   `model/` after at least 24 hours.
 
 Keep the account network-accessible to the web app. Snapshot download URLs are
 short-lived, read-only user-delegation SAS URLs; the container itself stays
@@ -535,7 +535,7 @@ az storage container create \
   --public-access off \
   --output none
 
-GDS_LIFECYCLE_POLICY='{"rules":[{"enabled":true,"name":"delete-expired-snapshots","type":"Lifecycle","definition":{"actions":{"baseBlob":{"delete":{"daysAfterModificationGreaterThan":1}}},"filters":{"blobTypes":["blockBlob"],"prefixMatch":["snapshots/metadata/","snapshots/model/","snapshots/dbml/"]}}}]}'
+GDS_LIFECYCLE_POLICY='{"rules":[{"enabled":true,"name":"delete-expired-snapshots","type":"Lifecycle","definition":{"actions":{"baseBlob":{"delete":{"daysAfterModificationGreaterThan":1}}},"filters":{"blobTypes":["blockBlob"],"prefixMatch":["snapshots/metadata/","snapshots/model/"]}}}]}'
 
 az storage account management-policy create \
   --resource-group "$GDS_RG" \

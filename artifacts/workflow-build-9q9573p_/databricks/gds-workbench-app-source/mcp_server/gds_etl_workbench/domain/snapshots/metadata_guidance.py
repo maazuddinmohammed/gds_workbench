@@ -38,9 +38,10 @@ class ColumnGuidance:
 
 _EXACT_GUIDANCE = {
     "attribute_custom_code": ColumnGuidance(
-        "Optional implementation code or expression associated with the Attribute.",
-        "Use null when no governed custom code is required; otherwise provide only the "
-        "expression expected by the downstream metadata consumer.",
+        "Replacement SELECT expression for SQL-based Source or Bronze ingestion.",
+        "Blank leaves the column unchanged. Populated code replaces the column completely; "
+        "include its output alias and any required cast. File copying ignores this field. "
+        "For APIs, confirm the orchestration implementation before using it.",
     ),
     "attribute_data_type": ColumnGuidance(
         "Physical data type of the Attribute.",
@@ -92,41 +93,40 @@ _EXACT_GUIDANCE = {
         (",",),
     ),
     "copy_source_file_name": ColumnGuidance(
-        "Optional fixed source filename used by the Copy.",
-        "Use null when files are selected by another mechanism; do not populate both a fixed "
-        "name and a conflicting file pattern.",
+        "Intermediate landing filename used by the orchestration framework.",
+        "Use the framework's confirmed landing naming convention; use null when unnecessary.",
         ("orders.csv",),
     ),
     "copy_source_file_pattern": ColumnGuidance(
-        "Optional source-file matching pattern used by the Copy.",
-        "Use null when no pattern is required; otherwise use the pattern syntax expected by "
-        "the source connector.",
+        "Intermediate landing file pattern used by the orchestration framework.",
+        "Use the framework's confirmed naming/pattern convention; use null when unnecessary.",
         ("orders_*.csv",),
     ),
     "copy_source_incremental_sql_script": ColumnGuidance(
-        "Optional source SQL used for incremental Copy execution.",
-        "Use null when incremental extraction is not SQL-driven; otherwise provide the "
-        "governed source query without credentials.",
+        "Optional SQL filter fragment for incremental Copy execution.",
+        "Include WHERE in the stored fragment; it is not added automatically. Use only "
+        "confirmed framework placeholders. Blank appends no filter.",
     ),
     "copy_source_initial_sql_script": ColumnGuidance(
-        "Optional source SQL used for the initial Copy execution.",
-        "Use null when initial extraction is not SQL-driven; otherwise provide the governed "
-        "source query without credentials.",
+        "Optional SQL filter fragment for initial Copy execution.",
+        "Include WHERE in the stored fragment; it is not added automatically. Use only "
+        "confirmed framework placeholders. Blank appends no filter.",
     ),
     "copy_source_order": ColumnGuidance(
-        "Execution order of the Copy within its Copy Group.",
-        "Use a positive integer unique within the Copy Group; lower values execute first.",
+        "Sort order of the Copy within its Copy Group.",
+        "Use a positive integer, normally 1. Equal values are allowed; "
+        "this is a sort hint, not a completion barrier.",
         (1,),
     ),
     "copy_source_record_limit": ColumnGuidance(
-        "Optional source-row limit represented as an integer string.",
-        "Use null for no limit; otherwise provide only a base-10 integer string.",
+        "Optional chunking parameter represented as an integer string.",
+        "Use the selected Chunk Type's description/code to determine its meaning; do not "
+        "assume it is an ordinary SQL row limit. Blank when chunking does not need it.",
         ("100000",),
     ),
     "copy_source_record_limit_attribute": ColumnGuidance(
-        "Optional source Attribute used with record-limiting logic.",
-        "Use null when the record limit does not depend on an Attribute; otherwise use a "
-        "source Attribute name.",
+        "Optional parameter used by the selected chunking logic.",
+        "Populate only as required by the Chunk Type's documented implementation.",
         ("created_time",),
     ),
     "fc_attribute_name": ColumnGuidance(
@@ -192,9 +192,9 @@ _EXACT_GUIDANCE = {
         (False,),
     ),
     "is_mapped": ColumnGuidance(
-        "Whether the Attribute participates in an ingestion Attribute Mapping.",
-        "Use true when the Attribute is intentionally mapped; otherwise use false.",
-        (True,),
+        "Reserved mapping flag, currently unused by downstream orchestration.",
+        "Default new records to false; preserve existing values on unrelated edits.",
+        (False,),
     ),
     "is_masking_required": ColumnGuidance(
         "Whether downstream handling must mask the Attribute.",
@@ -217,8 +217,8 @@ _EXACT_GUIDANCE = {
         (False,),
     ),
     "is_purge": ColumnGuidance(
-        "Whether the Attribute participates in purge behavior.",
-        "Use true only when governed purge processing uses this Attribute.",
+        "Reserved purge flag, currently unused by downstream orchestration.",
+        "Default new records to false; preserve existing values on unrelated edits.",
         (False,),
     ),
     "is_surrogate_key": ColumnGuidance(
@@ -232,9 +232,15 @@ _EXACT_GUIDANCE = {
         ("2026-01-01",),
     ),
     "object_transformation": ColumnGuidance(
-        "Optional transformation expression or document associated with the Object.",
-        "Use null for directly represented Objects; otherwise provide only governed "
-        "transformation content and never credentials.",
+        "Reserved Object transformation field; current orchestration does not use it.",
+        "Default blank. Attribute custom code, not this field, supplies SELECT replacements.",
+    ),
+    "process_group_dependency_order": ColumnGuidance(
+        "Dependency level of the Process Group within its Zone phase.",
+        "Use a positive integer, default 1 for new groups. Equal levels may run together; "
+        "lower levels must finish successfully before higher levels. "
+        "Review existing groups explicitly.",
+        (1,),
     ),
     "process_execution_order": ColumnGuidance(
         "Execution order of the Process within its Process Group.",

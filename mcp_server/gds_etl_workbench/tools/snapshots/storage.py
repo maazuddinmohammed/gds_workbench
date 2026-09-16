@@ -16,7 +16,7 @@ from gds_etl_workbench.domain.errors import DependencyUnavailableError
 
 from .archive import SnapshotArchive, SnapshotContractError
 
-type SnapshotKind = Literal["metadata", "model", "dbml"]
+type SnapshotKind = Literal["metadata", "model"]
 
 
 class SnapshotStore(Protocol):
@@ -206,7 +206,7 @@ def _validate_identity(
     snapshot_id: UUID,
 ) -> None:
     if (
-        snapshot_kind not in ("metadata", "model", "dbml")
+        snapshot_kind not in ("metadata", "model")
         or scope_id <= 0
         or not schema_version
         or len(schema_version) > 20

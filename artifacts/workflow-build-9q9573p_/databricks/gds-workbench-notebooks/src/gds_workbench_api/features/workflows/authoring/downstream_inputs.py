@@ -6,6 +6,12 @@ from copy import deepcopy
 from functools import cache
 from typing import Any, cast
 
+from gds_etl_workbench.application.mapping_context import (
+    project_mapping_inputs as _sql_inputs,
+)
+from gds_etl_workbench.application.mapping_context import (
+    without_internal_fields as _without_internal_fields,
+)
 from gds_etl_workbench.domain.errors import InvalidRequestError
 
 from .context_inputs import OBJECT_FIELDS, natural_key
@@ -116,70 +122,6 @@ def build_downstream_readers(
         max_page_records=max_page_records,
         max_cumulative_result_bytes=max_cumulative_result_bytes,
     )
-
-
-_DOCUMENT_FIELDS = {
-    "transformation",
-    "transformation_document",
-    "mapping_transformation_document",
-    "attribute_mapping_transformation_document",
-    "audit_columns_template",
-    "technical_columns_template",
-    "example",
-    "validation_comparison_value",
-}
-
-
-def _without_internal_fields(value: Any) -> Any:
-    if isinstance(value, list):
-        return [_without_internal_fields(item) for item in cast(list[Any], value)]
-    if not isinstance(value, dict):
-        return deepcopy(value)
-    return {
-        name: deepcopy(item) if name in _DOCUMENT_FIELDS else _without_internal_fields(item)
-        for name, item in cast(dict[str, Any], value).items()
-        if not name.endswith("_id")
-        and name not in {"ids", "schema_digest", "schema_digest_is_valid"}
-    }
-
-
-def _sql_inputs(context: dict[str, Any]) -> dict[str, Any]:
-    systems = {row["source_system_id"]: row["system_code"] for row in context["source_systems"]}
-    objects = {row["mapping_object_id"]: row for row in context["object_mappings"]}
-    sources: list[dict[str, Any]] = []
-    for row in context["physical_sources"]:
-        sources.append(
-            {
-                **_without_internal_fields(row),
-                "source_system_code": systems[row["selected_source_system_id"]],
-            }
-        )
-    object_mappings: list[dict[str, Any]] = []
-    for row in context["object_mappings"]:
-        object_mappings.append(
-            {
-                **_without_internal_fields(row),
-                "source_system_code": systems[row["source_system_id"]],
-            }
-        )
-    attributes: list[dict[str, Any]] = []
-    for row in context["attribute_mappings"]:
-        entity = objects[row["mapping_object_id"]]["entity"]
-        attributes.append(
-            {
-                **_without_internal_fields(row),
-                "source_system_code": systems[row["source_system_id"]],
-                "modeled_entity_type": entity["entity_type"],
-                "modeled_entity_name": entity["entity_name"],
-            }
-        )
-    return {
-        "target_metadata": _without_internal_fields(context["target"]),
-        "source_metadata": sources,
-        "source_systems": _without_internal_fields(context["source_systems"]),
-        "object_transformations": object_mappings,
-        "attribute_transformations": attributes,
-    }
 
 
 def project_downstream_inputs(workflow: str, context: dict[str, Any]) -> dict[str, Any]:

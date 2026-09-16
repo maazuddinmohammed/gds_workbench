@@ -89,6 +89,8 @@ These checks and the procedure are a design synthesis from the cited definitions
 
 Analysis has no dedicated cardinality field: put direction and inferred cardinality in `relationship_basis`, leaving unmeasured validation fields null. Later Conceptual/Logical records use their own explicit cardinality field. A category label can be a valid reference key; use `relationship_kind="reference"` for ordinary lookups and describe its category/domain semantics. Matching low-cardinality strings alone do not establish shared meaning or uniqueness.
 
+Analysis findings do not create Logical FKs. During Logical design, map relevant supported associations to the actual modeled grains and keys, then author explicit relationships under the [relationship and graph review](logical-design.md#relationship-and-graph-review). Do not mechanically copy every physical edge or infer a join from matching names alone. Review isolated Entities and disconnected components with the user before completing model work; intentional separation remains valid.
+
 ## Analysis planner input
 
 Use `analysis-plan --session <directory> --plan-file <input.json>`. The wrapper is `{ "selections": { "batches": <profiling-selections>, "probes": [...] }, "execution_connections": [...] }`; execution Connection entries follow the [runtime guide](../../docs/runtime-guide.md#profiling-and-analysis-files). Supply one to 50 probes.

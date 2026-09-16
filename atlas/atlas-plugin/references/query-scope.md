@@ -74,12 +74,14 @@ execute_databricks_sql(
 - Current limits: 100,000 SQL characters, at most 25 statements, at most 50 result rows (deployment may configure fewer). Only the final statement returns rows. Prefer one standalone aggregate statement per file; do not concatenate independent SELECTs expecting every result.
 - Each call has its own connection. Do not depend on temporary state surviving across calls. Reuse registered query coordinates without directly connecting to Source systems.
 - Saved framework transformation SQL/DDL can use its documented runtime catalog convention. Prepare a separate fully qualified evidence query before using this tool; do not submit a two-part production artifact unchanged. Persistent DDL/DML remain forbidden.
+- Process one prepared query/group and its result at a time. Consume one canonical JSON object: prefer `structuredContent`; otherwise parse the single JSON text result. MCP may expose both copies for client compatibility; do not process both or concatenate response documents.
 - Check `row_limit`, `rows_truncated`, `cells_truncated`, returned columns and expected result identifiers/counts. Incomplete results are not evidence for the full planned query. Preserve integer/decimal precision; the topic guide defines how to interpret metrics.
-- If limits truncate a group, discard its partial measurement and prepare smaller result groups under the same row scope. Retain successful unaffected groups. A topic's permitted SQL-authoring fallback follows these same rules; it does not expand authorization.
+- If a response is too large or truncated, discard that group's partial measurement and prepare smaller result groups under the same row/batch scope. Retain successful unaffected groups. A topic's permitted SQL-authoring fallback follows these same rules; it does not expand authorization.
+- Do not echo complete SQL, plans or result rows into conversation. Keep progress to completed/total groups, measured Attributes and unresolved counts; retain only permitted aggregate results and concise evidence locally.
 
 ## Evidence and recovery
 
-Keep exact Object/Attribute keys, endpoint batch sets or unbatched state, actual environment/Connection, Snapshot IDs, Model revision, query hashes, execution time and coverage in concise task evidence. Never put these into record fields that do not exist. Do not persist raw physical rows or raw tool envelopes.
+Keep exact Object/Attribute keys, endpoint batch sets or unbatched state, actual environment/Connection, Snapshot IDs, Model revision, query hashes, execution time and coverage in concise task evidence. Never put these into record fields that do not exist. Save only permitted aggregates and these bindings, never raw physical rows, raw tool envelopes or credentials.
 
 Planning is not execution. A SQL failure, unavailable evidence or mismatch remains explicit. Different row counts across supposedly identical scopes require reconciliation; equal counts alone do not prove stable data. Reuse evidence only with its scope and limitations intact.
 

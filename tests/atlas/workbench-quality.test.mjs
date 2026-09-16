@@ -415,3 +415,53 @@ test("shared validation checks Analysis counts and applied scope without a decis
   assert.equal(outsideScope.valid, false);
   assert.ok(outsideScope.issues.some(issue => issue.dataset === "analysis_result" && issue.code === "model_input_reference_invalid"));
 });
+
+
+test("disconnected connected pairs prompt review even without isolated Entities", () => {
+  const names = ["Customer", "Order", "Product", "Category"];
+  const edge = (from, to, status = "active") => ({
+    logical_relationship_name: `${from}${to}`, logical_relationship_status: status,
+    from_logical_entity_name: from, from_logical_attribute_name: `${from}ID`,
+    to_logical_entity_name: to, to_logical_attribute_name: `${to}ID`,
+    logical_relationship_cardinality: "many_to_one",
+  });
+  const bridge = edge("Order", "Product", "inactive");
+  const records = { logical_entity: names.map(entity),
+    logical_attribute: names.map(name => attr(name, `${name}ID`, true)),
+    logical_relationship: [edge("Order", "Customer"), edge("Product", "Category"), bridge] };
+  const graph = model(records);
+  const before = core.stableStringify([...graph]);
+  const disconnected = evaluateQuality(graph, null);
+  assert.deepEqual(disconnected.errors, []);
+  assert.equal(disconnected.metrics.connected_components, 2);
+  assert.equal(disconnected.metrics.isolated_entity_count, 0);
+  assert.deepEqual(disconnected.metrics.components, [["Customer", "Order"], ["Category", "Product"]]);
+  assert.ok(disconnected.warnings.some(warning => warning.code === "disconnected_components" && /Ask the user/.test(warning.message) && /do not invent joins/.test(warning.message)));
+  assert.ok(!disconnected.warnings.some(warning => warning.code === "isolated_entities"));
+  assert.equal(core.stableStringify([...graph]), before);
+
+  bridge.logical_relationship_status = "active";
+  const connected = evaluateQuality(graph, null);
+  assert.equal(connected.metrics.connected_components, 1);
+  assert.ok(!connected.warnings.some(warning => warning.code === "disconnected_components"));
+});
+
+test("intentional standalone Entities remain warnings and unchanged locked Models need no new evidence", () => {
+  const records = { logical_entity: [{ ...entity("Calendar"), logical_entity_is_locked: true, sources: [] }],
+    logical_attribute: [attr("Calendar", "CalendarID", true)] };
+  const graph = model(records, {}, records);
+  const before = core.stableStringify([...graph]);
+  const unchanged = evaluateQuality(graph, null);
+  assert.equal(unchanged.required, false);
+  assert.equal(unchanged.status, "not_required");
+  assert.deepEqual(unchanged.errors, []);
+  assert.equal(unchanged.metrics.connected_components, 1);
+  assert.deepEqual(unchanged.metrics.isolated_entities, ["Calendar"]);
+  assert.ok(unchanged.warnings.some(warning => warning.code === "isolated_entities" && /Ask the user/.test(warning.message) && /intentionally standalone/.test(warning.message)));
+  assert.ok(!unchanged.warnings.some(warning => warning.code === "disconnected_components"));
+  assert.equal(core.stableStringify([...graph]), before);
+
+  const empty = evaluateQuality(model({}), null);
+  assert.equal(empty.status, "not_required");
+  assert.ok(!empty.warnings.some(warning => ["isolated_entities", "disconnected_components"].includes(warning.code)));
+});

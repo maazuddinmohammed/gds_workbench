@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -8,17 +9,18 @@ from typing import Any, LiteralString
 from uuid import uuid4
 
 import pytest
-from mcp import Client
-from mcp.server.mcpserver import MCPServer
-from mcp.types import TextContent
-
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
+from gds_etl_workbench.domain.databricks_sql import ValidatedDatabricksSql
 from gds_etl_workbench.domain.errors import (
     DatabricksStatementFailedError,
     DependencyUnavailableError,
+)
+from gds_etl_workbench.infrastructure.databricks_sql import (
+    DatabricksSqlConnection,
+    DatabricksSqlExecutionResult,
 )
 from gds_etl_workbench.infrastructure.postgres import (
     DatabricksConnectionValuesRecord,
@@ -28,13 +30,12 @@ from gds_etl_workbench.infrastructure.postgres import (
     ToolCallLogRecord,
 )
 from gds_etl_workbench.tools.databricks.execute_sql import (
+    ExecuteDatabricksSqlResult,
     register_execute_databricks_sql_tool,
 )
-from gds_etl_workbench.infrastructure.databricks_sql import (
-    DatabricksSqlConnection,
-    DatabricksSqlExecutionResult,
-)
-from gds_etl_workbench.domain.databricks_sql import ValidatedDatabricksSql
+from mcp import Client
+from mcp.server.mcpserver import MCPServer
+from mcp.types import TextContent
 
 
 @dataclass
@@ -224,6 +225,41 @@ async def test_tool_executes_governed_batch_and_returns_final_result() -> None:
     rendered_audit = repr(database.audit_records)
     assert sql not in rendered_audit
     assert connection.access_token not in rendered_audit
+
+
+@pytest.mark.asyncio
+async def test_result_text_is_one_compact_document_with_unchanged_structured_schema() -> None:
+    columns = tuple(f"metric_{index}" for index in range(14))
+    rows = tuple(tuple(index + column for column in range(14)) for index in range(50))
+    database = FakeDatabase({"tenant_id": 7}, _values(environment_code="dev"))
+    executor = FakeExecutor(
+        DatabricksSqlExecutionResult(
+            columns=columns,
+            rows=rows,
+            rows_truncated=False,
+            cells_truncated=False,
+        )
+    )
+    async with Client(_server(database, executor)) as client:
+        tools = await client.list_tools()
+        result = await client.call_tool(
+            "execute_databricks_sql", {"connection_id": 42, "sql": "SELECT 1"}
+        )
+
+    assert not result.is_error
+    assert len(result.content) == 1
+    text = result.content[0]
+    assert isinstance(text, TextContent)
+    assert json.loads(text.text) == result.structured_content
+    assert text.text == json.dumps(
+        result.structured_content, ensure_ascii=False, separators=(",", ":")
+    )
+    assert len(text.text) < len(json.dumps(result.structured_content, indent=2)) * 0.5
+    tool = next(tool for tool in tools.tools if tool.name == "execute_databricks_sql")
+    assert tool.output_schema == ExecuteDatabricksSqlResult.model_json_schema()
+    assert result.structured_content is not None
+    assert result.structured_content["rows"] == [list(row) for row in rows]
+    assert len(executor.calls) == 1
 
 
 @pytest.mark.asyncio

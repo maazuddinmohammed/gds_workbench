@@ -88,7 +88,6 @@ _NOTEBOOK_ETL_EXCLUDED_PREFIXES = frozenset(
         "diagnostics",
         "tools/ingestion",
         "tools/processing",
-        "tools/snapshots/dbml",
         "tools/tenants",
     }
 )

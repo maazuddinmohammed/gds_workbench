@@ -37,11 +37,11 @@ Model-derived Metadata selection should record the Model Snapshot binding in `ta
 
 A baseline conflict while unapplied work exists requires explicit three-way review of original, current and proposed records. Preserve the old draft and Snapshot; do not empty the draft or edit a manifest to force installation. Complete or resolve the current operation before changing that baseline.
 
-## Workbench and DBML
+## Workbench
 
 At every Atlas start/resume, immediately open or reuse Workbench with `bash scripts/open-workbench.sh` or `scripts/open-workbench.ps1`. No Tenant, Model, workflow or Snapshot is required to open it. This opens the bundled static app in Chrome/Edge; it does not start a server. Once `.atlas` is ready, select the working directory in the browser, then reload local files after agent edits. Existing owners and operation status remain visible.
 
-`generate-dbml --session <path> --area model` validates and renders the complete effective Model. It replaces `model-dbml` only after inputs remain unchanged; previous exports are retained in `.atlas/temp`. The browser uses the same merger and structural validation. DBML generation is not proof of business modeling quality.
+DBML is a user-only Workbench export of the complete Snapshot plus saved changes. There is no Atlas CLI or MCP export command. Agents use Model records and local validation; they never generate, read, inspect or use DBML. For an export request, direct the user to **Generate DBML** in Workbench.
 
 ## Profiling and Analysis files
 
@@ -58,22 +58,34 @@ At every Atlas start/resume, immediately open or reuse Workbench with `bash scri
 
 Resolve Connection access through MCP first. `selections.objects` can override batch lists for exact Object keys; `selected_objects` narrows active applied Model Input Scope. See [profiling](../references/logical-build/profiling.md) and [query scope](../references/query-scope.md). All registered owner Metadata Snapshots are combined by canonical key, with conflicting shared records rejected.
 
-The result identifies a `plan.json` and numbered SQL files under `.atlas/temp/<task>/`. Each query includes SHA-256, physical scope, batch IDs, expected Attribute rows and execution Connection/environment. Send one SQL file's text per governed call, following policy. Check returned columns, row/cell truncation and all expected Attribute indexes before using results. Never persist raw tool envelopes or physical data rows.
+Optional `selections.max_attributes_per_query` is an integer 1–50 (default 50). Lower it when planning for a smaller server result limit or host response size; it preserves each Object's complete selected batch set.
 
-`profile-results` takes the generated plan, current draft digest and a JSON array of curated aggregate results:
+The result identifies a `plan.json` and numbered SQL files under `.atlas/temp/<task>/`. Each query includes SHA-256, physical scope, batch IDs, expected Attribute rows and execution Connection/environment. Process one SQL file and its result at a time under [query scope](../references/query-scope.md#execute-bounded-sql). Prefer `structuredContent`, otherwise parse one JSON text result; process only one copy. Check columns, row/cell truncation and expected Attribute indexes. Do not echo SQL, plans or results into conversation; report completed/total groups and unresolved counts.
+
+Save each complete profiling aggregate payload under `result`, with the query filename and actual execution time. Keep only this canonical JSON payload, not the MCP envelope or both response copies; never persist physical data rows or credentials. `profile-results` takes the generated plan, current draft digest and one JSON array of groups. This synthetic example profiles one string Attribute:
 
 ```json
 [{
   "file": "0001.sql",
-  "connection_id": 23,
-  "environment": "dev",
   "executed_at": "2026-09-15T12:00:00Z",
-  "truncated": false,
-  "rows": []
+  "result": {
+    "schema_version": "1.0",
+    "connection_id": 23,
+    "environment_code": "dev",
+    "statement_count": 1,
+    "row_limit": 50,
+    "columns": ["attribute_index", "row_count", "non_null_count", "null_count", "blank_count", "distinct_count", "min_data_length", "max_data_length", "avg_data_length", "percent_populated", "percent_duplicates", "percent_null", "percent_blank", "percent_distinct"],
+    "rows": [[1, 10, 10, 0, 0, 10, 1, 5, 3, 100, 0, 0, 0, 100]],
+    "row_count": 1,
+    "rows_truncated": false,
+    "cells_truncated": false
+  }
 }]
 ```
 
-`rows` must contain every expected Attribute's exact 14-column result (index plus 13 metrics); the empty example above shows shape only and fails for a nonempty planned group. The helper checks scope, query hashes, coverage and metrics, then merges `profiling_profile` records and saves concise durable evidence. It does not call Databricks.
+Once all planned groups are complete, run `profile-results --session <directory> --plan-file <plan.json> --results-file <aggregates.json> --expected-digest <current-digest>`. It verifies complete responses/bindings, matches the 14 columns by name, checks coverage/metrics, maps indexes to physical keys, merges `profiling_profile` records and saves concise durable evidence. Do not reshape responses or manually rebuild/upsert those records as well. The older curated named-row format remains accepted for compatibility. The helper does not call Databricks.
+
+For an oversized/truncated response, discard only that group's partial result and follow [group recovery](../references/logical-build/profiling.md#files-and-execution) with the same Object/batch scope. Lowering the group maximum generates a new plan, not an automatic partial retry. Preserve successful unaffected queries/results; import requires one complete result for every query in the current plan.
 
 For `analysis-plan`, use the same wrapper; `selections` is `{batches:<profiling-selection>, probes:[...]}`. Supported probe shapes live in the [relationship guide](../references/logical-build/find-relationships.md); use `analysis.js` only for needed measurements. The agent converts interpreted results into the exact [Analysis record](../references/model/analysis-result.md) with `upsert-batch`; metadata-derived inference needs no fabricated SQL evidence.
 

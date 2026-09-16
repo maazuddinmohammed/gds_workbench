@@ -14,7 +14,6 @@ const workbenchAreas = {
   metadata: require("../workbench/metadata.js"),
   model: require("../workbench/model.js"),
 };
-const workbenchDbml = require("../workbench/dbml.js");
 const qualityFiles = require("./model-quality-files.js");
 const evidence = require("./operation-evidence.js");
 
@@ -63,24 +62,6 @@ function writeJsonAtomic(filePath, value) {
     mode: 0o600,
   });
   fs.renameSync(temporary, filePath);
-}
-
-function writeTextAtomic(filePath, value) {
-  const temporary = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
-  );
-  fs.writeFileSync(temporary, value, { encoding: "utf8", flag: "wx", mode: 0o600 });
-  try {
-    if (fs.existsSync(filePath)) {
-      const stat = fs.lstatSync(filePath);
-      if (!stat.isFile() || stat.isSymbolicLink()) fail("Generated DBML member must be a regular file.");
-    }
-    fs.renameSync(temporary, filePath);
-  } catch (error) {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-    throw error;
-  }
 }
 
 function readJsonFile(filePath, label) {
@@ -617,64 +598,6 @@ function reviewChangeSet(options) {
   };
 }
 
-function generateLocalDbml(options) {
-  if (options.area !== "model") fail("--area must be model for generate-dbml.");
-  const modelType = options["model-type"] ?? "full";
-  if (!["full", "conceptual", "logical", "dimensional"].includes(modelType)) fail("Invalid DBML Model type.");
-  const includeSubmodels = options["include-submodels"] ?? "true";
-  if (!["true", "false"].includes(includeSubmodels)) fail("--include-submodels must be true or false.");
-  const context = changeSetContext(options);
-  const sessionDigest = stateFiles.session(context.session).digest;
-  const validation = validateChangeSet({...options, _includeQuality: false});
-  if (!validation.valid) fail(`Correct local Model findings before generating DBML; inspect ${validation.report}.`);
-  const inputDigest = validation.digest;
-  const verifyInputs = () => {
-    if (stateFiles.session(context.session).digest !== sessionDigest || workspaceDigest(context) !== inputDigest ||
-        validation.inputs.some((input) => fileDigest(stateFiles.safePath(context.session, input.manifest_path)) !== input.manifest_sha256) ||
-        validation.snapshot.manifest_digest !== fileDigest(path.join(context.root, "manifest.json"))) {
-      fail("DBML inputs changed during generation; reload and generate again.");
-    }
-  };
-  verifyInputs();
-  const pending = readPending(context), loaded = new Map();
-  for (const dataset of context.datasets) {
-    const baseline = readSnapshotRecords(context, dataset), draft = pending[dataset.name] ?? [];
-    loaded.set(dataset.name, {definition: dataset, schema: datasetSchema(context, dataset), baseline, pending: draft,
-      effective: workbenchCore.overlay("model", dataset, baseline, draft)});
-  }
-  const documents = workbenchDbml.render(loaded, context.catalog.model, {modelType, includeSubmodels: includeSubmodels === "true"});
-  if (!documents.length || documents.length > 1002 || documents.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0) > 16 * 1024 * 1024) fail("DBML output exceeds the supported file/byte limits.");
-  const temporary = path.dirname(stateFiles.safePath(context.session, `.atlas/temp/dbml-${crypto.randomUUID()}/.check`, true));
-  const candidate = path.join(temporary, "candidate"); fs.mkdirSync(candidate, {mode: 0o700});
-  const files = documents.map(document => {
-    if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]*\.dbml$/.test(document.path) || Buffer.byteLength(document.content) > 12 * 1024 * 1024) fail("Invalid DBML output member.");
-    fs.writeFileSync(path.join(candidate, document.path), document.content, {flag: "wx", mode: 0o600});
-    return {path: document.path, layer: document.layer, view: document.view, submodel_name: document.submodel_name,
-      table_count: document.table_count, relationship_count: document.relationship_count,
-      size_bytes: Buffer.byteLength(document.content), sha256: sha256Bytes(Buffer.from(document.content, "utf8"))};
-  });
-  const manifest = {schema_version: "1.0", snapshot_kind: "dbml", source: "local_effective_model", generated_by: "agent",
-    model: {id: context.catalog.model.model_id, name: context.catalog.model.model_name, revision: context.catalog.model.model_revision},
-    draft_digest: inputDigest, inputs: validation.inputs, model_type: modelType, include_submodels: includeSubmodels === "true", files};
-  writeJsonAtomic(path.join(candidate, "manifest.json"), manifest);
-  verifyInputs();
-  const destination = stateFiles.safePath(context.session, "model-dbml"), backup = path.join(temporary, "previous");
-  const existed = fs.existsSync(destination);
-  if (existed && !fs.lstatSync(destination).isDirectory()) fail("DBML destination must be a regular directory.");
-  // Publish a complete generation; retain the previous directory for recovery.
-  if (existed) fs.renameSync(destination, backup);
-  try {
-    fs.renameSync(candidate, destination);
-    verifyInputs();
-  } catch (error) {
-    if (fs.existsSync(destination)) fs.renameSync(destination, candidate);
-    if (existed) fs.renameSync(backup, destination);
-    throw error;
-  }
-  return {directory: destination, manifest: path.join(destination, "manifest.json"), file_count: files.length,
-    draft_digest: inputDigest, files: files.map(item => item.path)};
-}
-
 function sameAppliedRecord(local, server, schema, root = schema, recordType = "", collection = "") {
   // Retirement only: accepted bytes and Stage fingerprints must stay exact.
   if (stableStringify(local) === stableStringify(server)) return true;
@@ -1037,14 +960,14 @@ function validateChangeSet(options) {
     if (!inputs.some((existing) => existing.manifest_path === actual.manifest_path)) inputs.push(actual);
   }
   let decisions = null, noteFiles = {}, qualityBindings = [];
-  if (options.area === "model" && options._includeQuality !== false && Object.keys(pending).some((name) => qualityFiles.modelingDatasets.has(name))) {
+  if (options.area === "model" && Object.keys(pending).some((name) => qualityFiles.modelingDatasets.has(name))) {
     const evidence = qualityFiles.readDecisions(context.session, context.taskId);
     decisions = evidence.decisions;
     noteFiles = evidence.noteFiles;
     qualityBindings = evidence.files;
   }
   const evaluated = require("../workbench/validation/run.js").run(options.area, loaded, metadata,
-    {tenantCode: context.owner.code, model: context.catalog.model ?? null, decisions, noteFiles, missingMetadataOwners, includeQuality: options._includeQuality !== false});
+    {tenantCode: context.owner.code, model: context.catalog.model ?? null, decisions, noteFiles, missingMetadataOwners});
   const {issues, quality} = evaluated;
   for (const evidence of qualityBindings) {
     const file = stateFiles.safePath(context.session, evidence.path);
@@ -1222,7 +1145,7 @@ async function main() {
     "upsert": upsertRecord, "upsert-batch": upsertBatch, "discard": discardRecord,
     "review": reviewChangeSet, "validate": validateChangeSet, "accept": acceptChangeSet,
     "draft-cache": cacheServerDraft, "prepare-stage-request": prepareStageRequest,
-    "generate-dbml": generateLocalDbml, "snapshot-install": installSnapshot, "operation-record": recordOperation,
+    "snapshot-install": installSnapshot, "operation-record": recordOperation,
     "profile-results": importProfileResults,
     "profile-plan": (value) => aggregatePlan(value, "profiling"),
     "analysis-plan": (value) => aggregatePlan(value, "analysis"),
@@ -1232,7 +1155,7 @@ async function main() {
   const allowed = new Set([...contract.usage.matchAll(/--([a-z0-9-]+)/g)].map((match) => match[1]));
   if (contract.session_required) allowed.add("output-file");
   // Explicit task selection is valid for local authoring commands; it never changes operation ownership.
-  if (["copy", "upsert", "upsert-batch", "discard", "review", "accept", "generate-dbml"].includes(command)) allowed.add("task");
+  if (["copy", "upsert", "upsert-batch", "discard", "review", "accept"].includes(command)) allowed.add("task");
   for (const option of Object.keys(options)) if (!allowed.has(option)) fail(`Unsupported option --${option} for ${command}. Read command-contract.`);
   let outputTarget;
   if (options["output-file"]) {
@@ -1453,7 +1376,25 @@ function importProfileResults(options) {
   const metricNames = ["row_count", "non_null_count", "null_count", "blank_count", "distinct_count", "min_data_length", "max_data_length", "avg_data_length", "percent_populated", "percent_duplicates", "percent_null", "percent_blank", "percent_distinct"];
   const evidence = [];
   for (const query of plan.queries) {
-    const result = results.find((item) => item.file === query.file);
+    const matches = results.filter((item) => stateFiles.object(item) && item.file === query.file);
+    if (matches.length !== 1) fail("Profiling execution binding/coverage mismatch.");
+    let result = matches[0];
+    if (Object.hasOwn(result, "result")) {
+      const payload = result.result, columns = ["attribute_index", ...metricNames];
+      const fields = ["schema_version", "connection_id", "environment_code", "statement_count", "row_limit", "columns", "rows", "row_count", "rows_truncated", "cells_truncated"];
+      if (Object.keys(result).length !== 3 || Object.keys(result).some((name) => !["file", "executed_at", "result"].includes(name)) ||
+          !stateFiles.object(payload) || Object.keys(payload).length !== fields.length || fields.some((name) => !Object.hasOwn(payload, name)) ||
+          payload.schema_version !== "1.0" || payload.statement_count !== 1 || !Number.isSafeInteger(payload.connection_id) ||
+          payload.connection_id !== query.connection_id || typeof payload.environment_code !== "string" || payload.environment_code.trim().toLowerCase() !== query.environment ||
+          !Number.isSafeInteger(payload.row_limit) || payload.row_limit < query.expected_row_count || payload.row_limit > 50 ||
+          !Number.isSafeInteger(payload.row_count) || payload.row_count !== query.expected_row_count ||
+          payload.rows_truncated !== false || payload.cells_truncated !== false || !Array.isArray(payload.rows) || payload.rows.length !== payload.row_count) fail("Profiling SQL result contract/binding mismatch or truncated result.");
+      if (!Array.isArray(payload.columns) || payload.columns.length !== columns.length || new Set(payload.columns).size !== columns.length ||
+          payload.columns.some((name) => !columns.includes(name)) || payload.rows.some((row) => !Array.isArray(row) || row.length !== columns.length)) fail("Profiling SQL result columns/rows must match the fixed aggregate contract.");
+      result = {file: result.file, executed_at: result.executed_at, connection_id: payload.connection_id,
+        environment: query.environment, truncated: false,
+        rows: payload.rows.map((row) => Object.fromEntries(payload.columns.map((name, index) => [name, row[index]])))};
+    }
     if (!result || seenFiles.has(query.file) || result.truncated === true || !Array.isArray(result.rows) || result.rows.length !== query.attributes.length ||
         result.connection_id !== query.connection_id || result.environment !== query.environment || typeof result.executed_at !== "string" || !Number.isFinite(Date.parse(result.executed_at))) fail("Profiling execution binding/coverage mismatch.");
     seenFiles.add(query.file);

@@ -171,7 +171,9 @@ function Build-ProfileQuery([string]$Relation, $Attributes, $Batch) {
 }
 function Plan-Profiling($Metadata, $Scope, $Plan) {
     if ($null -eq $Plan -or $Plan -is [Array] -or
-        @((Get-PropertyNames $Plan) | Where-Object { @('systems','objects','selected_objects') -cnotcontains $_ }).Count) { Fail 'Profiling plan accepts systems, objects and selected_objects only.' }
+        @((Get-PropertyNames $Plan) | Where-Object { @('systems','objects','selected_objects','max_attributes_per_query') -cnotcontains $_ }).Count) { Fail 'Profiling plan accepts systems, objects, selected_objects and max_attributes_per_query only.' }
+    $maxAttributes = if (Test-Property $Plan 'max_attributes_per_query') { Get-Property $Plan 'max_attributes_per_query' } else { 50 }
+    if (-not (Test-SafeJsonInteger $maxAttributes $false) -or $maxAttributes -gt 50) { Fail 'max_attributes_per_query must be an integer from 1 to 50.' }
     $assignments = @{}
     foreach ($level in @('systems','objects')) {
         $rows = Get-Property $Plan $level
@@ -278,7 +280,7 @@ function Plan-Profiling($Metadata, $Scope, $Plan) {
             [void]$projected.Add(@{index=($projected.Count+1);name=$name;data_type=$row.attribute_data_type;key=$key})
         }
         for ($offset=0; $offset -lt $projected.Count;) {
-            $count = [Math]::Min(50,$projected.Count-$offset)
+            $count = [Math]::Min([int]$maxAttributes,$projected.Count-$offset)
             do {
                 $chunk = @($projected.GetRange($offset,$count)); $sql = Build-ProfileQuery $relation $chunk $filter
                 if ($sql.Length -le 100000) { break }; $count--

@@ -67,7 +67,7 @@ The agent completes the generated decision scaffold; users do not need to write 
 
 ## Workbench and approvals
 
-Workbench shows a read-only Snapshot and editable Change Set. **Add selected to Change Set** copies complete records; **Save changes** writes locally. **Show details** opens Mapping, Code and Validation details. **Validate locally** checks structure; the agent's local helper also evaluates the modeling evidence. **Generate DBML** is an optional requested display export, not validation evidence.
+Workbench shows a read-only Snapshot and editable Change Set. **Add selected to Change Set** copies complete records; **Save changes** writes locally. **Show details** opens Mapping, Code and Validation details. **Validate locally** checks structure; the agent's local helper also evaluates the modeling evidence. **Generate DBML** is your Workbench-only display export, not validation evidence. Agents use Model records and do not generate or read this export.
 
 The normal handoff is:
 

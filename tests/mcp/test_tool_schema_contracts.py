@@ -60,7 +60,6 @@ EXPECTED_PUBLIC_TOOLS = {
     "execute_databricks_sql",
     "describe_model_dataset",
     "create_model_snapshot",
-    "export_model_dbml",
     "describe_metadata_dataset",
     "create_metadata_snapshot",
 }
@@ -128,16 +127,17 @@ def model_description_server() -> MCPServer[None]:
 
 
 @pytest.mark.asyncio
-async def test_public_surface_is_exactly_38_focused_tools() -> None:
+async def test_public_surface_is_exactly_37_focused_tools() -> None:
     names = {tool.name for tool in await list_tools()}
 
     assert names == EXPECTED_PUBLIC_TOOLS
-    assert len(names) == 38
+    assert len(names) == 37
     assert (
         not {
             "get_model",
             "get_model_snapshot",
             "get_model_dbml",
+            "export_model_dbml",
             "get_metadata_snapshot",
             "get_server_contract",
             "get_model_scope",
@@ -181,7 +181,6 @@ async def test_tool_descriptions_and_complex_arguments_are_agent_ready() -> None
         in connection["is_tenant_gds_connection"]["description"]
     )
 
-    assert "explicitly requests DBML" in tools["export_model_dbml"].description
     for tool_name in ("stage_metadata_change_set", "stage_model_change_set"):
         assert "every included dataset fits in one request" in tools[tool_name].description
     for tool_name in ("validate_metadata_change_set", "validate_model_change_set"):

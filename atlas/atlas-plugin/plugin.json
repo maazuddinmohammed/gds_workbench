@@ -1,6 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "atlas",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Atlas metadata and data-modeling workflows, local Workbench, validation and governed Stage Runner integration."
 }

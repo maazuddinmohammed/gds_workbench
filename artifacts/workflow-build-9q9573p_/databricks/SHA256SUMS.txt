@@ -1,2 +1,2 @@
-f15de8c04999c6a4af9380d3f025c68c40e78c276c96c6b6ede086cf3d468d84  gds-workbench-app-source.zip
-600dc9fb1f5768d76fa50208e024bd9d3a4ac509ca6201134fdeb7a6ddb440e1  gds-workbench-notebooks.zip
+4bf0c379b888bc3721bf33fe385447dccf523d17c847d8ace716e887efa12a30  gds-workbench-app-source.zip
+d85eb19e6a2b20911561767c6e60120ddadcb4b26f86c43e5824a1a9a9625bcc  gds-workbench-notebooks.zip

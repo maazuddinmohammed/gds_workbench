@@ -533,7 +533,7 @@ function Validate-Changes([hashtable]$Options) {
         else { [void]$checks.Add([ordered]@{id = 'model.authoring-policy'; status = 'not_run'; reason = 'Repair structural errors first.'}) }
     }
     $quality = $null; $evidenceFiles = @()
-    if ($context.Area -ceq 'model' -and $Options['_includeQuality'] -ne $false) {
+    if ($context.Area -ceq 'model') {
         $decisions = $null; $noteFiles = @{}
         if (@($pending.Keys | Where-Object { $script:ModelingQualityDatasets -ccontains $_ }).Count -gt 0) {
             $evidence = Read-ModelingDecisions $context.Session $context.TaskId
@@ -1018,6 +1018,33 @@ function Import-ProfileResults([hashtable]$Options) {
         $matches = @($results | Where-Object { (Get-Property $_ 'file') -ceq $query.file })
         if ($matches.Count -ne 1) { Fail 'Profiling execution binding/coverage mismatch.' }
         $result = $matches[0]; $executed = [DateTimeOffset]::MinValue
+        if (Test-Property $result 'result') {
+            $payload = Get-Property $result 'result'; $columns = @('attribute_index') + $metricNames
+            $fields = @('schema_version', 'connection_id', 'environment_code', 'statement_count', 'row_limit', 'columns', 'rows', 'row_count', 'rows_truncated', 'cells_truncated')
+            if (@(Get-PropertyNames $result).Count -ne 3 -or @(Get-PropertyNames $result | Where-Object { @('file', 'executed_at', 'result') -cnotcontains $_ }).Count -gt 0 -or
+                -not (Test-AtlasObject $payload) -or @(Get-PropertyNames $payload).Count -ne $fields.Count -or @($fields | Where-Object { -not (Test-Property $payload $_) }).Count -gt 0 -or
+                (Get-Property $payload 'schema_version') -isnot [string] -or $payload.schema_version -cne '1.0' -or -not (Test-SafeJsonInteger (Get-Property $payload 'statement_count') $false) -or $payload.statement_count -ne 1 -or
+                -not (Test-SafeJsonInteger (Get-Property $payload 'connection_id') $false) -or $payload.connection_id -ne $query.connection_id -or
+                (Get-Property $payload 'environment_code') -isnot [string] -or $payload.environment_code.Trim().ToLowerInvariant() -cne $query.environment -or
+                -not (Test-SafeJsonInteger (Get-Property $payload 'row_limit') $false) -or $payload.row_limit -lt $query.expected_row_count -or $payload.row_limit -gt 50 -or
+                -not (Test-SafeJsonInteger (Get-Property $payload 'row_count')) -or $payload.row_count -ne $query.expected_row_count -or
+                $payload.rows_truncated -isnot [bool] -or $payload.rows_truncated -ne $false -or $payload.cells_truncated -isnot [bool] -or $payload.cells_truncated -ne $false -or
+                $payload.rows -isnot [Array] -or $payload.rows.Count -ne $payload.row_count) { Fail 'Profiling SQL result contract/binding mismatch or truncated result.' }
+            if ($payload.columns -isnot [Array] -or $payload.columns.Count -ne $columns.Count -or
+                @($payload.columns | Where-Object { $_ -isnot [string] -or $columns -cnotcontains $_ }).Count -gt 0) { Fail 'Profiling SQL result columns/rows must match the fixed aggregate contract.' }
+            foreach ($column in $columns) {
+                if (@($payload.columns | Where-Object { $_ -ceq $column }).Count -ne 1) { Fail 'Profiling SQL result columns/rows must match the fixed aggregate contract.' }
+            }
+            $mappedRows = New-Object Collections.ArrayList
+            foreach ($row in $payload.rows) {
+                if ($row -isnot [Array] -or $row.Count -ne $columns.Count) { Fail 'Profiling SQL result columns/rows must match the fixed aggregate contract.' }
+                $mapped = [ordered]@{}
+                for ($index = 0; $index -lt $columns.Count; $index++) { $mapped[[string]$payload.columns[$index]] = $row[$index] }
+                [void]$mappedRows.Add($mapped)
+            }
+            $result = [ordered]@{file = $result.file; executed_at = $result.executed_at; connection_id = $payload.connection_id;
+                environment = $query.environment; truncated = $false; rows = @($mappedRows)}
+        }
         if ($seenFiles.ContainsKey($query.file) -or (Get-Property $result 'truncated') -eq $true -or $result.rows -isnot [Array] -or
             $result.rows.Count -ne $query.attributes.Count -or $result.connection_id -ne $query.connection_id -or $result.environment -cne $query.environment -or
             (Get-Property $result 'executed_at') -isnot [string] -or -not [DateTimeOffset]::TryParse($result.executed_at, [ref]$executed)) { Fail 'Profiling execution binding/coverage mismatch.' }
@@ -1028,8 +1055,10 @@ function Import-ProfileResults([hashtable]$Options) {
         foreach ($row in $result.rows) {
             if (-not (Test-AtlasObject $row) -or @(Get-PropertyNames $row | Where-Object { @('attribute_index') + $metricNames -cnotcontains $_ }).Count -gt 0 -or
                 @($metricNames | Where-Object { -not (Test-Property $row $_) }).Count -gt 0) { Fail 'Profiling result columns must match the fixed aggregate contract.' }
-            $keys = @($query.attributes | Where-Object { $_.attribute_index -eq (Get-Property $row 'attribute_index') })
-            if ($keys.Count -ne 1 -or $indexes.ContainsKey([string]$row.attribute_index)) { Fail 'Profiling result has an unknown or duplicate Attribute index.' }
+            $attributeIndex = Get-Property $row 'attribute_index'
+            if (-not (Test-SafeJsonInteger $attributeIndex $false)) { Fail 'Profiling result has an unknown or duplicate Attribute index.' }
+            $keys = @($query.attributes | Where-Object { $_.attribute_index -eq $attributeIndex })
+            if ($keys.Count -ne 1 -or $indexes.ContainsKey([string]$attributeIndex)) { Fail 'Profiling result has an unknown or duplicate Attribute index.' }
             $indexes[[string]$row.attribute_index] = $true; $record = [ordered]@{}
             foreach ($name in @(Get-PropertyNames $keys[0])) { if ($name -cne 'attribute_index') { $record[$name] = Get-Property $keys[0] $name } }
             foreach ($name in $metricNames) { $record[$name] = Get-Property $row $name }

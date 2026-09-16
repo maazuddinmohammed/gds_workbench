@@ -100,7 +100,7 @@ Choose **Open working directory** and select the folder containing `.atlas`, not
 - **Save local changes** saves a proposal; it does not Stage or Apply.
 - **Reload local files** picks up agent edits; it does not download a fresh Snapshot.
 - **Validate locally** shows findings to correct and recheck.
-- **Generate DBML** includes the complete Model Snapshot plus saved changes, regardless of table filters or paging. Resolve unsaved edits first.
+- **Generate DBML** is your Workbench-only export: complete Model Snapshot plus saved changes, regardless of filters or paging. Resolve unsaved edits first. Agents work with Model records and do not generate or read this export.
 
 If another window or the agent changed a file, Workbench asks you to resolve the conflict before saving. Snapshots remain the applied baseline. One directory holds one active Model; Model-derived Metadata can have separate owner folders within it. Each owner's review and submission remain separate.
 

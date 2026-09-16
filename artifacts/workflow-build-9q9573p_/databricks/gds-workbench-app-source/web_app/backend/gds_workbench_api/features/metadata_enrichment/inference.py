@@ -114,10 +114,12 @@ def normalize_data_type(value: str | None) -> str | None:
 
 
 def infer_sample_data_type(values: Sequence[JsonValue]) -> str | None:
-    """Infer a lossless primitive type from at most 50 non-persisted observations.
+    """Infer a provisional primitive type from at most 50 non-persisted observations.
 
     Nulls and blanks carry no narrowing evidence. Identifiers with leading zeros,
     incompatible values and values outside exact decimal capacity remain STRING.
+    Decimal samples retain observed scale but reserve the full precision; sample
+    magnitude cannot establish a production bound or prove a whole-column cast.
     """
     if len(values) > 50 or any(isinstance(value, str) and len(value) > 20_000 for value in values):
         raise InvalidRequestError("Metadata inference sample limits were exceeded.")
@@ -188,4 +190,4 @@ def infer_sample_data_type(values: Sequence[JsonValue]) -> str | None:
         -(2**63) <= int(value) <= 2**63 - 1 for value in text_values
     ):
         return "BIGINT"
-    return f"DECIMAL({max(1, integer_digits + scale)},{scale})"
+    return f"DECIMAL(38,{scale})"

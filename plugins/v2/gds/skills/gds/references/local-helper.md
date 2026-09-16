@@ -20,7 +20,7 @@ For rejected server drafts, follow `server-handoff.md`; only the task-bound fail
 
 Local `validate` shares Workbench validators; server validation remains authoritative.
 
-Never generate, regenerate, read, or inspect DBML unless the user explicitly asks. `generate-dbml` exports the effective Model to `model-dbml/`.
+Never generate, read, inspect or use DBML. Use Model records; exports are user-only through Workbench.
 
 `task-state staged` requires digest acceptance and server-draft cache. `applied` requires a validated cache. Edits remove acceptance; never relaunch it after every update.
 

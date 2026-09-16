@@ -36,6 +36,8 @@ New-table policies preserve existing historical layouts. Explicit naming instruc
 
 Confirm changes match the user's [update selection](working-method.md#existing-work-and-update-scope), including agreed dependents. Preserve unrelated/manual work and validate the full effective graph even for selected regeneration. Missing history does not prove an affected-item list is complete.
 
+For Logical builds, perform the shared [relationship and graph review](logical-build/logical-design.md#relationship-and-graph-review): verify supported FKs have explicit records, show isolated Entity/component names and resolve unexplained separations with the user. The `isolated_entities` and `disconnected_components` quality warnings prompt this review. Reuse applicable decisions; intentional standalone structures are not structural errors. Connectivity alone does not prove business correctness.
+
 | Check | Review |
 |---|---|
 | `local.meaning` | Definitions, grain, cardinality and modeling reasons agree with available evidence; uncertainty stays explicit. |
@@ -53,7 +55,7 @@ Deterministic record checks run without a decision file: Analysis measurements m
 3. Keep the report under `.atlas/tasks/<task>.evidence/`, with owner, Snapshot/draft hashes and retained evidence hashes. Content changes invalidate the result. Record concise remaining blockers in the task; failed required checks leave the phase incomplete.
 4. Before submission, validate the complete batch again and follow the [Change Set lifecycle](change-set-lifecycle.md). The user reviews locally; server validation and separately approved Apply remain necessary.
 
-DBML runs shared structural/policy checks over the complete effective Model but deliberately skips modeling-decision quality checks. Its report says so. A diagram export is neither full workflow completion nor approval.
+Review actual effective Model records and validation reports. Agents never generate, read, inspect or use DBML; the user's Workbench display export is neither workflow completion nor approval evidence.
 
 ## Optional decision evidence file
 

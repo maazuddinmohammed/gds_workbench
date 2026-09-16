@@ -2,6 +2,8 @@
 
 Shared operating rules. Use the [Atlas runtime guide](../docs/runtime-guide.md) for concrete commands; workflow references own domain decisions.
 
+Agents read and author Model records, never DBML. Do not generate, read, inspect or use DBML in any workflow; direct export requests to the user's **Generate DBML** action in Workbench. That display export is not modeling, validation or approval evidence.
+
 ## Initialize or resume
 
 On every Atlas start/resume, open or reuse Workbench immediately through the [verified launcher](#current-initialization-capabilities), even for read-only work or an undecided workflow. Opening the empty app needs no Tenant, Model, session or Snapshot. Reuse an open instance; resolve and connect the working directory as setup progresses.

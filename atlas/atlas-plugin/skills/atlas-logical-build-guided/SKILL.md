@@ -34,6 +34,8 @@ For conceptual modeling, load [business concepts](../../references/logical-build
 
 For logical modeling, load [logical design](../../references/logical-build/logical-design.md): establish Entity grain and identity, apply [normalization decisions](../../references/logical-build/normalization.md), design Attributes/keys/relationships, preserve source lineage and organize useful Submodels. Use [Logical records](../../references/model/logical.md) for exact payloads and [Assertions](../../references/model/assertions.md) only when applicable. Justified generated/standalone structures need no fabricated physical source.
 
+Before completing Logical work, follow the shared [relationship and graph review](../../references/logical-build/logical-design.md#relationship-and-graph-review): persist supported FK relationships and resolve unexplained isolated Entities/disconnected groups with the user, reusing applicable decisions. Standalone designs are allowed; matching names alone do not justify a link.
+
 After each authored phase's local batch, run the shared [local validation sequence](../../references/local-validation.md), repair failures and rerun affected checks before treating that work as complete. Validate actual endpoints and eligible scope as well as schema. This is local validation; SQL relationship testing is optional under policy.
 
 ## Gotchas

@@ -72,6 +72,7 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
             "gds_etl_workbench/tools/tenants/tenant_locks.py",
         } <= set(names)
         assert "gds_etl_workbench/tools/snapshots/metadata/storage.py" not in names
+        assert not any("/snapshots/dbml/" in name for name in names)
         assert all(
             name in {"app.py", "startup.sh", "requirements.txt", "BUILD_MANIFEST.json"}
             or name.startswith("gds_etl_workbench/")

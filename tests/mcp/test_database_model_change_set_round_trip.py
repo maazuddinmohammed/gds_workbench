@@ -52,9 +52,6 @@ from gds_etl_workbench.tools.modeling.read_model_section import (
     register_read_model_section_tool,
 )
 from gds_etl_workbench.tools.snapshots.archive import SnapshotArchive
-from gds_etl_workbench.tools.snapshots.dbml.get_model_dbml import (
-    register_export_model_dbml_tool,
-)
 from gds_etl_workbench.tools.snapshots.model.get_model_snapshot import (
     register_create_model_snapshot_tool,
 )
@@ -107,7 +104,7 @@ class RecordingSnapshotStore:
         created_at: datetime,
         available_until: datetime,
     ) -> None:
-        assert snapshot_kind in {"model", "dbml"}
+        assert snapshot_kind == "model"
         assert scope_id > 0
         assert schema_version == "2.0"
         assert snapshot_id.version == 4
@@ -125,7 +122,7 @@ class RecordingSnapshotStore:
         ttl_seconds: int,
     ) -> str | None:
         del scope_id, snapshot_id, now, ttl_seconds
-        assert snapshot_kind in {"model", "dbml"}
+        assert snapshot_kind == "model"
         assert schema_version == "2.0"
         return f"https://snapshot.example.test/{snapshot_kind}.zip?read-only"
 
@@ -1597,17 +1594,6 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
         retention_hours=24,
         max_archive_bytes=16 * 1024 * 1024,
     )
-    register_export_model_dbml_tool(
-        server,
-        database=database,
-        identity_provider=identity_provider,
-        authorizer=authorizer,
-        audit=audit,
-        store=snapshot_store,
-        download_ttl_seconds=300,
-        retention_hours=24,
-        max_archive_bytes=16 * 1024 * 1024,
-    )
     register_read_mapping_context_tool(
         server,
         database=database,
@@ -1713,22 +1699,6 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
             snapshot_counts, serialized = _snapshot_archive(
                 snapshot_store.archive_content["model"]
             )
-            dbml_result = await client.call_tool(
-                "export_model_dbml",
-                {
-                    "model_id": model_id,
-                    "model_type": "full",
-                    "include_submodels": True,
-                },
-            )
-            assert dbml_result.is_error is False
-            dbml_descriptor = dbml_result.structured_content
-            assert dbml_descriptor["snapshot_kind"] == "dbml"
-            assert dbml_descriptor["model_revision"] == 2
-            assert dbml_descriptor["model_type"] == "full"
-            assert dbml_descriptor["include_submodels"] is True
-            assert dbml_descriptor["dbml_file_count"] == 5
-            _assert_dbml_archive(snapshot_store.archive_content["dbml"])
             await _assert_focused_reads(client, model_id)
             active_scope = await client.call_tool(
                 "get_model_input_scope",
@@ -2415,31 +2385,6 @@ def _snapshot_archive(content: bytes) -> tuple[dict[str, int], str]:
             counts[definition.name] = len(rows.splitlines())
             serialized.append(rows)
     return counts, "".join(serialized)
-
-
-def _assert_dbml_archive(content: bytes) -> None:
-    assert content
-    with zipfile.ZipFile(io.BytesIO(content)) as archive:
-        assert archive.namelist() == [
-            "model-dbml/manifest.json",
-            "model-dbml/files/conceptual.dbml",
-            "model-dbml/files/dimensional_complete.dbml",
-            "model-dbml/files/dimensional_salesmart.dbml",
-            "model-dbml/files/logical_complete.dbml",
-            "model-dbml/files/logical_sales.dbml",
-        ]
-        manifest = json.loads(archive.read("model-dbml/manifest.json"))
-        assert manifest["snapshot_kind"] == "dbml"
-        assert manifest["counts"]["dbml_file_count"] == 5
-        logical = archive.read("model-dbml/files/logical_complete.dbml").decode()
-        dimensional = archive.read(
-            "model-dbml/files/dimensional_complete.dbml"
-        ).decode()
-        assert 'Table "Order"' in logical
-        assert "Ref logical_relationship_1:" in logical
-        assert 'Table "SalesFact"' in dimensional
-        assert "Ref dimensional_relationship_1:" in dimensional
-        assert "Optional: no" in dimensional
 
 
 async def _assert_focused_reads(client: Client, model_id: int) -> None:

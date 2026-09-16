@@ -90,6 +90,24 @@ test('missing batches fail; truly unbatched Objects omit the filter', () => {
   assert.doesNotMatch(planProfiling(metadata,[object],{}).queries[0].sql,/WHERE/);
 });
 
+test('optional smaller groups retain exact Attribute coverage and batch scope', () => {
+  const {object,metadata} = fixture(71);
+  const baseline = planProfiling(metadata,[object],batch);
+  for (const limit of [1,10,50]) {
+    const planned = planProfiling(metadata,[object],{...batch,max_attributes_per_query:limit});
+    assert.equal(planned.queries.length,Math.ceil(71/limit));
+    assert.deepEqual(planned.coverage,baseline.coverage);
+    assert.deepEqual(planned.queries.flatMap(query=>query.attributes),baseline.queries.flatMap(query=>query.attributes));
+    for (const query of planned.queries) {
+      assert.ok(query.attributes.length<=limit);
+      assert.deepEqual(query.batch_ids,['10','11']);
+    }
+  }
+  for (const limit of [0,51,-1,1.5,'10',true,null]) {
+    assert.throws(()=>planProfiling(metadata,[object],{...batch,max_attributes_per_query:limit}),/max_attributes_per_query/);
+  }
+});
+
 test('SQL-literal batch text is encoded and analysis uses identical batch scope', () => {
   const {object,metadata} = fixture();
   const value = "x') OR 1=1 --";

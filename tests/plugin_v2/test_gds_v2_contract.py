@@ -431,16 +431,19 @@ def test_workbench_opens_once_and_chat_acknowledgement_stays_user_facing() -> No
     assert "reuses information you already supplied" in guide
 
 
-def test_dbml_is_an_explicit_opt_in_display_export() -> None:
+def test_dbml_is_a_user_only_workbench_display_export() -> None:
     router = read(SKILL_ROOT / "SKILL.md")
     local_helper = read(REFERENCES / "local-helper.md")
     workbench = read(REFERENCES / "workbench.md")
 
-    rule = "Never generate, regenerate, read, or inspect DBML unless the user explicitly asks"
+    rule = "Never generate, read, inspect or use DBML"
     assert rule in router
     assert rule in local_helper
-    assert "DBML is a display export, not validation or review evidence" in router
-    assert "DBML generation never runs automatically after a Model edit" in workbench
+    assert "Workbench's user-only **Generate DBML**" in router
+    assert "display exports are not validation/review evidence" in router
+    assert "exports are user-only through Workbench" in local_helper
+    assert "**Generate DBML** is user-only" in workbench
+    assert "Agents use Model records, never DBML" in workbench
 
 
 def test_user_guide_explains_vs_code_and_the_simple_workflow() -> None:

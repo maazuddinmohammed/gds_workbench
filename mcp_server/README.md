@@ -16,14 +16,15 @@ The server registers 37 focused tools:
   archive, plus their bounded Stage Batch transport.
 - Model Change Sets: create, stage, inspect, fingerprint, validate, apply,
   archive, plus their bounded Stage Batch transport.
-- Focused reads: `inspect_metadata`, `read_model_section`.
+- Focused reads: `inspect_metadata`, `read_model_section`, `read_mapping_context`.
 - Snapshots and contracts: `describe_metadata_dataset`,
-  `create_metadata_snapshot`, `describe_model_dataset`, `create_model_snapshot`,
-  `export_model_dbml`.
+  `create_metadata_snapshot`, `describe_model_dataset`, `create_model_snapshot`.
 - Governed SQL preflight: `execute_databricks_sql`.
 
 It registers no MCP prompts or resources. The plugin owns user interaction;
 server instructions contain only shared safety and dependency rules.
+DBML generation is a local browser Workbench display export from the effective
+Snapshot plus pending Change Set; MCP does not export or store DBML.
 
 Foundational CRUD, individual graph mutation, direct lock-table writes,
 PostgreSQL SQL, file upload, secret reads, and code execution are not exposed.

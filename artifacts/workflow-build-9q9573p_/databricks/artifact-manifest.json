@@ -48,8 +48,8 @@
     },
     {
       "path": "mcp_server/gds_etl_workbench/adapters/mcp/server.py",
-      "sha256": "7d7f15d3412338cae54bb47a2e3632631857c087e59bff6db429c892dffaff8e",
-      "size": 11383
+      "sha256": "19a636afe66c51f4ad174932da2c70ce6737d4e9c0737f363e01f412239cf334",
+      "size": 11182
     },
     {
       "path": "mcp_server/gds_etl_workbench/adapters/mcp/tool_audit.py",
@@ -103,8 +103,8 @@
     },
     {
       "path": "mcp_server/gds_etl_workbench/application/change_sets/model_validation.py",
-      "sha256": "7b9f76411a1e2cb2c84381a2d0ae872d4c7b22472321533b544a9604e6bf5b3f",
-      "size": 62258
+      "sha256": "bbbada02ea9037a91c100dfb71aefcb6ca9bdb69004bf38ee0b826e5c55318ac",
+      "size": 64314
     },
     {
       "path": "mcp_server/gds_etl_workbench/application/cursor.py",
@@ -115,6 +115,11 @@
       "path": "mcp_server/gds_etl_workbench/application/identity.py",
       "sha256": "923dfb8368ed200eef174588b216e665ce59a71aa52e15e575a22891a6e88025",
       "size": 427
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/mapping_context.py",
+      "sha256": "a4d21c4824951ce23afaca1fd7d674f1b42aead248a1637b56a8abdd7a22b1f8",
+      "size": 8235
     },
     {
       "path": "mcp_server/gds_etl_workbench/application/model_read.py",
@@ -158,8 +163,8 @@
     },
     {
       "path": "mcp_server/gds_etl_workbench/configuration.py",
-      "sha256": "741b3c79fe30027c424bc72df07cd5af3e0b22a7ee8d21ab5c34181af2190c65",
-      "size": 12270
+      "sha256": "e214a1794ea4a3829d24ea649052f3d93d28ebedd95d471d751c9fc32e190c40",
+      "size": 12524
     },
     {
       "path": "mcp_server/gds_etl_workbench/diagnostics/__init__.py",
@@ -203,13 +208,13 @@
     },
     {
       "path": "mcp_server/gds_etl_workbench/domain/metadata_records.py",
-      "sha256": "40dbcf0f02f3a6e09165d382f7ce804e7001de3b17ac55c649842865cb5f9093",
-      "size": 11180
+      "sha256": "e93c7e2327de7a07aa2a32cb96a12b58ee6fc1519dae09cc55313b12d8087014",
+      "size": 11262
     },
     {
       "path": "mcp_server/gds_etl_workbench/domain/modeling_records.py",
-      "sha256": "79c40bc7ef6854ce344ccc8bd22064200e7c3f41d2a0d45d8749c44c636fe38d",
-      "size": 41458
+      "sha256": "e86294b599eeec6b18e1296ebd21039f0ed1cc64685a15cc57e0b6d7b224a594",
+      "size": 44814
     },
     {
       "path": "mcp_server/gds_etl_workbench/domain/portable_validation.py",
@@ -228,13 +233,13 @@
     },
     {
       "path": "mcp_server/gds_etl_workbench/domain/snapshots/metadata.py",
-      "sha256": "9a01078dbdfef28add4e3872e48a0c6e94f8f71081aeff321a0678c25c414528",
-      "size": 16475
+      "sha256": "f7a6908ef785cb4db4a4a4051c23216cf02379240dac3b899ff478840be3ba24",
+      "size": 16405
     },
     {
       "path": "mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py",
-      "sha256": "8c03b252fbdeba54d8c32189a7d68395414c2abf9c25354f328c3fb5faf471fe",
-      "size": 24712
+      "sha256": "41f74d92f585d62801e2f2b27b570934fc2ed70c41322ee750aeb00fc634a2d1",
+      "size": 25232
     },
     {
       "path": "mcp_server/gds_etl_workbench/domain/snapshots/model.py",
@@ -263,8 +268,8 @@
     },
     {
       "path": "mcp_server/gds_etl_workbench/infrastructure/postgres.py",
-      "sha256": "d2843835cd82bdca713173f2f939d1278e4497e39a51a9b69a27e7692c10cbfd",
-      "size": 12134
+      "sha256": "6ed8eb5fd5c91208a3d0d8dc16812b6a2fd77e844194ec8d0a036642dddedd3e",
+      "size": 12582
     },
     {
       "path": "mcp_server/gds_etl_workbench/runtime.py",
@@ -323,8 +328,8 @@
     },
     {
       "path": "mcp_server/gds_etl_workbench/tools/databricks/execute_sql.py",
-      "sha256": "29f4bd377bcfa51ef07356c0dd727021c87b88862214ca487a020c0b09b1173f",
-      "size": 9793
+      "sha256": "f7dc2e07e3b57438309ec824e9b244034d539d31d033a2fffd6cee3c25798250",
+      "size": 10209
     },
     {
       "path": "mcp_server/gds_etl_workbench/tools/ingestion/__init__.py",
@@ -352,6 +357,11 @@
       "size": 9396
     },
     {
+      "path": "mcp_server/gds_etl_workbench/tools/modeling/read_mapping_context.py",
+      "sha256": "983163fa7dc86b1a7c0b5552f2d4091770ee5d9f0f800f0c4591f4af46eb338d",
+      "size": 11089
+    },
+    {
       "path": "mcp_server/gds_etl_workbench/tools/modeling/read_model_section.py",
       "sha256": "97d98a4085a70480d5947f4e33f1951046c6328babfb49de3dc7208949b9e588",
       "size": 10000
@@ -363,8 +373,8 @@
     },
     {
       "path": "mcp_server/gds_etl_workbench/tools/processing/process_groups.py",
-      "sha256": "9473f027a773bb5bdc7a3b0a3f90dc0347bf5d07aaa880e50a5c163758fb9178",
-      "size": 6477
+      "sha256": "62aa0574530269629f75efc3ed1640e958d40745e026a8127b8a155097c828cf",
+      "size": 6655
     },
     {
       "path": "mcp_server/gds_etl_workbench/tools/snapshots/__init__.py",
@@ -375,26 +385,6 @@
       "path": "mcp_server/gds_etl_workbench/tools/snapshots/archive.py",
       "sha256": "aaedec3fc1a68c229cbd776a0851f67a245c797f3110348a5c1e312a2c1a3413",
       "size": 6019
-    },
-    {
-      "path": "mcp_server/gds_etl_workbench/tools/snapshots/dbml/__init__.py",
-      "sha256": "5df966581d98736b75ec9da0d35818735ca6bdaa4fc580be93cee0a6cdf2ecf5",
-      "size": 62
-    },
-    {
-      "path": "mcp_server/gds_etl_workbench/tools/snapshots/dbml/archive.py",
-      "sha256": "df03096a59a18cd33f1857eb5e025a830527914d76c9b75db95273ac64d413f4",
-      "size": 4099
-    },
-    {
-      "path": "mcp_server/gds_etl_workbench/tools/snapshots/dbml/get_model_dbml.py",
-      "sha256": "b4b2a7a24814a94c048987778dffe4c7cabe2f0f8d1b323164a47401e3ab0bae",
-      "size": 10149
-    },
-    {
-      "path": "mcp_server/gds_etl_workbench/tools/snapshots/dbml/renderer.py",
-      "sha256": "3e3972e634ae0e8fe04076f772705356bf16b9c55b780c9e781e1fcd91ea7c56",
-      "size": 33075
     },
     {
       "path": "mcp_server/gds_etl_workbench/tools/snapshots/metadata/__init__.py",
@@ -418,13 +408,13 @@
     },
     {
       "path": "mcp_server/gds_etl_workbench/tools/snapshots/metadata/projection.py",
-      "sha256": "b11da953d2467d98ff9d53d8dacb7c478ef97806404828ed0c21793d06464533",
-      "size": 15050
+      "sha256": "d5583f71a3db5a6c837b6ca46df255992544a6f4f5814c83a5c28952c78271a4",
+      "size": 15135
     },
     {
       "path": "mcp_server/gds_etl_workbench/tools/snapshots/metadata/sql.py",
-      "sha256": "6e4fd986fa6e40986668080b69cd1307fd1c1f5ff8982fb2cc547e4225b4e55d",
-      "size": 8915
+      "sha256": "74f2cbcfa8453f43908a77297bd133c8c01ad4349ee8277ff901ba542304a83f",
+      "size": 8954
     },
     {
       "path": "mcp_server/gds_etl_workbench/tools/snapshots/model/__init__.py",
@@ -453,8 +443,8 @@
     },
     {
       "path": "mcp_server/gds_etl_workbench/tools/snapshots/storage.py",
-      "sha256": "6e653c4f73090c692346f24ff17d2b4c66256e24bd2de4c81617a922d271cc7c",
-      "size": 9065
+      "sha256": "d4e9a6fd0c615c3c111128919a5762688ad0551929f8181d6e81732a567c8137",
+      "size": 9049
     },
     {
       "path": "mcp_server/gds_etl_workbench/tools/tenants/__init__.py",
@@ -598,8 +588,8 @@
     },
     {
       "path": "web_app/backend/gds_workbench_api/features/analysis/validation_execution.py",
-      "sha256": "325f1234f9566b16304b8212ad56aee084f7a5d35dcc27c692b873a18b26f8e1",
-      "size": 19593
+      "sha256": "651d45ec2d41f77a1a9d8db649f96b380fe46891c341b2f62bf2d3c3fbbd9f76",
+      "size": 16963
     },
     {
       "path": "web_app/backend/gds_workbench_api/features/analysis/validation_router.py",
@@ -733,8 +723,8 @@
     },
     {
       "path": "web_app/backend/gds_workbench_api/features/dimensional/policy.py",
-      "sha256": "d6c569fb20fe1d7fd3cd570a970b2d555a532573285e9d7faceb3320c5f89b0f",
-      "size": 27219
+      "sha256": "879e9728386191b76d3a20af50a85e18060f0553a2282f0221b8ddecf6ae2662",
+      "size": 29925
     },
     {
       "path": "web_app/backend/gds_workbench_api/features/dimensional/read_contracts.py",
@@ -773,8 +763,8 @@
     },
     {
       "path": "web_app/backend/gds_workbench_api/features/logical/policy.py",
-      "sha256": "bd46b754c389e99b0d016b4398d0cb00171824cab7d364dc77d2a509c793c64e",
-      "size": 8254
+      "sha256": "5e154de6cb3910ad67fbc623d3ee880ac89efd63f817899e1c56cb7cc368d488",
+      "size": 11678
     },
     {
       "path": "web_app/backend/gds_workbench_api/features/logical/read_contracts.py",
@@ -883,8 +873,8 @@
     },
     {
       "path": "web_app/backend/gds_workbench_api/features/metadata/repository.py",
-      "sha256": "2a5394371d76c7b4c5fb1139aa0b648f461831de88e38f9ef1341c42850bc449",
-      "size": 41447
+      "sha256": "52c7188ddafc70d2226926efc99cb299cd63e651abf8f07c2d3f6285a58ff67c",
+      "size": 41500
     },
     {
       "path": "web_app/backend/gds_workbench_api/features/metadata/review.py",
@@ -943,8 +933,8 @@
     },
     {
       "path": "web_app/backend/gds_workbench_api/features/metadata_enrichment/inference.py",
-      "sha256": "cbbbcedb6e1458af29daabafca7f66d740ddc9d8299739be2f4a7aa0079ca8b3",
-      "size": 7027
+      "sha256": "ff31dbf14e77d9608b4627d78233b41a095681e25b239945916d5e1e38dd16a4",
+      "size": 7161
     },
     {
       "path": "web_app/backend/gds_workbench_api/features/metadata_enrichment/read_contracts.py",
@@ -1333,13 +1323,13 @@
     },
     {
       "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_contracts.py",
-      "sha256": "fd635a35555fb224818b9e68cfd22d2c542b65cd90159618335f16c4a6f86c05",
-      "size": 124360
+      "sha256": "46399f231401c9551eda095213e408a26e91da437f480c6be611a21c87d9601c",
+      "size": 126976
     },
     {
       "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_inputs.py",
-      "sha256": "b6b09152dca39cff503621466b6d4fd860ee113ed62efd8b0a2e05c30dae27f6",
-      "size": 11657
+      "sha256": "4d80618f07d38fe1e8b5b084db378b7770154aa394ffa0905e03b3ead9b9cd5c",
+      "size": 9519
     },
     {
       "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/lifecycle.py",
@@ -2400,8 +2390,8 @@
     },
     {
       "path": "src/gds_etl_workbench/application/change_sets/model_validation.py",
-      "sha256": "7b9f76411a1e2cb2c84381a2d0ae872d4c7b22472321533b544a9604e6bf5b3f",
-      "size": 62258
+      "sha256": "bbbada02ea9037a91c100dfb71aefcb6ca9bdb69004bf38ee0b826e5c55318ac",
+      "size": 64314
     },
     {
       "path": "src/gds_etl_workbench/application/cursor.py",
@@ -2412,6 +2402,11 @@
       "path": "src/gds_etl_workbench/application/identity.py",
       "sha256": "923dfb8368ed200eef174588b216e665ce59a71aa52e15e575a22891a6e88025",
       "size": 427
+    },
+    {
+      "path": "src/gds_etl_workbench/application/mapping_context.py",
+      "sha256": "a4d21c4824951ce23afaca1fd7d674f1b42aead248a1637b56a8abdd7a22b1f8",
+      "size": 8235
     },
     {
       "path": "src/gds_etl_workbench/application/model_read.py",
@@ -2455,8 +2450,8 @@
     },
     {
       "path": "src/gds_etl_workbench/configuration.py",
-      "sha256": "741b3c79fe30027c424bc72df07cd5af3e0b22a7ee8d21ab5c34181af2190c65",
-      "size": 12270
+      "sha256": "e214a1794ea4a3829d24ea649052f3d93d28ebedd95d471d751c9fc32e190c40",
+      "size": 12524
     },
     {
       "path": "src/gds_etl_workbench/domain/__init__.py",
@@ -2490,13 +2485,13 @@
     },
     {
       "path": "src/gds_etl_workbench/domain/metadata_records.py",
-      "sha256": "40dbcf0f02f3a6e09165d382f7ce804e7001de3b17ac55c649842865cb5f9093",
-      "size": 11180
+      "sha256": "e93c7e2327de7a07aa2a32cb96a12b58ee6fc1519dae09cc55313b12d8087014",
+      "size": 11262
     },
     {
       "path": "src/gds_etl_workbench/domain/modeling_records.py",
-      "sha256": "79c40bc7ef6854ce344ccc8bd22064200e7c3f41d2a0d45d8749c44c636fe38d",
-      "size": 41458
+      "sha256": "e86294b599eeec6b18e1296ebd21039f0ed1cc64685a15cc57e0b6d7b224a594",
+      "size": 44814
     },
     {
       "path": "src/gds_etl_workbench/domain/portable_validation.py",
@@ -2515,8 +2510,8 @@
     },
     {
       "path": "src/gds_etl_workbench/domain/snapshots/metadata.py",
-      "sha256": "9a01078dbdfef28add4e3872e48a0c6e94f8f71081aeff321a0678c25c414528",
-      "size": 16475
+      "sha256": "f7a6908ef785cb4db4a4a4051c23216cf02379240dac3b899ff478840be3ba24",
+      "size": 16405
     },
     {
       "path": "src/gds_etl_workbench/domain/snapshots/model.py",
@@ -2545,8 +2540,8 @@
     },
     {
       "path": "src/gds_etl_workbench/infrastructure/postgres.py",
-      "sha256": "d2843835cd82bdca713173f2f939d1278e4497e39a51a9b69a27e7692c10cbfd",
-      "size": 12134
+      "sha256": "6ed8eb5fd5c91208a3d0d8dc16812b6a2fd77e844194ec8d0a036642dddedd3e",
+      "size": 12582
     },
     {
       "path": "src/gds_etl_workbench/tools/__init__.py",
@@ -2660,8 +2655,8 @@
     },
     {
       "path": "src/gds_workbench_api/features/analysis/validation_execution.py",
-      "sha256": "325f1234f9566b16304b8212ad56aee084f7a5d35dcc27c692b873a18b26f8e1",
-      "size": 19593
+      "sha256": "651d45ec2d41f77a1a9d8db649f96b380fe46891c341b2f62bf2d3c3fbbd9f76",
+      "size": 16963
     },
     {
       "path": "src/gds_workbench_api/features/analysis/validation_router.py",
@@ -2795,8 +2790,8 @@
     },
     {
       "path": "src/gds_workbench_api/features/dimensional/policy.py",
-      "sha256": "d6c569fb20fe1d7fd3cd570a970b2d555a532573285e9d7faceb3320c5f89b0f",
-      "size": 27219
+      "sha256": "879e9728386191b76d3a20af50a85e18060f0553a2282f0221b8ddecf6ae2662",
+      "size": 29925
     },
     {
       "path": "src/gds_workbench_api/features/dimensional/read_contracts.py",
@@ -2835,8 +2830,8 @@
     },
     {
       "path": "src/gds_workbench_api/features/logical/policy.py",
-      "sha256": "bd46b754c389e99b0d016b4398d0cb00171824cab7d364dc77d2a509c793c64e",
-      "size": 8254
+      "sha256": "5e154de6cb3910ad67fbc623d3ee880ac89efd63f817899e1c56cb7cc368d488",
+      "size": 11678
     },
     {
       "path": "src/gds_workbench_api/features/logical/read_contracts.py",
@@ -2950,8 +2945,8 @@
     },
     {
       "path": "src/gds_workbench_api/features/metadata_enrichment/inference.py",
-      "sha256": "cbbbcedb6e1458af29daabafca7f66d740ddc9d8299739be2f4a7aa0079ca8b3",
-      "size": 7027
+      "sha256": "ff31dbf14e77d9608b4627d78233b41a095681e25b239945916d5e1e38dd16a4",
+      "size": 7161
     },
     {
       "path": "src/gds_workbench_api/features/metadata_enrichment/read_contracts.py",
@@ -3180,13 +3175,13 @@
     },
     {
       "path": "src/gds_workbench_api/features/workflows/authoring/downstream_contracts.py",
-      "sha256": "fd635a35555fb224818b9e68cfd22d2c542b65cd90159618335f16c4a6f86c05",
-      "size": 124360
+      "sha256": "46399f231401c9551eda095213e408a26e91da437f480c6be611a21c87d9601c",
+      "size": 126976
     },
     {
       "path": "src/gds_workbench_api/features/workflows/authoring/downstream_inputs.py",
-      "sha256": "b6b09152dca39cff503621466b6d4fd860ee113ed62efd8b0a2e05c30dae27f6",
-      "size": 11657
+      "sha256": "4d80618f07d38fe1e8b5b084db378b7770154aa394ffa0905e03b3ead9b9cd5c",
+      "size": 9519
     },
     {
       "path": "src/gds_workbench_api/features/workflows/authoring/lifecycle.py",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -68,6 +69,8 @@ def install_dataset(
 
 def planned_workspace(
     tmp_path: Path,
+    *,
+    max_attributes_per_query: int | None = None,
 ) -> tuple[Path, Path, dict[str, Any], list[dict[str, Any]]]:
     root = workspace(tmp_path)
     physical = {
@@ -162,13 +165,18 @@ def planned_workspace(
         json.dumps(
             {
                 "selections": {
+                    **(
+                        {"max_attributes_per_query": max_attributes_per_query}
+                        if max_attributes_per_query is not None
+                        else {}
+                    ),
                     "systems": [
                         {
                             "source_tenant_code": "TENANT_A",
                             "system_code": "CRM",
                             "batch_ids": ["10", "11"],
                         }
-                    ]
+                    ],
                 },
                 "execution_connections": [
                     {
@@ -244,6 +252,188 @@ def import_results(
         "empty",
         success=success,
     )
+
+
+@pytest.fixture(params=["node", "powershell"])
+def profile_runtime(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
+    if request.param == "powershell":
+        from tests.atlas import test_native_parity as native
+        from tests.atlas import test_workspace as shared
+
+        if not native.NATIVE:
+            pytest.skip("Native PowerShell runtime unavailable")
+        monkeypatch.setattr(shared, "run", native.native_run)
+        monkeypatch.setitem(globals(), "run", native.native_run)
+    return str(request.param)
+
+
+def canonical_results(curated: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    # Deliberately reorder columns: interpretation must follow names, not positions.
+    columns = [*reversed(METRICS), "attribute_index"]
+    return [
+        {
+            "file": entry["file"],
+            "executed_at": entry["executed_at"],
+            "result": {
+                "schema_version": "1.0",
+                "connection_id": entry["connection_id"],
+                "environment_code": entry["environment"],
+                "statement_count": 1,
+                "row_limit": 50,
+                "columns": columns,
+                "rows": [[row[name] for name in columns] for row in entry["rows"]],
+                "row_count": len(entry["rows"]),
+                "rows_truncated": False,
+                "cells_truncated": False,
+            },
+        }
+        for entry in curated
+    ]
+
+
+def test_profile_imports_canonical_sql_result_by_column_name(
+    tmp_path: Path, profile_runtime: str
+) -> None:
+    root, plan_path, plan, results = planned_workspace(tmp_path)
+    canonical = canonical_results(results)
+    canonical[0]["result"]["environment_code"] = " Dev "
+    canonical[1]["result"]["environment_code"] = "DEV"
+    outcome = import_results(root, plan_path, canonical)
+    records = json.loads((root / "model-change-set/profiling_profile.json").read_text())
+    assert outcome["profiles"] == len(records) == 51
+    assert all(set(record) == set(IDENTITY + METRICS) for record in records)
+    assert records[0]["attribute_name"] == "BatchID"
+    assert records[0]["min_data_length"] is None
+    assert all(row["row_count"] == 20 and row["distinct_count"] == 9 for row in records)
+    evidence = json.loads((root / outcome["evidence"]).read_text())
+    assert evidence["inputs"] == plan["inputs"]
+    assert all("rows" not in entry and "result" not in entry for entry in evidence["coverage"])
+
+
+def test_profile_rejects_malformed_canonical_results_before_writing(
+    tmp_path: Path, profile_runtime: str
+) -> None:
+    root, plan_path, _, curated = planned_workspace(tmp_path)
+    valid = canonical_results(curated)
+    cases: list[tuple[str, list[dict[str, Any]]]] = []
+    for field, value in [
+        ("schema_version", "2.0"),
+        ("schema_version", 1.0),
+        ("connection_id", 100),
+        ("environment_code", "qa"),
+        ("environment_code", 1),
+        ("statement_count", 2),
+        ("statement_count", True),
+        ("row_limit", 49),
+        ("row_limit", 51),
+        ("row_count", 49),
+        ("row_count", "50"),
+        ("rows_truncated", True),
+        ("cells_truncated", True),
+        ("cells_truncated", 0),
+        ("columns", ["attribute_index", *METRICS[:-1]]),
+        ("columns", ["attribute_index", *METRICS, "unexpected"]),
+        ("columns", ["attribute_index", *METRICS[:-1], "attribute_index"]),
+        ("unexpected", "not permitted"),
+    ]:
+        changed = deepcopy(valid)
+        changed[0]["result"][field] = value
+        cases.append((field, changed))
+    for case in [
+        "missing_field",
+        "short_row",
+        "long_row",
+        "object_row",
+        "raw_envelope",
+        "mixed_shapes",
+        "duplicate_file",
+        "wrong_file",
+        "invalid_time",
+        "unsafe_integer",
+        "string_index",
+    ]:
+        changed = deepcopy(valid)
+        payload = changed[0]["result"]
+        if case == "missing_field":
+            payload.pop("cells_truncated")
+        elif case == "short_row":
+            payload["rows"][0].pop()
+        elif case == "long_row":
+            payload["rows"][0].append(0)
+        elif case == "object_row":
+            payload["rows"][0] = curated[0]["rows"][0]
+        elif case == "raw_envelope":
+            changed[0]["result"] = {"structuredContent": payload, "content": []}
+        elif case == "mixed_shapes":
+            changed[0]["rows"] = curated[0]["rows"]
+        elif case == "duplicate_file":
+            changed[1]["file"] = changed[0]["file"]
+        elif case == "wrong_file":
+            changed[0]["file"] = "9999.sql"
+        elif case == "invalid_time":
+            changed[0]["executed_at"] = "invalid"
+        elif case == "unsafe_integer":
+            payload["rows"][0][payload["columns"].index("row_count")] = 9007199254740992
+        elif case == "string_index":
+            payload["rows"][0][payload["columns"].index("attribute_index")] = "1"
+        cases.append((case, changed))
+    for case, changed in cases:
+        import_results(root, plan_path, changed, success=False)
+        assert not (root / "model-change-set/profiling_profile.json").exists(), case
+        assert not list((root / ".atlas/tasks").rglob("profiling-*.json")), case
+
+
+def test_profile_smaller_groups_preserve_scope_batches_and_canonical_import(
+    tmp_path: Path, profile_runtime: str
+) -> None:
+    root, plan_path, plan, results = planned_workspace(tmp_path, max_attributes_per_query=10)
+    assert plan["selections"]["max_attributes_per_query"] == 10
+    assert [query["expected_row_count"] for query in plan["queries"]] == [10] * 5 + [1]
+    assert [
+        attribute["attribute_index"]
+        for query in plan["queries"]
+        for attribute in query["attributes"]
+    ] == list(range(1, 52))
+    assert plan["coverage"][0]["planned_attribute_count"] == 51
+    for query in plan["queries"]:
+        sql = (plan_path.parent / query["file"]).read_text()
+        assert "`BatchID` IN (" in sql
+        assert "`crm_catalog`.`sales`.`Customer`" in sql
+        assert len(sql) < 100_000
+        assert query["batch_ids"] == ["10", "11"]
+    assert import_results(root, plan_path, canonical_results(results))["profiles"] == 51
+
+
+def test_profile_rejects_invalid_attribute_indexes_in_both_result_shapes(
+    tmp_path: Path, profile_runtime: str
+) -> None:
+    root, plan_path, _, curated = planned_workspace(tmp_path)
+    for canonical in [False, True]:
+        for index in ["1", True, 1.5, 0, 51]:
+            results = deepcopy(curated)
+            results[0]["rows"][0]["attribute_index"] = index
+            if canonical:
+                results = canonical_results(results)
+            rejected = import_results(root, plan_path, results, success=False)
+            assert "Attribute index" in rejected["error"]
+            assert not (root / "model-change-set/profiling_profile.json").exists()
+
+
+def test_profile_rejects_invalid_group_limit_without_new_plan(
+    tmp_path: Path, profile_runtime: str
+) -> None:
+    root, _, _, _ = planned_workspace(tmp_path)
+    planning = root / ".atlas/temp/planning.json"
+    supplied = json.loads(planning.read_text())
+    before = set((root / ".atlas/temp").rglob("plan.json"))
+    for value in [0, 51, -1, 1.5, "10", True, None]:
+        supplied["selections"]["max_attributes_per_query"] = value
+        planning.write_text(json.dumps(supplied))
+        rejected = run(
+            "profile-plan", "--session", str(root), "--plan-file", str(planning), success=False
+        )
+        assert "max_attributes_per_query" in rejected["error"]
+        assert set((root / ".atlas/temp").rglob("plan.json")) == before
 
 
 def test_profile_runtime_groups_sql_and_imports_exact_record_contract(

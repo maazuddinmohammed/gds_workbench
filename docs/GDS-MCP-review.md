@@ -37,9 +37,9 @@ Sources: [server registration](/Users/maazuddinmohammed/main/projects/gds_workbe
 | Group | Count | Exposed tools | Purpose |
 |---|---:|---|---|
 | Tenant and Model discovery | 4 | `list_tenants`<br>`get_tenant_details`<br>`list_models`<br>`get_model_input_scope` | Find authorized Tenants, safe Tenant/Connection context, Models and their selected input Objects. |
-| Focused data reads | 2 | `inspect_metadata`<br>`read_model_section` | Bounded live Metadata views and applied Model datasets. |
+| Focused data reads | 3 | `inspect_metadata`<br>`read_model_section`<br>`read_mapping_context` | Bounded live Metadata views, applied Model datasets, and governed Mapping consumer context. |
 | Dataset/schema guidance | 2 | `describe_metadata_dataset`<br>`describe_model_dataset` | Return keys, accepted fields, references, rules and JSON Schema; no records. |
-| Snapshots and diagram export | 3 | `create_metadata_snapshot`<br>`create_model_snapshot`<br>`export_model_dbml` | Create immutable ZIPs and return small download descriptors. |
+| Snapshots | 2 | `create_metadata_snapshot`<br>`create_model_snapshot` | Create immutable ZIPs and return small download descriptors. |
 | Tenant Lock management | 5 | `check_tenant_lock`<br>`acquire_tenant_lock`<br>`renew_tenant_lock`<br>`release_tenant_lock`<br>`override_tenant_lock` | Inspect/reserve/extend/release governed Tenant ownership; explicit override releases another owner's lock. |
 | Metadata Change Sets | 10 | `create_metadata_change_set`<br>`stage_metadata_change_set`<br>`begin_metadata_stage_batch`<br>`put_metadata_stage_chunk`<br>`commit_metadata_stage_batch`<br>`get_metadata_change_set`<br>`get_metadata_change_set_fingerprint`<br>`validate_metadata_change_set`<br>`apply_metadata_change_set`<br>`archive_metadata_change_set` | Govern pending changes to the 16 operational Metadata datasets. |
 | Model Change Sets | 10 | `create_model_change_set`<br>`stage_model_change_set`<br>`begin_model_stage_batch`<br>`put_model_stage_chunk`<br>`commit_model_stage_batch`<br>`get_model_change_set`<br>`get_model_change_set_fingerprint`<br>`validate_model_change_set`<br>`apply_model_change_set`<br>`archive_model_change_set` | Govern pending changes to the 25 Model datasets. |
@@ -56,7 +56,7 @@ Sources: [server registration](/Users/maazuddinmohammed/main/projects/gds_workbe
 | `describe_metadata_dataset`, `describe_model_dataset` | `detail=compact` (default): keys/rules/authoring schema. `full`: also column guidance and exact schema. Authenticated contract reads; no Tenant row selection. | [Metadata](/Users/maazuddinmohammed/main/projects/gds_workbench_v2/mcp_server/gds_etl_workbench/tools/snapshots/metadata/describe_metadata_dataset.py:43), [Model](/Users/maazuddinmohammed/main/projects/gds_workbench_v2/mcp_server/gds_etl_workbench/tools/snapshots/model/describe_model_dataset.py:31) |
 | `create_metadata_snapshot` | One authorized Tenant; optional explicitly authorized `source_tenant_ids` adds Source/Bronze context. Extra context grants no write rights. | [tool](/Users/maazuddinmohammed/main/projects/gds_workbench_v2/mcp_server/gds_etl_workbench/tools/snapshots/metadata/get_metadata_snapshot.py:129) |
 | `create_model_snapshot` | Complete registered Model datasets from one consistent database read, including applied Code and Validation definitions. | [tool](/Users/maazuddinmohammed/main/projects/gds_workbench_v2/mcp_server/gds_etl_workbench/tools/snapshots/model/get_model_snapshot.py:95) |
-| `export_model_dbml` | Diagram ZIP for selected `model_type` (`full`, `conceptual`, `logical`, `dimensional`); `include_submodels=true` by default. Separate export, not an extra file inside the Metadata/Model ZIPs described below. | [tool](/Users/maazuddinmohammed/main/projects/gds_workbench_v2/mcp_server/gds_etl_workbench/tools/snapshots/dbml/get_model_dbml.py:107) |
+| `read_mapping_context` | Authorized, revision/digest-bound Mapping consumer view with paged target Metadata, source Objects, source Systems, dependencies, and attribute rules. | [tool](/Users/maazuddinmohammed/main/projects/gds_workbench_v2/mcp_server/gds_etl_workbench/tools/modeling/read_mapping_context.py:1) |
 | `execute_databricks_sql` | Default `environment_code=dev`; qualified persistent relations required; permits reads and unqualified temporary views/tables. Rejects persistent DDL and DML; returns at most 50 rows from final statement. | [tool](/Users/maazuddinmohammed/main/projects/gds_workbench_v2/mcp_server/gds_etl_workbench/tools/databricks/execute_sql.py:83) |
 
 Older individual reader modules remain implementation helpers. Names such as `list_objects`, `get_object_details`, `get_object_lineage`, `get_model_snapshot` and `get_metadata_snapshot` are **not separately registered tools**. `inspect_metadata` composes the physical readers; current Snapshot tool names start with `create_`.
@@ -201,7 +201,7 @@ model-snapshot/
     └── validation/{validation_group,validation_check}/rows.jsonl
 ```
 
-No `model.dbml`, separate SQL/Python files, README or prompts are generated inside these two Snapshot ZIPs. Generated program text stays in the `generated_code_content` JSON field; DBML has its own export tool.
+No `model.dbml`, separate SQL/Python files, README or prompts are generated inside these two Snapshot ZIPs. Generated program text stays in the `generated_code_content` JSON field. DBML is generated locally by browser Workbench from the effective Snapshot plus pending Change Set; MCP does not export or store it.
 
 The current plugin normally installs the ZIP contents as:
 

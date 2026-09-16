@@ -127,11 +127,6 @@
       "session_required": true,
       "mutates": true
     },
-    "generate-dbml": {
-      "usage": "generate-dbml --session <working-directory> --area model [--model-type full|conceptual|logical|dimensional] [--include-submodels true|false] [--output-file <new-.atlas/temp-result.json>]",
-      "session_required": true,
-      "mutates": true
-    },
     "profile-plan": {
       "usage": "profile-plan --session <working-directory> --plan-file <planning-input-json> [--task <UUID>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,

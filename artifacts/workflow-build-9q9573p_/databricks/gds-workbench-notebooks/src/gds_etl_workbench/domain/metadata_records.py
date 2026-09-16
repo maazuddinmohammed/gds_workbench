@@ -336,6 +336,7 @@ class ProcessGroupRecord(MetadataRecord):
     zone_code: Annotated[str, StringConstraints(min_length=1, max_length=30)]
     process_group_name: Name200
     process_group_description: str | None
+    process_group_dependency_order: Annotated[int, Field(gt=0, le=2_147_483_647)]
     copy_group_name: Name200
     is_active: bool
 

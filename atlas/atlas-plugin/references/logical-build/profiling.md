@@ -21,7 +21,7 @@ The profiling selection and manifest record each Object's resolved scope. The co
 
 ## Deterministic generator contract
 
-Use the runtime input wrapper `{selections, execution_connections}`. `selections` holds optional `systems`, `objects` and `selected_objects`; each batch assignment has `batch_ids`. The helper resolves Snapshot paths and saved environment from the workspace. Do not use scalar `batch_id` or `default_batch_id`.
+Use the runtime input wrapper `{selections, execution_connections}`. `selections` holds optional `systems`, `objects`, `selected_objects` and `max_attributes_per_query` (integer 1–50; default 50). Each batch assignment has `batch_ids`. Reduce the group maximum for a lower result limit or constrained host response size; it changes grouping, not row/batch scope. The helper resolves Snapshot paths and saved environment from the workspace. Do not use scalar `batch_id` or `default_batch_id`.
 
 Illustrative System assignment. Omit selected_objects only when the parent workflow selected the entire active applied Input Scope; otherwise supply the selected complete Object keys:
 
@@ -74,9 +74,9 @@ Use the existing manifest-plus-SQL pattern under the task's temporary workspace:
 
 The manifest binds Snapshot IDs, Model revision, environment, selected scope and coverage. Identify each query's origin (generator with its actual version, or agent-written), Object, actual relation, originating System context, resolved non-GDS execution Connection ID/key, batch column and selected IDs (or explicitly unbatched), file/hash, expected row count, and attribute_index-to-complete-Attribute-key mapping. Query identity plus attribute_index identifies a returned measurement; the index is not a database ID. Resolve Connection bindings before preparing SQL; the server still revalidates access at execution.
 
-Follow shared [Databricks execution](../query-scope.md#execute-bounded-sql): verify the file and bindings, pass the SQL text through the governed tool, and inspect its complete result before continuing. A profiling query group returns one row per planned Attribute; require each expected attribute_index exactly once.
+Follow shared [Databricks execution](../query-scope.md#execute-bounded-sql): verify the file and bindings, execute one query/group, and consume one complete JSON result before continuing. Prefer `structuredContent`, otherwise the single JSON text result; do not process both copies. A profiling query group returns one row per planned Attribute; require each expected attribute_index exactly once. Do not echo SQL, plans or result rows into conversation; report bounded progress counts.
 
-If a lower row limit truncates the result, discard that group's partial measurements and prepare smaller Attribute groups under the same Object/batch scope. Use the generator or its documented fallback, updating hashes and expected indexes. Preserve successful unaffected groups. Do not split the selected batch set or concatenate independent queries into one tool call.
+If a response is too large or truncated, discard that group's partial measurements and prepare smaller Attribute groups under the same Object/batch scope. Preserve successful unaffected groups. `max_attributes_per_query` changes a newly generated plan; it does not patch an existing plan or preserve its query hashes. To retry only failed groups, use the documented fallback to replace those queries and update their manifest bindings. Do not split the selected batch set or concatenate independent queries into one tool call.
 
 ## Measurement fields
 
@@ -86,7 +86,9 @@ Return one complete set of documented metrics per Attribute, plus the temporary 
 
 ## Results, checks and reuse
 
-Match result columns by name and map aggregates through the query's Attribute index. Remove the transport index, preserve metric precision and follow [Model Change Set authoring](../model/change-sets.md) to validate/upsert complete profiling_profile records locally. Preserve unrelated work.
+1. Check one group's complete aggregate response against the plan, including Connection/environment, truncation flags and expected result coverage. Keep one canonical payload, preferably `structuredContent`, with its original metric precision and Attribute indexes.
+2. Save `{file, executed_at, result:<canonical aggregate payload>}` in the [runtime result shape](../../docs/runtime-guide.md#profiling-and-analysis-files). Accumulate one JSON array of completed groups under `.atlas/temp/`; never concatenate JSON documents or save MCP envelopes/physical rows. No manual column-to-record reshaping is needed.
+3. Once every query in the current plan has one complete result, run `profile-results` with that plan, aggregate file and current draft digest. The helper validates the response, maps columns/indexes to exact physical keys, checks metrics, merges complete `profiling_profile` records and retains concise evidence. Do not manually reconstruct the same records or upsert them a second time. Preserve unrelated work and run shared local validation after import.
 
 | Check | Purpose |
 |---|---|
@@ -99,7 +101,7 @@ Match result columns by name and map aggregates through the query's Attribute in
 
 Atlas planning/result helpers implement the checks described below; semantic interpretation remains agent review. The profile key is the physical Attribute key: reprofiling updates its current profile, not a batch-history record. Batch IDs, environment, measurement time and Snapshot IDs are not profile fields.
 
-Keep concise scope, execution time, actual environment/Connection binding, query hashes and coverage in durable task evidence before temporary cleanup. Do not save raw tool envelopes or physical rows. Reuse depends on this evidence and the user's choice, not merely the presence of a profile row. Related analysis/modeling may use validated local results where catalog prerequisites allow; use the shared [Change Set lifecycle](../change-set-lifecycle.md) at the appropriate completion/dependency boundary.
+Keep concise scope, execution time, actual environment/Connection binding, query hashes and coverage in durable task evidence before temporary cleanup. Do not save raw tool envelopes, physical rows or credentials. Reuse depends on this evidence and the user's choice, not merely the presence of a profile row. Related analysis/modeling may use validated local results where catalog prerequisites allow; use the shared [Change Set lifecycle](../change-set-lifecycle.md) at the appropriate completion/dependency boundary.
 
 ## Existing implementation to reuse
 
