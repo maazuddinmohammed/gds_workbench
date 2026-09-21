@@ -74,12 +74,8 @@ describe("Model Analysis", () => {
       expect(screen.getAllByText(result)).toHaveLength(2);
       expect(within(screen.getByRole("table", { name: "Recorded endpoint counts" })).getAllByRole("row")).toHaveLength(3);
       expect(screen.getByText("Duplicate target keys").nextElementSibling).toHaveTextContent("0");
-      const digest = screen.getByText("a".repeat(64));
-      expect(digest).not.toBeVisible();
-      await user.click(screen.getByRole("heading", { name: "Provenance" }));
-      const summary = screen.getByText("Validation policy digest");
-      await user.click(summary);
-      expect(digest).toBeVisible();
+      expect(screen.queryByRole("heading", { name: "Provenance" })).not.toBeInTheDocument();
+      expect(screen.queryByText("a".repeat(64))).not.toBeInTheDocument();
     }
   });
 

@@ -157,7 +157,7 @@ function LogicalEntityView({
         ) : (
           <div className="table-scroll">
             <table aria-label="Submodel memberships">
-              <thead><tr><th>Submodel</th><th>Status</th><th>Lock</th><th>Workflow</th></tr></thead>
+              <thead><tr><th>Submodel</th><th>Status</th><th>Lock</th></tr></thead>
               <tbody>{entity.submodels.map((membership) => (
                 <tr key={membership.logical_entity_submodel_id}>
                   <td><Link className="text-action" to="/tenants/$tenantId/models/$modelId/logical/submodels/$submodelId"
@@ -166,7 +166,6 @@ function LogicalEntityView({
                   </Link></td>
                   <td>{humanize(membership.membership_status)}</td>
                   <td>{membership.membership_is_locked ? "Locked" : "Open"}</td>
-                  <td>{membership.workflow_run_id === null ? "No workflow provenance" : `Workflow run ${membership.workflow_run_id}`}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -174,18 +173,6 @@ function LogicalEntityView({
         )}
       </details>
 
-      <details className="detail-section detail-disclosure" aria-labelledby="logical-provenance">
-        <summary><h2 id="logical-provenance">Provenance</h2></summary>
-        <dl className="detail-fact-grid">
-          <Fact
-            label="Workflow"
-            value={entity.workflow_run_id === null
-              ? "No workflow provenance"
-              : `Workflow run ${entity.workflow_run_id}`}
-          />
-          <Fact label="Created" value={formatDateTime(entity.created_at)} />
-        </dl>
-      </details>
     </article>
   );
 }
@@ -232,7 +219,6 @@ function LogicalAttributeView({
         </dl>
       </section>
       <SourceMappings sources={attribute.sources} />
-      <LogicalProvenance workflowRunId={attribute.workflow_run_id} createdAt={attribute.created_at} />
     </article>
   );
 }
@@ -287,7 +273,6 @@ function LogicalRelationshipView({
           <Fact label="Cardinality basis" value={relationship.logical_relationship_cardinality_basis} />
         </dl>
       </section>
-      <LogicalProvenance workflowRunId={relationship.workflow_run_id} createdAt={relationship.created_at} />
     </article>
   );
 }
@@ -342,7 +327,6 @@ function LogicalSubmodelView({
           </div>
         )}
       </section>
-      <LogicalProvenance workflowRunId={submodel.workflow_run_id} createdAt={submodel.created_at} />
     </article>
   );
 }
@@ -386,27 +370,6 @@ function LogicalDetailHeader({
         <span className="status-badge is-neutral">{locked ? "Locked" : "Open"}</span>
       </div>
     </header>
-  );
-}
-
-function LogicalProvenance({
-  workflowRunId,
-  createdAt,
-}: {
-  workflowRunId: number | null;
-  createdAt: string;
-}) {
-  return (
-    <details className="detail-section detail-disclosure" aria-labelledby="logical-record-provenance">
-      <summary><h2 id="logical-record-provenance">Provenance</h2></summary>
-      <dl className="detail-fact-grid">
-        <Fact
-          label="Workflow"
-          value={workflowRunId === null ? "No workflow provenance" : `Workflow run ${workflowRunId}`}
-        />
-        <Fact label="Created" value={formatDateTime(createdAt)} />
-      </dl>
-    </details>
   );
 }
 

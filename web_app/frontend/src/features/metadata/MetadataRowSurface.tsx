@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { trapPromptDialogFocus, usePromptDialogFocus } from "../prompts/PromptTemplateDialogs";
 
 import type {
   MetadataDatasetDescription,
@@ -52,8 +53,8 @@ export function MetadataRowDetail({
   onEdit: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  usePromptDialogFocus(closeRef);
   useEffect(() => {
-    closeRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
@@ -68,6 +69,7 @@ export function MetadataRowDetail({
         role="dialog"
         aria-modal="true"
         aria-labelledby="metadata-row-detail-title"
+        onKeyDown={trapPromptDialogFocus}
       >
         <header>
           <div>
@@ -164,8 +166,8 @@ export function MetadataRowEditor({
   const [draft, setDraft] = useState<Record<string, string | boolean>>(initialDraft);
   const [nullFields, setNullFields] = useState(initialNullFields);
   const [message, setMessage] = useState("");
+  usePromptDialogFocus(closeRef);
   useEffect(() => {
-    closeRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !isSaving) onClose();
     };
@@ -291,6 +293,7 @@ export function MetadataRowEditor({
         role="dialog"
         aria-modal="true"
         aria-labelledby="metadata-row-editor-title"
+        onKeyDown={trapPromptDialogFocus}
       >
         <header>
           <div>

@@ -52,11 +52,6 @@ export function AssertionDocumentDetailPage({
         <summary><h2 id="document-metadata-heading">Normalized metadata</h2></summary>
         <NormalizedJson value={document.modeling_assertion_document_metadata} />
       </details>
-      <Provenance
-        workflowRunId={document.workflow_run_id}
-        agentRunId={document.agent_run_id}
-        createdAt={document.created_at}
-      />
     </article>
   );
 }
@@ -116,11 +111,6 @@ export function AssertionRecordDetailPage({
           <NormalizedJson value={record.modeling_assertion_source_location} />
         </details>
       ) : null}
-      <Provenance
-        workflowRunId={record.workflow_run_id}
-        agentRunId={record.agent_run_id}
-        createdAt={record.created_at}
-      />
     </article>
   );
 }
@@ -155,30 +145,6 @@ function DetailHeader({
         {active ? "Active" : "Inactive"}
       </span>
     </header>
-  );
-}
-
-function Provenance({
-  workflowRunId,
-  agentRunId,
-  createdAt,
-}: {
-  workflowRunId: number | null;
-  agentRunId: string | null;
-  createdAt: string;
-}) {
-  return (
-    <details className="detail-section detail-disclosure" aria-labelledby="assertion-provenance-heading">
-      <summary><h2 id="assertion-provenance-heading">Provenance</h2></summary>
-      <dl className="detail-fact-grid">
-        <Fact
-          label="Workflow"
-          value={workflowRunId === null ? "No workflow provenance" : `Workflow run ${workflowRunId}`}
-        />
-        <Fact label="Agent run" value={agentRunId ?? "Not recorded"} />
-        <Fact label="Created" value={formatDateTime(createdAt)} />
-      </dl>
-    </details>
   );
 }
 

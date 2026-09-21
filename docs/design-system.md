@@ -126,6 +126,16 @@ Use this order when applicable:
 6. Inspector, drawer, or dialog for one selected record.
 7. Empty, loading, and error state in the same content location.
 
+The Metadata catalog uses a full-width Excel Change Set above a left section
+rail and the selected sheet. Keep the page heading to “Metadata catalog”;
+Tenant identity stays in the shell. Use prominent Reference, Foundational, and
+Operational buttons with sheet counts, without a separate navigation heading
+or sheet filters. Keep Refresh and Export Excel in the page header. The Excel
+panel uses “Tenant Lock is required” when unlocked, with draft details and
+validation results shown only when relevant. Wide sheets scroll inside their
+surface with sticky headers, first column, and row actions; Show details opens
+the existing row drawer with Edit.
+
 ## Components
 
 ### Buttons and links

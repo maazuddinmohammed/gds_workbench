@@ -86,7 +86,10 @@ SELECT model_input_scope.model_input_scope_id,
    AND (%s::TEXT IS NULL OR lower(source_tenant.tenant_code) = %s)
    AND (
        %s::TEXT IS NULL
-       OR strpos(lower(btrim(eligible_object.object_name)), %s) > 0
+       OR strpos(
+           lower(btrim(eligible_object.object_schema) || '.' || btrim(eligible_object.object_name)),
+           %s
+       ) > 0
    )
  ORDER BY lower(source_tenant.tenant_code),
           lower(system.system_code),
@@ -258,18 +261,18 @@ SELECT object.object_id,
 
 _SCOPE_SEARCH_OPTIONS_SQL: LiteralString = f"""
 {_SCOPE_VISIBLE_OBJECTS_CTE}
-SELECT DISTINCT placement.tenant_id, placement.tenant_code, placement.tenant_name,
+SELECT DISTINCT source_tenant.tenant_id, source_tenant.tenant_code, source_tenant.tenant_name,
        system.system_code, system.system_name, lower(btrim(zone.zone_code)) AS zone_code
   FROM visible_objects AS visible
   JOIN core.object AS object ON object.object_id = visible.object_id AND object.is_active
   JOIN core.connection AS connection
     ON connection.connection_id = object.connection_id AND connection.is_active
-  JOIN core.tenant AS placement
-    ON placement.tenant_id = connection.tenant_id AND placement.is_active
+  JOIN core.tenant AS source_tenant
+    ON source_tenant.tenant_id = visible.object_tenant_id AND source_tenant.is_active
   JOIN core.system AS system ON system.system_id = connection.system_id AND system.is_active
   JOIN reference.zone AS zone ON zone.zone_id = object.zone_id AND zone.is_active
  WHERE lower(btrim(zone.zone_code)) IN ('source', 'bronze')
- ORDER BY placement.tenant_name, placement.tenant_id,
+ ORDER BY source_tenant.tenant_name, source_tenant.tenant_id,
           system.system_name, system.system_code, zone_code
 """
 

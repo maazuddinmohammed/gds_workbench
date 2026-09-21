@@ -31,9 +31,8 @@ describe("Model Assertions", () => {
     expect(screen.getByText("Quarterly customer-domain review rules.")).toBeVisible();
     expect(screen.getByText("data_governance")).not.toBeVisible();
     await user.click(screen.getByRole("heading", { name: "Normalized metadata" }));
-    await user.click(screen.getByRole("heading", { name: "Provenance" }));
     expect(screen.getByText("data_governance")).toBeVisible();
-    expect(screen.getByText("No workflow provenance")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Provenance" })).not.toBeInTheDocument();
   });
 
   it("filters Assertion Records and renders bounded arrays as structured sections", async () => {
@@ -59,10 +58,9 @@ describe("Model Assertions", () => {
     await user.click(screen.getByRole("link", { name: "Open Assertion Record 91" }));
     expect(await screen.findByRole("heading", { name: "customer.identity.stable" })).toBeVisible();
     await user.click(screen.getByRole("heading", { name: "Normalized details" }));
-    await user.click(screen.getByRole("heading", { name: "Provenance" }));
     expect(screen.getByText("customer_raw")).toBeVisible();
     expect(screen.getByText("invoice_raw")).toBeVisible();
-    expect(screen.getByText("Workflow run 1048")).toBeVisible();
+    expect(screen.queryByText("Workflow run 1048")).not.toBeInTheDocument();
   });
 
   it("keeps refresh, empty, error, and revision states explicit without write controls", async () => {

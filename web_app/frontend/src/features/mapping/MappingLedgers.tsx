@@ -61,14 +61,6 @@ export function MappingDependenciesLedger({
     { accessorKey: "dependency_order", header: "Order" },
     { accessorKey: "status", header: "Status", cell: ({ getValue }) => humanize(getValue<string>()) },
     { accessorKey: "is_locked", header: "Lock", cell: ({ getValue }) => getValue<boolean>() ? "Locked" : "Open" },
-    {
-      accessorKey: "workflow_run_id",
-      header: "Provenance",
-      cell: ({ getValue }) => {
-        const value = getValue<number | null>();
-        return value === null ? "No workflow provenance" : `Workflow run ${value}`;
-      },
-    },
     { accessorKey: "updated_at", header: "Updated", cell: ({ getValue }) => formatDateTime(getValue<string>()) },
   ], [items, selectedIds, onSelectionChange]);
   return (

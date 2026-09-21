@@ -18,9 +18,11 @@ describe("Model Profiling", () => {
     const table = await screen.findByRole("table", { name: "Profiling results" });
     expect(within(table).getByText("customer_raw")).toBeVisible();
     expect(within(table).getByText("12 profiles")).toBeVisible();
+    expect(within(table).getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
+      "Source Tenant", "System", "Schema", "Object", "Profiles", "Last profiled", "Actions",
+    ]);
     expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/profiling/501"))).toBe(false);
 
-    await user.type(screen.getByLabelText("Object ID"), "501");
     await user.type(screen.getByLabelText("Source Tenant code"), " GRDM ");
     await user.type(screen.getByLabelText("System code"), " CRM ");
     await user.type(screen.getByLabelText("Object schema"), " Bronze_CRM ");
@@ -29,7 +31,7 @@ describe("Model Profiling", () => {
 
     expect(await screen.findByRole("table", { name: "Profiling results" })).toBeVisible();
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/profiling?object_id=501&source_tenant_code=grdm&system_code=crm&object_schema=bronze_crm&object_name=customer_raw&page_size=200",
+      "/api/v1/tenants/7/models/18/profiling?source_tenant_code=grdm&system_code=crm&object_schema=bronze_crm&object_name=customer_raw&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
@@ -38,7 +40,6 @@ describe("Model Profiling", () => {
 
     expect(router.state.location.pathname).toBe("/tenants/7/models/18/profiling/501");
     expect(router.state.location.search).toMatchObject({
-      objectId: 501,
       sourceTenantCode: " GRDM ",
       systemCode: " CRM ",
       objectSchema: " Bronze_CRM ",
@@ -47,79 +48,39 @@ describe("Model Profiling", () => {
     });
     expect(await screen.findByRole("heading", { name: "customer_raw" })).toBeVisible();
     expect(screen.getByText("This response contains 2 of 12 Attribute profiles.")).toBeVisible();
-
-    const context = screen.getByRole("region", { name: "Profiled Object context" });
-    expectFact(context, "Model revision", "r18");
-    expectFact(context, "Object", "bronze_crm.customer_raw");
-    expectFact(context, "Source Tenant", "Global Reference Data (GRDM)");
-    expectFact(context, "System", "Customer Relationship Management (CRM)");
-    expectFact(context, "Connection", "CRM_DBR");
-    expectFact(context, "Profiles returned", "2");
-    expectFact(context, "Last profiled", "Aug 24");
+    expect(screen.getByRole("region", { name: "Object description" }))
+      .toHaveTextContent("Customer records used for identity resolution.");
 
     const profileTable = screen.getByRole("table", { name: "Attribute profiles" });
     expect(screen.getByRole("region", { name: "Scrollable Attribute profile metrics" }))
       .toHaveAttribute("tabindex", "0");
-    expect(within(profileTable).getAllByRole("columnheader")).toHaveLength(9);
-    expect(within(profileTable).getByRole("columnheader", { name: "Catalog type" })).toBeVisible();
+    expect(within(profileTable).getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
+      "Attribute", "Inferred data type", "Attribute description", "Number of rows",
+      "Unique distinct rows", "Duplicate percentage",
+    ]);
     expect(within(profileTable).queryByText("Source context digest")).not.toBeInTheDocument();
 
     const customerProfile = profileRow(profileTable, "customer_id");
-    expect(within(customerProfile).getAllByRole("cell")).toHaveLength(8);
-    expect(customerProfile).toHaveTextContent("bigint");
+    expect(within(customerProfile).getAllByRole("cell")).toHaveLength(5);
+    expect(customerProfile).toHaveTextContent("integer");
+    expect(customerProfile).toHaveTextContent("Stable customer identifier.");
     expect(customerProfile).toHaveTextContent("10");
-    expect(customerProfile).toHaveTextContent("80%");
+    expect(customerProfile).toHaveTextContent("8");
     expect(customerProfile).toHaveTextContent("0%");
     expect(customerProfile).not.toHaveTextContent("a".repeat(64));
 
-    const review = within(customerProfile).getByRole("button", { name: "Review customer_id" });
-    review.focus();
-    await user.keyboard("{Enter}");
-    const inspector = screen.getByRole("region", { name: "customer_id" });
-    expect(within(inspector).getByRole("heading", { name: "customer_id" })).toHaveFocus();
-    expect(review).toHaveAttribute("aria-expanded", "true");
-    expect(review).toHaveAttribute("aria-controls", inspector.id);
-    for (const [label, value] of [
-      ["Catalog type", "bigint"], ["Ordinal position", "1"], ["Attribute ID", "601"],
-      ["Rows", "10"], ["Non-null rows", "8"], ["Null rows", "2"], ["Blank rows", "0"],
-      ["Distinct values", "8"], ["Minimum length", "1"], ["Maximum length", "8"], ["Average length", "4.2"],
-      ["Populated", "80%"], ["Distinct", "100%"], ["Duplicates", "0%"], ["Null", "20%"], ["Blank", "0%"],
-      ["Workflow run", "Run 1048"], ["Agent run", "Not recorded"],
-      ["Created", "Aug 24"], ["Updated", "Aug 24"], ["Source context digest", "a".repeat(64)],
-    ] as const) expectFact(inspector, label, value);
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("region", { name: "customer_id" })).not.toBeInTheDocument();
-    expect(review).toHaveFocus();
-    expect(review).toHaveAttribute("aria-expanded", "false");
-
     const statusProfile = profileRow(profileTable, "status");
-    expect(statusProfile).toHaveTextContent("string");
-    expect(statusProfile).toHaveTextContent("100%");
+    expect(statusProfile).toHaveTextContent("Not inferred");
+    expect(statusProfile).toHaveTextContent("No description");
+    expect(statusProfile).toHaveTextContent("Not recorded");
     expect(statusProfile).toHaveTextContent("—");
-    const reviewStatus = within(statusProfile).getByRole("button", { name: "Review status" });
-    reviewStatus.focus();
-    await user.keyboard(" ");
-    const statusInspector = screen.getByRole("region", { name: "status" });
-    expect(within(statusInspector).getByRole("heading", { name: "status" })).toHaveFocus();
-    expectFact(statusInspector, "Null rows", "0");
-    expectFact(statusInspector, "Blank rows", "Not recorded");
-    expectFact(statusInspector, "Average length", "Not recorded");
-    expectFact(statusInspector, "Workflow run", "Not recorded");
-    expectFact(statusInspector, "Source context digest", "b".repeat(64));
-    await user.click(within(statusInspector).getByRole("button", { name: "Close Attribute profile" }));
-    expect(reviewStatus).toHaveFocus();
     expect(fetcher.mock.calls.filter(([input]) => String(input).endsWith("/profiling/501"))).toHaveLength(1);
-
-    const recordDetails = screen.getByText("Object record details").closest("details")!;
-    await user.click(within(recordDetails).getByText("Object record details"));
-    for (const [label, value] of [
-      ["Object ID", "501"], ["Model ID", "18"], ["Source Tenant ID", "8"], ["System ID", "31"], ["Connection ID", "21"],
-    ] as const) expectFact(recordDetails, label, value);
+    expect(screen.queryByText("Object record details")).not.toBeInTheDocument();
+    expect(screen.queryByText("Provenance")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Back to Profiling" }));
     expect(await screen.findByRole("table", { name: "Profiling results" })).toBeVisible();
     expect(router.state.location.pathname).toBe("/tenants/7/models/18/profiling");
-    expect(screen.getByLabelText("Object ID")).toHaveValue("501");
     expect(screen.getByLabelText("Source Tenant code")).toHaveValue(" GRDM ");
     expect(screen.getByLabelText("System code")).toHaveValue(" CRM ");
     expect(screen.getByLabelText("Object schema")).toHaveValue(" Bronze_CRM ");
@@ -139,7 +100,6 @@ describe("Model Profiling", () => {
       });
     });
     await waitFor(() => {
-      expect(screen.getByLabelText("Object ID")).toHaveValue("");
       expect(screen.getByLabelText("Source Tenant code")).toHaveValue("");
       expect(screen.getByLabelText("System code")).toHaveValue("ERP");
     });
@@ -406,10 +366,6 @@ function jsonResponse(value: unknown, status = 200): Response {
   });
 }
 
-function expectFact(scope: HTMLElement, label: string, value: string): void {
-  expect(within(scope).getByText(label).parentElement).toHaveTextContent(value);
-}
-
 function profileRow(table: HTMLElement, attributeName: string): HTMLElement {
   const row = within(table).getByRole("rowheader", { name: attributeName }).closest("tr");
   if (!row) throw new Error(`${attributeName} profile row was not rendered.`);
@@ -517,12 +473,15 @@ const profilingDetailPayload = {
   ...profilingPagePayload.items[0],
   model_id: 18,
   model_revision: 18,
+  object_description: "Customer records used for identity resolution.",
   attribute_profiles: [
     {
       attribute_id: 601,
       attribute_name: "customer_id",
       attribute_ordinal_position: 1,
       attribute_data_type: "bigint",
+      attribute_inferred_data_type: "integer",
+      attribute_description: "Stable customer identifier.",
       source_context_digest: "a".repeat(64),
       row_count: 10,
       non_null_count: 8,
@@ -546,6 +505,8 @@ const profilingDetailPayload = {
       attribute_name: "status",
       attribute_ordinal_position: 2,
       attribute_data_type: "string",
+      attribute_inferred_data_type: null,
+      attribute_description: null,
       source_context_digest: "b".repeat(64),
       row_count: 10,
       non_null_count: 10,

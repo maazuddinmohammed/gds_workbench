@@ -495,7 +495,7 @@ describe("Active Scope", () => {
     await user.selectOptions(screen.getByLabelText("Zone"), "bronze");
     await user.type(screen.getByLabelText("System code"), " CRM ");
     await user.type(screen.getByLabelText("Source Tenant code"), " GRDM ");
-    await user.type(screen.getByLabelText("Object name"), " Customer_Raw ");
+    await user.type(screen.getByLabelText("Schema or Object name"), " Customer_Raw ");
     await user.click(screen.getByRole("button", { name: "Apply filters" }));
 
     expect(await screen.findByRole("table", { name: "Active Model Input Scope" })).toBeVisible();

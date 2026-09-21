@@ -7,7 +7,7 @@ export function AddScopeDialog({ api, tenantId, modelId, modelRevision, hasTenan
   api: ModelInputScopeApi; tenantId: number; modelId: number; modelRevision: number;
   hasTenantLock: boolean; onClose: () => void; onAdded: () => Promise<void>;
 }) {
-  const [placement, setPlacement] = useState(0);
+  const [sourceTenantId, setSourceTenantId] = useState(0);
   const [system, setSystem] = useState("");
   const [zone, setZone] = useState<ZoneCode | "">("");
   const [name, setName] = useState("");
@@ -33,9 +33,11 @@ export function AddScopeDialog({ api, tenantId, modelId, modelRevision, hasTenan
   const busy = add.isPending || uncertain;
   const locations = options.data?.locations ?? [];
   const tenants = [...new Map(locations.map((item) => [item.tenant_id, item])).values()];
-  const systems = [...new Map(locations.filter((item) => item.tenant_id === placement).map((item) => [item.system_code, item])).values()];
-  const zones = [...new Set(locations.filter((item) => item.tenant_id === placement && item.system_code === system).map((item) => item.zone_code))];
+  const systems = [...new Map(locations.filter((item) => item.tenant_id === sourceTenantId).map((item) => [item.system_code, item])).values()];
+  const zones = [...new Set(locations.filter((item) => item.tenant_id === sourceTenantId && item.system_code === system).map((item) => item.zone_code))];
   const rows = candidates.data?.pages.flatMap((page) => page.items) ?? [];
+  const availableRows = rows.filter((row) => !row.is_in_active_scope);
+  const allSelected = availableRows.length > 0 && availableRows.every((row) => selected.has(row.object_id));
   const stale = revision !== modelRevision || (options.data && options.data.model_revision !== revision)
     || candidates.data?.pages.some((page) => page.model_revision !== revision);
   useEffect(() => {
@@ -54,16 +56,16 @@ export function AddScopeDialog({ api, tenantId, modelId, modelRevision, hasTenan
         else if (!event.shiftKey && document.activeElement === focusable.at(-1)) { event.preventDefault(); focusable[0]?.focus(); }
       }}>
       <header className="drawer-header"><h2 id="scope-add-title">Add Objects</h2><button type="button" className="button button-secondary button-small" disabled={busy} onClick={onClose}>Close</button></header>
-      <form className="scope-add-filters" onSubmit={(event) => { event.preventDefault(); if (placement && system && zone) setSearch({ tenantId: placement, systemCode: system, zone, objectName: name }); }}>
-        <label>Tenant<select ref={firstInput} value={placement || ""} disabled={busy} onChange={(event) => { setPlacement(Number(event.target.value)); setSystem(""); setZone(""); resetSearch(); }}><option value="">Choose Tenant</option>{tenants.map((item) => <option key={item.tenant_id} value={item.tenant_id}>{item.tenant_name} ({item.tenant_code})</option>)}</select></label>
-        <label>System<select value={system} disabled={!placement || busy} onChange={(event) => { setSystem(event.target.value); setZone(""); resetSearch(); }}><option value="">Choose System</option>{systems.map((item) => <option key={item.system_code} value={item.system_code}>{item.system_name} ({item.system_code})</option>)}</select></label>
+      <form className="scope-add-filters" onSubmit={(event) => { event.preventDefault(); const sourceTenant = tenants.find((item) => item.tenant_id === sourceTenantId); if (sourceTenant && system && zone) setSearch({ sourceTenantCode: sourceTenant.tenant_code, systemCode: system, zone, objectName: name }); }}>
+        <label>Source Tenant<select ref={firstInput} value={sourceTenantId || ""} disabled={busy} onChange={(event) => { setSourceTenantId(Number(event.target.value)); setSystem(""); setZone(""); resetSearch(); }}><option value="">Choose Source Tenant</option>{tenants.map((item) => <option key={item.tenant_id} value={item.tenant_id}>{item.tenant_name} ({item.tenant_code})</option>)}</select></label>
+        <label>System<select value={system} disabled={!sourceTenantId || busy} onChange={(event) => { setSystem(event.target.value); setZone(""); resetSearch(); }}><option value="">Choose System</option>{systems.map((item) => <option key={item.system_code} value={item.system_code}>{item.system_name} ({item.system_code})</option>)}</select></label>
         <label>Zone<select value={zone} disabled={!system || busy} onChange={(event) => { setZone(event.target.value as ZoneCode | ""); resetSearch(); }}><option value="">Choose Zone</option>{zones.map((item) => <option key={item} value={item}>{item === "source" ? "Source" : "Bronze"}</option>)}</select></label>
         <label>Schema or Object name<input value={name} maxLength={400} disabled={busy} onChange={(event) => setName(event.target.value)} placeholder="Search Objects" /></label>
-        <button className="button button-secondary" type="submit" disabled={busy || !placement || !system || !zone || candidates.isFetching}>Find Objects</button>
+        <button className="button button-secondary" type="submit" disabled={busy || !sourceTenantId || !system || !zone || candidates.isFetching}>Find Objects</button>
       </form>
       {options.isPending ? <p aria-busy="true">Loading available locations…</p> : options.isError ? <p role="alert">Could not load locations. Close and retry.</p> : !locations.length ? <p className="empty-state">Register Source or Bronze Objects in Metadata first.</p> : null}
       {search ? candidates.isPending ? <p aria-busy="true">Finding Objects…</p> : candidates.isError ? <p role="alert">Could not find Objects. Retry the search.</p> : <>
-        <div className="workflow-table-scroll"><table aria-label="Objects to add"><thead><tr><th><span className="sr-only">Select</span></th><th>Object</th><th>Schema</th><th>Attributes</th><th>Scope</th></tr></thead><tbody>{rows.map((row) => <tr key={row.object_id}>
+        <div className="workflow-table-scroll"><table aria-label="Objects to add"><thead><tr><th><input type="checkbox" aria-label="Select all Objects" disabled={busy || !availableRows.length} checked={allSelected} onChange={(event) => setSelected((current) => { const next = new Set(current); for (const row of availableRows) { if (event.target.checked) next.add(row.object_id); else next.delete(row.object_id); } return next; })} /></th><th>Object</th><th>Schema</th><th>Attributes</th><th>Scope</th></tr></thead><tbody>{rows.map((row) => <tr key={row.object_id}>
           <td><input type="checkbox" aria-label={`Add ${row.object_schema}.${row.object_name}`} disabled={row.is_in_active_scope || busy} checked={row.is_in_active_scope || selected.has(row.object_id)} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(row.object_id); else next.delete(row.object_id); return next; })} /></td>
           <th scope="row">{row.object_name}</th><td>{row.object_schema}</td><td>{row.attribute_count}</td><td>{row.is_in_active_scope ? "Already added" : "Available"}</td>
         </tr>)}</tbody></table></div>

@@ -13,6 +13,7 @@ describe("stylesheet Module manifest", () => {
         '@import "./styles/analysis-assertions-modeled.css";',
         '@import "./styles/profiling.css";',
         '@import "./styles/metadata.css";',
+        '@import "./styles/metadata-catalog.css";',
         '@import "./styles/tenant-entry.css";',
         '@import "./styles/tenant-workspace.css";',
         '@import "./styles/model-workspace-overrides.css";',

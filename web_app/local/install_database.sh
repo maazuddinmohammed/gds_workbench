@@ -141,3 +141,7 @@ do
     psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
         -X -v ON_ERROR_STOP=1 --single-transaction -f "$local_prompt_seed"
 done
+
+psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+    -X -v ON_ERROR_STOP=1 --single-transaction \
+    -f "$database_root/seed/08_local_workbench_review.sql"

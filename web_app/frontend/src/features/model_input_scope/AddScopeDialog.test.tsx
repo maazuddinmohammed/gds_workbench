@@ -6,7 +6,7 @@ import { AddScopeDialog } from "./AddScopeDialog";
 import type { ModelInputScopeApi } from "./api";
 
 describe("Add Input Scope Objects", () => {
-  it("filters placement, preserves existing scope and retries an uncertain addition with the same key", async () => {
+  it("filters by Source Tenant, selects all available Objects and retries an uncertain addition with the same key", async () => {
     const added = vi.fn().mockResolvedValue(undefined);
     const closed = vi.fn();
     const add = vi.fn().mockRejectedValueOnce(new ApiError(503, "dependency_unavailable", null))
@@ -27,18 +27,19 @@ describe("Add Input Scope Objects", () => {
     </QueryClientProvider>);
     await screen.findByRole("option", { name: "Global Store (GDS)" });
     expect(screen.getByLabelText("System")).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Tenant"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("Source Tenant"), { target: { value: "2" } });
     fireEvent.change(screen.getByLabelText("System"), { target: { value: "GDS" } });
     fireEvent.change(screen.getByLabelText("Zone"), { target: { value: "bronze" } });
     fireEvent.click(screen.getByRole("button", { name: "Find Objects" }));
     await screen.findByRole("table", { name: "Objects to add" });
-    expect(find).toHaveBeenCalledWith(1, 7, { tenantId: 2, systemCode: "GDS", zone: "bronze", objectName: "" }, undefined);
+    expect(find).toHaveBeenCalledWith(1, 7, { sourceTenantCode: "GDS", systemCode: "GDS", zone: "bronze", objectName: "" }, undefined);
     expect(screen.getByLabelText("Add bronze.customers")).toBeDisabled();
-    fireEvent.click(screen.getByLabelText("Add bronze.orders"));
+    fireEvent.click(screen.getByLabelText("Select all Objects"));
+    expect(screen.getByLabelText("Add bronze.orders")).toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: "Add selected Objects" }));
     await screen.findByRole("button", { name: "Retry addition" });
     expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
-    expect(screen.getByLabelText("Tenant")).toBeDisabled();
+    expect(screen.getByLabelText("Source Tenant")).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Retry addition" }));
     await waitFor(() => expect(closed).toHaveBeenCalledOnce());
     expect(add.mock.calls[0]).toEqual(add.mock.calls[1]);

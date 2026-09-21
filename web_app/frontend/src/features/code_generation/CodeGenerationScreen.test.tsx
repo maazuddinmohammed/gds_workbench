@@ -72,7 +72,7 @@ describe("Code Generation journey", () => {
     expect(await screen.findByText("gold_nwa.order_mart")).toBeVisible();
   });
 
-  it("reviews stored SQL and canonical provenance on a dedicated full page", async () => {
+  it("reviews stored SQL and essential context on a dedicated full page", async () => {
     const { container } = render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(codeGenerationFetchStub()),
       history: createMemoryHistory({
@@ -84,20 +84,20 @@ describe("Code Generation journey", () => {
     expect(heading).toHaveFocus();
     expect(screen.getByLabelText("Stored SQL for silver_nwa.customer")).toBeVisible();
     expect(screen.getByText("Customer CRM")).not.toBeVisible();
-    for (const label of ["Target Object", "Contributing source Systems", "Applied Mapping provenance", "Generation provenance"]) await userEvent.setup().click(screen.getByRole("heading", { name: label }));
+    for (const label of ["Target Object", "Contributing source Systems", "Applied Mapping"]) await userEvent.setup().click(screen.getByRole("heading", { name: label }));
     expect(screen.getByRole("heading", { name: "Contributing source Systems" })).toBeVisible();
     expect(screen.getByText("Customer CRM")).toBeVisible();
     expect(screen.getByRole("table", { name: "Applied Mapping supports" })).toBeVisible();
     expect(screen.getByText("Customer source")).toBeVisible();
-    expect(screen.getByText("Standard Databricks SQL (databricks.standard)")).toBeVisible();
-    expect(screen.getByText("gds_sql_generator@1.2.0")).toBeVisible();
-    expect(screen.getByText("a".repeat(64))).toBeVisible();
+    expect(screen.queryByText("Standard Databricks SQL (databricks.standard)")).not.toBeInTheDocument();
+    expect(screen.queryByText("gds_sql_generator@1.2.0")).not.toBeInTheDocument();
+    expect(screen.queryByText("a".repeat(64))).not.toBeInTheDocument();
     expect(screen.getByLabelText("Stored SQL for silver_nwa.customer")).toHaveTextContent(
       "SELECT '<script>not executable</script>' AS literal;",
     );
     expect(container.querySelector("script")).toBeNull();
     expect(screen.getAllByRole("heading", { level: 2 }).map((item) => item.textContent)).toEqual([
-      "Stored SQL", "Target Object", "Contributing source Systems", "Applied Mapping provenance", "Generation provenance",
+      "Stored SQL", "Target Object", "Contributing source Systems", "Applied Mapping",
     ]);
     expect(screen.getByRole("link", { name: "Object Mapping 81" })).toHaveAttribute(
       "href", "/tenants/7/mapping/models/18/objects/81",
@@ -109,7 +109,7 @@ describe("Code Generation journey", () => {
     );
   });
 
-  it("renders migrated Code artifacts without legacy guide or generator provenance", async () => {
+  it("keeps migrated Code artifacts focused on stored SQL", async () => {
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(codeGenerationFetchStub({ nullableProvenance: true })),
       history: createMemoryHistory({
@@ -118,9 +118,7 @@ describe("Code Generation journey", () => {
     })} />);
 
     await screen.findByRole("heading", { name: "customer.sql" });
-    await userEvent.setup().click(screen.getByRole("heading", { name: "Generation provenance" }));
-    expect(screen.getByText("No legacy guide provenance")).toBeVisible();
-    expect(screen.getByText("No legacy generator provenance")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Generation provenance" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Stored SQL for silver_nwa.customer")).toHaveTextContent(
       "SELECT '<script>not executable</script>' AS literal;",
     );
@@ -133,7 +131,7 @@ describe("Code Generation journey", () => {
     })} />);
     await screen.findByRole("heading", { name: "customer.sql" });
     expect(screen.getByLabelText("Stored SQL for silver_nwa.customer").textContent).toBe(generatedSqlDetail.generated_sql);
-    await userEvent.setup().click(screen.getByRole("heading", { name: "Applied Mapping provenance" }));
+    await userEvent.setup().click(screen.getByRole("heading", { name: "Applied Mapping" }));
     await userEvent.setup().click(screen.getByRole("heading", { name: "Contributing source Systems" }));
     if (truncated) {
       expect(screen.getByText("Showing 1 of 3 Mapping supports.")).toBeVisible();

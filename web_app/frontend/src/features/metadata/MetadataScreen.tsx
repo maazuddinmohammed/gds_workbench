@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 
 import { ApiError } from "../../core/http";
 import type { TenantLockState } from "../tenant_locks/api";
@@ -11,7 +10,6 @@ import {
   validationReviewFromOutcome,
   validationReviewFromResult,
   type MetadataApi,
-  type MetadataFilters,
   type MetadataRow,
   type MetadataSection,
   type MetadataValidationReview,
@@ -30,20 +28,17 @@ const SECTIONS: Array<{ section: MetadataSection; label: string }> = [
 export function MetadataScreen({
   api,
   tenantId,
-  tenantName,
   tenantLock,
   canWriteMetadata,
 }: {
   api: MetadataApi;
   tenantId: number;
-  tenantName: string;
   tenantLock: TenantLockState;
   canWriteMetadata: boolean;
 }) {
   const queryClient = useQueryClient();
   const [section, setSection] = useState<MetadataSection>("reference");
   const [datasetCode, setDatasetCode] = useState<string | null>(null);
-  const [filters, setFilters] = useState<MetadataFilters>({});
   const [cursor, setCursor] = useState<string | undefined>();
   const [cursorHistory, setCursorHistory] = useState<Array<string | undefined>>([]);
   const [selectedRow, setSelectedRow] = useState<MetadataRow | null>(null);
@@ -70,11 +65,11 @@ export function MetadataScreen({
   }, [datasetCode, descriptor]);
 
   const rowsQuery = useQuery({
-    queryKey: metadataQueryKeys.rows(tenantId, descriptor?.dataset ?? "", filters, cursor),
+    queryKey: metadataQueryKeys.rows(tenantId, descriptor?.dataset ?? "", {}, cursor),
     queryFn: () => api.listMetadataRows(
       tenantId,
       descriptor?.dataset ?? "",
-      filters,
+      {},
       50,
       cursor,
     ),
@@ -224,14 +219,12 @@ export function MetadataScreen({
   const selectSection = (next: MetadataSection) => {
     setSection(next);
     setDatasetCode(registryQuery.data?.datasets.find((dataset) => dataset.section === next)?.dataset ?? null);
-    setFilters({});
     setCursor(undefined);
     setCursorHistory([]);
     setSelectedRow(null);
   };
   const selectDataset = (next: string) => {
     setDatasetCode(next);
-    setFilters({});
     setCursor(undefined);
     setCursorHistory([]);
     setSelectedRow(null);
@@ -266,20 +259,58 @@ export function MetadataScreen({
     ? editDisabledReason
     : "Stage a new complete normalized row";
 
+  const rowDetailSurface = effectiveSelectedRow ? (
+    <MetadataRowDetail
+      descriptor={descriptor}
+      row={effectiveSelectedRow}
+      isStaged={Boolean(selectedStagedRow)}
+      canEdit={canStage}
+      editDisabledReason={editDisabledReason}
+      onClose={() => setSelectedRow(null)}
+      onEdit={() => {
+        setEditor({ mode: "edit", row: effectiveSelectedRow });
+        setSelectedRow(null);
+      }}
+    />
+  ) : null;
+  const rowEditorSurface = editor ? (
+    <MetadataRowEditor
+      mode={editor.mode}
+      descriptor={descriptor}
+      rowSchema={datasetDetailQuery.data?.row_schema ?? { properties: {} }}
+      fixedValues={datasetDetailQuery.data?.fixed_values ?? {}}
+      baseRow={editor.row}
+      isSaving={stageMutation.isPending}
+      onClose={() => setEditor(null)}
+      onStage={(record, previousKey) => stageMutation.mutateAsync({
+        record,
+        ...(previousKey ? { previousKey } : {}),
+      }).then(() => {
+        setSelectedRow(record);
+      })}
+    />
+  ) : null;
+  const exportDialog = exportOpen ? (
+    <MetadataExportDialog
+      datasets={operationalDatasets}
+      activeDataset={descriptor.section === "operational" ? descriptor.dataset : null}
+      onClose={() => setExportOpen(false)}
+      onExport={(sheetCodes) => api.exportMetadataWorkbook(tenantId, sheetCodes)}
+    />
+  ) : null;
+
   return (
-    <main className="workspace metadata-workspace page-enter">
-      <header className="metadata-commandbar">
-        <div>
-          <p className="eyebrow">Governed catalog · {tenantName}</p>
-          <h1>Metadata</h1>
-          <p>Normalized server records, operational workbook exchange, and reviewed Tenant changes.</p>
-        </div>
-        <div>
-          <Link className="button button-secondary button-small" to="/tenants/$tenantId/metadata/objects" params={{ tenantId: String(tenantId) }}>Objects and Attributes</Link>
+    <main className="metadata-catalog">
+      <header className="metadata-catalog-titlebar">
+        <h1>Metadata catalog</h1>
+        <div className="metadata-catalog-actions">
+          <span className={`metadata-catalog-state${hasTenantLock ? " is-held" : ""}`} title={lockStateText(tenantLock)}>
+            {hasTenantLock ? "Lock held" : "Read-only"}
+          </span>
           <button
             className="button button-secondary button-small"
             type="button"
-            disabled={registryQuery.isFetching || rowsQuery.isFetching}
+            disabled={registryQuery.isFetching || rowsQuery.isFetching || isChangeSetBusy}
             onClick={() => void Promise.all([
               registryQuery.refetch(),
               datasetDetailQuery.refetch(),
@@ -295,141 +326,89 @@ export function MetadataScreen({
         </div>
       </header>
 
-      <nav className="metadata-section-tabs" aria-label="Metadata sections">
-        {SECTIONS.map((item) => {
-          const count = registryQuery.data.datasets.filter((dataset) => dataset.section === item.section).length;
-          return (
-            <button
-              key={item.section}
-              className={section === item.section ? "is-active" : undefined}
-              type="button"
-              aria-label={`${item.label} ${count} sheets`}
-              aria-current={section === item.section ? "page" : undefined}
-              onClick={() => selectSection(item.section)}
-            >
-              <strong>{item.label}</strong><span>{count} sheets</span>
-            </button>
-          );
-        })}
-      </nav>
+      <MetadataChangeSetPanel
+        changeSet={changeSetQuery.data ?? null}
+        selectedDataset={descriptor.section === "operational" ? descriptor : null}
+        review={review}
+        canWrite={canWriteMetadata}
+        hasTenantLock={hasTenantLock}
+        isBusy={isChangeSetBusy}
+        onCreateOrResume={() => createMutation.mutateAsync().then(() => undefined)}
+        onValidate={() => validateMutation.mutateAsync().then(() => undefined)}
+        onApply={() => applyMutation.mutateAsync().then(() => undefined)}
+        onArchive={() => archiveMutation.mutateAsync().then(() => undefined)}
+        onImport={(file) => importMutation.mutateAsync(file).then(() => undefined)}
+      />
 
-      <div className="metadata-layout">
-        <aside className="metadata-control-rail" aria-label="Metadata access and Change Set">
-          <section className="metadata-access-state">
-            <p className="eyebrow">Access state</p>
-            <h2>{hasTenantLock ? "Tenant Lock held" : "Read-only view"}</h2>
-            <p>{lockStateText(tenantLock)}</p>
-            <dl>
-              <div><dt>Reference</dt><dd>Read-only</dd></div>
-              <div><dt>Foundational</dt><dd>Read-only</dd></div>
-              <div><dt>Operational</dt><dd>{hasTenantLock && canWriteMetadata ? "Staging available" : "Read-only"}</dd></div>
-            </dl>
-          </section>
-          <MetadataChangeSetPanel
-            changeSet={changeSetQuery.data ?? null}
-            selectedDataset={descriptor.section === "operational" ? descriptor : null}
-            review={review}
-            canWrite={canWriteMetadata}
-            hasTenantLock={hasTenantLock}
-            isBusy={isChangeSetBusy}
-            onCreateOrResume={() => createMutation.mutateAsync().then(() => undefined)}
-            onValidate={() => validateMutation.mutateAsync().then(() => undefined)}
-            onApply={() => applyMutation.mutateAsync().then(() => undefined)}
-            onArchive={() => archiveMutation.mutateAsync().then(() => undefined)}
-            onImport={(file) => importMutation.mutateAsync(file).then(() => undefined)}
-          />
-        </aside>
-
-        <section className="metadata-catalog-plane">
-          <nav className="metadata-sheet-tabs" aria-label={`${section} Metadata sheets`}>
-            {sectionDatasets.map((dataset) => (
-              <button
-                key={dataset.dataset}
-                className={dataset.dataset === descriptor.dataset ? "is-active" : undefined}
-                type="button"
-                onClick={() => selectDataset(dataset.dataset)}
-              >
-                {dataset.label}
-              </button>
-            ))}
-          </nav>
-          <MetadataLedger
-            descriptor={descriptor}
-            items={rowsQuery.data?.items ?? []}
-            filters={filters}
-            rowSchema={datasetDetailQuery.data?.row_schema ?? null}
-            state={{
-              isLoading: rowsQuery.isPending,
-              isFetching: rowsQuery.isFetching,
-              isDenied: rowsQuery.error instanceof ApiError && rowsQuery.error.status === 403,
-              isError: rowsQuery.isError,
-              hasNext: Boolean(rowsQuery.data?.next_cursor),
-              hasPrevious: cursorHistory.length > 0,
-            }}
-            canAdd={canStage}
-            addDisabledReason={addDisabledReason}
-            onApplyFilters={(next) => {
-              setFilters(next);
-              setCursor(undefined);
-              setCursorHistory([]);
-            }}
-            onOpenRow={setSelectedRow}
-            onAdd={() => setEditor({ mode: "add", row: {} })}
-            onNext={() => {
-              if (!rowsQuery.data?.next_cursor) return;
-              setCursorHistory((current) => [...current, cursor]);
-              setCursor(rowsQuery.data.next_cursor ?? undefined);
-            }}
-            onPrevious={() => {
-              setCursorHistory((current) => {
-                const next = [...current];
-                setCursor(next.pop());
-                return next;
-              });
-            }}
-          />
-        </section>
-      </div>
-
-      {effectiveSelectedRow ? (
-        <MetadataRowDetail
+      <div className="metadata-catalog-navigator">
+        <nav className="metadata-catalog-tree" aria-label="Metadata catalog navigation">
+          {SECTIONS.map((item) => {
+            const datasets = registryQuery.data.datasets.filter((dataset) => dataset.section === item.section);
+            const selected = section === item.section;
+            return (
+              <section key={item.section}>
+                <button
+                  className={selected ? "is-active" : undefined}
+                  type="button"
+                  aria-label={`${item.label} ${datasets.length} sheets`}
+                  aria-expanded={selected}
+                  aria-current={selected ? "page" : undefined}
+                  onClick={() => selectSection(item.section)}
+                >
+                  <strong>{item.label}</strong><span>{datasets.length} sheets</span>
+                </button>
+                {selected ? (
+                  <div aria-label={`${item.label} sheets`}>
+                    {datasets.map((dataset) => (
+                      <button
+                        key={dataset.dataset}
+                        className={dataset.dataset === descriptor.dataset ? "is-selected" : undefined}
+                        type="button"
+                        aria-current={dataset.dataset === descriptor.dataset ? "page" : undefined}
+                        onClick={() => selectDataset(dataset.dataset)}
+                      >
+                        {dataset.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
+            );
+          })}
+        </nav>
+        <MetadataLedger
           descriptor={descriptor}
-          row={effectiveSelectedRow}
-          isStaged={Boolean(selectedStagedRow)}
-          canEdit={canStage}
-          editDisabledReason={editDisabledReason}
-          onClose={() => setSelectedRow(null)}
-          onEdit={() => {
-            setEditor({ mode: "edit", row: effectiveSelectedRow });
-            setSelectedRow(null);
+          items={rowsQuery.data?.items ?? []}
+          state={{
+            isLoading: rowsQuery.isPending,
+            isFetching: rowsQuery.isFetching,
+            isDenied: rowsQuery.error instanceof ApiError && rowsQuery.error.status === 403,
+            isError: rowsQuery.isError,
+            hasNext: Boolean(rowsQuery.data?.next_cursor),
+            hasPrevious: cursorHistory.length > 0,
+          }}
+          canAdd={canStage}
+          addDisabledReason={addDisabledReason}
+          onOpenRow={setSelectedRow}
+          onAdd={() => setEditor({ mode: "add", row: {} })}
+          onNext={() => {
+            if (!rowsQuery.data?.next_cursor) return;
+            setCursorHistory((current) => [...current, cursor]);
+            setCursor(rowsQuery.data.next_cursor ?? undefined);
+          }}
+          onPrevious={() => {
+            setCursorHistory((current) => {
+              const next = [...current];
+              setCursor(next.pop());
+              return next;
+            });
           }}
         />
-      ) : null}
-      {editor ? (
-        <MetadataRowEditor
-          mode={editor.mode}
-          descriptor={descriptor}
-          rowSchema={datasetDetailQuery.data?.row_schema ?? { properties: {} }}
-          fixedValues={datasetDetailQuery.data?.fixed_values ?? {}}
-          baseRow={editor.row}
-          isSaving={stageMutation.isPending}
-          onClose={() => setEditor(null)}
-          onStage={(record, previousKey) => stageMutation.mutateAsync({
-            record,
-            ...(previousKey ? { previousKey } : {}),
-          }).then(() => {
-            setSelectedRow(record);
-          })}
-        />
-      ) : null}
-      {exportOpen ? (
-        <MetadataExportDialog
-          datasets={operationalDatasets}
-          activeDataset={descriptor.section === "operational" ? descriptor.dataset : null}
-          onClose={() => setExportOpen(false)}
-          onExport={(sheetCodes) => api.exportMetadataWorkbook(tenantId, sheetCodes)}
-        />
-      ) : null}
+      </div>
+
+      {rowDetailSurface}
+      {rowEditorSurface}
+      {exportDialog}
     </main>
   );
 }

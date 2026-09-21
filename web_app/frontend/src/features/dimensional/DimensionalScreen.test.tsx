@@ -26,7 +26,7 @@ describe("Model Dimensional", () => {
     expect(screen.getByRole("heading", { name: "Source mappings" })).toBeVisible();
     expect(screen.getAllByText("silver.sales_order")).toHaveLength(1);
     expect(screen.getByText("assertion:sales-grain")).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Provenance" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Provenance" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Back to Dimensional" }));
     expect(await screen.findByRole("table", { name: "Dimensional Objects" })).toBeVisible();
@@ -47,7 +47,7 @@ describe("Model Dimensional", () => {
     expect(screen.getByText("No change behavior is recorded.")).toBeVisible();
     await user.click(screen.getByRole("heading", { name: "Source mappings" }));
     await user.click(within(screen.getByRole("table", { name: "Source mappings" })).getAllByText("Show details")[0]!);
-    expect(screen.getByText("Entity mapping id").nextElementSibling).toHaveTextContent("901");
+    expect(screen.queryByText("Entity mapping id")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Source mappings" })).toBeVisible();
     expect(screen.getAllByText("silver.sales_order.sales_amount")).toHaveLength(1);
     expect(screen.getByText("assertion:additive-sales")).toBeVisible();

@@ -118,7 +118,7 @@
 }
 
 .profiling-filterbar {
-  grid-template-columns: 0.65fr repeat(4, minmax(7.5rem, 1fr)) auto;
+  grid-template-columns: repeat(4, minmax(7.5rem, 1fr)) auto;
 }
 
 .workflow-filterbar label,
@@ -315,10 +315,6 @@
   font-size: 0.61rem;
 }
 
-.profiling-object-facts {
-  margin-top: 0;
-}
-
 .profiling-detail-page {
   width: 100%;
 }
@@ -397,15 +393,6 @@
 .profile-evidence-table tbody tr.is-active > * {
   background: var(--blue-soft);
 }
-
-.profile-evidence-actions { text-align: right; }
-
-.profile-inspector h2 { overflow-wrap: anywhere; }
-.profile-inspector h3 { margin: 1.25rem 0 0.65rem; font-size: 0.85rem; }
-.profile-inspector code { overflow-wrap: anywhere; word-break: break-all; }
-.profile-record-details { margin-top: 1.5rem; }
-.profile-record-details summary { cursor: pointer; color: var(--muted); }
-
 
 .profile-evidence-name,
 .profile-evidence-wrap {

@@ -345,8 +345,17 @@ describe("current metadata enrichment workspace", () => {
 
   it("edits current metadata and preserves the exact request across an uncertain save", async () => {
     const api = metadataFixture({ failOnce: true }); const user = userEvent.setup();
-    const table = await screen.findByRole("table", { name: "Object metadata" });
-    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["", "Schema", "Object", "Description", "Zone", "Attributes", "Actions", "Details"]);
+    let table = await screen.findByRole("table", { name: "Object metadata" });
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["", "Source Tenant", "Schema", "Object", "Object description", "Zone", "Attributes", "Actions", "Details"]);
+    await user.type(screen.getByLabelText("Source Tenant code"), " NWA ");
+    await user.type(screen.getByLabelText("System code"), " CRM ");
+    await user.selectOptions(screen.getByLabelText("Zone"), "source");
+    await user.type(screen.getByLabelText("Schema or Object name"), " customer ");
+    await user.click(screen.getByRole("button", { name: "Apply filters" }));
+    await waitFor(() => expect(api.listModelInputScope).toHaveBeenLastCalledWith(7, 18, {
+      sourceTenantCode: " NWA ", systemCode: " CRM ", zone: "source", objectName: " customer ",
+    }, 200, undefined));
+    table = screen.getByRole("table", { name: "Object metadata" });
     expect(screen.queryByText(/Complete missing/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show activity" })).toHaveAttribute("aria-expanded", "false");
     await user.click(within(table).getByRole("button", { name: "Edit" }));

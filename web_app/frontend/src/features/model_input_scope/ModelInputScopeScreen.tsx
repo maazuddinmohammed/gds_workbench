@@ -151,13 +151,13 @@ function ScopeView({
   onRefresh: () => void;
 }) {
   const columns = useMemo<ColumnDef<ModelInputScopeObject>[]>(() => [
-    { accessorKey: "object_schema", header: "Schema" },
     {
-      accessorKey: "object_name",
-      header: "Object",
+      accessorKey: "source_tenant_code",
+      header: "Source Tenant",
       cell: ({ row }) => (
-        <span className="scope-object-name">
-          <strong>{row.original.object_name}</strong>
+        <span className="scope-secondary">
+          <strong>{row.original.source_tenant_code}</strong>
+          <span>{row.original.source_tenant_name}</span>
         </span>
       ),
     },
@@ -171,13 +171,13 @@ function ScopeView({
         </span>
       ),
     },
+    { accessorKey: "object_schema", header: "Schema" },
     {
-      accessorKey: "source_tenant_code",
-      header: "Source Tenant",
+      accessorKey: "object_name",
+      header: "Object",
       cell: ({ row }) => (
-        <span className="scope-secondary">
-          <strong>{row.original.source_tenant_code}</strong>
-          <span>{row.original.source_tenant_name}</span>
+        <span className="scope-object-name">
+          <strong>{row.original.object_name}</strong>
         </span>
       ),
     },
@@ -410,7 +410,13 @@ function ScopeDetailDrawer({
   );
 }
 
-function ScopeFilterForm({ onApply }: { onApply: (filters: ModelInputScopeFilters) => void }) {
+export function ScopeFilterForm({
+  ariaLabel = "Filter active Model Input Scope",
+  onApply,
+}: {
+  ariaLabel?: string;
+  onApply: (filters: ModelInputScopeFilters) => void;
+}) {
   const form = useForm({
     defaultValues: {
       zone: "",
@@ -424,26 +430,23 @@ function ScopeFilterForm({ onApply }: { onApply: (filters: ModelInputScopeFilter
   return (
     <form
       className="scope-filterbar"
-      aria-label="Filter active Model Input Scope"
+      aria-label={ariaLabel}
       onSubmit={(event) => {
         event.preventDefault();
         event.stopPropagation();
         void form.handleSubmit();
       }}
     >
-      <form.Field name="zone">
+      <form.Field name="sourceTenantCode">
         {(field) => (
           <label>
-            <span>Zone</span>
-            <select
+            <span>Source Tenant code</span>
+            <input
+              maxLength={100}
               value={field.state.value}
               onBlur={field.handleBlur}
               onChange={(event) => field.handleChange(event.target.value)}
-            >
-              <option value="">All Zones</option>
-              <option value="source">Source</option>
-              <option value="bronze">Bronze</option>
-            </select>
+            />
           </label>
         )}
       </form.Field>
@@ -460,23 +463,26 @@ function ScopeFilterForm({ onApply }: { onApply: (filters: ModelInputScopeFilter
           </label>
         )}
       </form.Field>
-      <form.Field name="sourceTenantCode">
+      <form.Field name="zone">
         {(field) => (
           <label>
-            <span>Source Tenant code</span>
-            <input
-              maxLength={100}
+            <span>Zone</span>
+            <select
               value={field.state.value}
               onBlur={field.handleBlur}
               onChange={(event) => field.handleChange(event.target.value)}
-            />
+            >
+              <option value="">All Zones</option>
+              <option value="source">Source</option>
+              <option value="bronze">Bronze</option>
+            </select>
           </label>
         )}
       </form.Field>
       <form.Field name="objectName">
         {(field) => (
           <label>
-            <span>Object name</span>
+            <span>Schema or Object name</span>
             <input
               maxLength={400}
               value={field.state.value}

@@ -4,7 +4,8 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { ApiError } from "../../core/http";
 import { formatRequiredDateTime, zoneLabel } from "../../shared/presentation";
 import type { ModelDetail } from "../models/api";
-import type { ModelInputScopeApi, ModelInputScopeObject } from "../model_input_scope/api";
+import type { ModelInputScopeApi, ModelInputScopeFilters, ModelInputScopeObject } from "../model_input_scope/api";
+import { ScopeFilterForm } from "../model_input_scope/ModelInputScopeScreen";
 import type { MetadataApi, ObjectAttribute, ReviewMetadataRecordsCommand } from "../metadata/api";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
 import { WorkflowTokenUsage } from "../workflows/WorkflowTokenUsage";
@@ -28,8 +29,7 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
   const [objectId, setObjectId] = useState<number | null>(null);
   const [attributePage, setAttributePage] = useState(0);
   const [editor, setEditor] = useState<DescriptionRecord | null>(null);
-  const [search, setSearch] = useState("");
-  const [objectFilter, setObjectFilter] = useState("");
+  const [filters, setFilters] = useState<ModelInputScopeFilters>({});
   const [notice, setNotice] = useState("");
   const [refreshRequired, setRefreshRequired] = useState(false);
   const pendingReview = useRef<ReviewRequest | null>(null);
@@ -37,8 +37,8 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
   const editTrigger = useRef<HTMLElement | null>(null);
   const returnObject = useRef<number | null>(null);
   const objects = useInfiniteQuery({
-    queryKey: ["model-input-scope", tenantId, model.model_id, { objectName: objectFilter }],
-    queryFn: ({ pageParam }) => api.listModelInputScope(tenantId, model.model_id, { objectName: objectFilter }, 200, pageParam),
+    queryKey: ["model-input-scope", tenantId, model.model_id, filters],
+    queryFn: ({ pageParam }) => api.listModelInputScope(tenantId, model.model_id, filters, 200, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
@@ -142,13 +142,14 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
     {!editor && review.isError ? <div role="alert"><p>{error}</p>{uncertain ? <button type="button" className="button button-secondary button-small" onClick={() => { if (pendingReview.current) review.mutate(pendingReview.current); }}>Retry same save</button> : null}</div> : null}
     {notice ? <p role="status">{notice}</p> : null}
     {objectId === null ? <section className="workflow-surface" aria-label="Current metadata">
-      <form className="enrichment-search" onSubmit={(event) => { event.preventDefault(); if (!busy) { setSelectedIds(new Set()); setObjectFilter(search.trim()); } }}>
-        <label htmlFor="enrichment-object-search">Objects</label><input id="enrichment-object-search" type="search" placeholder="Find an Object" value={search} disabled={busy} onChange={(event) => setSearch(event.target.value)} />
-        <button type="submit" className="button button-secondary button-small" disabled={busy}>Search</button>
-      </form>
+      <ScopeFilterForm ariaLabel="Filter Enrichment Objects" onApply={(nextFilters) => {
+        if (busy) return;
+        setSelectedIds(new Set());
+        setFilters(nextFilters);
+      }} />
       {objects.isPending ? <p className="surface-state" aria-busy="true">Loading metadata…</p> : objects.isError || changed ? <p className="surface-state" role="alert">Metadata is unavailable or the Model changed. Refresh to retry.</p> : <>
-        <div className="workflow-table-scroll table-scroll"><table className="enrichment-metadata-table" aria-label="Object metadata"><thead><tr><th className="selection-cell">{checkbox()}</th><th>Schema</th><th>Object</th><th>Description</th><th>Zone</th><th>Attributes</th><th>Actions</th><th><span className="sr-only">Details</span></th></tr></thead>
-          <tbody>{rows.map((object) => <tr key={object.object_id}><td className="selection-cell">{checkbox(object.object_id)}</td><td>{object.object_schema}</td><td><strong>{object.object_name}</strong>{object.is_locked ? <span className="metadata-lock-label">Locked</span> : null}</td><td className="enrichment-description">{object.object_description || <span className="field-help">No description</span>}</td><td>{zoneLabel(object.zone_code)}</td><td>{object.attribute_count}</td><td>{recordActions(object)}</td><td><button type="button" className="text-action" id={`enrichment-object-${object.object_id}`} disabled={busy} aria-label={`Show details for ${object.object_name}`} onClick={() => { returnObject.current = object.object_id; setObjectId(object.object_id); }}>Show details</button></td></tr>)}</tbody>
+        <div className="workflow-table-scroll table-scroll"><table className="enrichment-metadata-table" aria-label="Object metadata"><thead><tr><th className="selection-cell">{checkbox()}</th><th>Source Tenant</th><th>Schema</th><th>Object</th><th>Object description</th><th>Zone</th><th>Attributes</th><th>Actions</th><th>Details</th></tr></thead>
+          <tbody>{rows.map((object) => <tr key={object.object_id}><td className="selection-cell">{checkbox(object.object_id)}</td><td><span className="scope-secondary"><strong>{object.source_tenant_code}</strong><span>{object.source_tenant_name}</span></span></td><td>{object.object_schema}</td><td><strong>{object.object_name}</strong>{object.is_locked ? <span className="metadata-lock-label">Locked</span> : null}</td><td className="enrichment-description">{object.object_description || <span className="field-help">No description</span>}</td><td>{zoneLabel(object.zone_code)}</td><td>{object.attribute_count}</td><td>{recordActions(object)}</td><td><button type="button" className="text-action" id={`enrichment-object-${object.object_id}`} disabled={busy} aria-label={`Show details for ${object.object_name}`} onClick={() => { returnObject.current = object.object_id; setObjectId(object.object_id); }}>Show details</button></td></tr>)}</tbody>
         </table></div>
         {!rows.length ? <p className="empty-state compact">No Objects match this Scope.</p> : null}
         {objects.hasNextPage ? <button type="button" className="button button-secondary button-small" disabled={busy || objects.isFetching} onClick={() => void objects.fetchNextPage()}>Load more Objects</button> : null}

@@ -96,17 +96,11 @@ describe("Model Conceptual", () => {
     expect(screen.getAllByText("bronze.customer_raw")).toHaveLength(1);
     expect(screen.getByText("Customer identity remains stable across CRM and ERP.")).toBeVisible();
     const physical = screen.getByRole("article", { name: "Support 61" });
-    expect(within(physical).getByText("Object 501")).not.toBeVisible();
-    expect(within(physical).getByText("Locked")).toBeVisible();
-    await user.click(within(physical).getByText("Record details"));
-    expect(within(physical).getByText("Object 501")).toBeVisible();
-    expect(within(physical).getByText("No workflow provenance")).toBeVisible();
+    expect(within(physical).queryByText("Object 501")).not.toBeInTheDocument();
     expect(within(physical).getByText("Locked")).toBeVisible();
     const assertion = screen.getByRole("article", { name: "Support 62" });
-    expect(within(assertion).getByText("Assertion 91")).not.toBeVisible();
-    await user.click(within(assertion).getByText("Record details"));
-    expect(within(assertion).getByText("Assertion 91")).toBeVisible();
-    expect(within(assertion).getByText("Workflow run 1048")).toBeVisible();
+    expect(within(assertion).queryByText("Assertion 91")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Provenance" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Back to Conceptual" }));
     expect(await screen.findByRole("table", { name: "Conceptual Objects" })).toBeVisible();

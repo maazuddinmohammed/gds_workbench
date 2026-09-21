@@ -1,4 +1,5 @@
 import { ModelTargetsScreen } from "./features/model_targets/ModelTargetsScreen";
+import { TablePrototype } from "./features/table_prototype/TablePrototype";
 import {
   QueryClient,
   QueryClientProvider,
@@ -83,6 +84,8 @@ interface MappingRouteSearch {
   view?: "dependencies" | "objects" | "attributes";
 }
 
+type TablePrototypeVariant = "A" | "B" | "C";
+
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: () => <Outlet />,
   notFoundComponent: () => (
@@ -100,6 +103,15 @@ const tenantEntryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: TenantEntry,
+});
+
+const tablePrototypeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/prototype/data-table",
+  validateSearch: (search: Record<string, unknown>): { variant: TablePrototypeVariant } => ({
+    variant: search.variant === "B" || search.variant === "C" ? search.variant : "A",
+  }),
+  component: DataTablePrototype,
 });
 
 const tenantHomeRoute = createRoute({
@@ -362,6 +374,7 @@ const tenantModelDimensionalRelationshipRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   tenantEntryRoute,
+  tablePrototypeRoute,
   tenantHomeRoute,
   tenantMetadataRoute,
   tenantMetadataObjectsRoute,
@@ -445,6 +458,20 @@ export function WorkbenchApp({ router }: { router: WorkbenchRouter }) {
   );
 }
 
+function DataTablePrototype() {
+  const { variant } = tablePrototypeRoute.useSearch();
+  const navigate = useNavigate({ from: "/prototype/data-table" });
+  if (!import.meta.env.DEV) return <ErrorPage />;
+  return (
+    <TablePrototype
+      variant={variant}
+      onVariantChange={(nextVariant) => {
+        void navigate({ search: { variant: nextVariant }, replace: true });
+      }}
+    />
+  );
+}
+
 function TenantEntry() {
   const { api } = rootRoute.useRouteContext();
   const navigate = useNavigate({ from: "/" });
@@ -482,7 +509,6 @@ function TenantMetadata() {
         <MetadataScreen
           api={api}
           tenantId={numericTenantId}
-          tenantName={home.tenant.tenant_name}
           tenantLock={home.lock}
           canWriteMetadata={home.tenant.effective_role !== "viewer"}
         />

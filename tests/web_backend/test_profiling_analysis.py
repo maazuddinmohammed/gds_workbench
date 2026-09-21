@@ -506,6 +506,7 @@ class ReviewTransaction:
                 "connection_code": "BRONZE",
                 "object_schema": "bronze_crm",
                 "object_name": "customer_raw",
+                "object_description": "Customer records.",
                 "profiled_attribute_count": 1,
                 "last_profiled_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
             }
@@ -626,6 +627,8 @@ class ReviewTransaction:
                     "attribute_name": "customer_id",
                     "attribute_ordinal_position": 1,
                     "attribute_data_type": "bigint",
+                    "attribute_inferred_data_type": "integer",
+                    "attribute_description": "Stable customer identifier.",
                     "agent_run_id": None,
                     "workflow_run_id": None,
                     "source_context_digest": "a" * 64,
@@ -812,6 +815,11 @@ async def test_database_profiling_detail_preserves_nullable_run_provenance() -> 
     )
 
     assert detail.model_revision == 4
+    assert detail.object_description == "Customer records."
+    assert detail.attribute_profiles[0].attribute_inferred_data_type == "integer"
+    assert detail.attribute_profiles[0].attribute_description == (
+        "Stable customer identifier."
+    )
     assert detail.attribute_profiles[0].provenance == ProfileWorkflowProvenance(
         agent_run_id=None,
         workflow_run_id=None,

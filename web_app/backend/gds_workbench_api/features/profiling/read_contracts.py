@@ -73,6 +73,8 @@ class AttributeProfile(ReviewContract):
     attribute_name: str = Field(min_length=1, max_length=400)
     attribute_ordinal_position: int = Field(gt=0)
     attribute_data_type: str = Field(min_length=1, max_length=100)
+    attribute_inferred_data_type: str | None = Field(default=None, max_length=100)
+    attribute_description: str | None = Field(default=None, max_length=2000, repr=False)
     source_context_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     row_count: int = Field(ge=0)
     non_null_count: int = Field(ge=0)
@@ -111,6 +113,7 @@ class AttributeProfile(ReviewContract):
 class ProfilingObjectDetail(ProfilingObjectLedgerItem):
     model_id: int = Field(gt=0)
     model_revision: int = Field(gt=0)
+    object_description: str | None = Field(default=None, max_length=2000, repr=False)
     attribute_profiles: tuple[AttributeProfile, ...] = Field(max_length=2000)
     profiles_truncated: bool
 

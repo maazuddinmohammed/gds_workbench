@@ -31,12 +31,12 @@ export function ProfilingResults({
 }) {
   const columns = useMemo<ColumnDef<ProfilingObject>[]>(() => [
     {
-      accessorKey: "object_name",
-      header: "Object",
+      accessorKey: "source_tenant_code",
+      header: "Source Tenant",
       cell: ({ row }) => (
-        <span className="scope-object-name">
-          <strong>{row.original.object_name}</strong>
-          <span>{row.original.object_schema}</span>
+        <span className="scope-secondary">
+          <strong>{row.original.source_tenant_code}</strong>
+          <span>{row.original.source_tenant_name}</span>
         </span>
       ),
     },
@@ -50,17 +50,12 @@ export function ProfilingResults({
         </span>
       ),
     },
+    { accessorKey: "object_schema", header: "Schema" },
     {
-      accessorKey: "source_tenant_code",
-      header: "Source Tenant",
-      cell: ({ row }) => (
-        <span className="scope-secondary">
-          <strong>{row.original.source_tenant_code}</strong>
-          <span>{row.original.source_tenant_name}</span>
-        </span>
-      ),
+      accessorKey: "object_name",
+      header: "Object",
+      cell: ({ getValue }) => <strong>{getValue<string>()}</strong>,
     },
-    { accessorKey: "connection_code", header: "Connection" },
     {
       accessorKey: "profiled_attribute_count",
       header: "Profiles",
@@ -131,22 +126,13 @@ function ProfilingFilterForm({
 }) {
   const form = useForm({
     defaultValues: {
-      objectId: filters.objectId ? String(filters.objectId) : "",
       sourceTenantCode: filters.sourceTenantCode ?? "",
       systemCode: filters.systemCode ?? "",
       objectSchema: filters.objectSchema ?? "",
       objectName: filters.objectName ?? "",
     },
     onSubmit: ({ value }) => {
-      const parsedObjectId = value.objectId.trim() ? Number(value.objectId) : undefined;
       const nextFilters: ProfilingFilters = {};
-      if (
-        typeof parsedObjectId === "number"
-        && Number.isSafeInteger(parsedObjectId)
-        && parsedObjectId > 0
-      ) {
-        nextFilters.objectId = parsedObjectId;
-      }
       if (value.sourceTenantCode.trim()) nextFilters.sourceTenantCode = value.sourceTenantCode;
       if (value.systemCode.trim()) nextFilters.systemCode = value.systemCode;
       if (value.objectSchema.trim()) nextFilters.objectSchema = value.objectSchema;
@@ -165,20 +151,6 @@ function ProfilingFilterForm({
         void form.handleSubmit();
       }}
     >
-      <form.Field name="objectId">
-        {(field) => (
-          <label>
-            <span>Object ID</span>
-            <input
-              aria-label="Object ID"
-              inputMode="numeric"
-              value={field.state.value}
-              onBlur={field.handleBlur}
-              onChange={(event) => field.handleChange(event.target.value)}
-            />
-          </label>
-        )}
-      </form.Field>
       <form.Field name="sourceTenantCode">
         {(field) => (
           <label>

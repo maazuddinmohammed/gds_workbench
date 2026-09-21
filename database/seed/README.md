@@ -134,6 +134,18 @@ psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
 
 Do not run this demo file against a populated or production database.
 
+## Local Workbench review model
+
+`08_local_workbench_review.sql` extends the demo metadata with one review-ready
+`Customer Orders 360` Model. It covers Input Scope, Profiling, Analysis,
+Assertions, Conceptual and Logical models, Dimensional records, target bindings,
+Mapping, generated SQL, and Validation checks.
+
+The local runner installs it automatically after the local identity and template
+seeds. The script refuses any database whose generated name does not match the
+disposable `gds_local_<12 hex characters>` convention. Do not run it manually or
+against a populated database.
+
 ## Human Entra access
 
 `02_human_principal_access.template.sql` contains placeholders for the actual

@@ -174,12 +174,16 @@ def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql(
     assert "04_application_reference.sql" in initializer
     assert "05_global_prompt_defaults.template.sql" in initializer
     assert "07_global_mapping_output_templates.template.sql" in initializer
+    assert "08_local_workbench_review.sql" in initializer
     assert initializer.index("03_local_super_admin.template.sql") < initializer.index(
         "05_global_prompt_defaults.template.sql"
     )
     assert initializer.index(
         "05_global_prompt_defaults.template.sql"
     ) < initializer.index("07_global_mapping_output_templates.template.sql")
+    assert initializer.index(
+        "07_global_mapping_output_templates.template.sql"
+    ) < initializer.index("08_local_workbench_review.sql")
     assert not re.search(r"\b(?:DROP|TRUNCATE|RESET)\b", initializer, re.IGNORECASE)
 
 

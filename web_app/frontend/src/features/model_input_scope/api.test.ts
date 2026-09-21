@@ -19,12 +19,22 @@ describe("Model Input Scope HTTP adapter", () => {
       sourceTenantCode: " GRDM ",
       objectName: " Customer_Raw ",
     }, 25, "opaque-next");
+    await api.listScopeCandidates(7, 18, {
+      sourceTenantCode: "GRDM",
+      systemCode: "CRM",
+      zone: "bronze",
+      objectName: "customer",
+    });
     await api.readModelInputScopeObject(7, 18, 501);
 
     expect(calls).toEqual([
       ["/api/v1/tenants/7/models/18/input-scope?page_size=200", undefined],
       [
         "/api/v1/tenants/7/models/18/input-scope?zone=bronze&system_code=crm&source_tenant_code=grdm&object_name=customer_raw&page_size=25&cursor=opaque-next",
+        undefined,
+      ],
+      [
+        "/api/v1/tenants/7/models/18/input-scope/candidates?source_tenant_code=GRDM&system_code=CRM&zone=bronze&page_size=200&object_name=customer",
         undefined,
       ],
       ["/api/v1/tenants/7/models/18/input-scope/501", undefined],

@@ -10,7 +10,7 @@ import type { MetadataDatasetDescription } from "./api";
 describe("governed Metadata experience", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("opens from active shell navigation and uses registry-driven sections, columns, and exact filters", async () => {
+  it("opens the catalog rail from shell navigation with complete columns and no sheet filters", async () => {
     const fetcher = metadataFetchStub();
     const user = userEvent.setup();
     renderMetadata(fetcher, "/tenants/7");
@@ -19,8 +19,11 @@ describe("governed Metadata experience", () => {
     expect(link).toHaveAttribute("href", "/tenants/7/metadata");
     await user.click(link);
 
-    expect(await screen.findByRole("heading", { name: "Metadata" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Objects and Attributes" })).toHaveAttribute("href", "/tenants/7/metadata/objects");
+    expect(await screen.findByRole("heading", { name: "Metadata catalog" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: /Objects (and|&) Attributes/ })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("main")).queryByText("Northwind Analytics")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Choose a sheet, compare/)).not.toBeInTheDocument();
+    expect(screen.getByText("Tenant Lock is required")).toBeVisible();
     expect(screen.getByRole("button", { name: /Reference 8 sheets/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("button", { name: /Foundational 4 sheets/ })).toBeVisible();
     expect(screen.getByRole("button", { name: /Operational 16 sheets/ })).toBeVisible();
@@ -29,11 +32,12 @@ describe("governed Metadata experience", () => {
     expect(within(table).getByText("CRM")).toBeVisible();
     expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
 
-    await user.type(screen.getByLabelText("System Type Code filter"), "CRM");
-    await user.click(screen.getByRole("button", { name: "Apply sheet filters" }));
-    await waitFor(() => expect(metadataRowCalls(fetcher).at(-1)).toContain(
-      "filters=%7B%22system_type_code%22%3A%22CRM%22%7D",
-    ));
+    expect(screen.queryByRole("button", { name: "Apply sheet filters" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("System Type Code filter")).not.toBeInTheDocument();
+    expect(metadataRowCalls(fetcher).at(-1)).not.toContain("filters=");
+    await user.click(screen.getByRole("button", { name: /Foundational 4 sheets/ }));
+    expect(screen.getByRole("button", { name: /Foundational 4 sheets/ })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.queryByRole("button", { name: "System Types" })).not.toBeInTheDocument();
   });
 
   it("opens an ample keyboard-closeable row detail and keeps read-only sections immutable", async () => {
@@ -42,7 +46,7 @@ describe("governed Metadata experience", () => {
     renderMetadata(fetcher);
 
     await screen.findByRole("table", { name: "System Types normalized Metadata" });
-    expect(screen.getByText("Read-only view")).toBeVisible();
+    expect(screen.getByText("Tenant Lock is required")).toBeVisible();
     expect(screen.getByText("Read-only", { selector: ".metadata-readonly-badge" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "Add row" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Show details" }));
@@ -51,6 +55,7 @@ describe("governed Metadata experience", () => {
     expect(within(detail).getByRole("button", { name: "Close Metadata row details" })).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Row details" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show details" })).toHaveFocus();
   });
 
   it("distinguishes physical storage and inferred types in the attribute catalog and details", async () => {
@@ -91,7 +96,7 @@ describe("governed Metadata experience", () => {
     await screen.findByRole("table", { name: "System Types normalized Metadata" });
     await user.click(screen.getByRole("button", { name: /Operational 16 sheets/ }));
     await screen.findByRole("table", { name: "Source Objects normalized Metadata" });
-    await user.click(screen.getByRole("button", { name: "Start or resume" }));
+    await user.click(screen.getByRole("button", { name: "Start change set" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Add row" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "Show details" }));
     await user.click(screen.getByRole("button", { name: "Edit row" }));
@@ -128,8 +133,8 @@ describe("governed Metadata experience", () => {
 
     await screen.findByRole("table", { name: "System Types normalized Metadata" });
     await user.click(screen.getByRole("button", { name: /Operational 16 sheets/ }));
-    expect(await screen.findByText("No rows match this sheet’s server filters.")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Start or resume" }));
+    expect(await screen.findByText("No rows are available for this sheet.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Start change set" }));
     const add = await screen.findByRole("button", { name: "Add row" });
     await waitFor(() => expect(add).toBeEnabled());
     await user.click(add);
@@ -183,13 +188,13 @@ describe("governed Metadata experience", () => {
     await screen.findByRole("table", { name: "System Types normalized Metadata" });
     await user.click(screen.getByRole("button", { name: /Operational 16 sheets/ }));
     await screen.findByRole("table", { name: "Source Objects normalized Metadata" });
-    await user.click(screen.getByRole("button", { name: "Start or resume" }));
-    const input = await screen.findByLabelText("Import governed .xlsx");
+    await user.click(screen.getByRole("button", { name: "Start change set" }));
+    const input = await screen.findByLabelText("Choose Excel");
     const file = new File([new Uint8Array([80, 75, 3, 4])], "metadata.xlsx", {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
     await user.upload(input, file);
-    await user.click(screen.getByRole("button", { name: "Import and validate" }));
+    await user.click(screen.getByRole("button", { name: "Import Excel" }));
     await waitFor(() => expect(findCall(fetcher, "/imports/xlsx", "POST")).toBeDefined());
     expect(findCall(fetcher, "/imports/xlsx", "POST")?.[1]?.headers).toEqual(expect.objectContaining({
       "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -200,6 +205,42 @@ describe("governed Metadata experience", () => {
     const confirmation = await screen.findByRole("dialog", { name: "Archive Change Set" });
     await user.click(within(confirmation).getByRole("button", { name: "Archive draft" }));
     await waitFor(() => expect(findCall(fetcher, "/archive", "POST")).toBeDefined());
+  });
+
+
+  it("keeps Excel writes and row editing locked while allowing catalog reads", async () => {
+    const fetcher = metadataFetchStub({ hasLock: false });
+    const user = userEvent.setup();
+    renderMetadata(fetcher, "/tenants/7/metadata?variant=B");
+    await screen.findByRole("table", { name: "System Types normalized Metadata" });
+    expect(screen.getByRole("button", { name: "Start change set" })).toBeDisabled();
+    expect(screen.getByLabelText("Choose Excel")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Import Excel" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: /Operational 16 sheets/ }));
+    await user.click(await screen.findByRole("button", { name: "Show details" }));
+    expect(screen.getByRole("button", { name: "Edit row" })).toBeDisabled();
+    expect(findCall(fetcher, "/metadata-change-sets", "POST")).toBeUndefined();
+  });
+
+  it("can start the top workflow from Reference and retains a rejected workbook for retry", async () => {
+    const fetcher = metadataFetchStub({ hasLock: true, importStatus: 409 });
+    const user = userEvent.setup();
+    renderMetadata(fetcher);
+    await screen.findByRole("table", { name: "System Types normalized Metadata" });
+    await user.click(screen.getByRole("button", { name: "Start change set" }));
+    const input = screen.getByLabelText("Choose Excel");
+    await waitFor(() => expect(input).toBeEnabled());
+    const file = new File([new Uint8Array([80, 75, 3, 4])], "metadata.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    await user.upload(input, file);
+    await user.click(screen.getByRole("button", { name: "Import Excel" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The workbook was rejected or could not be imported.");
+    expect(screen.queryByText("secret-row-sentinel")).not.toBeInTheDocument();
+    expect(input).toHaveProperty("files", expect.objectContaining({ length: 1 }));
+    expect(screen.getByRole("button", { name: "Import Excel" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Apply validated changes" })).toBeDisabled();
+    expect(findCall(fetcher, "/apply", "POST")).toBeUndefined();
   });
 
   it("shows a redacted denied registry state", async () => {
@@ -219,7 +260,7 @@ function renderMetadata(fetcher: ReturnType<typeof metadataFetchStub>, path = "/
   })} />);
 }
 
-function metadataFetchStub(options: { hasLock?: boolean; registryStatus?: number; emptySource?: boolean } = {}) {
+function metadataFetchStub(options: { hasLock?: boolean; registryStatus?: number; emptySource?: boolean; importStatus?: number } = {}) {
   let revision = 1;
   let status: "active" | "validated" | "applied" | "archived" = "active";
   let stagedRecords: Array<Record<string, string | boolean>> = [];
@@ -314,6 +355,7 @@ function metadataFetchStub(options: { hasLock?: boolean; registryStatus?: number
       return jsonResponse({ schema_version: "1.0", tenant_id: 7, metadata_change_set_id: CHANGE_SET_ID, archived: true, status, draft_revision: revision, archived_at: NOW });
     }
     if (url.endsWith("/imports/xlsx") && init?.method === "POST") {
+      if (options.importStatus) return errorResponse(options.importStatus);
       stagedRecords = [{ tenant_code: "NWA", object_name: "Imported", is_active: true }];
       revision += 1;
       status = "validated";

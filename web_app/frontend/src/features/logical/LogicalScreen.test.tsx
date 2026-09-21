@@ -32,10 +32,11 @@ describe("Model Logical", () => {
     expect(sourceHeading.compareDocumentPosition(membershipHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole("table", { name: "Submodel memberships" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Customer domain" })).toHaveAttribute("href", "/tenants/7/models/18/logical/submodels/91");
-    expect(screen.getAllByText("Source mapping id")[0]).toBeVisible();
     await user.click(within(screen.getByRole("table", { name: "Source mappings" })).getAllByText("Show details")[1]!);
     expect(screen.getByText("Customer identity is governed across systems.")).toBeVisible();
-    expect(screen.getAllByText("Workflow run 1048").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Source mapping id")).not.toBeInTheDocument();
+    expect(screen.queryByText("Workflow run 1048")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Provenance" })).not.toBeInTheDocument();
   });
 
   it("reviews Submodels, Attributes, and Relationships in dedicated ledgers and pages", async () => {

@@ -60,7 +60,7 @@ export interface ScopeCandidate {
   attribute_count: number; is_in_active_scope: boolean;
 }
 export interface ScopeCandidateFilters {
-  tenantId: number; systemCode: string; zone: ZoneCode; objectName: string;
+  sourceTenantCode: string; systemCode: string; zone: ZoneCode; objectName: string;
 }
 export interface AddScopeCommand { object_ids: number[]; expected_model_revision: number }
 
@@ -86,7 +86,7 @@ export function createModelInputScopeApi(request: HttpRequest): ModelInputScopeA
   return {
     readScopeSearchOptions: (tenantId, modelId) => request(`/api/v1/tenants/${tenantId}/models/${modelId}/input-scope/options`),
     listScopeCandidates: (tenantId, modelId, filters, cursor) => {
-      const query = new URLSearchParams({ placement_tenant_id: String(filters.tenantId), system_code: filters.systemCode, zone: filters.zone, page_size: "50" });
+      const query = new URLSearchParams({ source_tenant_code: filters.sourceTenantCode, system_code: filters.systemCode, zone: filters.zone, page_size: "200" });
       if (filters.objectName.trim()) query.set("object_name", filters.objectName.trim());
       if (cursor) query.set("cursor", cursor);
       return request(`/api/v1/tenants/${tenantId}/models/${modelId}/input-scope/candidates?${query}`);

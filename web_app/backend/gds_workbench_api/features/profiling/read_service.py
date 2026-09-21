@@ -121,6 +121,7 @@ SELECT profile.object_id,
        connection.connection_code,
        object_record.object_schema,
        object_record.object_name,
+       left(object_record.object_description, 2000) AS object_description,
        count(profile.attribute_id)::INTEGER AS profiled_attribute_count,
        max(profile.updated_time) AS last_profiled_at
   FROM target_model
@@ -156,7 +157,8 @@ SELECT profile.object_id,
           connection.connection_id,
           connection.connection_code,
           object_record.object_schema,
-          object_record.object_name
+          object_record.object_name,
+          object_record.object_description
 """
 
 _ATTRIBUTE_PROFILES_SQL: LiteralString = """
@@ -171,6 +173,8 @@ SELECT profile.attribute_id,
        attribute.attribute_name,
        attribute.attribute_ordinal_position,
        attribute.attribute_data_type,
+       attribute.attribute_inferred_data_type,
+       left(attribute.attribute_description, 2000) AS attribute_description,
        profile.agent_run_id,
        profile.workflow_run_id,
        profile.source_context_digest,

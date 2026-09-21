@@ -46,6 +46,8 @@ export interface AttributeProfile {
   attribute_name: string;
   attribute_ordinal_position: number;
   attribute_data_type: string;
+  attribute_inferred_data_type: string | null;
+  attribute_description: string | null;
   source_context_digest: string;
   row_count: number;
   non_null_count: number;
@@ -71,6 +73,7 @@ export interface AttributeProfile {
 export interface ProfilingObjectDetail extends ProfilingObject {
   model_id: number;
   model_revision: number;
+  object_description: string | null;
   attribute_profiles: AttributeProfile[];
   profiles_truncated: boolean;
 }

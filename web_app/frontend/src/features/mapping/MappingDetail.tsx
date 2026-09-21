@@ -5,7 +5,6 @@ import { DetailState } from "../../shared/ui";
 
 import { ApiError } from "../../core/http";
 import type { MappingAttributeDetail, MappingObjectDetail } from "./api";
-import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 import { mappingQueryKeys, type MappingApi } from "./api";
 import { MappingDocumentView } from "./MappingDocumentView";
 
@@ -91,7 +90,6 @@ function MappingObjectDetailView({
         </details>
       </section>
       <MappingDocumentView title="Transformation document" document={detail.mapping_document} />
-      <MappingProvenance detail={detail} />
     </article>
   );
 }
@@ -153,7 +151,6 @@ function MappingAttributeDetailView({
           <Fact label="Lock" value={detail.parent_object_mapping.is_locked ? "Locked" : "Open"} />
         </dl>
       </details>
-      <MappingProvenance detail={detail} />
     </article>
   );
 }
@@ -210,39 +207,6 @@ function OutputTemplate({ template }: { template: MappingObjectDetail["output_te
         <Fact label="Template state" value={template.is_active ? "Active" : "Inactive"} />
       </> : null}
     </dl>
-  );
-}
-
-function MappingProvenance({ detail }: { detail: MappingObjectDetail | MappingAttributeDetail }) {
-  const target = "mapping_attribute_id" in detail ? detail.target.object : detail.target;
-  const source = "mapping_attribute_id" in detail ? detail.source.entity : detail.source;
-  return (
-    <details className="detail-section detail-disclosure" aria-labelledby="mapping-provenance">
-      <summary><h2 id="mapping-provenance">Provenance</h2></summary>
-      <dl className="detail-fact-grid">
-        <Fact label="Workflow" value={detail.workflow_run_id === null ? "No workflow provenance" : `Workflow run ${detail.workflow_run_id}`} />
-        <Fact label="Created" value={formatDateTime(detail.created_at)} />
-        <Fact label="Updated" value={formatDateTime(detail.updated_at)} />
-      </dl>
-      <details className="support-record-details">
-        <summary>Record details</summary>
-        <dl className="detail-fact-grid">
-          <Fact label="Target Object ID" value={String(target.object_id)} />
-          <Fact label="Target System ID" value={String(target.system_id)} />
-          <Fact label="Connection ID" value={String(target.connection_id)} />
-          <Fact label="Source Entity ID" value={String(source.entity_id)} />
-          <Fact label="Source System ID" value={String(detail.source_system.system_id)} />
-          {"mapping_attribute_id" in detail ? <>
-            <Fact label="Target Attribute ID" value={String(detail.target.attribute_id)} />
-            <Fact label="Source Attribute ID" value={String(detail.source.attribute_id)} />
-          </> : null}
-          {detail.output_template ? <>
-            <Fact label="Template ID" value={String(detail.output_template.output_template_id)} />
-            <div className="digest-fact"><dt>Template schema digest</dt><dd><code>{detail.output_template.output_template_schema_digest}</code></dd></div>
-          </> : null}
-        </dl>
-      </details>
-    </details>
   );
 }
 

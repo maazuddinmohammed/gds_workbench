@@ -158,26 +158,18 @@ function DimensionalObjectView({
         ) : (
           <div className="table-scroll">
             <table aria-label="Submodel memberships">
-              <thead><tr><th>Submodel</th><th>ID</th><th>Status</th><th>Lock</th><th>Workflow</th></tr></thead>
+              <thead><tr><th>Submodel</th><th>ID</th><th>Status</th><th>Lock</th></tr></thead>
               <tbody>{object.submodels.map((membership) => (
                 <tr key={membership.dimensional_entity_submodel_id}>
                   <td>{membership.dimensional_submodel_name}</td>
                   <td>{membership.dimensional_submodel_id}</td>
                   <td>{humanize(membership.membership_status)}</td>
                   <td>{membership.membership_is_locked ? "Locked" : "Open"}</td>
-                  <td>{membership.workflow_run_id === null ? "No workflow provenance" : `Workflow run ${membership.workflow_run_id}`}</td>
                 </tr>
               ))}</tbody>
             </table>
           </div>
         )}
-      </details>
-      <details className="detail-section detail-disclosure" aria-labelledby="dimensional-record-provenance">
-        <summary><h2 id="dimensional-record-provenance">Provenance</h2></summary>
-        <dl className="detail-fact-grid">
-          <Fact label="Workflow" value={object.workflow_run_id === null ? "No workflow provenance" : `Workflow run ${object.workflow_run_id}`} />
-          <Fact label="Created" value={formatDateTime(object.created_at)} />
-        </dl>
       </details>
     </article>
   );
@@ -246,7 +238,6 @@ function DimensionalAttributeView({
         ) : <p className="detail-empty-note">No change behavior is recorded.</p>}
       </section>
       <SourceMappings sources={attribute.sources} />
-      <DimensionalProvenance workflowRunId={attribute.workflow_run_id} createdAt={attribute.created_at} />
     </article>
   );
 }
@@ -301,7 +292,6 @@ function DimensionalRelationshipView({
           <Fact label="Cardinality basis" value={relationship.dimensional_relationship_cardinality_basis} />
         </dl>
       </section>
-      <DimensionalProvenance workflowRunId={relationship.workflow_run_id} createdAt={relationship.created_at} />
     </article>
   );
 }
@@ -342,24 +332,6 @@ function DimensionalDetailHeader({
         <span className="status-badge is-neutral">{locked ? "Locked" : "Open"}</span>
       </div>
     </header>
-  );
-}
-
-function DimensionalProvenance({
-  workflowRunId,
-  createdAt,
-}: {
-  workflowRunId: number | null;
-  createdAt: string;
-}) {
-  return (
-    <details className="detail-section detail-disclosure" aria-labelledby="dimensional-record-provenance">
-      <summary><h2 id="dimensional-record-provenance">Provenance</h2></summary>
-      <dl className="detail-fact-grid">
-        <Fact label="Workflow" value={workflowRunId === null ? "No workflow provenance" : `Workflow run ${workflowRunId}`} />
-        <Fact label="Created" value={formatDateTime(createdAt)} />
-      </dl>
-    </details>
   );
 }
 

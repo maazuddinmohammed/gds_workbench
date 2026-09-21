@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
-import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 import { analysisQueryKeys, type AnalysisApi, type AnalysisEndpoint } from "./api";
 
 export function AnalysisDetail({
@@ -109,23 +108,6 @@ export function AnalysisDetail({
         </div>
       </details>
 
-      <details className="detail-section detail-disclosure" aria-labelledby="analysis-provenance-heading">
-        <summary><h2 id="analysis-provenance-heading">Provenance</h2></summary>
-        <dl className="detail-fact-grid">
-          <Fact label="Inference run" value={nullableRun(finding.provenance.inference_workflow_run_id)} />
-          <Fact label="Validation run" value={nullableRun(finding.provenance.validation_workflow_run_id)} />
-          <Fact label="Agent run" value={finding.provenance.agent_run_id ?? "Not recorded"} />
-          <Fact label="Created" value={formatDateTime(finding.created_at)} />
-          <Fact label="Updated" value={formatDateTime(finding.updated_at)} />
-          {finding.evidence ? <Fact label="Validation policy" value={`v${finding.evidence.validation_policy_version}`} /> : null}
-        </dl>
-        {finding.evidence ? (
-          <details className="analysis-policy-details">
-            <summary>Validation policy digest</summary>
-            <code>{finding.evidence.validation_policy_digest}</code>
-          </details>
-        ) : null}
-      </details>
     </article>
   );
 }
@@ -151,8 +133,4 @@ function EndpointDetail({
 
 function Fact({ label, value }: { label: string; value: string }) {
   return <div><dt>{label}</dt><dd>{value}</dd></div>;
-}
-
-function nullableRun(value: number | null): string {
-  return value === null ? "Not recorded" : `Run ${value}`;
 }

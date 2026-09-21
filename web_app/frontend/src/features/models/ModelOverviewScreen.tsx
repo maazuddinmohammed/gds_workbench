@@ -92,11 +92,6 @@ function ModelOverviewView({
             <p className="eyebrow">Current model journey</p>
             <h2 id="workflow-ledger-heading">Workflow ledger</h2>
           </div>
-          <Link className="text-action"
-            to="/tenants/$tenantId/models/$modelId/metadata-enrichment"
-            params={{ tenantId: String(tenantId), modelId: String(model.model_id) }}>
-            Enrich physical metadata
-          </Link>
         </header>
         {overview.model_revision !== model.model_revision ? (
           <div className="surface-state is-error" role="alert">

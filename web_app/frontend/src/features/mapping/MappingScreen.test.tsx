@@ -81,14 +81,11 @@ describe("Mapping journey", () => {
     expect(screen.getByText("Normalize whitespace")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Parent Object Mapping" })).toBeVisible();
     expect(screen.getAllByRole("heading", { level: 2 }).map((item) => item.textContent)).toEqual([
-      "Mapping context", "Transformation document", "Parent Object Mapping", "Provenance",
+      "Mapping context", "Transformation document", "Parent Object Mapping",
     ]);
     expect(screen.getAllByText("mapping.attribute.standard")).toHaveLength(1);
-    expect(screen.getByText("c".repeat(64))).not.toBeVisible();
+    expect(screen.queryByText("c".repeat(64))).not.toBeInTheDocument();
     await user.click(screen.getByText("Connection and template details"));
-    await user.click(screen.getByRole("heading", { name: "Provenance" }));
-    await user.click(screen.getByText("Record details"));
-    expect(screen.getByText("c".repeat(64))).toBeVisible();
     await user.click(screen.getByRole("heading", { name: "Parent Object Mapping" }));
     await user.click(screen.getByRole("link", { name: "Object Mapping 81" }));
     expect(await screen.findByRole("heading", { name: "silver_nwa.customer", level: 1 })).toHaveFocus();

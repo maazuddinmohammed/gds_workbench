@@ -100,7 +100,6 @@ function ConceptualObjectView({
         ) : null}
       </section>
       <SupportEvidence supports={object.supports} />
-      <Provenance workflowRunId={object.workflow_run_id} createdAt={object.created_at} />
     </article>
   );
 }
@@ -158,7 +157,6 @@ function ConceptualRelationshipView({
         </dl>
       </section>
       <SupportEvidence supports={relationship.supports} />
-      <Provenance workflowRunId={relationship.workflow_run_id} createdAt={relationship.created_at} />
     </article>
   );
 }
@@ -272,51 +270,11 @@ function SupportEvidence({ supports }: { supports: ConceptualSupport[] }) {
                   </>
                 )}
               </dl>
-              <details className="support-record-details">
-                <summary>Record details</summary>
-                <dl className="support-facts">
-                  <Fact label="Support ID" value={String(support.conceptual_support_id)} />
-                  {support.support_source_type === "object" ? (
-                    <Fact label="Source Object ID" value={`Object ${support.source_object.object_id}`} />
-                  ) : (
-                    <Fact label="Assertion ID" value={`Assertion ${support.assertion_record.modeling_assertion_record_id}`} />
-                  )}
-                <Fact
-                  label="Workflow"
-                  value={support.workflow_run_id === null
-                    ? "No workflow provenance"
-                    : `Workflow run ${support.workflow_run_id}`}
-                />
-                <Fact label="Created" value={formatDateTime(support.created_at)} />
-                <Fact label="Updated" value={formatDateTime(support.updated_at)} />
-                </dl>
-              </details>
             </article>
           ))}
         </div>
       )}
     </section>
-  );
-}
-
-function Provenance({
-  workflowRunId,
-  createdAt,
-}: {
-  workflowRunId: number | null;
-  createdAt: string;
-}) {
-  return (
-    <details className="detail-section detail-disclosure" aria-labelledby="conceptual-provenance-heading">
-      <summary><h2 id="conceptual-provenance-heading">Provenance</h2></summary>
-      <dl className="detail-fact-grid">
-        <Fact
-          label="Workflow"
-          value={workflowRunId === null ? "No workflow provenance" : `Workflow run ${workflowRunId}`}
-        />
-        <Fact label="Created" value={formatDateTime(createdAt)} />
-      </dl>
-    </details>
   );
 }
 
