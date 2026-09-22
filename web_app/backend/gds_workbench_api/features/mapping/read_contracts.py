@@ -135,6 +135,33 @@ class MappingTargetPage(ContractModel):
     next_cursor: str | None = Field(default=None, max_length=2048)
 
 
+class MappingGenerationAttribute(ContractModel):
+    attribute_id: int
+    attribute_name: str
+    modeled_attribute_name: str
+    ordinal_position: int
+    is_locked: bool
+    is_authored: bool
+
+
+class MappingGenerationTarget(MappingTargetSummary):
+    source_system: SourceSystemReference
+    entity_name: str
+    mapping_object_id: int | None
+    dependency_order: int
+    object_order: int
+    is_locked: bool
+    has_sources: bool
+    attributes: tuple[MappingGenerationAttribute, ...]
+
+
+class MappingGenerationPage(ContractModel):
+    model_id: int
+    model_revision: int
+    items: tuple[MappingGenerationTarget, ...]
+    next_cursor: str | None
+
+
 class MappingObjectSummary(ContractModel):
     mapping_object_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)

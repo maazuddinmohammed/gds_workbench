@@ -78,7 +78,7 @@ export function SelectField({
     <label>
       <span>{label}</span>
       <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">Select…</option>
+        {options.some(([optionValue]) => optionValue === "") ? null : <option value="">Select…</option>}
         {options.map(([optionValue, optionLabel]) => (
           <option key={optionValue} value={optionValue}>{optionLabel}</option>
         ))}

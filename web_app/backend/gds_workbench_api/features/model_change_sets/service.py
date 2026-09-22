@@ -82,6 +82,10 @@ from gds_etl_workbench.domain.snapshots.model import (
 )
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 
+from gds_workbench_api.features.mapping.dependencies import (
+    SaveMappingDependencyRequest,
+    prepare_mapping_dependency,
+)
 from gds_workbench_api.features.model_change_sets.input_scope import (
     AddInputScopeRequest,
     prepare_input_scope_addition,
@@ -348,6 +352,71 @@ class DatabaseModelChangeSetService:
                 section="model_input_scope",
                 outcome="scope_added",
                 scope_addition=(principal, tenant_id, command.object_ids),
+            )
+
+    async def save_mapping_dependency(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        command: SaveMappingDependencyRequest,
+        idempotency_key: UUID,
+    ) -> ReviewModelRecordsResult:
+        request_digest = hashlib.sha256(
+            json.dumps(
+                {"operation": "save_mapping_dependency", **command.model_dump()},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        async with self._database.write_transaction() as transaction:
+            repository, model, principal_id = await self._authorize_record_review(
+                transaction, principal, tenant_id=tenant_id, model_id=model_id
+            )
+            replay = await repository.replay_review(
+                model_id=model_id, principal_id=principal_id, correlation_id=idempotency_key
+            )
+            if replay is not None:
+                metadata = replay["event_metadata"]
+                if metadata.get("request_digest") != request_digest:
+                    raise WorkbenchError("review_conflict", "This review key was already used.")
+                return ReviewModelRecordsResult(
+                    model_id=model_id,
+                    model_change_set_id=replay["model_change_set_id"],
+                    model_revision=metadata["model_revision"],
+                    action_count=replay["action_count"],
+                )
+            if model["model_revision"] != command.expected_model_revision:
+                raise ModelRevisionConflictError()
+            if await repository.has_running_tenant_workflow(tenant_id=tenant_id):
+                raise TenantWorkflowConflictError()
+            context = ModelReadContext(
+                model_id=model_id,
+                tenant_id=tenant_id,
+                model_name=model["model_name"],
+                model_revision=model["model_revision"],
+                readable_source_tenant_ids=model["readable_source_tenant_ids"],
+            )
+            validation = await prepare_mapping_dependency(transaction, context, command)
+            await self._authorizer.authorize_tenant(
+                transaction,
+                principal,
+                tenant_id=tenant_id,
+                policy=ToolPolicy.TENANT_MODEL_WRITE,
+                model_id=model_id,
+            )
+            return await self._apply_validated_review(
+                transaction,
+                repository,
+                validation,
+                model_id=model_id,
+                principal_id=principal_id,
+                idempotency_key=idempotency_key,
+                expected_model_revision=command.expected_model_revision,
+                request_digest=request_digest,
+                section="mapping",
+                outcome="dependency_saved",
             )
 
     async def _apply_validated_review(

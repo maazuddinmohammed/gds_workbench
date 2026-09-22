@@ -76,6 +76,7 @@ function MappingObjectDetailView({
       <DetailHeader
         tenantId={tenantId}
         modelId={modelId}
+        layer={detail.source.entity_type === "logical_entity" ? "logical" : "dimensional"}
         eyebrow={`Object Mapping ${detail.mapping_object_id}`}
         title={`${detail.target.object_schema}.${detail.target.object_name}`}
         status={detail.status}
@@ -174,6 +175,7 @@ function DetailHeader({
   tenantId,
   modelId,
   parentObjectId,
+  layer,
   eyebrow,
   title,
   status,
@@ -183,6 +185,7 @@ function DetailHeader({
   tenantId: number;
   modelId: number;
   parentObjectId?: number;
+  layer?: "logical" | "dimensional";
   eyebrow: string;
   title: string;
   status: string;
@@ -200,7 +203,7 @@ function DetailHeader({
             : "/tenants/$tenantId/mapping/models/$modelId"}
           params={{ tenantId: String(tenantId), modelId: String(modelId),
             ...(parentObjectId ? { mappingObjectId: String(parentObjectId) } : {}) }}
-          search={parentObjectId ? {} : { view: "objects" }}
+          search={parentObjectId ? {} : { view: "objects", layer }}
         >
           ← {parentObjectId ? "Back to Object Mapping" : "Back to Object mappings"}
         </Link>

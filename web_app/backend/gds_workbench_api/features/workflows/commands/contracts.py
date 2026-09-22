@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from gds_workbench_api.capabilities import AgentRunSelection
+from gds_workbench_api.features.mapping.contracts import MappingTargetSelection
 from gds_workbench_api.features.metadata_enrichment.contracts import EnrichmentDescriptionTarget
 from gds_workbench_api.features.workflows.runs import (
     ExecutionMode,
@@ -28,7 +29,8 @@ class CreateWorkflowRunRequest(BaseModel):
     ] = Field(default_factory=list)
     modeled_entity_type: ModeledEntityType | None = None
     requested_batch_id: str | None = Field(default=None, min_length=1, max_length=500)
-    mapping_operation: Literal["build", "extend"] | None = None
+    mapping_operation: Literal["build", "extend", "generate"] | None = None
+    mapping_targets: list[MappingTargetSelection] | None = Field(default=None, min_length=1)
     mapping_coverage_mode: Literal["selected_targets"] | None = None
     mapping_source_system_id: int | None = Field(default=None, gt=0)
     mapping_object_output_template_id: int | None = Field(
@@ -177,11 +179,25 @@ class CreateWorkflowRunRequest(BaseModel):
             self.mapping_attribute_output_template_id,
         )
         if self.model_workflow == "mapping":
-            if any(value is None for value in required_mapping_inputs):
+            if self.mapping_targets is not None:
+                pairs = {(item.object_id, item.source_system_id) for item in self.mapping_targets}
+                if (
+                    self.mapping_operation != "generate"
+                    or self.mapping_coverage_mode != "selected_targets"
+                    or self.mapping_source_system_id is not None
+                    or len(pairs) != len(self.mapping_targets)
+                    or {item.object_id for item in self.mapping_targets}
+                    != set(self.selected_object_ids)
+                ):
+                    raise ValueError(
+                        "Mapping requires unique targets matching the selected Objects"
+                    )
+            elif (
+                any(value is None for value in required_mapping_inputs)
+                or len(self.selected_object_ids) != 1
+            ):
                 raise ValueError("Mapping requires one complete target selection")
-            if len(self.selected_object_ids) != 1:
-                raise ValueError("Mapping selected coverage requires one target Object")
-        elif any(value is not None for value in mapping_inputs):
+        elif self.mapping_targets is not None or any(value is not None for value in mapping_inputs):
             raise ValueError("Mapping inputs are unavailable for this workflow")
         if self.requested_batch_id is not None and self.model_workflow not in {
             "profiling",

@@ -362,7 +362,9 @@ def test_staged_sql_examples_and_mapping_guidance_agree() -> None:
     for mode in ("one_shot", "tool_assisted"):
         prompt = json.loads(read(prompts / f"mapping.{mode}.json"))["system_prompt"]
         assert "natural-language query-building instructions" in prompt
-        assert "Keep field transformations here" in prompt
+        assert "Attribute document:" in prompt
+        assert "transformation" in prompt
+        assert "field" in prompt
     prompt = json.loads(read(prompts / "code.tool_assisted.json"))["system_prompt"]
     assert "never repeat the entire pipeline" in prompt
     assert "Runtime performs loading/merge" in prompt

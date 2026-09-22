@@ -1453,6 +1453,52 @@
           }
         ]
       }
+    },
+    "mapping_support": {
+      "description": "Saved evidence scoped to this target and eligible sources: attribute_lineage links modeled names to physical source Attributes or assertion keys, with rationale and key roles; modeled_relationships describe conceptual join intent, not physical join proof; source_relationships carry Analysis confidence and measured validation when available; profiles are saved aggregate counts, percentages and lengths, not live rows or guaranteed current observations; assertions contain the linked active business rules. Empty lists mean no saved evidence, never permission to invent rules.",
+      "value_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "attribute_lineage": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "modeled_relationships": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "source_relationships": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "assertions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "example": {
+        "attribute_lineage": [],
+        "modeled_relationships": [],
+        "source_relationships": [],
+        "profiles": [],
+        "assertions": []
+      }
     }
   },
   "selection": "Every variable and reader is workflow-local and author-selected. Defaults do not force inclusion. No hidden context append. Use restricted Jinja, render once; values are data.",
@@ -1529,6 +1575,37 @@
         ],
         "title": "MappingObjectCandidate",
         "type": "object"
+      },
+      "MappingUnresolvedIssue": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "missing_join_evidence",
+              "missing_transformation_rule",
+              "preserved_mapping_conflict"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "modeled_attribute_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Modeled Attribute Name"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "MappingUnresolvedIssue",
+        "type": "object"
       }
     },
     "additionalProperties": false,
@@ -1538,6 +1615,14 @@
         "const": "1.0",
         "title": "Schema Version",
         "type": "string"
+      },
+      "issues": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/MappingUnresolvedIssue"
+        },
+        "title": "Issues",
+        "type": "array"
       },
       "object_mapping": {
         "anyOf": [

@@ -10,10 +10,12 @@ from uuid import UUID
 from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.application.change_sets.model_validation import (
     ModelValidationIssue,
+    PhysicalModelCatalog,
     validate_future_graph,
 )
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
+from gds_etl_workbench.domain.snapshots.model import ModelChangeSetDataset, ModelSnapshot
 from pydantic import JsonValue
 
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
@@ -71,7 +73,7 @@ class MappingPreparationService(Protocol):
         model_id: int,
         workflow_run_id: int,
         expected_model_revision: int,
-    ) -> MappingPreparation: ...
+    ) -> tuple[MappingPreparation, ...]: ...
 
 
 class MappingChangeSetHandoff(Protocol):
@@ -233,118 +235,156 @@ class MappingWorkflow:
         rejected_changes: tuple[StageModelChange, ...] = ()
         rejected_issues: tuple[ModelValidationIssue, ...] = ()
         try:
-            preparation = await self._preparation_service.prepare(
+            preparations = await self._preparation_service.prepare(
                 principal,
                 tenant_id=tenant_id,
                 model_id=model_id,
                 workflow_run_id=workflow_run_id,
                 expected_model_revision=expected_model_revision,
             )
-            plan = preparation.plan.agent_plan
-            _validate_plan(
-                preparation,
-                model_id=model_id,
-                workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
-            )
-            if not preparation.readiness.ready:
-                raise InvalidRequestError("Mapping readiness checks must pass before authoring.")
-            execution_mode = plan.workflow_execution_mode
-            if execution_mode is None:
-                raise InvalidRequestError("Mapping requires an explicit execution mode.")
-
-            await self._lifecycle.append_event(
-                principal,
-                workflow_run_id=workflow_run_id,
-                workflow_run_claim_token=workflow_run_claim_token,
-                expected_model_revision=expected_model_revision,
-                event=AgentWorkflowEvent(
-                    sequence=2,
-                    attempt=1,
-                    stage="mapping.mapping_authoring",
-                    status="running",
-                    message="Mapping authoring started.",
-                    current=0,
-                    total=1,
-                    finding_count=0,
-                ),
-            )
-
-            if not _has_actionable_authoring(preparation):
-                finalization_attempted = True
-                return await self._complete_no_op(
-                    principal,
-                    preparation=preparation,
-                    tenant_id=tenant_id,
+            if not preparations:
+                raise InvalidRequestError("Select at least one eligible Mapping Object.")
+            preparation = preparations[0]
+            warning = False
+            final_attempt = 1
+            sequence = 2
+            failures: list[WorkbenchError] = []
+            completed = 0
+            for index, preparation in enumerate(preparations):
+                plan = preparation.plan.agent_plan
+                _validate_plan(
+                    preparation,
                     model_id=model_id,
+                    workflow_run_id=workflow_run_id,
+                    expected_model_revision=expected_model_revision,
+                )
+                await self._lifecycle.append_event(
+                    principal,
                     workflow_run_id=workflow_run_id,
                     workflow_run_claim_token=workflow_run_claim_token,
                     expected_model_revision=expected_model_revision,
-                    sequence=3,
-                    attempt=1,
-                    warning=False,
-                    message="Mapping preservation completed with no effective change.",
+                    event=AgentWorkflowEvent(
+                        sequence=sequence,
+                        attempt=1,
+                        stage="mapping.mapping_authoring",
+                        status="running",
+                        message=f"Authoring Mapping target {index + 1} of {len(preparations)}.",
+                        current=index,
+                        total=len(preparations),
+                        finding_count=0,
+                    ),
                 )
+                sequence += 1
+                try:
+                    if not preparation.readiness.ready:
+                        raise InvalidRequestError(
+                            " ".join(issue.message for issue in preparation.readiness.issues)
+                        )
+                    execution_mode = plan.workflow_execution_mode
+                    if execution_mode is None:
+                        raise InvalidRequestError("Mapping requires an explicit execution mode.")
+                    if not _has_actionable_authoring(preparation):
+                        completed += 1
+                        continue
+                    validator = CompleteMappingCandidateValidator(preparation=preparation)
+                    snapshot, physical_scope = preparation.snapshot, preparation.physical_scope
+                    if snapshot is None or physical_scope is None:
+                        raise InvalidRequestError("The Mapping validation context is unavailable.")
 
-            validator = CompleteMappingCandidateValidator(preparation=preparation)
-            snapshot = preparation.snapshot
-            physical_scope = preparation.physical_scope
-            if snapshot is None or physical_scope is None:
-                raise InvalidRequestError("The Mapping validation context is unavailable.")
+                    async def validate_complete_candidate(
+                        value: JsonValue,
+                        validator: CompleteMappingCandidateValidator = validator,
+                        prior_changes: tuple[StageModelChange, ...] = changes,
+                        snapshot: ModelSnapshot = snapshot,
+                        physical_scope: PhysicalModelCatalog = physical_scope,
+                    ) -> AgentCandidateValidation:
+                        nonlocal rejected_changes, rejected_issues
+                        candidate_changes = validator.parse_validated(value).changes
+                        combined: dict[ModelChangeSetDataset, list[dict[str, object]]] = {}
+                        for change in (*prior_changes, *candidate_changes):
+                            combined.setdefault(change.dataset, []).extend(change.records)
+                        checked = validate_future_graph(
+                            snapshot=snapshot,
+                            staged_documents=combined,
+                            physical_scope=physical_scope,
+                        )
+                        if checked.issues:
+                            rejected_changes, rejected_issues = candidate_changes, checked.issues
+                        return AgentCandidateValidation(
+                            issues=model_validation_issues(checked.issues)
+                        )
 
-            async def validate_complete_candidate(value: JsonValue) -> AgentCandidateValidation:
-                nonlocal rejected_changes, rejected_issues
-                candidate_changes = validator.parse_validated(value).changes
-                checked = validate_future_graph(
-                    snapshot=snapshot,
-                    staged_documents={
-                        change.dataset: change.records for change in candidate_changes
-                    },
-                    physical_scope=physical_scope,
-                )
-                if checked.issues:
-                    rejected_changes, rejected_issues = candidate_changes, checked.issues
-                return AgentCandidateValidation(issues=model_validation_issues(checked.issues))
-
-            execution_context = build_mapping_execution_context(
-                preparation=preparation,
-                execution_mode=execution_mode,
-                limits=self._context_limits,
+                    execution_context = build_mapping_execution_context(
+                        preparation=preparation,
+                        execution_mode=execution_mode,
+                        limits=self._context_limits,
+                    )
+                    outcome = await self._stage_runner.run(
+                        plan=plan,
+                        stage_code="mapping_authoring",
+                        resolver_values=_mapping_resolver_values(
+                            preparation,
+                            stage_code="mapping_authoring",
+                            context=execution_context.embedded_context,
+                        ),
+                        context=execution_context.embedded_context,
+                        output_schema=validator.output_schema(),
+                        allowed_tool_names=(
+                            execution_context.tool_catalog.allowed_tool_names
+                            if execution_context.tool_catalog is not None
+                            else ()
+                        ),
+                        local_tool_catalog=execution_context.tool_catalog,
+                        validator=validator,
+                        final_validation=validate_complete_candidate,
+                    )
+                    changes += validator.parse_validated(outcome.candidate).changes
+                    warning |= outcome.was_repaired or bool(outcome.warning_codes)
+                    final_attempt = max(final_attempt, outcome.attempt_count)
+                    completed += 1
+                except Exception as pair_error:
+                    if len(preparations) == 1:
+                        raise
+                    safe = _safe_execution_error(pair_error, finalization_attempted=False)
+                    failures.append(safe)
+                    warning = True
+                    await self._lifecycle.append_event(
+                        principal,
+                        workflow_run_id=workflow_run_id,
+                        workflow_run_claim_token=workflow_run_claim_token,
+                        expected_model_revision=expected_model_revision,
+                        event=AgentWorkflowEvent(
+                            sequence=sequence,
+                            attempt=1,
+                            stage="mapping.mapping_authoring",
+                            status="warning",
+                            message=(
+                                f"Target Object {preparation.plan.pair.target_object_id}, "
+                                f"Source System {preparation.plan.pair.source_system_id}: "
+                                f"{safe.message}"
+                            )[:2000],
+                            current=index + 1,
+                            total=len(preparations),
+                            finding_count=1,
+                        ),
+                    )
+                    sequence += 1
+            if failures and not completed:
+                raise failures[0]
+            # One section per dataset; each pair retains its own identity and frozen evidence.
+            combined_records: dict[ModelChangeSetDataset, list[dict[str, object]]] = {}
+            for change in changes:
+                combined_records.setdefault(change.dataset, []).extend(change.records)
+            changes = tuple(
+                StageModelChange(dataset=dataset, records=records)
+                for dataset, records in combined_records.items()
             )
-            outcome = await self._stage_runner.run(
-                plan=plan,
-                stage_code="mapping_authoring",
-                resolver_values=_mapping_resolver_values(
-                    preparation,
-                    stage_code="mapping_authoring",
-                    context=execution_context.embedded_context,
-                ),
-                context=execution_context.embedded_context,
-                output_schema=validator.output_schema(),
-                allowed_tool_names=(
-                    execution_context.tool_catalog.allowed_tool_names
-                    if execution_context.tool_catalog is not None
-                    else ()
-                ),
-                local_tool_catalog=execution_context.tool_catalog,
-                validator=validator,
-                final_validation=validate_complete_candidate,
-            )
-            candidate = outcome.candidate
-            outcomes = (outcome,)
-            final_sequence = 3
-
-            result = validator.parse_validated(candidate)
-            changes = result.changes
-            warning = any(
-                outcome.was_repaired or bool(outcome.warning_codes) for outcome in outcomes
-            )
-            final_attempt = max(outcome.attempt_count for outcome in outcomes)
+            final_sequence = sequence
             if not changes:
                 finalization_attempted = True
                 return await self._complete_no_op(
                     principal,
-                    preparation=preparation,
+                    preparation=preparations[0],
                     tenant_id=tenant_id,
                     model_id=model_id,
                     workflow_run_id=workflow_run_id,
@@ -353,7 +393,7 @@ class MappingWorkflow:
                     sequence=final_sequence,
                     attempt=final_attempt,
                     warning=warning,
-                    message="Mapping authoring completed with no effective change.",
+                    message="Mapping completed with no effective change.",
                 )
 
             staged_record_count = sum(len(change.records) for change in changes)
@@ -372,9 +412,12 @@ class MappingWorkflow:
                     attempt=final_attempt,
                     stage="mapping.backend_validation",
                     status="warning" if warning else "running",
-                    message="Mapping candidate is ready in a validated draft.",
-                    current=1,
-                    total=1,
+                    message=(
+                        f"{completed} of {len(preparations)} Mapping targets completed; "
+                        f"{len(failures)} failed. Review the draft and run events."
+                    ),
+                    current=len(preparations),
+                    total=len(preparations),
                     finding_count=staged_record_count,
                 ),
             )
@@ -586,6 +629,14 @@ def _safe_execution_error(
     *,
     finalization_attempted: bool,
 ) -> WorkbenchError:
+    if isinstance(error, AgentCandidateValidationError):
+        mapping_issues = [
+            issue.message for issue in error.issues if issue.code.startswith("mapping.")
+        ]
+        if mapping_issues:
+            return WorkbenchError(
+                "mapping_evidence_unresolved", " ".join(dict.fromkeys(mapping_issues))
+            )
     if isinstance(error, WorkbenchError):
         return error
     if finalization_attempted:

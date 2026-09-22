@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Literal, Self, cast
+from typing import Annotated, Literal, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
@@ -12,6 +12,19 @@ type JsonObject = dict[str, JsonValue]
 
 class MappingContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class MappingTargetSelection(MappingContractModel):
+    object_id: int = Field(gt=0)
+    source_system_id: int = Field(gt=0)
+    selected_attribute_ids: list[Annotated[int, Field(gt=0)]]
+
+    @field_validator("selected_attribute_ids")
+    @classmethod
+    def unique_attributes(cls, value: list[int]) -> list[int]:
+        if len(value) != len(set(value)):
+            raise ValueError("Select each Attribute once")
+        return sorted(value)
 
 
 class MappingObjectCandidate(MappingContractModel):
@@ -36,14 +49,22 @@ class MappingAttributeCandidate(MappingContractModel):
         return self
 
 
+class MappingUnresolvedIssue(MappingContractModel):
+    code: Literal[
+        "missing_join_evidence", "missing_transformation_rule", "preserved_mapping_conflict"
+    ]
+    modeled_attribute_name: str | None = None
+
+
 class CompleteMappingCandidateV1(MappingContractModel):
     """Agent output: transformation content only; identity comes from the frozen run."""
 
     schema_version: Literal["1.0"]
+    issues: tuple[MappingUnresolvedIssue, ...] = ()
     object_mapping: MappingObjectCandidate | None
     attribute_mappings: tuple[MappingAttributeCandidate, ...] = Field(max_length=5_000)
 
-    @field_validator("attribute_mappings", mode="before")
+    @field_validator("attribute_mappings", "issues", mode="before")
     @classmethod
     def normalize_json_array(cls, value: object) -> object:
         if isinstance(value, list):

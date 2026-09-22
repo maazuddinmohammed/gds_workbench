@@ -189,7 +189,7 @@ psql -X -v ON_ERROR_STOP=1 --single-transaction \
   -f database/seed/04_application_reference.sql
 ```
 
-This installs exactly 26 workflow stages and 169 backend-resolved prompt
+This installs exactly 26 workflow stages and 171 backend-resolved prompt
 variables. It contains no credentials, prompt bodies, connection values, or
 business data and is safe to replay unchanged.
 

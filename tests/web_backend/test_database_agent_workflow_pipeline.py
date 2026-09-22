@@ -14,6 +14,8 @@ from gds_workbench_api.capabilities import (
     load_default_agent_capabilities,
 )
 from gds_workbench_api.database import WebPostgresDatabase
+from gds_workbench_api.features.mapping.contracts import MappingTargetSelection
+from gds_workbench_api.features.mapping.read_service import DatabaseMappingReviewService
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
@@ -108,14 +110,18 @@ def pipeline_database(
 
 
 @pytest.mark.parametrize("mapping_mode", ["one_shot", "tool_assisted"])
+@pytest.mark.parametrize("bulk", ["legacy", "complete", "partial"])
 async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
     pipeline_database: DisposablePostgres,
     monkeypatch: pytest.MonkeyPatch,
     mapping_mode: Literal["one_shot", "tool_assisted"],
+    bulk: str,
 ) -> None:
     fixture = pipeline_database
     scope = _seed_mapping_scope(fixture, dimensional=False, create_run=False)
     model_id = scope.plan.model_id
+    if bulk != "legacy":
+        _add_mapping_target(fixture, model_id, scope.silver_object_id)
     with fixture.connect_owner() as connection:
         actor = require_row(
             connection.execute(
@@ -144,11 +150,18 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
         entra_object_id=actor["entra_object_id"],
     )
     calls: list[tuple[str, str, int]] = []
+    mapping_calls = 0
     original_execute = LocalFakeAgentAdapter.execute
 
     async def recording_execute(
         self: LocalFakeAgentAdapter, request: AgentExecutionRequest
     ) -> AgentExecutionResult:
+        nonlocal mapping_calls
+        if request.workflow == "mapping":
+            mapping_calls += 1
+            if bulk == "partial" and mapping_calls == 2:
+                calls.append((request.workflow, request.execution_mode, 0))
+                raise TimeoutError("Synthetic provider timeout")
         result = await original_execute(self, request)
         calls.append((request.workflow, request.execution_mode, result.tool_call_count))
         return result
@@ -190,16 +203,38 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
     run_ids: list[int] = []
     await database.open()
     try:
+        targets = await DatabaseMappingReviewService(
+            database=database, authorizer=authorizer, cursor_signing_key=b"fixture-key" * 4
+        ).list_generation_targets(
+            principal,
+            tenant_id=scope.tenant_id,
+            model_id=model_id,
+            entity_type="logical_entity",
+            page_size=200,
+            cursor=None,
+        )
+        eligible = [row for row in targets.items if row.has_sources]
+        assert len(eligible) == (1 if bulk == "legacy" else 2)
+        assert all(row.attributes and not row.is_locked for row in eligible)
+        selections = [
+            MappingTargetSelection(
+                object_id=row.object_id,
+                source_system_id=row.source_system.system_id,
+                selected_attribute_ids=[attribute.attribute_id for attribute in row.attributes],
+            )
+            for row in eligible
+        ]
         for revision, workflow in enumerate(("mapping", "code_generation", "validation"), 1):
             if workflow == "mapping":
                 command = CreateWorkflowRunRequest(
                     expected_model_revision=revision,
                     model_workflow="mapping",
                     workflow_execution_mode=mapping_mode,
-                    selected_object_ids=[scope.silver_object_id],
-                    mapping_operation="extend",
+                    selected_object_ids=[row.object_id for row in eligible],
+                    mapping_operation="extend" if bulk == "legacy" else "generate",
+                    mapping_targets=selections if bulk != "legacy" else None,
                     mapping_coverage_mode="selected_targets",
-                    mapping_source_system_id=scope.source_system_id,
+                    mapping_source_system_id=scope.source_system_id if bulk == "legacy" else None,
                     agent=selection,
                 )
             elif workflow == "code_generation":
@@ -227,6 +262,17 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                 command=command,
             )
             assert created.created and created.prompt_snapshot_count == 1
+            if workflow == "mapping" and bulk != "legacy":
+                with fixture.connect_owner() as connection:
+                    frozen = connection.execute(
+                        "SELECT object_id, source_system_id, selected_attribute_ids "
+                        "FROM application.workflow_run_mapping_target_selection "
+                        "WHERE workflow_run_id=%s ORDER BY selection_order",
+                        (created.workflow_run_id,),
+                    ).fetchall()
+                assert len(frozen) == 2
+                assert {row["object_id"] for row in frozen} == set(command.selected_object_ids)
+                assert all(row["selected_attribute_ids"] for row in frozen)
             run_ids.append(created.workflow_run_id)
             await lifecycle.start(
                 principal,
@@ -249,6 +295,17 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                 workflow_run_id=created.workflow_run_id,
             )
             assert detail.workflow_run_state in {"completed", "completed_with_repair"}
+            if workflow == "mapping" and bulk == "partial":
+                events = await runs.list_events(
+                    principal,
+                    tenant_id=scope.tenant_id,
+                    model_id=model_id,
+                    workflow_run_id=created.workflow_run_id,
+                    after_sequence=0,
+                    page_size=200,
+                )
+                assert any("1 failed" in event.message for event in events.items)
+                assert any(event.status == "warning" for event in events.items)
             assert detail.failure_code is None
             assert detail.model_change_set_status == "validated"
             with fixture.connect_owner() as connection:
@@ -286,14 +343,15 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
     finally:
         await services.close()
         await database.close()
-    assert [workflow for workflow, _, _ in calls] == [
-        "mapping",
-        "code_generation",
-        "validation",
-    ]
+    expected_mapping_calls = 1 if bulk == "legacy" else 2
+    assert [workflow for workflow, _, _ in calls] == (
+        ["mapping"] * expected_mapping_calls + ["code_generation", "validation"]
+    )
     assert calls[0][1] == mapping_mode
     assert (calls[0][2] > 0) == (mapping_mode == "tool_assisted")
-    assert all(mode == "tool_assisted" and count > 0 for _, mode, count in calls[1:])
+    assert all(
+        mode == "tool_assisted" and count > 0 for _, mode, count in calls[expected_mapping_calls:]
+    )
     with fixture.connect_owner() as connection:
         states = connection.execute(
             "SELECT run.workflow_run_state, changes.model_change_set_status, "
@@ -307,3 +365,72 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
     assert len(states) == 3
     assert all(row["model_change_set_status"] == "applied" for row in states)
     assert all(row["applied_event_count"] == 1 for row in states)
+
+
+def _add_mapping_target(fixture: DisposablePostgres, model_id: int, object_id: int) -> None:
+    """A second independent target in this fixture-owned database only."""
+    with fixture.connect_owner() as connection:
+        target = require_row(
+            connection.execute(
+                "INSERT INTO core.object (connection_id, source_tenant_id, object_schema, "
+                "object_name, object_type_id, zone_id) SELECT connection_id, source_tenant_id, "
+                "object_schema, 'second_customer', object_type_id, zone_id FROM core.object "
+                "WHERE object_id=%s RETURNING object_id",
+                (object_id,),
+            ).fetchone()
+        )["object_id"]
+        attribute = require_row(
+            connection.execute(
+                "INSERT INTO core.attribute (object_id, attribute_name, "
+                "attribute_ordinal_position, "
+                "attribute_data_type, attribute_nullability) "
+                "VALUES (%s, 'customer_id', 1, 'bigint', FALSE) RETURNING attribute_id",
+                (target,),
+            ).fetchone()
+        )["attribute_id"]
+        entity = require_row(
+            connection.execute(
+                "INSERT INTO workflow.logical_entity (model_id, logical_entity_name, "
+                "logical_entity_definition, logical_entity_type, logical_entity_grain, "
+                "logical_entity_dependency_order) VALUES (%s, 'SecondCustomer', "
+                "'Second customer projection.', 'core', 'One customer.', 1) "
+                "RETURNING logical_entity_id",
+                (model_id,),
+            ).fetchone()
+        )["logical_entity_id"]
+        modeled = require_row(
+            connection.execute(
+                "INSERT INTO workflow.logical_attribute (model_id, logical_entity_id, "
+                "logical_attribute_name, logical_attribute_definition, "
+                "logical_attribute_data_type, "
+                "logical_attribute_ordinal_position) VALUES (%s, %s, 'customer_id', "
+                "'Customer key.', 'bigint', 1) RETURNING logical_attribute_id",
+                (model_id, entity),
+            ).fetchone()
+        )["logical_attribute_id"]
+        binding = require_row(
+            connection.execute(
+                "INSERT INTO workflow.model_object_binding (model_id, object_id, "
+                "modeled_entity_type, "
+                "logical_entity_id) VALUES (%s, %s, 'logical_entity', %s) "
+                "RETURNING model_object_binding_id",
+                (model_id, target, entity),
+            ).fetchone()
+        )["model_object_binding_id"]
+        connection.execute(
+            "INSERT INTO workflow.model_attribute_binding (model_object_binding_id, "
+            "attribute_id, logical_attribute_id) VALUES (%s, %s, %s)",
+            (binding, attribute, modeled),
+        )
+        connection.execute(
+            "INSERT INTO workflow.logical_entity_source_mapping (model_id, logical_entity_id, "
+            "support_source_type, source_object_id, logical_entity_source_mapping_order, "
+            "logical_entity_source_mapping_rationale) "
+            "SELECT %s, %s, 'object', sources.source_object_id, "
+            "sources.logical_entity_source_mapping_order, 'Synthetic source.' "
+            "FROM workflow.logical_entity_source_mapping sources "
+            "JOIN workflow.model_object_binding binding USING(logical_entity_id, model_id) "
+            "WHERE binding.model_id=%s AND binding.object_id=%s "
+            "AND sources.support_source_type='object'",
+            (model_id, entity, model_id, object_id),
+        )

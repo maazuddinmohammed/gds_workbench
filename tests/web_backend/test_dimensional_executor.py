@@ -34,9 +34,9 @@ from gds_workbench_api.features.dimensional.policy import (
     project_dimensional_gold_policy,
 )
 from gds_workbench_api.features.dimensional.service import (
-    DimensionalWorkflow,
     DimensionalExecutionFailedError,
     DimensionalFinalizationFailedError,
+    DimensionalWorkflow,
 )
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
@@ -62,8 +62,8 @@ from gds_workbench_api.features.workflows.authoring.no_op import (
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
-    WorkflowExecutionMode,
     FrozenAgentStage,
+    WorkflowExecutionMode,
 )
 from gds_workbench_api.features.workflows.authoring.repair import AgentContextPolicy
 from gds_workbench_api.prompt_rendering import (

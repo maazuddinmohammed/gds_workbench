@@ -425,7 +425,15 @@ class ValidationRepairRunner:
             if attempt_count > request.selection.validation_retry_count:
                 raise AgentCandidateValidationError(
                     candidate=execution.candidate if complete_candidate_rejected else None,
-                    issues=validation.issues if complete_candidate_rejected else (),
+                    issues=(
+                        validation.issues
+                        if complete_candidate_rejected
+                        else tuple(
+                            issue
+                            for issue in validation.issues
+                            if issue.code.startswith("mapping.")
+                        )
+                    ),
                 )
 
             repair = {

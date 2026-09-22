@@ -38,13 +38,14 @@ interface CommonLedgerProps {
 }
 
 export function MappingDependenciesLedger({
+  onEdit, canEdit,
   selectedIds, onSelectionChange,
   items,
   filters,
   state,
   onApplyFilters,
   onLoadMore,
-}: CommonLedgerProps & { items: MappingDependency[] }) {
+}: CommonLedgerProps & { items: MappingDependency[]; onEdit: (dependency: MappingDependency) => void; canEdit: boolean }) {
   const columns = useMemo<ColumnDef<MappingDependency>[]>(() => [
     reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.mapping_source_system_dependency_id, "Mapping Dependencies"),
     {
@@ -54,12 +55,12 @@ export function MappingDependenciesLedger({
         <strong>{row.original.source_system.system_code}</strong>
       ),
     },
-    { accessorKey: "entity_type", header: "Entity type", cell: ({ getValue }) => humanize(getValue<string>()) },
     { accessorKey: "dependency_order", header: "Order" },
     { accessorKey: "status", header: "Status", cell: ({ getValue }) => humanize(getValue<string>()) },
     { accessorKey: "is_locked", header: "Lock", cell: ({ getValue }) => getValue<boolean>() ? "Locked" : "Open" },
     { accessorKey: "updated_at", header: "Updated", cell: ({ getValue }) => formatDateTime(getValue<string>()) },
-  ], [items, selectedIds, onSelectionChange]);
+    { id: "edit", header: "", cell: ({ row }) => <button className="text-action" type="button" disabled={!canEdit || row.original.is_locked} title={row.original.is_locked ? "Unlock this dependency to edit" : "Edit System order"} onClick={() => onEdit(row.original)}>Edit order</button> },
+  ], [items, selectedIds, onSelectionChange, onEdit, canEdit]);
   return (
     <MappingLedgerSurface
       label="Mapping Dependencies"
@@ -100,7 +101,6 @@ export function MappingObjectsLedger({
       cell: ({ row }) => (
         <span className="endpoint-cell">
           <strong>{row.original.source.entity_name}</strong>
-          <span>{humanize(row.original.source.entity_type)}</span>
         </span>
       ),
     },
@@ -215,13 +215,11 @@ function MappingFilterBar({
 }) {
   const form = useForm({
     defaultValues: {
-      entityType: filters.entityType ?? "",
       sourceSystemCode: filters.sourceSystemCode ?? "",
       status: filters.status ?? "",
       locked: filters.locked === undefined ? "" : String(filters.locked),
     },
     onSubmit: ({ value }) => onApplyFilters({
-      ...(value.entityType ? { entityType: value.entityType as NonNullable<MappingFilters["entityType"]> } : {}),
       ...(value.sourceSystemCode ? { sourceSystemCode: value.sourceSystemCode } : {}),
       ...(value.status ? { status: value.status as NonNullable<MappingFilters["status"]> } : {}),
       ...(value.locked ? { locked: value.locked === "true" } : {}),
@@ -239,18 +237,6 @@ function MappingFilterBar({
     >
       {!objectScoped ? (
         <>
-          <form.Field name="entityType">
-            {(field) => (
-              <label>
-                <span>Entity type</span>
-                <select aria-label="Entity type" value={field.state.value} onChange={(event) => field.handleChange(event.target.value)}>
-                  <option value="">All Entity types</option>
-                  <option value="logical_entity">Logical Entity</option>
-                  <option value="dimensional_entity">Dimensional Entity</option>
-                </select>
-              </label>
-            )}
-          </form.Field>
           <form.Field name="sourceSystemCode">
             {(field) => (
               <label>

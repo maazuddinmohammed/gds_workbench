@@ -343,9 +343,9 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND (SELECT count(*) = 26
               FROM application.workflow_stage
              WHERE is_active)
-       AND (SELECT count(*) = 169
+       AND (SELECT count(*) = 171
               FROM application.workflow_stage_variable)
-       AND (SELECT count(*) = 169
+       AND (SELECT count(*) = 171
               FROM application.workflow_stage_variable
              WHERE is_active) AS application_reference_ready
 """

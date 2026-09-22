@@ -55,25 +55,26 @@ describe("Model Profiling", () => {
     expect(screen.getByRole("region", { name: "Scrollable Attribute profile metrics" }))
       .toHaveAttribute("tabindex", "0");
     expect(within(profileTable).getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "Attribute", "Inferred data type", "Attribute description", "Number of rows",
-      "Unique distinct rows", "Duplicate percentage",
+      "Attribute", "Position", "Data type", "Inferred data type", "Attribute description",
+      "Total rows", "Non-null rows", "Null rows", "Blank rows", "Distinct values",
+      "Populated (%)", "Null (%)", "Blank (%)", "Distinct (%)", "Duplicate (%)",
+      "Minimum length", "Maximum length", "Average length", "Last profiled",
     ]);
     expect(within(profileTable).queryByText("Source context digest")).not.toBeInTheDocument();
 
     const customerProfile = profileRow(profileTable, "customer_id");
-    expect(within(customerProfile).getAllByRole("cell")).toHaveLength(5);
-    expect(customerProfile).toHaveTextContent("integer");
-    expect(customerProfile).toHaveTextContent("Stable customer identifier.");
-    expect(customerProfile).toHaveTextContent("10");
-    expect(customerProfile).toHaveTextContent("8");
-    expect(customerProfile).toHaveTextContent("0%");
+    expect(within(customerProfile).getAllByRole("cell").slice(0, -1).map((cell) => cell.textContent)).toEqual([
+      "1", "bigint", "integer", "Stable customer identifier.",
+      "10", "8", "2", "0", "8", "80%", "20%", "0%", "100%", "0%", "1", "8", "4.2",
+    ]);
+    expect(customerProfile.querySelector("time")).toHaveAttribute("datetime", "2026-08-24T14:00:00Z");
     expect(customerProfile).not.toHaveTextContent("a".repeat(64));
 
     const statusProfile = profileRow(profileTable, "status");
-    expect(statusProfile).toHaveTextContent("Not inferred");
-    expect(statusProfile).toHaveTextContent("No description");
-    expect(statusProfile).toHaveTextContent("Not recorded");
-    expect(statusProfile).toHaveTextContent("—");
+    expect(within(statusProfile).getAllByRole("cell").slice(0, -1).map((cell) => cell.textContent)).toEqual([
+      "2", "string", "Not inferred", "No description", "10", "10", "0", "Not recorded", "Not recorded",
+      "100%", "0%", "—", "—", "—", "Not recorded", "Not recorded", "Not recorded",
+    ]);
     expect(fetcher.mock.calls.filter(([input]) => String(input).endsWith("/profiling/501"))).toHaveLength(1);
     expect(screen.queryByText("Object record details")).not.toBeInTheDocument();
     expect(screen.queryByText("Provenance")).not.toBeInTheDocument();

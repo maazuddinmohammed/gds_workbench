@@ -1,17 +1,18 @@
 import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
 import { ApiError } from "../../core/http";
 import type { ModelDetail } from "../models/api";
 import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
-import { mappingQueryKeys, type MappingApi, type MappingFilters } from "./api";
+import { mappingQueryKeys, type MappingApi, type MappingFilters, type MappingDependency, type MappingEntityType } from "./api";
 import {
   MappingDependenciesLedger,
   MappingObjectsLedger,
   type MappingLedgerState,
 } from "./MappingLedgers";
+import { MappingDependencyDialog } from "./MappingDependencyDialog";
 import { MappingRunDialog } from "./MappingRunDialog";
 
 type MappingView = "dependencies" | "objects";
@@ -23,6 +24,7 @@ export function MappingScreen({
   hasTenantLock,
   hasAppPermission,
   initialView,
+  layer,
 }: {
   api: MappingApi;
   tenantId: number;
@@ -30,22 +32,28 @@ export function MappingScreen({
   hasTenantLock: boolean;
   hasAppPermission: boolean;
   initialView?: MappingView;
+  layer: "logical" | "dimensional";
 }) {
   const queryClient = useQueryClient();
+  const commandButton = useRef<HTMLButtonElement>(null);
   const [view, setView] = useState<MappingView>(initialView ?? "dependencies");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [dependencyEditor, setDependencyEditor] = useState<MappingDependency | null | undefined>(undefined);
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [recentRunId, setRecentRunId] = useState<number | null>(null);
   const [filters, setFilters] = useState<Record<MappingView, MappingFilters>>({
     dependencies: {},
     objects: {},
   });
+  const entityType: MappingEntityType = layer === "logical" ? "logical_entity" : "dimensional_entity";
+  const dependencyFilters = { ...filters.dependencies, entityType };
+  const objectFilters = { ...filters.objects, entityType };
   const dependencies = useInfiniteQuery({
-    queryKey: mappingQueryKeys.dependencies(tenantId, model.model_id, filters.dependencies),
+    queryKey: mappingQueryKeys.dependencies(tenantId, model.model_id, dependencyFilters),
     queryFn: ({ pageParam }) => api.listMappingDependencies(
       tenantId,
       model.model_id,
-      filters.dependencies,
+      dependencyFilters,
       200,
       pageParam,
     ),
@@ -54,11 +62,11 @@ export function MappingScreen({
     enabled: view === "dependencies",
   });
   const objects = useInfiniteQuery({
-    queryKey: mappingQueryKeys.objects(tenantId, model.model_id, filters.objects),
+    queryKey: mappingQueryKeys.objects(tenantId, model.model_id, objectFilters),
     queryFn: ({ pageParam }) => api.listMappingObjects(
       tenantId,
       model.model_id,
-      filters.objects,
+      objectFilters,
       200,
       pageParam,
     ),
@@ -101,6 +109,24 @@ export function MappingScreen({
 
   return (
     <main className="workspace mapping-workspace page-enter">
+      <header className="mapping-layer-header">
+        <h1>Mapping</h1>
+        <nav className="target-layer-switch" aria-label="Mapping layer">
+          {(["logical", "dimensional"] as const).map((value) => (
+            <Link
+              key={value}
+              to="/tenants/$tenantId/mapping/models/$modelId"
+              params={{ tenantId: String(tenantId), modelId: String(model.model_id) }}
+              search={{ layer: value, view }}
+              className={layer === value ? "is-active" : ""}
+              aria-current={layer === value ? "page" : undefined}
+            >
+              {value === "logical" ? "Logical" : "Dimensional"}
+            </Link>
+          ))}
+        </nav>
+        <span>{layer === "logical" ? "Logical Entities → Silver" : "Dimensional Entities → Gold"}</span>
+      </header>
       <header className="workflow-commandbar mapping-commandbar">
         <div className="workflow-command-context mapping-command-context">
           <Link
@@ -136,19 +162,20 @@ export function MappingScreen({
             Refresh
           </button>
           <button
+            ref={commandButton}
             className="button button-primary button-small"
             type="button"
             disabled={!hasTenantLock || !hasAppPermission}
             title={permissionLabel}
-            onClick={() => setRunDialogOpen(true)}
+            onClick={() => view === "dependencies" ? setDependencyEditor(null) : setRunDialogOpen(true)}
           >
-            Run Mapping
+            {view === "dependencies" ? "Add System dependency" : "Generate mappings"}
           </button>
         </div>
       </header>
       <div className="workflow-context-line mapping-context-line">
         <strong>{model.model_name} · r{model.model_revision}</strong>
-        <Link className="text-action" to="/tenants/$tenantId/models/$modelId/targets" params={{ tenantId: String(tenantId), modelId: String(model.model_id) }} search={{ layer: "logical" }}>Review target bindings</Link>
+        <Link className="text-action" to="/tenants/$tenantId/models/$modelId/targets" params={{ tenantId: String(tenantId), modelId: String(model.model_id) }} search={{ layer }}>Review target bindings</Link>
       </div>
       <WorkflowRunMonitor
         api={api}
@@ -169,6 +196,7 @@ export function MappingScreen({
       />
       {view === "dependencies" ? (
         <MappingDependenciesLedger
+          onEdit={setDependencyEditor} canEdit={hasTenantLock && hasAppPermission}
           selectedIds={selectedIds} onSelectionChange={setSelectedIds}
           tenantId={tenantId}
           modelId={model.model_id}
@@ -190,8 +218,11 @@ export function MappingScreen({
           onLoadMore={() => void objects.fetchNextPage()}
         />
       )}
+      {dependencyEditor !== undefined ? <MappingDependencyDialog api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
+        entityType={entityType} dependency={dependencyEditor} onClose={() => { setDependencyEditor(undefined); commandButton.current?.focus(); }} onSaved={async () => { await refresh(); await invalidateLedgers(); }} /> : null}
       {runDialogOpen ? (
         <MappingRunDialog
+          entityType={entityType}
           api={api}
           tenantId={tenantId}
           model={model}

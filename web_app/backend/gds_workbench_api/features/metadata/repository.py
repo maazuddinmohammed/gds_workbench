@@ -28,6 +28,18 @@ from gds_workbench_api.features.metadata.contracts import (
 _MAX_DATABASE_ID = 9_223_372_036_854_775_807
 _MAX_PAGE_OFFSET = 10_000_000
 
+_OBJECT_ORDER: LiteralString = """
+lower(btrim(placement_tenant.tenant_code)),
+lower(btrim(system.system_code)),
+lower(btrim(connection.connection_code)),
+lower(btrim(object.object_schema)),
+lower(btrim(object.object_name))
+"""
+_ATTRIBUTE_ORDER: LiteralString = f"""
+{_OBJECT_ORDER}, attribute.attribute_ordinal_position,
+lower(btrim(attribute.attribute_name)), attribute.attribute_id
+"""
+
 _SYSTEM_TYPE_ROWS_SQL: LiteralString = """
 SELECT system_type.system_type_code,
        system_type.system_type_name,
@@ -614,7 +626,12 @@ SELECT object.object_id,
    AND (%s::TEXT IS NULL OR lower(btrim(system.system_code)) = %s)
    AND (%s::TEXT IS NULL OR lower(btrim(source_tenant.tenant_code)) = %s)
    AND (%s = 'all' OR object.is_active = (%s = 'active'))
- ORDER BY object.object_id
+ ORDER BY lower(btrim(source_tenant.tenant_code)),
+          lower(btrim(system.system_code)),
+          lower(btrim(connection.connection_code)),
+          lower(btrim(object.object_schema)),
+          lower(btrim(object.object_name)),
+          object.object_id
 LIMIT %s OFFSET %s
 """
 
@@ -687,6 +704,7 @@ SELECT attribute.attribute_id,
     ON object.object_id = attribute.object_id
  WHERE visible_objects.object_id = %s
  ORDER BY attribute.attribute_ordinal_position,
+          lower(btrim(attribute.attribute_name)),
           attribute.attribute_id
  LIMIT %s
 """
@@ -856,49 +874,49 @@ _DATASET_QUERIES: Mapping[MetadataDataset, _DatasetQuery] = MappingProxyType(
         "source_object": _DatasetQuery(
             _OBJECT_ROWS_SQL,
             _OBJECT_FILTER_EXPRESSIONS,
-            "object.object_id",
+            _OBJECT_ORDER,
             ("source",),
         ),
         "source_attribute": _DatasetQuery(
             _ATTRIBUTE_ROWS_SQL,
             _ATTRIBUTE_FILTER_EXPRESSIONS,
-            "attribute.attribute_id",
+            _ATTRIBUTE_ORDER,
             ("source",),
         ),
         "bronze_object": _DatasetQuery(
             _OBJECT_ROWS_SQL,
             _OBJECT_FILTER_EXPRESSIONS,
-            "object.object_id",
+            _OBJECT_ORDER,
             ("bronze",),
         ),
         "bronze_attribute": _DatasetQuery(
             _ATTRIBUTE_ROWS_SQL,
             _ATTRIBUTE_FILTER_EXPRESSIONS,
-            "attribute.attribute_id",
+            _ATTRIBUTE_ORDER,
             ("bronze",),
         ),
         "silver_object": _DatasetQuery(
             _OBJECT_ROWS_SQL,
             _OBJECT_FILTER_EXPRESSIONS,
-            "object.object_id",
+            _OBJECT_ORDER,
             ("silver",),
         ),
         "silver_attribute": _DatasetQuery(
             _ATTRIBUTE_ROWS_SQL,
             _ATTRIBUTE_FILTER_EXPRESSIONS,
-            "attribute.attribute_id",
+            _ATTRIBUTE_ORDER,
             ("silver",),
         ),
         "gold_object": _DatasetQuery(
             _OBJECT_ROWS_SQL,
             _OBJECT_FILTER_EXPRESSIONS,
-            "object.object_id",
+            _OBJECT_ORDER,
             ("gold",),
         ),
         "gold_attribute": _DatasetQuery(
             _ATTRIBUTE_ROWS_SQL,
             _ATTRIBUTE_FILTER_EXPRESSIONS,
-            "attribute.attribute_id",
+            _ATTRIBUTE_ORDER,
             ("gold",),
         ),
         "ingestion_object_mapping": _DatasetQuery(

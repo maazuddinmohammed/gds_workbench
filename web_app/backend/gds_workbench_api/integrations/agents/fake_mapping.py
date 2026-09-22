@@ -61,9 +61,15 @@ def fake_mapping_candidate(context: dict[str, JsonValue]) -> JsonValue:
         dependency_order = header.get("object_dependency_order")
         if isinstance(dependency_order, bool) or not isinstance(dependency_order, int):
             raise InvalidRequestError("The local fake agent context is invalid.")
+        preserved = any(
+            mapping_dict(item).get("action") == "preserve"
+            for item in _mapping_list(ready.get("attribute_actions"))
+        )
         object_mapping = {
             "object_dependency_order": dependency_order,
-            "mapping_transformation_document": {
+            "mapping_transformation_document": header["transformation_document"]
+            if preserved and header.get("transformation_document") is not None
+            else {
                 "kind": "derived",
                 "logic": "Build the bound target from the frozen executable sources.",
             },

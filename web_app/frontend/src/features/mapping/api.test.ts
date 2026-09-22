@@ -4,7 +4,7 @@ import { createHttpRequest } from "../../core/http";
 import {
   createMappingApi,
   loadActiveMappingOutputTemplates,
-  loadAllMappingTargets,
+  loadMappingGenerationTargets,
   type MappingApi,
   type OutputTemplateTargetType,
 } from "./api";
@@ -124,7 +124,7 @@ describe("Mapping Output Template catalog", () => {
     );
   });
 
-  it("rejects an Output Template catalog beyond its five-page bound", async () => {
+  it("loads the complete Output Template catalog beyond five pages", async () => {
     let objectPage = 0;
     const listOutputTemplates = vi.fn(async (
       tenantId: number,
@@ -134,22 +134,22 @@ describe("Mapping Output Template catalog", () => {
       return {
         tenant_id: tenantId,
         items: [],
-        next_cursor: targetType === "mapping_object" ? `next-${objectPage}` : null,
+        next_cursor: targetType === "mapping_object" && objectPage < 7 ? `next-${objectPage}` : null,
       };
     });
 
-    await expect(loadActiveMappingOutputTemplates({ listOutputTemplates }, 7)).rejects.toThrow(
-      "Output Template selection exceeds the supported bound",
-    );
+    await expect(loadActiveMappingOutputTemplates({ listOutputTemplates }, 7)).resolves.toEqual({
+      mappingObjects: [], mappingAttributes: [],
+    });
     expect(listOutputTemplates.mock.calls.filter(([, targetType]) => (
       targetType === "mapping_object"
-    ))).toHaveLength(5);
+    ))).toHaveLength(7);
   });
 });
 
 describe("Mapping target loader", () => {
   it("keeps revision consistency and repeated-cursor protection", async () => {
-    const listMappingTargets = vi.fn<MappingApi["listMappingTargets"]>()
+    const listMappingGenerationTargets = vi.fn<MappingApi["listMappingGenerationTargets"]>()
       .mockResolvedValueOnce({
         model_id: 18,
         model_revision: 4,
@@ -163,8 +163,8 @@ describe("Mapping target loader", () => {
         next_cursor: null,
       });
 
-    await expect(loadAllMappingTargets(
-      { listMappingTargets },
+    await expect(loadMappingGenerationTargets(
+      { listMappingGenerationTargets },
       7,
       18,
       "logical_entity",
@@ -172,19 +172,19 @@ describe("Mapping target loader", () => {
       modelRevision: 4,
       items: [],
     });
-    expect(listMappingTargets.mock.calls).toEqual([
+    expect(listMappingGenerationTargets.mock.calls).toEqual([
       [7, 18, "logical_entity", 200, undefined],
       [7, 18, "logical_entity", 200, "next"],
     ]);
 
-    const repeatedCursor = vi.fn<MappingApi["listMappingTargets"]>().mockResolvedValue({
+    const repeatedCursor = vi.fn<MappingApi["listMappingGenerationTargets"]>().mockResolvedValue({
       model_id: 18,
       model_revision: 4,
       items: [],
       next_cursor: "same",
     });
-    await expect(loadAllMappingTargets(
-      { listMappingTargets: repeatedCursor },
+    await expect(loadMappingGenerationTargets(
+      { listMappingGenerationTargets: repeatedCursor },
       7,
       18,
       "logical_entity",

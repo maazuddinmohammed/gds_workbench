@@ -85,7 +85,8 @@ export interface CreateWorkflowRunCommand {
   agent: AgentRunSelection | null;
   prompt_overrides: Record<string, number>;
   modeled_entity_type?: "logical_entity" | "dimensional_entity" | null;
-  mapping_operation?: "build" | "extend" | null;
+  mapping_operation?: "build" | "extend" | "generate" | null;
+  mapping_targets?: { object_id: number; source_system_id: number; selected_attribute_ids: number[] }[];
   mapping_coverage_mode?: "selected_targets" | null;
   mapping_source_system_id?: number | null;
   mapping_object_output_template_id?: number | null;

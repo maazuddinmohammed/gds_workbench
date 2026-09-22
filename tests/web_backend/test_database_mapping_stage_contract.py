@@ -120,7 +120,7 @@ async def test_installed_mapping_stages_execute_one_complete_candidate(
         }
     )
     preparation_service = AsyncMock()
-    preparation_service.prepare.return_value = preparation
+    preparation_service.prepare.return_value = (preparation,)
     adapter = LocalFakeAgentAdapter(
         sdk_code=preparation.plan.agent_plan.selection.sdk_code
     )

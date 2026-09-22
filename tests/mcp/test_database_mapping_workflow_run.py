@@ -491,11 +491,12 @@ def test_mapping_run_rejects_invalid_binding_atomically(
         elif invalid_state == "locked":
             connection.execute(
                 """
-                UPDATE workflow.model_object_binding
-                   SET model_object_binding_is_locked = TRUE
-                 WHERE model_object_binding_id = %s
+                INSERT INTO workflow.mapping_object (
+                    model_id, model_object_binding_id, source_system_id, object_mapping_is_locked
+                ) VALUES (%s, %s, %s, TRUE)
                 """,
-                (context.model_object_binding_id,),
+                (context.workflow.model_id, context.model_object_binding_id,
+                 context.source_system_id),
             )
             message = "unavailable or locked header"
         else:

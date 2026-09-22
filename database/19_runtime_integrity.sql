@@ -1413,6 +1413,7 @@ GRANT EXECUTE ON FUNCTION application.create_workflow_run(
     BIGINT,
     VARCHAR,
     BIGINT,
+    JSONB,
     JSONB
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.lock_authoring_workflow_run(

@@ -435,12 +435,12 @@ class WorkflowCommandTransaction:
                 "default_validation_retry_count": 2,
             }
         assert "application.create_workflow_run" in query
-        assert len(parameters) == 27
+        assert len(parameters) == 28
         assert parameters[3:7] == (18, 4, "profiling", None)
         assert parameters[13] == [101, 102]
         assert parameters[14] == []
         assert parameters[16] == "10428"
-        assert parameters[19:] == (None, None, None, None, None, None, None, None)
+        assert parameters[19:] == (None,) * 9
         return {
             "created": True,
             "workflow_run_id": 1048,
@@ -913,7 +913,7 @@ class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
     ) -> dict[str, Any] | None:
         if "application.create_workflow_run" not in query:
             return await super().fetch_one(query, parameters)
-        assert len(parameters) == 27
+        assert len(parameters) == 28
         self.create_parameters = parameters
         assert parameters[3:6] == (18, 4, "mapping")
         assert parameters[6] in {"one_shot", "tool_assisted"}
@@ -924,7 +924,7 @@ class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
             "selected_targets",
             77,
         )
-        assert parameters[24:] == (None, None, None)
+        assert parameters[24:] == (None,) * 4
         return {
             "created": True,
             "workflow_run_id": 1049,

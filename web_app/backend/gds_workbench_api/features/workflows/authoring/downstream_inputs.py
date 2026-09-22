@@ -24,6 +24,7 @@ def downstream_reader_specs(workflow: str) -> ReaderSpecs:
             "get_mapping_target": ("target_metadata", None, ()),
             "get_mapping_sources": ("source_evidence", "source_object_keys", OBJECT_FIELDS),
             "get_existing_mapping": ("existing_mapping", None, ()),
+            "get_mapping_support": ("mapping_support", None, ()),
         }
     if workflow == "code_generation":
         return {
@@ -61,9 +62,10 @@ class DownstreamContextReaders(FrozenContextReaders):
     @property
     def prompt_values(self) -> dict[str, Any]:
         values = super().prompt_values
-        target = values.get("target_metadata")
-        if isinstance(target, list):
-            values["target_metadata"] = target[0]
+        for name in ("target_metadata", "mapping_support"):
+            value = values.get(name)
+            if isinstance(value, list):
+                values[name] = value[0]
         return values
 
     @property
@@ -176,6 +178,7 @@ def project_downstream_inputs(workflow: str, context: dict[str, Any]) -> dict[st
 
             return {
                 "mapping_route": context["run"]["route"],
+                "mapping_support": deepcopy(context.get("mapping_support", {})),
                 "operation": context["run"]["operation"],
                 "target_metadata": _without_internal_fields(context["target"]),
                 "source_evidence": _without_internal_fields(context["sources"]),

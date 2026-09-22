@@ -15,6 +15,7 @@ from gds_workbench_api.features.mapping.read_contracts import (
     MappingDependencyFilters,
     MappingDependencyPage,
     MappingEntityType,
+    MappingGenerationPage,
     MappingListQuery,
     MappingObjectDetail,
     MappingObjectPage,
@@ -91,6 +92,31 @@ def create_mapping_review_router(
         list_targets,
         methods=["GET"],
         response_model=MappingTargetPage,
+    )
+
+    async def list_generation_targets(
+        tenant_id: Annotated[int, Path(gt=0)],
+        model_id: Annotated[int, Path(gt=0)],
+        entity_type: Annotated[MappingEntityType, Query()],
+        page_size: Annotated[int, Query(ge=1, le=200)] = 200,
+        cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
+    ) -> MappingGenerationPage:
+        return await service.list_generation_targets(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            entity_type=entity_type,
+            page_size=page_size,
+            cursor=cursor,
+        )
+
+    router.add_api_route(
+        "/generation-targets",
+        list_generation_targets,
+        methods=["GET"],
+        response_model=MappingGenerationPage,
     )
 
     async def list_objects(

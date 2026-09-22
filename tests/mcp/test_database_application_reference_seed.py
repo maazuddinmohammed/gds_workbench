@@ -122,6 +122,7 @@ EXPECTED_NAMES = {
         "technical_columns",
     },
     "mapping": {
+        "mapping_support",
         "mapping_route",
         "operation",
         "target_metadata",

@@ -550,6 +550,64 @@ def test_sheet_rows_are_sorted_by_the_normalized_canonical_key() -> None:
         workbook.close()
 
 
+@pytest.mark.parametrize("zone", ["source", "bronze", "silver", "gold"])
+def test_attribute_export_sorts_by_object_then_numeric_ordinal(zone: str) -> None:
+    dataset = cast(OperationalDataset, f"{zone}_attribute")
+    rows = tuple(
+        {
+            "tenant_code": "NWA",
+            "system_code": "CRM",
+            "connection_code": "MAIN",
+            "object_schema": "sales",
+            "object_name": object_name,
+            "attribute_name": attribute_name,
+            "attribute_ordinal_position": ordinal,
+            "fc_attribute_name": None,
+            "attribute_description": None,
+            "attribute_data_type": "STRING",
+            "attribute_inferred_data_type": None,
+            "attribute_nullability": True,
+            "attribute_custom_code": None,
+            "is_surrogate_key": False,
+            "is_natural_key": False,
+            "is_meta_data": False,
+            "is_masking_required": False,
+            "is_mapped": False,
+            "is_purge": False,
+            "is_locked": False,
+            "is_active": True,
+        }
+        for object_name, ordinal, attribute_name in [("B", 1, "A"), ("a", 10, "A"), ("a", 2, "Z")]
+    )
+    service = DatabaseMetadataService(
+        database=ExportDatabase(),
+        repository=cast(Any, ExportRepository({dataset: rows})),
+        authorizer=AuthorizationService(),
+        cursor_signing_key=b"development-only-key-32-bytes-long",
+    )
+    app = FastAPI()
+    app.include_router(
+        create_metadata_router(identity_provider=_identity_provider(), service=service)
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/tenants/7/metadata/exports/xlsx",
+            json={"schema_version": "1.0", "sheet_codes": [dataset]},
+        )
+    assert response.status_code == 200
+    workbook = load_workbook(BytesIO(response.content), read_only=True)
+    try:
+        values = workbook[DATASETS_BY_NAME[dataset].label].iter_rows(values_only=True)
+        headers = next(values)
+        exported = [dict(zip(headers, row, strict=True)) for row in values]
+        assert [
+            (row["object_name"], row["attribute_ordinal_position"], row["attribute_name"])
+            for row in exported
+        ] == [("a", 2, "Z"), ("a", 10, "A"), ("B", 1, "A")]
+    finally:
+        workbook.close()
+
+
 def test_all_selection_exports_every_operational_sheet_even_when_empty() -> None:
     repository = ExportRepository({})
     service = DatabaseMetadataService(
@@ -857,7 +915,7 @@ async def test_export_repository_uses_one_fixed_tenant_scoped_bounded_query() ->
     query, parameters = transaction.queries[0]
     assert "WITH RECURSIVE requested_tenant AS" in query
     assert "connection_value" not in query
-    assert "ORDER BY object.object_id" in query
+    assert "ORDER BY lower(btrim(placement_tenant.tenant_code))" in " ".join(query.split())
     assert "LIMIT %s" in query
     assert "OFFSET" not in query
     assert parameters == (7, "source", MAX_METADATA_EXPORT_ROWS_PER_SHEET + 1)

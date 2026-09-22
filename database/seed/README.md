@@ -5,7 +5,7 @@ Seed files are separate from canonical DDL. Run them only after
 
 ## Application reference metadata
 
-`04_application_reference.sql` installs 26 stable workflow stages and 169 allowed
+`04_application_reference.sql` installs 26 stable workflow stages and 171 allowed
 backend-resolved prompt variables. It includes deterministic stages, but gives
 variables only to agentic stages. It contains no prompt or SQL-generation-guide
 bodies, credentials, connection values, or business data.

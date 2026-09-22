@@ -37,6 +37,31 @@ class CompleteMappingCandidateValidator:
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
         try:
             parsed = CompleteMappingCandidateV1.model_validate(candidate, strict=True)
+            if parsed.issues:
+                return AgentCandidateValidation(
+                    issues=tuple(
+                        AgentValidationIssue(
+                            code=f"mapping.{issue.code}",
+                            path=("issues", index),
+                            message={
+                                "missing_join_evidence": (
+                                    "Required join evidence is missing. "
+                                    "Add or correct source relationships or business assertions."
+                                ),
+                                "missing_transformation_rule": (
+                                    "A required transformation rule is missing. "
+                                    "Add the relevant attribute lineage or business assertion."
+                                ),
+                                "preserved_mapping_conflict": (
+                                    "The requested mapping conflicts with preserved "
+                                    "Object or Attribute logic. "
+                                    "Review selection and locks."
+                                ),
+                            }[issue.code],
+                        )
+                        for index, issue in enumerate(parsed.issues)
+                    )
+                )
             MappingCandidateReconciler(preparation=self._preparation).reconcile(candidate=parsed)
         except ValidationError as error:
             return AgentCandidateValidation(issues=pydantic_validation_issues(error))
@@ -57,6 +82,8 @@ class CompleteMappingCandidateValidator:
             parsed = CompleteMappingCandidateV1.model_validate(candidate, strict=True)
         except ValidationError:
             raise InvalidRequestError("The Mapping candidate is invalid.") from None
+        if parsed.issues:
+            raise InvalidRequestError("Resolve Mapping evidence issues before staging a draft.")
         changes = MappingCandidateReconciler(preparation=self._preparation).reconcile(
             candidate=parsed
         )

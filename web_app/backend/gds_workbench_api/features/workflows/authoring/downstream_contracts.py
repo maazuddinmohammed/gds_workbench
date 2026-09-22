@@ -15,10 +15,10 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "example": "logical_to_silver",
         },
         "operation": {
-            "description": "Frozen build or extend operation. Per-record "
+            "description": "Frozen build, extend or generate operation. Per-record "
             "readiness determines exactly which transformations "
             "are actionable.",
-            "value_schema": {"enum": ["build", "extend"], "type": "string"},
+            "value_schema": {"enum": ["build", "extend", "generate"], "type": "string"},
             "example": "build",
         },
         "target_metadata": {
@@ -708,7 +708,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                         "title": "MappingHeaderReadiness",
                         "type": "object",
                     },
-                    "MappingOperation": {"enum": ["build", "extend"], "type": "string"},
+                    "MappingOperation": {"enum": ["build", "extend", "generate"], "type": "string"},
                     "MappingReadinessIssue": {
                         "additionalProperties": False,
                         "properties": {
@@ -1133,6 +1133,39 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                         "example": "TRIM(c.customer_name)",
                     },
                 ],
+            },
+        },
+        "mapping_support": {
+            "description": (
+                "Saved evidence scoped to this target and eligible sources: attribute_lineage "
+                "links modeled names to physical source Attributes or assertion keys, with "
+                "rationale and key roles; modeled_relationships describe conceptual join "
+                "intent, not physical join proof; source_relationships carry Analysis "
+                "confidence and measured validation when available; profiles are saved "
+                "aggregate counts, percentages and lengths, not live rows or guaranteed current "
+                "observations; assertions contain the linked active business rules. Empty lists "
+                "mean no saved evidence, never permission to invent rules."
+            ),
+            "value_schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    key: {"type": "array", "items": {"type": "object"}}
+                    for key in (
+                        "attribute_lineage",
+                        "modeled_relationships",
+                        "source_relationships",
+                        "profiles",
+                        "assertions",
+                    )
+                },
+            },
+            "example": {
+                "attribute_lineage": [],
+                "modeled_relationships": [],
+                "source_relationships": [],
+                "profiles": [],
+                "assertions": [],
             },
         },
     },

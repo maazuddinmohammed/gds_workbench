@@ -113,6 +113,28 @@
       "selector": null,
       "key_fields": [],
       "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Record paging retains complete records; default application byte ceilings are disabled."
+    },
+    {
+      "name": "get_mapping_support",
+      "variable": "mapping_support",
+      "description": "Saved evidence scoped to this target and eligible sources: attribute_lineage links modeled names to physical source Attributes or assertion keys, with rationale and key roles; modeled_relationships describe conceptual join intent, not physical join proof; source_relationships carry Analysis confidence and measured validation when available; profiles are saved aggregate counts, percentages and lengths, not live rows or guaranteed current observations; assertions contain the linked active business rules. Empty lists mean no saved evidence, never permission to invent rules.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "selector": null,
+      "key_fields": [],
+      "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Record paging retains complete records; default application byte ceilings are disabled."
     }
   ],
   "default_inline": [

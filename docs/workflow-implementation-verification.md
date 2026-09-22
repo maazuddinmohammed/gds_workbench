@@ -10,7 +10,7 @@ is part of this change.
 The implementation provides fourteen independently editable default prompt
 configurations across the existing workflows. Metadata enrichment uses separate
 Object and Attribute prompt identities under its existing run. The catalog
-contains 169 workflow/stage variable registrations. Readers query frozen
+contains 171 workflow/stage variable registrations. Readers query frozen
 precomputed evidence using natural keys, optional selectors, bounded pages, and
 run-bound cursors. Explicitly selecting no tools is supported.
 
@@ -275,3 +275,39 @@ Final plugin/packaging regression passed 254 tests, with the same 44 Windows
 PowerShell skips. Instruction footprint is 10,084 words total (limit 10,300),
 with no individual Markdown guide above 666 words (limit 700). Final whitespace
 checks pass. All observed test failures are resolved.
+
+
+## Object-scoped Mapping — 2026-09-22
+
+Mapping now offers manual Add/Edit System order and a Generate mappings dialog
+with layer, System and Object selection, nested Attribute exclusions and existing
+lock protection. The backend freezes every pair and selected physical Attribute
+ID. Legacy single-pair commands remain supported. Independent pair failures leave
+successful changes available in one validated draft; Apply remains explicit.
+
+Both Mapping defaults explain actual saved lineage, linked assertions,
+relationship evidence and profile aggregates. New declared physical references
+are checked against eligible source metadata. Preserved Attributes retain the
+existing Object document; unchanged older document formats remain accepted.
+Missing evidence produces fixed, actionable diagnostics. This does not prove
+business semantics or execute the generated SQL.
+
+Verification covers real disposable PostgreSQL persistence, installed prompts,
+one-shot and tool-assisted synthetic agents, bulk success, partial provider
+failure, governed Apply/replay, manual order authorization/revision/locks,
+selection preservation, invented references, frontend retry behavior and focus.
+No live provider, external database or Databricks execution is involved.
+See [ADR 008](adr/008-object-scoped-mapping-generation.md) for the release contract.
+
+Final verification: 3,078 Python/SQL/packaging/plugin checks passed (89 skipped);
+412 frontend tests, TypeScript, production build, backend Ruff and Pyright passed.
+Browser verification on a fresh disposable local stack covered manual System
+order, Object and Attribute lock/unlock, both generation modes through Apply,
+preserved locked/excluded Attributes, dialog focus and narrow-screen layout.
+Provider failure handling uses synthetic failures; real-provider output quality
+and generated SQL business correctness require evaluation against real evidence.
+
+The Mapping layer/selection follow-up also verifies URL-scoped Logical and
+Dimensional views, return navigation, selection retention across scope modes and
+search, bulk Attribute selection across pages, and keyboard focus restoration.
+The revised dialog completed a selected-Object run in the disposable preview.

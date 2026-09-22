@@ -2012,7 +2012,7 @@ def test_create_workflow_run_rejects_workflow_incompatible_options(
                 workflow="mapping",
                 modeled_entity_type=None,
             ),
-            "complete selected target",
+            "explicit target and source System selections",
         ),
         (
             create_workflow_run_parameters(

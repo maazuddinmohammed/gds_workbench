@@ -34,7 +34,8 @@ SELECT run.workflow_run_id,
        run.mapping_attribute_output_template_schema_digest,
        selection.object_id AS target_object_id,
        selection.source_system_id,
-       selection.selection_order
+       selection.selection_order,
+       selection.selected_attribute_ids
   FROM application.workflow_run AS run
   JOIN model.model AS target_model
     ON target_model.model_id = run.model_id
@@ -43,26 +44,18 @@ SELECT run.workflow_run_id,
   JOIN application.workflow_run_mapping_target_selection AS selection
     ON selection.workflow_run_id = run.workflow_run_id
    AND selection.model_id = run.model_id
-   AND selection.selection_order = 1
  WHERE run.model_id = %s
    AND run.workflow_run_id = %s
    AND target_model.model_revision = %s
    AND run.actor_principal_id = %s
    AND run.model_workflow = 'mapping'
    AND run.workflow_run_state = 'running'
-   AND run.selected_scope_count = 1
    AND run.mapping_coverage_mode = 'selected_targets'
    AND run.mapping_route = CASE run.modeled_entity_type
        WHEN 'logical_entity' THEN 'logical_to_silver'
        WHEN 'dimensional_entity' THEN 'dimensional_to_gold'
    END
-   AND NOT EXISTS (
-       SELECT 1
-         FROM application.workflow_run_mapping_target_selection AS extra
-        WHERE extra.workflow_run_id = run.workflow_run_id
-          AND extra.workflow_run_mapping_target_selection_id <>
-              selection.workflow_run_mapping_target_selection_id
-   )
+ ORDER BY selection.selection_order
 """
 
 _MAPPING_CONTEXT_ANCHOR_SQL: LiteralString = """
@@ -118,7 +111,6 @@ SELECT run.workflow_run_id,
   JOIN application.workflow_run_mapping_target_selection AS selection
     ON selection.workflow_run_id = run.workflow_run_id
    AND selection.model_id = run.model_id
-   AND selection.selection_order = 1
   JOIN core.system AS source_system
     ON source_system.system_id = selection.source_system_id
   JOIN workflow.mapping_source_system_dependency AS dependency
@@ -567,12 +559,12 @@ class PostgresMappingRunPlanRepository:
         model_id: int,
         workflow_run_id: int,
         expected_model_revision: int,
-    ) -> MappingRunPlan:
-        row = await transaction.fetch_one(
+    ) -> tuple[MappingRunPlan, ...]:
+        rows = await transaction.fetch_all(
             _MAPPING_RUN_PLAN_SQL,
             (tenant_id, model_id, workflow_run_id, expected_model_revision, actor_principal_id),
         )
-        if row is None:
+        if not rows:
             raise MappingRunPlanUnavailableError()
         common = await self._agent_plan_repository.load(
             transaction,
@@ -581,34 +573,41 @@ class PostgresMappingRunPlanRepository:
             workflow_run_id=workflow_run_id,
         )
         try:
-            if (
-                row.get("workflow_run_id") != common.workflow_run_id
-                or row.get("model_id") != common.model_id
-                or row.get("correlation_id") != common.correlation_id
-                or row.get("actor_principal_id") != actor_principal_id
-                or row.get("model_revision") != expected_model_revision
-                or row.get("modeled_entity_type") != common.modeled_entity_type
-                or row.get("selection_order") != 1
-            ):
-                raise MappingRunPlanUnavailableError()
-            return MappingRunPlan.model_validate(
-                {
-                    "agent_plan": common,
-                    "actor_principal_id": actor_principal_id,
-                    "pair": {
-                        "target_object_id": row.get("target_object_id"),
-                        "source_system_id": row.get("source_system_id"),
-                    },
-                    "operation": row.get("mapping_operation"),
-                    "coverage_mode": row.get("mapping_coverage_mode"),
-                    "route": row.get("mapping_route"),
-                    "output_template_selections": {
-                        "mapping_object": _template_selection(row, "mapping_object"),
-                        "mapping_attribute": _template_selection(row, "mapping_attribute"),
-                    },
-                },
-                strict=False,
-            )
+            plans: list[MappingRunPlan] = []
+            for row in rows:
+                if (
+                    row.get("workflow_run_id") != common.workflow_run_id
+                    or row.get("model_id") != common.model_id
+                    or row.get("correlation_id") != common.correlation_id
+                    or row.get("actor_principal_id") != actor_principal_id
+                    or row.get("model_revision") != expected_model_revision
+                    or row.get("modeled_entity_type") != common.modeled_entity_type
+                ):
+                    raise MappingRunPlanUnavailableError()
+                plans.append(
+                    MappingRunPlan.model_validate(
+                        {
+                            "agent_plan": common.model_copy(
+                                update={"selected_object_ids": (row["target_object_id"],)}
+                            ),
+                            "selected_attribute_ids": row.get("selected_attribute_ids"),
+                            "actor_principal_id": actor_principal_id,
+                            "pair": {
+                                "target_object_id": row.get("target_object_id"),
+                                "source_system_id": row.get("source_system_id"),
+                            },
+                            "operation": row.get("mapping_operation"),
+                            "coverage_mode": row.get("mapping_coverage_mode"),
+                            "route": row.get("mapping_route"),
+                            "output_template_selections": {
+                                "mapping_object": _template_selection(row, "mapping_object"),
+                                "mapping_attribute": _template_selection(row, "mapping_attribute"),
+                            },
+                        },
+                        strict=False,
+                    )
+                )
+            return tuple(plans)
         except MappingRunPlanUnavailableError:
             raise
         except TypeError, ValueError, ValidationError:
@@ -740,9 +739,7 @@ class PostgresMappingRunContextRepository:
                 },
                 strict=False,
             )
-            if context.target.source_tenant_id != tenant_id or any(
-                source.object.source_tenant_id != tenant_id for source in context.sources
-            ):
+            if context.target.source_tenant_id != tenant_id:
                 raise MappingRunContextUnavailableError()
             return context
         except MappingRunContextUnavailableError:

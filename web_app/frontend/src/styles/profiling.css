@@ -358,6 +358,11 @@
   width: auto;
 }
 
+.profile-evidence-table .profile-evidence-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .profile-evidence-table thead th {
   border-right: 1px solid var(--line);
   border-bottom-color: var(--line-strong);

@@ -48,7 +48,7 @@ class MappingReadinessService:
         model_id: int,
         workflow_run_id: int,
         expected_model_revision: int,
-    ) -> MappingPreparation:
+    ) -> tuple[MappingPreparation, ...]:
         async with self._database.write_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
         ) as transaction:
@@ -63,7 +63,7 @@ class MappingReadinessService:
             actor_principal_id = authorization.principal.principal_id
             if actor_principal_id is None:
                 raise AuthorizationDeniedError()
-            plan = await self._plan_repository.load(
+            plans = await self._plan_repository.load(
                 transaction,
                 actor_principal_id=actor_principal_id,
                 tenant_id=tenant_id,
@@ -71,26 +71,40 @@ class MappingReadinessService:
                 workflow_run_id=workflow_run_id,
                 expected_model_revision=expected_model_revision,
             )
-            context = await self._context_repository.load(
-                transaction,
-                tenant_id=tenant_id,
-                plan=plan,
-            )
+            contexts = [
+                await self._context_repository.load(transaction, tenant_id=tenant_id, plan=plan)
+                for plan in plans
+            ]
             model = ModelReadContext(
                 tenant_id=tenant_id,
-                model_id=plan.model_id,
-                model_name=context.authoring.model_name,
-                model_revision=plan.model_revision,
+                model_id=model_id,
+                model_name=contexts[0].authoring.model_name,
+                model_revision=expected_model_revision,
                 readable_source_tenant_ids=source_tenants,
             )
             snapshot = await build_model_snapshot(transaction, model, enforce_row_limits=False)
             physical_scope = await load_model_physical_scope(transaction, model)
-        return MappingPreparation(
-            plan=plan,
-            context=context,
-            readiness=assess_mapping_readiness(plan=plan, context=context),
-            snapshot=snapshot,
-            physical_scope=physical_scope,
+        preparations = [
+            MappingPreparation(
+                plan=plan,
+                context=context,
+                readiness=assess_mapping_readiness(plan=plan, context=context),
+                snapshot=snapshot,
+                physical_scope=physical_scope,
+            )
+            for plan, context in zip(plans, contexts, strict=True)
+        ]
+        return tuple(
+            sorted(
+                preparations,
+                key=lambda item: (
+                    item.context.dependency.dependency_order,
+                    item.context.headers[0].object_dependency_order,
+                    item.context.source_system.system_code.casefold(),
+                    item.context.target.object_schema.casefold(),
+                    item.context.target.object_name.casefold(),
+                ),
+            )
         )
 
 
@@ -206,7 +220,14 @@ def assess_mapping_readiness(
         if child is None:
             action = "blocked"
             mapping_attribute_id = None
-        elif child.is_locked:
+        elif (
+            header.is_locked
+            or child.is_locked
+            or (
+                plan.selected_attribute_ids is not None
+                and child.target_attribute_id not in plan.selected_attribute_ids
+            )
+        ):
             action = (
                 "preserve"
                 if child.mapping_attribute_id is not None
@@ -229,8 +250,22 @@ def assess_mapping_readiness(
                 action=action,
             )
         )
+    if plan.selected_attribute_ids is not None:
+        eligible_ids = {
+            child.target_attribute_id
+            for child in header.attribute_mappings
+            if not child.is_locked and not header.is_locked
+        }
+        if not set(plan.selected_attribute_ids) <= eligible_ids:
+            issue(
+                "selection.attributes_unavailable", "A selected Attribute is locked or unavailable."
+            )
     if object_action == "blocked" or any(item.action == "blocked" for item in attribute_actions):
-        issue("mapping.locked_incomplete", "A locked Mapping record is incomplete.")
+        issue(
+            "mapping.locked_incomplete",
+            "A preserved Mapping record is incomplete. "
+            "Select missing Attributes before generation.",
+        )
 
     readiness_header = MappingHeaderReadiness(
         model_object_binding_id=header.model_object_binding_id,

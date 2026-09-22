@@ -264,11 +264,14 @@ class DatabaseMetadataService:
                     raise InvalidRequestError(
                         "Metadata workbook row does not match its canonical schema."
                     ) from error
+                sort_fields = definition.canonical_key
+                if definition.record_type == "attribute":
+                    sort_fields = (*sort_fields[:-1], "attribute_ordinal_position", sort_fields[-1])
                 validated = tuple(
                     sorted(
                         validated,
                         key=lambda row: _metadata_export_sort_key(
-                            definition.canonical_key,
+                            sort_fields,
                             row,
                         ),
                     )
@@ -354,11 +357,11 @@ def _resolve_export_sheet_codes(
 
 
 def _metadata_export_sort_key(
-    canonical_key: tuple[str, ...],
+    sort_fields: tuple[str, ...],
     row: Mapping[str, object],
 ) -> tuple[str, ...]:
     encoded: list[str] = []
-    for field in canonical_key:
+    for field in sort_fields:
         value = normalize_natural_key_value(field, row[field])
         if value is None:
             encoded.append("0:")

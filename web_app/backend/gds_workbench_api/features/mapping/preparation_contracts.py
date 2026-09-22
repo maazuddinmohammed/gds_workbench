@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from gds_workbench_api.features.workflows.authoring.plan import AgentRunPlan
 
-type MappingOperation = Literal["build", "extend"]
+type MappingOperation = Literal["build", "extend", "generate"]
 type MappingRoute = Literal["logical_to_silver", "dimensional_to_gold"]
 type ModeledEntityType = Literal["logical_entity", "dimensional_entity"]
 type LifecycleStatus = Literal["active", "inactive", "deprecated"]
@@ -59,6 +59,7 @@ class MappingRunPlan(_FrozenModel):
     actor_principal_id: int = Field(gt=0)
     pair: MappingPairIdentity
     operation: MappingOperation
+    selected_attribute_ids: tuple[int, ...] | None = None
     coverage_mode: Literal["selected_targets"]
     route: MappingRoute
     output_template_selections: MappingOutputTemplateSelections
@@ -418,7 +419,7 @@ class MappingRunPlanRepository(Protocol):
         model_id: int,
         workflow_run_id: int,
         expected_model_revision: int,
-    ) -> MappingRunPlan: ...
+    ) -> tuple[MappingRunPlan, ...]: ...
 
 
 class CommonAgentPlanRepository(Protocol):

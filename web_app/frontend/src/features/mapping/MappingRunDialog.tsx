@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef } from "react";
-import { useForm, useStore } from "@tanstack/react-form";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
-import { useWorkflowRunSubmission } from "../workflows/useWorkflowRunSubmission";
+import { trapDialogFocus, useDialogFocus } from "../../shared/dialog";
 import { SelectField } from "../../shared/ui";
 import type { ModelDetail } from "../models/api";
+import { useWorkflowRunSubmission } from "../workflows/useWorkflowRunSubmission";
 import {
   findAgentExecutionProfile,
   listCompatibleExecutionModes,
@@ -16,412 +16,307 @@ import {
   workflowCreationQueryKeys,
   type CreateWorkflowRunCommand,
 } from "../workflows/api";
-import {
-  isTenantWorkflowConflict,
-  TENANT_WORKFLOW_CONFLICT_MESSAGE,
-} from "../workflows/presentation";
+import { isTenantWorkflowConflict, TENANT_WORKFLOW_CONFLICT_MESSAGE } from "../workflows/presentation";
 import {
   loadActiveMappingOutputTemplates,
-  loadAllMappingDependencies,
-  loadAllMappingTargets,
+  loadMappingGenerationTargets,
   mappingQueryKeys,
   type MappingApi,
   type MappingEntityType,
+  type MappingGenerationTarget,
 } from "./api";
 import { MappingOutputTemplateSelection } from "./MappingOutputTemplateSelection";
 
 type ExecutionMode = NonNullable<CreateWorkflowRunCommand["workflow_execution_mode"]>;
-export function MappingRunDialog({
-  api,
-  tenantId,
-  model,
-  onClose,
-  onCompleted,
-}: {
+const targetKey = (target: MappingGenerationTarget) => `${target.object_id}:${target.source_system.system_id}`;
+
+export function MappingRunDialog({ api, tenantId, model, entityType, onClose, onCompleted }: {
   api: MappingApi;
   tenantId: number;
   model: ModelDetail;
+  entityType: MappingEntityType;
   onClose: () => void;
   onCompleted: (workflowRunId: number) => Promise<void>;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
-  const capabilitiesQuery = useQuery({
+  const attributeHeading = useRef<HTMLHeadingElement>(null);
+  const returnToObject = useRef<string | null>(null);
+  useDialogFocus(closeButton);
+  const [scopeMode, setScopeMode] = useState<"all" | "selected">("all");
+  const [system, setSystem] = useState("");
+  const [search, setSearch] = useState("");
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [attributes, setAttributes] = useState<Record<string, number[]>>({});
+  const [viewedKey, setViewedKey] = useState<string | null>(null);
+  const [attributePage, setAttributePage] = useState(0);
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>("tool_assisted");
+  const [modelCode, setModelCode] = useState(model.default_agent_model_code ?? "");
+  const [reasoningCode, setReasoningCode] = useState(model.default_reasoning_effort_code ?? "");
+  const [objectTemplate, setObjectTemplate] = useState("");
+  const [attributeTemplate, setAttributeTemplate] = useState("");
+  const capabilities = useQuery({
     queryKey: workflowCreationQueryKeys.capabilities,
     queryFn: api.readAgentCapabilities,
   });
-  const outputTemplatesQuery = useQuery({
+  const targets = useQuery({
+    queryKey: ["mapping-generation-targets", tenantId, model.model_id, entityType],
+    queryFn: () => loadMappingGenerationTargets(api, tenantId, model.model_id, entityType),
+  });
+  const templates = useQuery({
     queryKey: mappingQueryKeys.outputTemplates(tenantId, model.model_id),
     queryFn: () => loadActiveMappingOutputTemplates(api, tenantId),
   });
-  const form = useForm({
-    defaultValues: {
-      entityType: "logical_entity" as MappingEntityType,
-      targetObjectId: "",
-      sourceSystemId: "",
-      operation: "build" as "build" | "extend",
-      executionMode: "tool_assisted" as ExecutionMode,
-      objectOutputTemplateId: "",
-      attributeOutputTemplateId: "",
-      modelCode: model.default_agent_model_code ?? "",
-      reasoningEffortCode: model.default_reasoning_effort_code ?? "",
-    },
-    onSubmit: ({ value }) => {
-      if (pendingStart) {
-        runMutation.mutate(undefined);
-        return;
-      }
-      if (!agentSelectionValid) return;
-      const targetObjectId = Number(value.targetObjectId);
-      const sourceSystemId = Number(value.sourceSystemId);
-      const objectOutputTemplateId = value.objectOutputTemplateId
-        ? Number(value.objectOutputTemplateId)
-        : null;
-      const attributeOutputTemplateId = value.attributeOutputTemplateId
-        ? Number(value.attributeOutputTemplateId)
-        : null;
-      if (
-        !Number.isSafeInteger(targetObjectId)
-        || !Number.isSafeInteger(sourceSystemId)
-        || (objectOutputTemplateId !== null && !Number.isSafeInteger(objectOutputTemplateId))
-        || (attributeOutputTemplateId !== null && !Number.isSafeInteger(attributeOutputTemplateId))
-      ) return;
-      runMutation.mutate({
-        expected_model_revision: model.model_revision,
-        model_workflow: "mapping",
-        workflow_execution_mode: value.executionMode,
-        selected_object_ids: [targetObjectId],
-        requested_batch_id: null,
-        agent,
-        prompt_overrides: {},
-        mapping_operation: value.operation,
-        mapping_coverage_mode: "selected_targets",
-        mapping_source_system_id: sourceSystemId,
-        mapping_object_output_template_id: objectOutputTemplateId,
-        mapping_attribute_output_template_id: attributeOutputTemplateId,
-      });
-    },
-  });
-  const values = useStore(form.store, (state) => state.values);
-  const targetsQuery = useQuery({
-    queryKey: mappingQueryKeys.runTargets(tenantId, model.model_id, values.entityType),
-    queryFn: () => loadAllMappingTargets(api, tenantId, model.model_id, values.entityType),
-  });
-  const dependenciesQuery = useQuery({
-    queryKey: mappingQueryKeys.runSystems(tenantId, model.model_id, values.entityType),
-    queryFn: () => loadAllMappingDependencies(api, tenantId, model.model_id, values.entityType),
-  });
-  const targets = useMemo(() => targetsQuery.data?.items ?? [], [targetsQuery.data?.items]);
-  const sourceSystems = useMemo(() => {
-    const byId = new Map<number, { system_id: number; system_code: string }>();
-    for (const item of dependenciesQuery.data?.items ?? []) {
-      if (item.status !== "active") continue;
-      byId.set(item.source_system.system_id, {
-        system_id: item.source_system.system_id,
-        system_code: item.source_system.system_code,
-      });
-    }
-    return [...byId.values()].sort((left, right) => left.system_code.localeCompare(right.system_code));
-  }, [dependenciesQuery.data?.items]);
-  const capabilities = capabilitiesQuery.data;
-  const compatibleExecutionModes = capabilities
-    ? listCompatibleExecutionModes(capabilities)
-    : [];
-  const compatibleModels = capabilities?.models.filter((candidate) => (
-    findAgentExecutionProfile(candidate, values.executionMode) !== undefined
-  )) ?? [];
-  const selectedModel = compatibleModels.find((candidate) => candidate.code === values.modelCode);
-  const selectedProfile = selectedModel
-    ? findAgentExecutionProfile(selectedModel, values.executionMode)
-    : undefined;
-  const compatibleReasoning = capabilities?.reasoning_efforts.filter((effort) => (
-    selectedProfile?.reasoning_effort_codes.includes(effort.code)
-  )) ?? [];
-  const targetId = Number(values.targetObjectId);
-  const sourceSystemId = Number(values.sourceSystemId);
-  const targetSelectionValid = targets.some((target) => target.object_id === targetId);
-  const sourceSystemSelectionValid = sourceSystems.some((system) => system.system_id === sourceSystemId);
-  const objectOutputTemplateSelectionValid = values.objectOutputTemplateId === ""
-    || Boolean(outputTemplatesQuery.data?.mappingObjects.some((template) => (
-      template.output_template_id === Number(values.objectOutputTemplateId)
-      && template.output_template_schema_digest_is_valid
-    )));
-  const attributeOutputTemplateSelectionValid = values.attributeOutputTemplateId === ""
-    || Boolean(outputTemplatesQuery.data?.mappingAttributes.some((template) => (
-      template.output_template_id === Number(values.attributeOutputTemplateId)
-      && template.output_template_schema_digest_is_valid
-    )));
-  const agent = capabilities ? resolveDefaultAgent(capabilities, values.executionMode, {
-    modelCode: values.modelCode,
-    reasoningEffortCode: values.reasoningEffortCode,
+  const rows = useMemo(() => targets.data?.items ?? [], [targets.data?.items]);
+  const systems = [...new Map(rows.map((row) => [row.source_system.system_id, row.source_system])).values()];
+  const scoped = rows.filter((row) => !system || String(row.source_system.system_id) === system);
+  // Search only narrows the list; it never silently removes a selected target from the run.
+  const visible = scoped.filter((row) => `${row.object_schema}.${row.object_name} ${row.entity_name}`
+    .toLowerCase().includes(search.trim().toLowerCase()));
+  const eligible = scoped.filter((row) => !row.is_locked && row.has_sources && row.attributes.length > 0);
+  const eligibleKeys = new Set(eligible.map(targetKey));
+  const selected = eligible.filter((row) => scopeMode === "all" || !excluded.has(targetKey(row)));
+  const selectedKeys = new Set(selected.map(targetKey));
+  const selectedAttributes = (row: MappingGenerationTarget) => attributes[targetKey(row)]
+    ?? row.attributes.filter((attribute) => !attribute.is_locked).map((attribute) => attribute.attribute_id);
+  const attributeCount = selected.reduce((count, row) => count + selectedAttributes(row).length, 0);
+  const preservedCount = selected.reduce((count, row) => count + row.attributes.length - selectedAttributes(row).length, 0);
+  const incompleteCount = selected.filter((row) => row.attributes.some((attribute) =>
+    !attribute.is_authored && !selectedAttributes(row).includes(attribute.attribute_id))).length;
+  const viewed = rows.find((row) => targetKey(row) === viewedKey);
+  const viewedAttributes = viewed ? selectedAttributes(viewed) : [];
+  const revisionChanged = targets.data !== undefined && targets.data.modelRevision !== model.model_revision;
+  const models = capabilities.data?.models.filter((item) => findAgentExecutionProfile(item, executionMode)) ?? [];
+  const profile = models.find((item) => item.code === modelCode);
+  const efforts = capabilities.data?.reasoning_efforts.filter((item) => profile
+    && findAgentExecutionProfile(profile, executionMode)?.reasoning_effort_codes.includes(item.code)) ?? [];
+  const agent = capabilities.data ? resolveDefaultAgent(capabilities.data, executionMode, {
+    modelCode,
+    reasoningEffortCode: reasoningCode,
     maxTurns: model.default_max_turns,
     validationRetryCount: model.default_validation_retry_count,
   }) : null;
-  const agentSelectionValid = agent !== null
-    && compatibleExecutionModes.includes(values.executionMode)
-    && agent.model_code === values.modelCode
-    && agent.reasoning_effort_code === values.reasoningEffortCode;
-  const revisionChanged = (
-    targetsQuery.data !== undefined
-    && targetsQuery.data.modelRevision !== model.model_revision
-  ) || (
-    dependenciesQuery.data !== undefined
-    && dependenciesQuery.data.modelRevision !== model.model_revision
-  );
-  const { mutation: runMutation, pendingRunId: pendingStart } = useWorkflowRunSubmission({
+  const agentValid = agent !== null && agent.model_code === modelCode && agent.reasoning_effort_code === reasoningCode;
+
+  useEffect(() => {
+    if (!capabilities.data) return;
+    const resolved = resolveAgentProfileSelection(capabilities.data, executionMode, { modelCode, reasoningEffortCode: reasoningCode });
+    if (!resolved) return;
+    setExecutionMode(resolved.executionMode);
+    setModelCode(resolved.modelCode);
+    setReasoningCode(resolved.reasoningEffortCode);
+  }, [capabilities.data, executionMode, modelCode, reasoningCode]);
+  useEffect(() => {
+    setAttributePage(0);
+    if (viewedKey !== null) attributeHeading.current?.focus();
+    else if (returnToObject.current !== null) document.getElementById(`mapping-choose-${returnToObject.current}`)?.focus();
+  }, [viewedKey]);
+
+  const { mutation, pendingRunId } = useWorkflowRunSubmission({
     api,
     tenantId,
     modelId: model.model_id,
-    execute: (workflowRunId, command) => {
-      if (!command.workflow_execution_mode) throw new Error("Mapping execution mode is required.");
-      return api.executeMappingRun(
-        tenantId, model.model_id, workflowRunId, command.workflow_execution_mode,
-        command.expected_model_revision,
-      );
-    },
-    onSuccess: async (workflowRunId) => {
-      await onCompleted(workflowRunId);
-      onClose();
-    },
+    execute: (id, command) => api.executeMappingRun(
+      tenantId, model.model_id, id, command.workflow_execution_mode!, command.expected_model_revision,
+    ),
+    onSuccess: async (id) => { await onCompleted(id); onClose(); },
   });
+  const frozen = mutation.isPending || pendingRunId !== null;
+  const selectionUnavailable = frozen || targets.isPending || targets.isError || revisionChanged;
+  const viewedSelected = viewedKey !== null && selectedKeys.has(viewedKey);
 
-  useEffect(() => closeButton.current?.focus(), []);
-  useEffect(() => {
-    if (!capabilities) return;
-    const resolved = resolveAgentProfileSelection(capabilities, values.executionMode, {
-      modelCode: values.modelCode,
-      reasoningEffortCode: values.reasoningEffortCode,
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (mutation.isPending) return;
+    if (pendingRunId !== null) { mutation.mutate(undefined); return; }
+    if (selectionUnavailable || !selected.length || !agentValid || incompleteCount) return;
+    mutation.mutate({
+      expected_model_revision: model.model_revision,
+      model_workflow: "mapping",
+      workflow_execution_mode: executionMode,
+      selected_object_ids: [...new Set(selected.map((row) => row.object_id))],
+      requested_batch_id: null,
+      agent,
+      prompt_overrides: {},
+      mapping_operation: "generate",
+      mapping_coverage_mode: "selected_targets",
+      mapping_targets: selected.map((row) => ({
+        object_id: row.object_id,
+        source_system_id: row.source_system.system_id,
+        selected_attribute_ids: selectedAttributes(row),
+      })),
+      mapping_object_output_template_id: objectTemplate ? Number(objectTemplate) : null,
+      mapping_attribute_output_template_id: attributeTemplate ? Number(attributeTemplate) : null,
     });
-    if (!resolved) return;
-    if (values.executionMode !== resolved.executionMode) {
-      form.setFieldValue("executionMode", resolved.executionMode);
-    }
-    if (values.modelCode !== resolved.modelCode) {
-      form.setFieldValue("modelCode", resolved.modelCode);
-    }
-    if (values.reasoningEffortCode !== resolved.reasoningEffortCode) {
-      form.setFieldValue("reasoningEffortCode", resolved.reasoningEffortCode);
-    }
-  }, [
-    capabilities,
-    form,
-    values.executionMode,
-    values.modelCode,
-    values.reasoningEffortCode,
-  ]);
-  useEffect(() => {
-    if (values.targetObjectId && !targets.some((target) => target.object_id === targetId)) {
-      form.setFieldValue("targetObjectId", "");
-    }
-  }, [form, targetId, targets, values.targetObjectId]);
+  }
 
-  return (
-    <div className="dialog-scrim" role="presentation">
-      <section
-        className="run-configuration-dialog mapping-run-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="mapping-run-dialog-heading"
-        onKeyDown={(event) => {
-          if (event.key === "Escape" && !runMutation.isPending) onClose();
-        }}
-      >
-        <header className="drawer-header">
-          <div>
-            <small>Agentic authoring</small>
-            <h2 id="mapping-run-dialog-heading">Configure Mapping run</h2>
+  return <div className="dialog-scrim" role="presentation">
+    <section
+      className="run-configuration-dialog mapping-run-dialog"
+      role="dialog" aria-modal="true" aria-labelledby="mapping-run-heading"
+      onKeyDown={(event) => {
+        trapDialogFocus(event);
+        if (event.key === "Escape" && !mutation.isPending) onClose();
+      }}
+    >
+      <header className="drawer-header">
+        <div>
+          <h2 id="mapping-run-heading">Generate mappings</h2>
+          <p>{entityType === "logical_entity" ? "Logical → Silver" : "Dimensional → Gold"}</p>
+        </div>
+        <button ref={closeButton} className="panel-close" type="button" aria-label="Close Generate mappings"
+          disabled={mutation.isPending} onClick={onClose}>×</button>
+      </header>
+      <form onSubmit={submit}>
+        <fieldset className="agent-run-grid" disabled={frozen}>
+          <legend className="sr-only">Agent configuration</legend>
+          <SelectField label="Execution mode" value={executionMode}
+            options={capabilities.data ? listCompatibleExecutionModes(capabilities.data).map((mode) => [mode, WORKFLOW_EXECUTION_MODE_NAMES[mode]]) : []}
+            onChange={(value) => setExecutionMode(value as ExecutionMode)} />
+          <SelectField label="Model" value={modelCode} options={models.map((item) => [item.code, item.name])} onChange={setModelCode} />
+          <SelectField label="Reasoning effort" value={reasoningCode}
+            options={efforts.map((item) => [item.code, reasoningEffortDisplayName(item)])} onChange={setReasoningCode} />
+        </fieldset>
+        <fieldset className="mapping-target-selection" disabled={selectionUnavailable}>
+          <legend className="sr-only">Mapping selection</legend>
+          {!viewed ? <div className="agent-run-grid mapping-scope-controls">
+            <SelectField label="Source System" value={system}
+              options={[["", "All eligible Systems"], ...systems.map((item) => [String(item.system_id), item.system_code] as [string, string])]}
+              onChange={setSystem} />
+          </div> : null}
+          <fieldset className="scope-mode-options">
+            <legend>Objects</legend>
+            <label><input type="radio" name="mapping-object-scope" checked={scopeMode === "all"}
+              onChange={() => setScopeMode("all")} /><span><strong>All unlocked Objects</strong></span></label>
+            <label><input type="radio" name="mapping-object-scope" checked={scopeMode === "selected"}
+              onChange={() => setScopeMode("selected")} /><span><strong>Selected Objects</strong></span></label>
+          </fieldset>
+          <div className="enrichment-selection-summary" aria-live="polite">
+            <strong>{selected.length} Object–System mappings · {attributeCount} Attributes to generate</strong>
+            <span>{preservedCount} Attributes preserved. Locked and unselected mappings stay unchanged.</span>
           </div>
-          <button
-            ref={closeButton}
-            className="panel-close"
-            type="button"
-            aria-label="Close Configure Mapping run"
-            disabled={runMutation.isPending}
-            onClick={onClose}
-          >
-            <span aria-hidden="true">×</span>
+          {targets.isPending ? <div className="surface-state" aria-busy="true">Loading all Mapping targets and Attributes…</div>
+            : targets.isError ? <p className="inline-error" role="alert">Targets could not be fully loaded.</p>
+            : revisionChanged ? <p className="inline-error" role="alert">The Model changed. Close this dialog and refresh.</p>
+            : viewed ? <section aria-label="Choose Object Attributes">
+              <button className="text-action" type="button" onClick={() => setViewedKey(null)}>Back to Objects</button>
+              <header className="enrichment-selection-header">
+                <div>
+                  <small>{viewed.object_schema} · {viewed.source_system.system_code}</small>
+                  <h3 ref={attributeHeading} tabIndex={-1}>{viewed.object_name}</h3>
+                </div>
+                <span>{viewedSelected ? viewedAttributes.length : 0} selected · {viewed.attributes.length - (viewedSelected ? viewedAttributes.length : 0)} unselected · {viewed.attributes.filter((item) => item.is_locked).length} locked</span>
+              </header>
+              <div className="enrichment-selection-actions">
+                <button type="button" className="button button-secondary button-small" disabled={!viewedSelected}
+                  onClick={() => setAttributes((previous) => ({ ...previous, [targetKey(viewed)]: viewed.attributes.filter((item) => !item.is_locked).map((item) => item.attribute_id) }))}>
+                  Select all unlocked Attributes
+                </button>
+                <button type="button" className="button button-secondary button-small" disabled={!viewedSelected}
+                  onClick={() => setAttributes((previous) => ({ ...previous, [targetKey(viewed)]: [] }))}>
+                  Clear Attribute selection
+                </button>
+              </div>
+              <div className="workflow-table-scroll table-scroll">
+                <table className="enrichment-selection-table" aria-label={`Attributes for ${viewed.object_name} from ${viewed.source_system.system_code}`}>
+                  <thead><tr><th className="selection-cell"><span className="sr-only">Selected</span></th><th>Target Attribute</th><th>Modeled Attribute</th><th>Mapping</th></tr></thead>
+                  <tbody>{viewed.attributes.slice(attributePage * 50, (attributePage + 1) * 50).map((attribute) => <tr key={attribute.attribute_id}>
+                    <td className="selection-cell"><input type="checkbox"
+                      aria-label={`Generate ${viewed.object_name}.${attribute.attribute_name} from ${viewed.source_system.system_code}`}
+                      disabled={!viewedSelected || attribute.is_locked}
+                      checked={viewedSelected && !attribute.is_locked && viewedAttributes.includes(attribute.attribute_id)}
+                      onChange={(event) => setAttributes((previous) => ({
+                        ...previous,
+                        [targetKey(viewed)]: event.target.checked
+                          ? [...viewedAttributes, attribute.attribute_id]
+                          : viewedAttributes.filter((id) => id !== attribute.attribute_id),
+                      }))} /></td>
+                    <td>{attribute.attribute_name}</td><td>{attribute.modeled_attribute_name}</td>
+                    <td>{attribute.is_locked ? "Locked · preserved" : attribute.is_authored ? "Existing" : "Missing"}</td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+              {viewed.attributes.length > 50 ? <div className="enrichment-pagination">
+                <span>{attributePage * 50 + 1}–{Math.min((attributePage + 1) * 50, viewed.attributes.length)} of {viewed.attributes.length}</span>
+                <button className="button button-secondary button-small" type="button" disabled={attributePage === 0}
+                  onClick={() => setAttributePage((page) => page - 1)}>Previous Attributes</button>
+                <button className="button button-secondary button-small" type="button" disabled={(attributePage + 1) * 50 >= viewed.attributes.length}
+                  onClick={() => setAttributePage((page) => page + 1)}>Next Attributes</button>
+              </div> : null}
+            </section> : <>
+              <div className="agent-run-grid mapping-scope-controls">
+                <label><span>Find Objects</span><input type="search" value={search} placeholder="Schema, Object or Entity"
+                  onChange={(event) => setSearch(event.target.value)} /></label>
+              </div>
+              {scopeMode === "selected" ? <div className="enrichment-selection-actions">
+                <button type="button" className="button button-secondary button-small" disabled={!visible.some((row) => eligibleKeys.has(targetKey(row)))}
+                  onClick={() => setExcluded((previous) => {
+                    const next = new Set(previous);
+                    for (const row of visible) if (eligibleKeys.has(targetKey(row))) next.delete(targetKey(row));
+                    return next;
+                  })}>Select all shown Objects</button>
+                <button type="button" className="button button-secondary button-small" disabled={!selected.length}
+                  onClick={() => setExcluded((previous) => new Set([...previous, ...eligibleKeys]))}>Clear Object selection</button>
+              </div> : null}
+              {search.trim() ? <p className="field-help">Showing {visible.length} of {scoped.length} mappings. Searching keeps your selections.</p> : null}
+              <div className="workflow-table-scroll table-scroll">
+                <table className="enrichment-selection-table" aria-label="Objects for Mapping">
+                  <thead><tr><th className="selection-cell"><span className="sr-only">Selected</span></th><th>Schema</th><th>Object</th><th>Source System</th><th>Attributes</th><th>Locks</th></tr></thead>
+                  <tbody>{visible.map((row) => {
+                    const key = targetKey(row);
+                    const checked = selectedKeys.has(key);
+                    const chosenCount = checked ? selectedAttributes(row).length : 0;
+                    return <tr key={key}>
+                      <td className="selection-cell"><input type="checkbox"
+                        aria-label={`Generate ${row.object_schema}.${row.object_name} from ${row.source_system.system_code}`}
+                        checked={checked} disabled={scopeMode === "all" || !eligibleKeys.has(key)}
+                        onChange={(event) => setExcluded((previous) => {
+                          const next = new Set(previous);
+                          if (event.target.checked) next.delete(key); else next.add(key);
+                          return next;
+                        })} /></td>
+                      <td>{row.object_schema}</td>
+                      <td><button type="button" className="text-action" id={`mapping-choose-${key}`}
+                        aria-label={`Choose Attributes for ${row.object_name} from ${row.source_system.system_code}`}
+                        disabled={!checked} onClick={() => { returnToObject.current = key; setViewedKey(key); }}>
+                        {row.object_name}
+                      </button><small>{row.entity_name}</small></td>
+                      <td>{row.source_system.system_code}</td>
+                      <td>{chosenCount} selected · {row.attributes.length - chosenCount} unselected</td>
+                      <td>{row.is_locked ? "Object locked" : !row.has_sources ? "No eligible sources" : `${row.attributes.filter((item) => item.is_locked).length} locked`}</td>
+                    </tr>;
+                  })}</tbody>
+                </table>
+                {!visible.length ? <p className="empty-state compact">No targets match. Check target bindings and Source System dependencies for this layer.</p> : null}
+              </div>
+            </>}
+        </fieldset>
+        {targets.isError ? <button type="button" className="text-action" disabled={frozen} onClick={() => void targets.refetch()}>Retry loading targets</button> : null}
+        {incompleteCount > 0 ? <p className="inline-error" role="alert">{incompleteCount} selected Objects have missing Attributes excluded. Select those Attributes to complete their mappings.</p> : null}
+        <details className="mapping-advanced"><summary>Advanced settings</summary>
+          <MappingOutputTemplateSelection
+            mappingObjects={templates.data?.mappingObjects ?? []} mappingAttributes={templates.data?.mappingAttributes ?? []}
+            objectValue={objectTemplate} attributeValue={attributeTemplate} disabled={frozen || templates.isPending || templates.isError}
+            onObjectChange={setObjectTemplate} onAttributeChange={setAttributeTemplate} />
+        </details>
+        {capabilities.isError || (capabilities.data && !agentValid) ? <p className="inline-error" role="alert">No compatible agent configuration is available. Refresh and check Model settings.</p> : null}
+        {templates.isError ? <p className="field-help">Custom templates could not be loaded. Global defaults remain available.</p> : null}
+        {mutation.isError ? <p className="inline-error" role="alert">{mappingRunError(mutation.error, pendingRunId !== null)}</p> : null}
+        <footer className="dialog-actions">
+          <button className="button button-secondary" type="button" disabled={mutation.isPending} onClick={onClose}>Cancel</button>
+          <button className="button button-primary" type="submit"
+            disabled={mutation.isPending || (pendingRunId === null && (selectionUnavailable || !selected.length || !agentValid || incompleteCount > 0))}>
+            {mutation.isPending ? "Starting…" : pendingRunId !== null ? "Retry start" : "Generate mappings"}
           </button>
-        </header>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void form.handleSubmit();
-          }}
-        >
-          <section className="agent-run-configuration" aria-labelledby="mapping-target-heading">
-            <header>
-              <strong id="mapping-target-heading">Target and delivery</strong>
-              <span>Exactly one eligible target and one source System per run.</span>
-            </header>
-            <div className="agent-run-grid">
-              <form.Field name="entityType">
-                {(field) => <SelectField
-                  label="Entity type"
-                  value={field.state.value}
-                  options={[["logical_entity", "Logical Entity"], ["dimensional_entity", "Dimensional Entity"]]}
-                  onChange={(value) => field.handleChange(value as MappingEntityType)}
-                />}
-              </form.Field>
-              <form.Field name="targetObjectId">
-                {(field) => <SelectField
-                  label="Target Object"
-                  value={field.state.value}
-                  options={targets.map((target) => [
-                    String(target.object_id),
-                    `${target.object_schema}.${target.object_name} · ${target.system_code}`,
-                  ])}
-                  onChange={field.handleChange}
-                />}
-              </form.Field>
-              <form.Field name="sourceSystemId">
-                {(field) => <SelectField
-                  label="Source System"
-                  value={field.state.value}
-                  options={sourceSystems.map((system) => [
-                    String(system.system_id),
-                    system.system_code,
-                  ])}
-                  onChange={field.handleChange}
-                />}
-              </form.Field>
-              <form.Field name="operation">
-                {(field) => <SelectField
-                  label="Mapping operation"
-                  value={field.state.value}
-                  options={[["build", "Build"], ["extend", "Extend"]]}
-                  onChange={(value) => field.handleChange(value as "build" | "extend")}
-                />}
-              </form.Field>
-              <form.Field name="executionMode">
-                {(field) => <SelectField
-                  label="Execution mode"
-                  value={field.state.value}
-                  options={compatibleExecutionModes.map((mode) => [
-                    mode,
-                    WORKFLOW_EXECUTION_MODE_NAMES[mode],
-                  ])}
-                  onChange={(value) => field.handleChange(value as ExecutionMode)}
-                />}
-              </form.Field>
-            </div>
-          </section>
-
-          <form.Field name="objectOutputTemplateId">
-            {(objectField) => (
-              <form.Field name="attributeOutputTemplateId">
-                {(attributeField) => <MappingOutputTemplateSelection
-                  mappingObjects={outputTemplatesQuery.data?.mappingObjects ?? []}
-                  mappingAttributes={outputTemplatesQuery.data?.mappingAttributes ?? []}
-                  objectValue={objectField.state.value}
-                  attributeValue={attributeField.state.value}
-                  disabled={outputTemplatesQuery.isPending || outputTemplatesQuery.isError || runMutation.isPending || pendingStart !== null}
-                  onObjectChange={objectField.handleChange}
-                  onAttributeChange={attributeField.handleChange}
-                />}
-              </form.Field>
-            )}
-          </form.Field>
-
-          <section className="agent-run-configuration" aria-labelledby="mapping-agent-heading">
-            <header>
-              <strong id="mapping-agent-heading">Agent configuration</strong>
-              <span>Model defaults are preselected and editable for this run.</span>
-            </header>
-            <fieldset className="agent-run-grid agent-run-grid-two" disabled={runMutation.isPending || pendingStart !== null}>
-              <legend className="sr-only">Model and reasoning</legend>
-              <form.Field name="modelCode">
-                {(field) => <SelectField
-                  label="Model"
-                  value={field.state.value}
-                  options={compatibleModels.map((item) => [item.code, item.name])}
-                  onChange={field.handleChange}
-                />}
-              </form.Field>
-              <form.Field name="reasoningEffortCode">
-                {(field) => <SelectField
-                  label="Reasoning effort"
-                  value={field.state.value}
-                  options={compatibleReasoning.map((item) => [
-                    item.code,
-                    reasoningEffortDisplayName(item),
-                  ])}
-                  onChange={field.handleChange}
-                />}
-              </form.Field>
-            </fieldset>
-          </section>
-
-          {targetsQuery.isPending || dependenciesQuery.isPending ? <p className="surface-state compact" aria-busy="true">Loading Mapping bindings…</p> : null}
-          {targetsQuery.isError || dependenciesQuery.isError ? <p className="inline-error" role="alert">Mapping bindings could not be loaded.</p> : null}
-          {outputTemplatesQuery.isPending ? <p className="surface-state compact" aria-busy="true">Loading active Output Templates…</p> : null}
-          {outputTemplatesQuery.isError ? <p className="inline-error" role="alert">Custom Output Templates could not be loaded. Global defaults remain available.</p> : null}
-          {capabilitiesQuery.isError ? <p className="inline-error" role="alert">Agent options could not be loaded.</p> : null}
-          {capabilities && !agentSelectionValid ? <p className="inline-error" role="alert">No compatible agent configuration is available.</p> : null}
-          {targetsQuery.data && targets.length === 0 ? <p className="inline-error" role="alert">No eligible target Objects are available for this Entity type.</p> : null}
-          {revisionChanged ? <p className="inline-error" role="alert">The Model changed. Close this dialog and refresh before creating the run.</p> : null}
-          {runMutation.isError ? (
-            <p className="inline-error" role="alert">
-              {mappingRunError(runMutation.error, pendingStart !== null)}
-            </p>
-          ) : null}
-
-          <footer className="dialog-actions">
-            <p>The backend revalidates eligibility, Output Templates, Model revision, agent options, App permission, and Tenant Lock.</p>
-            <div>
-              <button
-                className="button button-secondary button-small"
-                type="button"
-                disabled={runMutation.isPending}
-                onClick={onClose}
-              >
-                Cancel
-              </button>
-              <button
-                className="button button-primary button-small"
-                type="submit"
-                disabled={
-                  runMutation.isPending
-                  || (pendingStart === null && (
-                    targetsQuery.isPending
-                    || targetsQuery.isError
-                    || dependenciesQuery.isPending
-                    || dependenciesQuery.isError
-                    || capabilitiesQuery.isPending
-                    || capabilitiesQuery.isError
-                    || outputTemplatesQuery.isPending
-                    || revisionChanged
-                    || !targetSelectionValid
-                    || !sourceSystemSelectionValid
-                    || !objectOutputTemplateSelectionValid
-                    || !attributeOutputTemplateSelectionValid
-                    || !agentSelectionValid
-                  ))
-                }
-              >
-                {runMutation.isPending
-                  ? pendingStart ? "Starting…" : "Creating and starting…"
-                  : pendingStart ? "Retry start" : "Create and run Mapping"}
-              </button>
-            </div>
-          </footer>
-        </form>
-      </section>
-    </div>
-  );
+        </footer>
+      </form>
+    </section>
+  </div>;
 }
 
 function mappingRunError(error: Error, runWasCreated: boolean): string {
-  if (runWasCreated && isTenantWorkflowConflict(error)) {
-    return TENANT_WORKFLOW_CONFLICT_MESSAGE;
-  }
-  if (runWasCreated) {
-    return "The Mapping run remains queued because it could not be started.";
-  }
-  if (error instanceof ApiError && error.status === 403) {
-    return "You no longer have permission or the required Tenant Lock to run Mapping.";
-  }
-  if (error instanceof ApiError && error.status === 409) {
-    return "The Model or Mapping state changed. Refresh before creating another run.";
-  }
+  if (runWasCreated && isTenantWorkflowConflict(error)) return TENANT_WORKFLOW_CONFLICT_MESSAGE;
+  if (runWasCreated) return "The Mapping run remains queued because it could not be started.";
+  if (error instanceof ApiError && error.status === 403) return "You no longer have permission or the required Tenant Lock to run Mapping.";
+  if (error instanceof ApiError && error.status === 409) return "The Model or Mapping state changed. Refresh before creating another run.";
   return "The Mapping run could not be created or started.";
 }

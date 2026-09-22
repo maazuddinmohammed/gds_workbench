@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
+import { formatRequiredDateTime } from "../../shared/presentation";
 import {
   profilingQueryKeys,
   type ProfilingApi,
@@ -80,6 +81,10 @@ export function ProfilingObjectDetailPage({
           <h2 id="attribute-profiles-heading">Attribute profiles</h2>
           <span>{returnedProfileCount} returned</span>
         </header>
+        <p className="field-help">
+          Populated means non-null, including blanks. Blank, distinct, and duplicate percentages
+          use non-null rows. Lengths are measured in characters.
+        </p>
         {detail.profiles_truncated ? (
           <p className="drawer-warning">
             This response contains {returnedProfileCount} of {detail.profiled_attribute_count}
@@ -98,22 +103,48 @@ export function ProfilingObjectDetailPage({
               <thead>
                 <tr>
                   <th scope="col">Attribute</th>
+                  <th scope="col" className="profile-evidence-number">Position</th>
+                  <th scope="col">Data type</th>
                   <th scope="col">Inferred data type</th>
                   <th scope="col">Attribute description</th>
-                  <th scope="col">Number of rows</th>
-                  <th scope="col">Unique distinct rows</th>
-                  <th scope="col">Duplicate percentage</th>
+                  <th scope="col" className="profile-evidence-number">Total rows</th>
+                  <th scope="col" className="profile-evidence-number">Non-null rows</th>
+                  <th scope="col" className="profile-evidence-number">Null rows</th>
+                  <th scope="col" className="profile-evidence-number">Blank rows</th>
+                  <th scope="col" className="profile-evidence-number">Distinct values</th>
+                  <th scope="col" className="profile-evidence-number">Populated (%)</th>
+                  <th scope="col" className="profile-evidence-number">Null (%)</th>
+                  <th scope="col" className="profile-evidence-number">Blank (%)</th>
+                  <th scope="col" className="profile-evidence-number">Distinct (%)</th>
+                  <th scope="col" className="profile-evidence-number">Duplicate (%)</th>
+                  <th scope="col" className="profile-evidence-number">Minimum length</th>
+                  <th scope="col" className="profile-evidence-number">Maximum length</th>
+                  <th scope="col" className="profile-evidence-number">Average length</th>
+                  <th scope="col">Last profiled</th>
                 </tr>
               </thead>
               <tbody>
                 {detail.attribute_profiles.map((profile) => (
                   <tr key={profile.attribute_id}>
                     <th scope="row" className="profile-evidence-name">{profile.attribute_name}</th>
+                    <td className="profile-evidence-number">{profile.attribute_ordinal_position}</td>
+                    <td className="profile-evidence-wrap">{profile.attribute_data_type}</td>
                     <td className="profile-evidence-wrap">{profile.attribute_inferred_data_type ?? "Not inferred"}</td>
                     <td className="profile-evidence-wrap">{profile.attribute_description ?? "No description"}</td>
-                    <td>{formatMetric(profile.row_count)}</td>
-                    <td>{formatMetric(profile.distinct_count)}</td>
-                    <td>{formatPercent(profile.percent_duplicates)}</td>
+                    <td className="profile-evidence-number">{formatMetric(profile.row_count)}</td>
+                    <td className="profile-evidence-number">{formatMetric(profile.non_null_count)}</td>
+                    <td className="profile-evidence-number">{formatMetric(profile.null_count)}</td>
+                    <td className="profile-evidence-number">{formatMetric(profile.blank_count)}</td>
+                    <td className="profile-evidence-number">{formatMetric(profile.distinct_count)}</td>
+                    <td className="profile-evidence-number">{formatPercent(profile.percent_populated)}</td>
+                    <td className="profile-evidence-number">{formatPercent(profile.percent_null)}</td>
+                    <td className="profile-evidence-number">{formatPercent(profile.percent_blank)}</td>
+                    <td className="profile-evidence-number">{formatPercent(profile.percent_distinct)}</td>
+                    <td className="profile-evidence-number">{formatPercent(profile.percent_duplicates)}</td>
+                    <td className="profile-evidence-number">{formatMetric(profile.min_data_length)}</td>
+                    <td className="profile-evidence-number">{formatMetric(profile.max_data_length)}</td>
+                    <td className="profile-evidence-number">{formatMetric(profile.avg_data_length)}</td>
+                    <td><time dateTime={profile.updated_at}>{formatRequiredDateTime(profile.updated_at)}</time></td>
                   </tr>
                 ))}
               </tbody>

@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from hashlib import sha256
-from typing import cast
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
@@ -18,6 +18,11 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
 from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextToolRequestError,
     reject_forbidden_provider_json,
+)
+from gds_workbench_api.features.workflows.authoring.context_inputs import (
+    ASSERTION_FIELDS,
+    OBJECT_FIELDS,
+    natural_key,
 )
 from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
     DownstreamContextReaders,
@@ -300,6 +305,7 @@ def _mapping_provider_context(preparation: MappingPreparation) -> JsonValue:
                 ),
             },
             "source_system": context.source_system.model_dump(mode="json"),
+            "mapping_support": _mapping_support(preparation),
             "source_system_dependency": context.dependency.model_dump(mode="json"),
             "source_system_dependency_graph": (context.dependency_graph.model_dump(mode="json")),
             "target_dependency_graph": (context.target_dependency_graph.model_dump(mode="json")),
@@ -317,6 +323,100 @@ def _mapping_provider_context(preparation: MappingPreparation) -> JsonValue:
         reject_sensitive_values=True,
     )
     return provider_context
+
+
+def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
+    """Only persisted evidence relevant to this Entity and its eligible physical sources."""
+    snapshot = preparation.snapshot
+    result: dict[str, Any] = {
+        "attribute_lineage": [],
+        "modeled_relationships": [],
+        "source_relationships": [],
+        "profiles": [],
+        "assertions": [],
+    }
+    if snapshot is None:
+        return result
+    layer = "logical" if preparation.plan.route == "logical_to_silver" else "dimensional"
+    section = snapshot.logical if layer == "logical" else snapshot.dimensional
+    entity_name = preparation.context.headers[0].modeled_entity.entity_name.casefold()
+    source_keys = {natural_key(item.object.model_dump()) for item in preparation.context.sources}
+    assertion_keys: set[str] = set()
+    for entity in section.entities:
+        if getattr(entity, f"{layer}_entity_name").casefold() != entity_name:
+            continue
+        for source in entity.sources:
+            if source.status == "active" and source.support_source_type == "assertion":
+                assertion_keys.add(source.assertion_record.modeling_assertion_record_key.casefold())
+    for attribute in section.attributes:
+        if (
+            getattr(attribute, f"{layer}_entity_name").casefold() != entity_name
+            or getattr(attribute, f"{layer}_attribute_status") != "active"
+        ):
+            continue
+        sources: list[dict[str, Any]] = []
+        for source in attribute.sources:
+            if source.status != "active":
+                continue
+            if source.support_source_type == "assertion":
+                assertion_keys.add(source.assertion_record.modeling_assertion_record_key.casefold())
+                sources.append(source.model_dump(mode="json", exclude={"status", "is_locked"}))
+            elif natural_key(source.source_attribute.model_dump()) in source_keys:
+                sources.append(source.model_dump(mode="json", exclude={"status", "is_locked"}))
+        result["attribute_lineage"].append(
+            {
+                "modeled_attribute_name": getattr(attribute, f"{layer}_attribute_name"),
+                "sources": sources,
+                **{
+                    name.removeprefix(f"{layer}_attribute_"): value
+                    for name, value in attribute.model_dump(mode="json").items()
+                    if name.endswith(("_is_primary_key", "_is_natural_key", "_is_surrogate_key"))
+                },
+            }
+        )
+    for relationship in section.relationships:
+        row = relationship.model_dump(mode="json")
+        if row[f"{layer}_relationship_status"] == "active" and entity_name in {
+            row[f"from_{layer}_entity_name"].casefold(),
+            row[f"to_{layer}_entity_name"].casefold(),
+        }:
+            result["modeled_relationships"].append(
+                {
+                    key: value
+                    for key, value in row.items()
+                    if not key.endswith(("_is_locked", "_status"))
+                }
+            )
+    for relationship in snapshot.analysis.relationships:
+        row = relationship.model_dump(mode="json")
+        if row["analysis_result_status"] == "active" and all(
+            natural_key({key: row[f"{side}_{key}"] for key in OBJECT_FIELDS}) in source_keys
+            for side in ("from", "to")
+        ):
+            result["source_relationships"].append(
+                {
+                    key: value
+                    for key, value in row.items()
+                    if key
+                    not in {
+                        "analysis_result_status",
+                        "analysis_result_is_locked",
+                        "validation_policy_version",
+                    }
+                }
+            )
+    for profile in snapshot.profiling.profiles:
+        row = profile.model_dump(mode="json")
+        if natural_key(row) in source_keys:
+            result["profiles"].append(row)
+    for assertion in snapshot.assertion.records:
+        if (
+            assertion.modeling_assertion_record_status == "active"
+            and assertion.modeling_assertion_record_key.casefold() in assertion_keys
+        ):
+            row = assertion.model_dump(mode="json")
+            result["assertions"].append({key: row[key] for key in ASSERTION_FIELDS})
+    return result
 
 
 def _mapping_context_datasets(

@@ -31,7 +31,7 @@ DECLARE
         'application.save_sql_generation_guide(uuid,uuid,character varying,bigint,character varying,character varying,character varying,boolean,boolean,timestamp with time zone)',
         'application.save_sql_generation_guide_draft(uuid,uuid,character varying,bigint,bigint,text,timestamp with time zone)',
         'application.transition_sql_generation_guide_version(uuid,uuid,character varying,bigint,character varying,character varying)',
-        'application.create_workflow_run(uuid,uuid,character varying,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,character varying,character varying,bigint,bigint,bigint,character varying,bigint,jsonb)',
+        'application.create_workflow_run(uuid,uuid,character varying,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,character varying,character varying,bigint,bigint,bigint,character varying,bigint,jsonb,jsonb)',
         'application.start_workflow_run(uuid,uuid,character varying,bigint,bigint)',
         'application.claim_next_workflow_run(integer)',
         'application.renew_workflow_run_claim(bigint,uuid,integer)',

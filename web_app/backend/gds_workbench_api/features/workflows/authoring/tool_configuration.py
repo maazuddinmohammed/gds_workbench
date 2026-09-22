@@ -44,6 +44,7 @@ type AgentToolName = Literal[
     "get_mapping_target",
     "get_mapping_sources",
     "get_existing_mapping",
+    "get_mapping_support",
     "get_code_target",
     "get_code_sources",
     "get_code_source_systems",

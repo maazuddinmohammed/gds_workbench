@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, LiteralString, Protocol, cast
 from uuid import uuid4
@@ -586,6 +587,138 @@ async def test_object_detail_rechecks_visibility_and_bounds_attributes() -> None
     assert "FROM visible_objects" in attribute_query
     assert "LIMIT %s" in attribute_query
     assert attribute_parameters == (7, 101, 2001)
+
+
+@pytest.mark.asyncio
+async def test_metadata_hierarchy_sort_spans_pages_and_all_zones(
+    web_postgres_database: DisposablePostgres,
+) -> None:
+    prefix = f"SORT{uuid4().hex[:12]}"
+    with web_postgres_database.connect_owner() as connection:
+        if (
+            connection.execute(
+                "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
+            ).fetchone()
+            is None
+        ):
+            connection.execute(cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8")))
+        connection.execute(
+            """
+            INSERT INTO core.tenant
+                (project_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog)
+            SELECT project_id, %s || label, label, label, label
+              FROM core.project CROSS JOIN (VALUES ('Z'), ('a')) AS labels(label)
+             WHERE project_code = 'DEMO_PROJECT'
+             ORDER BY lower(label) DESC
+            """,
+            (prefix,),
+        )
+        tenant = connection.execute(
+            "SELECT tenant_id FROM core.tenant WHERE tenant_code = %s", (prefix + "a",)
+        ).fetchone()
+        assert tenant is not None
+        tenant_id = tenant["tenant_id"]
+        connection.execute(
+            """
+            INSERT INTO core.system (system_code, system_name, system_type_id)
+            SELECT %s || label, label, system_type_id
+              FROM reference.system_type CROSS JOIN (VALUES ('Z'), ('a')) AS labels(label)
+             WHERE system_type_code = 'DEMO_DATABASE'
+             ORDER BY lower(label) DESC
+            """,
+            (prefix,),
+        )
+        connection.execute(
+            """
+            INSERT INTO core.connection
+                (tenant_id, system_id, connection_code, connection_name, connection_type_id)
+            SELECT tenant_id, system_id, label, label, connection_type_id
+              FROM core.tenant CROSS JOIN core.system CROSS JOIN reference.connection_type
+             CROSS JOIN (VALUES ('Z'), ('a')) AS labels(label)
+             WHERE tenant_code LIKE %s AND system_code LIKE %s
+               AND connection_type_code = 'DEMO_POSTGRESQL'
+             ORDER BY lower(tenant_code) DESC, lower(system_code) DESC, lower(label) DESC
+            """,
+            (prefix + "%", prefix + "%"),
+        )
+        connection.execute(
+            """
+            INSERT INTO core.object
+                (connection_id, source_tenant_id, object_schema, object_name,
+                 object_type_id, zone_id)
+            SELECT connection_id, %s, zone_code || '_' || schemas.label, names.label,
+                   object_type_id, zone_id
+              FROM core.connection JOIN core.tenant USING (tenant_id)
+             CROSS JOIN reference.object_type CROSS JOIN reference.zone
+             CROSS JOIN (VALUES ('Z'), ('a')) AS schemas(label)
+             CROSS JOIN (VALUES ('Z'), ('a')) AS names(label)
+             WHERE tenant_code LIKE %s AND object_type_code = 'TABLE'
+               AND zone_code IN ('source', 'bronze', 'silver', 'gold')
+             ORDER BY connection_id, zone_code, lower(schemas.label) DESC, lower(names.label) DESC
+            """,
+            (tenant_id, prefix + "%"),
+        )
+        connection.execute(
+            """
+            INSERT INTO core.attribute
+                (object_id, attribute_name, attribute_ordinal_position, attribute_data_type)
+            SELECT object_id, name, ordinal, 'STRING'
+              FROM core.object JOIN core.connection USING (connection_id)
+              JOIN core.tenant USING (tenant_id)
+             CROSS JOIN (VALUES ('Alpha', 10), ('Zulu', 2), ('Middle', 1)) AS fields(name, ordinal)
+             WHERE tenant_code LIKE %s
+             ORDER BY object_id, ordinal DESC
+            """,
+            (prefix + "%",),
+        )
+
+    database = WebPostgresDatabase(
+        dsn=web_postgres_database.web_runtime_dsn(),
+        pool_min=1,
+        pool_max=1,
+        pool_timeout_seconds=5,
+    )
+    repository = PostgresMetadataRepository()
+    await database.open()
+    try:
+        async with database.read_transaction() as transaction:
+            for zone in ("source", "bronze", "silver", "gold"):
+                for kind in ("object", "attribute"):
+                    dataset = cast(OperationalDataset, f"{zone}_{kind}")
+                    rows: list[Mapping[str, Any]] = []
+                    while page := await repository.list_rows(
+                        transaction,
+                        tenant_id=tenant_id,
+                        dataset=dataset,
+                        filters=(),
+                        limit=7,
+                        offset=len(rows),
+                    ):
+                        rows.extend(page)
+                    assert len(rows) >= (32 if kind == "object" else 96)
+                    fields = (
+                        "tenant_code",
+                        "system_code",
+                        "connection_code",
+                        "object_schema",
+                        "object_name",
+                    )
+                    if kind == "attribute":
+                        fields += ("attribute_ordinal_position", "attribute_name")
+                    keys = [
+                        tuple(
+                            value.strip().lower() if isinstance(value := row[field], str) else value
+                            for field in fields
+                        )
+                        for row in rows
+                    ]
+                    assert keys == sorted(keys)
+                    exported = await repository.list_export_rows(
+                        transaction, tenant_id=tenant_id, dataset=dataset, limit=1000
+                    )
+                    assert list(exported) == rows
+    finally:
+        await database.close()
 
 
 @pytest.mark.asyncio

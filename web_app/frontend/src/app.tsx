@@ -80,6 +80,7 @@ interface RouterContext {
 }
 
 interface MappingRouteSearch {
+  layer?: "logical" | "dimensional";
   view?: "dependencies" | "objects";
 }
 
@@ -161,10 +162,11 @@ const tenantMappingModelRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/mapping/models/$modelId",
   component: TenantMappingModel,
-  validateSearch: (search: Record<string, unknown>): MappingRouteSearch => (
-    search.view === "attributes" ? { view: "objects" }
-      : search.view === "objects" || search.view === "dependencies" ? { view: search.view } : {}
-  ),
+  validateSearch: (search: Record<string, unknown>): MappingRouteSearch => ({
+    ...(search.layer === "logical" || search.layer === "dimensional" ? { layer: search.layer } : {}),
+    ...(search.view === "attributes" ? { view: "objects" }
+      : search.view === "objects" || search.view === "dependencies" ? { view: search.view } : {}),
+  }),
 });
 
 const tenantMappingObjectRoute = createRoute({
@@ -576,7 +578,7 @@ function TenantMappingModel() {
   const { tenantId, modelId } = tenantMappingModelRoute.useParams();
   const numericTenantId = Number(tenantId);
   const numericModelId = Number(modelId);
-  const { view } = tenantMappingModelRoute.useSearch();
+  const { view, layer = "logical" } = tenantMappingModelRoute.useSearch();
   return (
     <WorkspaceModelRouteFrame
       api={api}
@@ -587,6 +589,8 @@ function TenantMappingModel() {
     >
       {({ home, model }) => (
         <MappingScreen
+          key={`${numericTenantId}:${numericModelId}:${layer}`}
+          layer={layer}
           api={api}
           tenantId={numericTenantId}
           model={model}

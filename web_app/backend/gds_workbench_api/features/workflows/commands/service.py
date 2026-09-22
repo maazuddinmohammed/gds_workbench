@@ -60,7 +60,7 @@ SELECT created.created,
   FROM application.create_workflow_run(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS created
 """
 
@@ -172,6 +172,11 @@ class DatabaseWorkflowCommandService:
                             ]
                         )
                         if command.description_targets is not None
+                        else None,
+                        Jsonb(
+                            [target.model_dump(mode="json") for target in command.mapping_targets]
+                        )
+                        if command.mapping_targets is not None
                         else None,
                     ),
                 )

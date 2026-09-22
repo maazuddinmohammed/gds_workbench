@@ -298,6 +298,14 @@ Before completing a frontend change:
   Attribute filters, pagination, refresh, and review actions stay within that
   Object; Attribute details return to their parent Object. Keep the Object
   transformation available in a disclosure below the Attribute table.
+- Mapping separates Logical and Dimensional with prominent layer links above its
+  command bar. Keep the layer in the URL, server-side ledger filters, dependency
+  forms, target-binding links and return navigation. Generate inherits that layer.
+  Show execution mode, Model and reasoning effort first, followed by the same
+  All unlocked Objects / Selected Objects controls used by Attribute Enrichment.
+  Object names open Attribute selection with Back to Objects, Select all unlocked
+  Attributes and Clear Attribute selection. Preserve choices across navigation and
+  scope-mode changes; search narrows the list without changing selected targets.
 - Conceptual detail pages use the workspace width, with status beside the title.
   Support evidence uses a Source/Rationale/Confidence/Status table; source codes,
   assertion text, and detailed reasoning remain available through Show details.

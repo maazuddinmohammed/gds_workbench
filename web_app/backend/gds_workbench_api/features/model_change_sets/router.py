@@ -10,6 +10,7 @@ from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.snapshots.model import ModelDataset
 
 from gds_workbench_api.dependencies import principal_dependency
+from gds_workbench_api.features.mapping.dependencies import SaveMappingDependencyRequest
 from gds_workbench_api.features.model_change_sets.input_scope import AddInputScopeRequest
 from gds_workbench_api.features.model_targets.contracts import (
     ApplyModelBindingRequest,
@@ -55,6 +56,16 @@ class ModelChangeSetService(Protocol):
         tenant_id: int,
         model_id: int,
         command: AddInputScopeRequest,
+        idempotency_key: UUID,
+    ) -> ReviewModelRecordsResult: ...
+
+    async def save_mapping_dependency(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        command: SaveMappingDependencyRequest,
         idempotency_key: UUID,
     ) -> ReviewModelRecordsResult: ...
 
@@ -232,6 +243,29 @@ def create_model_change_sets_router(
     router.add_api_route(
         "/input-scope/add",
         add_input_scope,
+        methods=["POST"],
+        response_model=ReviewModelRecordsResult,
+    )
+
+    async def save_mapping_dependency(
+        tenant_id: PositivePathId,
+        model_id: PositivePathId,
+        command: SaveMappingDependencyRequest,
+        idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
+    ) -> ReviewModelRecordsResult:
+        return await service.save_mapping_dependency(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            command=command,
+            idempotency_key=idempotency_key,
+        )
+
+    router.add_api_route(
+        "/mapping/dependencies",
+        save_mapping_dependency,
         methods=["POST"],
         response_model=ReviewModelRecordsResult,
     )

@@ -127,7 +127,7 @@ async def test_readiness_checks_the_web_schema_and_role(
     assert "uq_workflow_run_running_tenant" in readiness_sql
     assert "fk_workflow_run_model" in readiness_sql
     assert "count(*) = 26" in readiness_sql
-    assert "count(*) = 169" in readiness_sql
+    assert "count(*) = 171" in readiness_sql
     assert "pg_auth_members" in readiness_sql
     assert "mcp.model_change_set" in readiness_sql
     assert "workflow.conceptual_object" in readiness_sql

@@ -322,6 +322,15 @@ active Logical Model Object Binding from bounded Source or Bronze Objects. It
 does not create the binding.
 _Avoid_: Logical Section, Silver deployment
 
+**Mapping generation selection**:
+One modeled layer, selected target Object–Source System pairs, and selected bound
+Attributes. Object selection includes unlocked Attributes by default. Existing
+Mapping locks and deselections preserve records; a locked Object protects all its
+Attributes. The run freezes this selection, authors each pair independently, and
+combines successful results into one draft for explicit Apply. System dependency
+order is maintained manually in the web UI. See ADR 008.
+_Avoid_: Attribute-only top-level workflow, agent-created System ordering
+
 **Mapping Transformation Document**:
 The flexible JSON transformation description for a Mapping Object or Attribute.
 PostgreSQL guarantees only valid JSON storage. An attached Output Template is

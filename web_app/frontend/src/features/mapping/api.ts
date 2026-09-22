@@ -109,6 +109,21 @@ export interface MappingTarget {
   zone_code: "silver" | "gold";
 }
 
+export interface MappingGenerationTarget extends MappingTarget {
+  source_system: MappingSourceSystem;
+  entity_name: string;
+  mapping_object_id: number | null;
+  dependency_order: number;
+  object_order: number;
+  is_locked: boolean;
+  has_sources: boolean;
+  attributes: { attribute_id: number; attribute_name: string; modeled_attribute_name: string; ordinal_position: number; is_locked: boolean; is_authored: boolean }[];
+}
+
+export interface MappingGenerationPage {
+  model_id: number; model_revision: number; items: MappingGenerationTarget[]; next_cursor: string | null;
+}
+
 export interface MappingTargetPage {
   model_id: number;
   model_revision: number;
@@ -183,7 +198,16 @@ export interface MappingAttributeDetail extends MappingAttribute {
   created_at: string;
 }
 
+export interface SaveMappingDependencyCommand {
+  expected_model_revision: number;
+  entity_type: MappingEntityType;
+  source_system_code: string;
+  dependency_order: number;
+}
+
 export interface MappingTransport {
+  listMappingGenerationTargets: (tenantId: number, modelId: number, entityType: MappingEntityType, pageSize?: number, cursor?: string) => Promise<MappingGenerationPage>;
+  saveMappingDependency: (tenantId: number, modelId: number, command: SaveMappingDependencyCommand, idempotencyKey: string) => Promise<{ model_revision: number }>;
   listMappingTargets: (
     tenantId: number,
     modelId: number,
@@ -246,6 +270,20 @@ export type MappingApi = MappingTransport & ModelRecordReviewApi
 
 export function createMappingApi(request: HttpRequest): MappingTransport {
   return {
+    saveMappingDependency: (tenantId, modelId, command, idempotencyKey) => request(
+      `/api/v1/tenants/${tenantId}/models/${modelId}/change-sets/mapping/dependencies`,
+      { method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify(command) },
+    ),
+    listMappingGenerationTargets: (tenantId, modelId, entityType, pageSize = 200, cursor) => {
+      const query = new URLSearchParams({
+        entity_type: entityType,
+        page_size: String(pageSize),
+      });
+      if (cursor) query.set("cursor", cursor);
+      return request<MappingGenerationPage>(
+        `/api/v1/tenants/${tenantId}/models/${modelId}/mapping/generation-targets?${query}`,
+      );
+    },
     listMappingTargets: (tenantId, modelId, entityType, pageSize = 200, cursor) => {
       const query = new URLSearchParams({
         entity_type: entityType,
@@ -309,9 +347,6 @@ export const mappingQueryKeys = {
   runTargets: (tenantId: number, modelId: number, entityType: MappingEntityType) => (
     ["mapping-run-targets", tenantId, modelId, entityType] as const
   ),
-  runSystems: (tenantId: number, modelId: number, entityType: MappingEntityType) => (
-    ["mapping-run-systems", tenantId, modelId, entityType] as const
-  ),
   outputTemplates: (tenantId: number, modelId: number) => (
     ["mapping-output-templates", tenantId, modelId] as const
   ),
@@ -342,35 +377,31 @@ async function loadOutputTemplatesForTargetType(
   const seenCursors = new Set<string>();
   let cursor: string | undefined;
 
-  for (let page = 0; page < 5; page += 1) {
+  for (;;) {
     const response = await api.listOutputTemplates(tenantId, targetType, 200, cursor);
     items.push(...response.items);
     if (!response.next_cursor) return items;
     if (seenCursors.has(response.next_cursor)) {
       throw new Error("Output Template cursor repeated");
     }
-    if (page === 4) {
-      throw new Error("Output Template selection exceeds the supported bound");
-    }
     seenCursors.add(response.next_cursor);
     cursor = response.next_cursor;
   }
-  throw new Error("Output Template selection exceeds the supported bound");
 }
 
-export async function loadAllMappingTargets(
-  api: Pick<MappingTransport, "listMappingTargets">,
+export async function loadMappingGenerationTargets(
+  api: Pick<MappingTransport, "listMappingGenerationTargets">,
   tenantId: number,
   modelId: number,
   entityType: MappingEntityType,
-): Promise<{ modelRevision: number; items: MappingTarget[] }> {
-  const items: MappingTarget[] = [];
+): Promise<{ modelRevision: number; items: MappingGenerationTarget[] }> {
+  const items: MappingGenerationTarget[] = [];
   const seenCursors = new Set<string>();
   let cursor: string | undefined;
   let modelRevision: number | null = null;
 
-  for (let page = 0; page < 250; page += 1) {
-    const response = await api.listMappingTargets(tenantId, modelId, entityType, 200, cursor);
+  for (;;) {
+    const response = await api.listMappingGenerationTargets(tenantId, modelId, entityType, 200, cursor);
     if (modelRevision !== null && response.model_revision !== modelRevision) {
       throw new Error("Mapping target revision changed while loading");
     }
@@ -383,42 +414,6 @@ export async function loadAllMappingTargets(
     seenCursors.add(response.next_cursor);
     cursor = response.next_cursor;
   }
-  throw new Error("Mapping targets exceed the supported bound");
-}
-
-export async function loadAllMappingDependencies(
-  api: Pick<MappingTransport, "listMappingDependencies">,
-  tenantId: number,
-  modelId: number,
-  entityType: MappingEntityType,
-): Promise<{ modelRevision: number; items: MappingDependency[] }> {
-  const items: MappingDependency[] = [];
-  const seenCursors = new Set<string>();
-  let cursor: string | undefined;
-  let modelRevision: number | null = null;
-
-  for (let page = 0; page < 5; page += 1) {
-    const response = await api.listMappingDependencies(
-      tenantId,
-      modelId,
-      { entityType },
-      200,
-      cursor,
-    );
-    if (modelRevision !== null && response.model_revision !== modelRevision) {
-      throw new Error("Mapping dependency revision changed while loading");
-    }
-    modelRevision = response.model_revision;
-    items.push(...response.items);
-    if (!response.next_cursor) return { modelRevision, items };
-    if (seenCursors.has(response.next_cursor)) {
-      throw new Error("Mapping dependency cursor repeated");
-    }
-    if (page === 4) throw new Error("Mapping dependencies exceed the supported bound");
-    seenCursors.add(response.next_cursor);
-    cursor = response.next_cursor;
-  }
-  throw new Error("Mapping dependencies exceed the supported bound");
 }
 
 function mappingCollectionPath(

@@ -21,6 +21,8 @@ from .read_contracts import (
     MappingDependencyPage,
     MappingDependencySummary,
     MappingEntityType,
+    MappingGenerationPage,
+    MappingGenerationTarget,
     MappingObjectDetail,
     MappingObjectNotFoundError,
     MappingObjectPage,
@@ -68,7 +70,7 @@ SELECT dependency.mapping_source_system_dependency_id,
  LIMIT %s OFFSET %s
 """
 
-_MAPPING_TARGETS_SQL: LiteralString = """
+_MAPPING_TARGET_BASE_SQL: LiteralString = """
 SELECT eligible.object_id,
        eligible.connection_id,
        eligible.system_id,
@@ -93,6 +95,11 @@ SELECT eligible.object_id,
        WHEN 'dimensional_entity' THEN eligible.is_dimensional_mapping_target_eligible
        ELSE false
    END
+"""
+
+_MAPPING_TARGETS_SQL: LiteralString = (
+    _MAPPING_TARGET_BASE_SQL
+    + """
  ORDER BY lower(source_tenant.tenant_code),
           lower(target_system.system_code),
           lower(eligible.object_schema),
@@ -100,6 +107,81 @@ SELECT eligible.object_id,
           eligible.object_id
  LIMIT %s OFFSET %s
 """
+)
+
+_MAPPING_GENERATION_TARGETS_SQL: LiteralString = (
+    """
+WITH targets AS (
+"""
+    + _MAPPING_TARGET_BASE_SQL
+    + """
+)
+SELECT targets.*,
+       jsonb_build_object('system_id', system.system_id, 'system_code', system.system_code,
+                          'system_name', system.system_name) AS source_system,
+       coalesce(logical.logical_entity_name, dimensional.dimensional_entity_name) AS entity_name,
+       mapping.mapping_object_id,
+       dependency.source_system_dependency_order AS dependency_order,
+       coalesce(mapping.object_dependency_order, logical.logical_entity_dependency_order,
+                dimensional.dimensional_entity_dependency_order, 0) AS object_order,
+       coalesce(mapping.object_mapping_is_locked, FALSE) AS is_locked,
+       EXISTS (SELECT 1 FROM workflow.list_mapping_source_objects(
+           binding.model_id, binding.object_id, binding.modeled_entity_type, system.system_id
+       )) AS has_sources,
+       attributes.items AS attributes
+  FROM targets
+  JOIN workflow.model_object_binding AS binding ON binding.object_id = targets.object_id
+  JOIN model.model AS model ON model.model_id = binding.model_id
+  JOIN workflow.mapping_source_system_dependency AS dependency
+
+        ON dependency.model_id = binding.model_id
+       AND dependency.modeled_entity_type = binding.modeled_entity_type
+   AND dependency.mapping_source_system_dependency_status = 'active'
+  JOIN core.system AS system ON system.system_id = dependency.source_system_id AND system.is_active
+  LEFT JOIN workflow.logical_entity AS logical
+        ON logical.logical_entity_id = binding.logical_entity_id
+  LEFT JOIN workflow.dimensional_entity AS dimensional
+        ON dimensional.dimensional_entity_id = binding.dimensional_entity_id
+  LEFT JOIN workflow.mapping_object AS mapping
+        ON mapping.model_object_binding_id = binding.model_object_binding_id
+   AND mapping.source_system_id = system.system_id
+ CROSS JOIN LATERAL (
+    SELECT coalesce(jsonb_agg(jsonb_build_object(
+        'attribute_id', physical.attribute_id, 'attribute_name', physical.attribute_name,
+        'modeled_attribute_name', coalesce(
+            logical_attribute.logical_attribute_name,
+            dimensional_attribute.dimensional_attribute_name),
+        'ordinal_position', physical.attribute_ordinal_position,
+        'is_locked', coalesce(child.attribute_mapping_is_locked, FALSE),
+        'is_authored', child.attribute_mapping_transformation_document IS NOT NULL
+    ) ORDER BY physical.attribute_ordinal_position, physical.attribute_name), '[]'::JSONB) AS items
+      FROM workflow.model_attribute_binding AS attribute
+      JOIN core.attribute AS physical
+        ON physical.attribute_id = attribute.attribute_id
+       AND physical.is_active
+      LEFT JOIN workflow.logical_attribute AS logical_attribute
+        ON logical_attribute.logical_attribute_id = attribute.logical_attribute_id
+      LEFT JOIN workflow.dimensional_attribute AS dimensional_attribute
+        ON dimensional_attribute.dimensional_attribute_id = attribute.dimensional_attribute_id
+      LEFT JOIN workflow.mapping_attribute AS child
+        ON child.model_attribute_binding_id = attribute.model_attribute_binding_id
+       AND child.mapping_object_id = mapping.mapping_object_id
+     WHERE attribute.model_object_binding_id = binding.model_object_binding_id
+       AND attribute.model_attribute_binding_status = 'active'
+
+       AND coalesce(
+            logical_attribute.logical_attribute_status,
+            dimensional_attribute.dimensional_attribute_status) = 'active'
+ ) AS attributes
+ WHERE model.tenant_id = %s AND model.model_id = %s AND model.is_active
+   AND binding.model_object_binding_status = 'active'
+   AND coalesce(logical.logical_entity_status, dimensional.dimensional_entity_status) = 'active'
+ ORDER BY dependency.source_system_dependency_order, system.system_code, object_order,
+          targets.object_schema, targets.object_name, targets.object_id
+ LIMIT %s OFFSET %s
+"""
+)
+
 
 _OBJECT_BASE_SQL = """
   FROM workflow.mapping_object AS mapping
@@ -365,6 +447,17 @@ class MappingReviewService(Protocol):
         cursor: str | None,
     ) -> MappingTargetPage: ...
 
+    async def list_generation_targets(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        entity_type: MappingEntityType,
+        page_size: int,
+        cursor: str | None,
+    ) -> MappingGenerationPage: ...
+
     async def list_dependencies(
         self,
         principal: RequestPrincipal,
@@ -492,6 +585,50 @@ class DatabaseMappingReviewService:
             model_revision=header["model_revision"],
             items=tuple(
                 MappingTargetSummary.model_validate(row, strict=False) for row in rows[:page_size]
+            ),
+            next_cursor=next_cursor,
+        )
+
+    async def list_generation_targets(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        entity_type: MappingEntityType,
+        page_size: int,
+        cursor: str | None,
+    ) -> MappingGenerationPage:
+        collection = f"web_mapping_generation:{tenant_id}:{model_id}:{entity_type}:{page_size}"
+        offset = self._cursors.decode(cursor, collection=collection)
+        async with self._database.read_transaction(
+            isolation=ReadIsolation.REPEATABLE_READ
+        ) as transaction:
+            await self._authorizer.authorize_tenant(
+                transaction,
+                principal,
+                tenant_id=tenant_id,
+                policy=ToolPolicy.TENANT_READ,
+                model_id=model_id,
+            )
+            header = await transaction.fetch_one(_MODEL_HEADER_SQL, (tenant_id, model_id))
+            if header is None:
+                raise ModelNotFoundError()
+            rows = await transaction.fetch_all(
+                _MAPPING_GENERATION_TARGETS_SQL,
+                (tenant_id, model_id, entity_type, tenant_id, model_id, page_size + 1, offset),
+            )
+        next_cursor = (
+            self._cursors.encode(collection=collection, offset=offset + page_size)
+            if len(rows) > page_size
+            else None
+        )
+        return MappingGenerationPage(
+            model_id=model_id,
+            model_revision=header["model_revision"],
+            items=tuple(
+                MappingGenerationTarget.model_validate(row, strict=False)
+                for row in rows[:page_size]
             ),
             next_cursor=next_cursor,
         )

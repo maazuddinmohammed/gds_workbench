@@ -19,6 +19,7 @@ from .preparation_contracts import (
     ExistingMappingHeader,
     MappingPreparation,
 )
+from .semantics import validate_mapping_references
 
 
 class MappingCandidateReconciler:
@@ -59,6 +60,8 @@ class MappingCandidateReconciler:
             raise InvalidRequestError(
                 "Mapping output must cover every actionable bound Attribute exactly once."
             )
+
+        validate_mapping_references(self._preparation, candidate)
 
         object_records: list[dict[str, object]] = []
         if candidate.object_mapping is not None:

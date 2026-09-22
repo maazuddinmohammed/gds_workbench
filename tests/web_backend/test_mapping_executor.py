@@ -14,10 +14,10 @@ from gds_workbench_api.features.mapping.preparation_contracts import (
     MappingRunContext,
 )
 from gds_workbench_api.features.mapping.service import (
-    MappingWorkflow,
     MappingChangeSetHandoff,
     MappingNoOpCompleter,
     MappingPreparationService,
+    MappingWorkflow,
 )
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
@@ -156,7 +156,7 @@ def _executor(
         preparation_service=cast(
             MappingPreparationService,
             SimpleNamespace(
-                prepare=AsyncMock(return_value=preparation),
+                prepare=AsyncMock(return_value=(preparation,)),
             ),
         ),
         agent_executor=agent,
