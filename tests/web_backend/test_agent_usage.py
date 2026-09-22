@@ -146,6 +146,8 @@ def _router(
     monkeypatch: pytest.MonkeyPatch,
     recorder: AgentUsageRecorder | None,
     handler: Any,
+    *,
+    timeout_seconds: int = 480,
 ) -> AgentExecutionRouter:
     def client_factory(**options: Any) -> httpx2.AsyncClient:
         return DefaultAsyncHttpxClient(transport=httpx2.MockTransport(handler), **options)
@@ -157,7 +159,7 @@ def _router(
                 provider_code="microsoft_foundry",
                 model_code="foundry-primary",
                 model_endpoint="gpt-5.6-sol",
-                timeout_seconds=10,
+                timeout_seconds=timeout_seconds,
             ),
         ),
         model_authentications={"microsoft_foundry": FixtureAuthentication()},

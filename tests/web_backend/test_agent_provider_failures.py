@@ -8,6 +8,7 @@ from uuid import UUID
 
 import httpx2
 import pytest
+from agents import ModelSettings
 from agents.exceptions import ModelTimeoutError
 from azure.core.exceptions import ClientAuthenticationError
 from gds_etl_workbench.domain.errors import WorkbenchError
@@ -49,6 +50,45 @@ from tests.web_backend.test_agent_usage import (
     _response,
     _router,
 )
+
+
+@pytest.mark.parametrize("tools, reasoning", [(False, "default"), (False, "none"), (True, "none")])
+@pytest.mark.parametrize("timeout_seconds", [480, 900])
+async def test_real_sdk_uses_the_configured_model_request_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    tools: bool,
+    reasoning: str,
+    timeout_seconds: int,
+) -> None:
+    sends = 0
+    settings_seen: list[ModelSettings] = []
+
+    def model_settings(**options: Any) -> ModelSettings:
+        settings = ModelSettings(**options)
+        settings_seen.append(settings)
+        return settings
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal sends
+        sends += 1
+        assert request.extensions["timeout"] == dict.fromkeys(
+            ("connect", "read", "write", "pool"), timeout_seconds
+        )
+        return httpx2.Response(200, json=_response(None, tool=tools and sends == 1))
+
+    monkeypatch.setattr(adapters, "ModelSettings", model_settings)
+    request = _request(tools=tools)
+    request = request.model_copy(
+        update={
+            "selection": request.selection.model_copy(update={"reasoning_effort_code": reasoning})
+        }
+    )
+    result = await _router(monkeypatch, None, handler, timeout_seconds=timeout_seconds).execute(
+        request
+    )
+    assert result.candidate == {"result": "valid"}
+    assert sends == (2 if tools else 1)
+    assert settings_seen and all(item.timeout == timeout_seconds for item in settings_seen)
 
 
 @pytest.mark.parametrize(

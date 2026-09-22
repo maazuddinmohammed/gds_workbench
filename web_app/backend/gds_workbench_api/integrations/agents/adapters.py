@@ -208,6 +208,8 @@ class OpenAIAgentsSdkAdapter:
             credentials = await self._authentication(connection).authenticate()
             tools = cast(Sequence[Tool], _openai_tools(self._tool_catalog(request), hooks))
             http_client = DefaultAsyncHttpxClient(
+                # Keep transport and model-call deadlines aligned.
+                timeout=connection.timeout_seconds,
                 event_hooks={"request": [hooks.on_request], "response": [hooks.on_response]},
             )
             client = AsyncOpenAI(
@@ -224,7 +226,7 @@ class OpenAIAgentsSdkAdapter:
             if request.selection.reasoning_effort_code == "default":
                 model_settings = ModelSettings(
                     parallel_tool_calls=False,
-                    timeout=float(connection.timeout_seconds),
+                    timeout=connection.timeout_seconds,
                 )
             else:
                 reasoning_effort = cast(
@@ -234,7 +236,7 @@ class OpenAIAgentsSdkAdapter:
                 model_settings = ModelSettings(
                     reasoning=Reasoning(effort=reasoning_effort),
                     parallel_tool_calls=False,
-                    timeout=float(connection.timeout_seconds),
+                    timeout=connection.timeout_seconds,
                 )
             model_settings.extra_body = {"response_format": {"type": "json_object"}}
             agent = Agent(

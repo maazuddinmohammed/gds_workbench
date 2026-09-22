@@ -17,6 +17,8 @@ from gds_workbench_api.capabilities import (
 )
 from gds_workbench_api.features.workflows.usage.contracts import FoundryModelPricing
 
+_DEFAULT_TIMEOUT_SECONDS = 480
+
 
 class FoundryClientCredentials(BaseModel):
     """Explicit Entra application credentials for a Databricks-hosted app."""
@@ -44,7 +46,7 @@ class AgentProviderConnection(BaseModel):
         max_length=200,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$",
     )
-    timeout_seconds: int = Field(ge=1, le=600)
+    timeout_seconds: int = Field(default=_DEFAULT_TIMEOUT_SECONDS, ge=1)
     openai_base_url: str | None = Field(default=None, max_length=2048)
     token_scope: str | None = Field(default=None, max_length=2048)
     foundry_client_credentials: FoundryClientCredentials | None = None
@@ -58,7 +60,7 @@ class AgentRuntimeConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     mode: Literal["fake", "remote"]
-    timeout_seconds: int = Field(ge=1, le=600)
+    timeout_seconds: int = Field(default=_DEFAULT_TIMEOUT_SECONDS, ge=1)
     connections: tuple[AgentProviderConnection, ...] = Field(max_length=200)
 
     @model_validator(mode="after")
@@ -92,13 +94,15 @@ class AgentRuntimeConfiguration(BaseModel):
         if production and raw_mode == "fake":
             raise ConfigurationError("fake agent execution is available only locally")
 
-        raw_timeout = source.get("GDS_WEB_AGENT_TIMEOUT_SECONDS", "120").strip()
+        raw_timeout = source.get("GDS_WEB_AGENT_TIMEOUT_SECONDS", "").strip()
         try:
-            timeout_seconds = int(raw_timeout)
+            timeout_seconds = int(raw_timeout or _DEFAULT_TIMEOUT_SECONDS)
         except ValueError as exc:
-            raise ConfigurationError("GDS_WEB_AGENT_TIMEOUT_SECONDS must be an integer") from exc
-        if not 1 <= timeout_seconds <= 600:
-            raise ConfigurationError("GDS_WEB_AGENT_TIMEOUT_SECONDS must be between 1 and 600")
+            raise ConfigurationError(
+                "GDS_WEB_AGENT_TIMEOUT_SECONDS must be a positive integer"
+            ) from exc
+        if timeout_seconds < 1:
+            raise ConfigurationError("GDS_WEB_AGENT_TIMEOUT_SECONDS must be a positive integer")
 
         foundry_models = tuple(
             model for model in registry.models if model.provider_code == "microsoft_foundry"

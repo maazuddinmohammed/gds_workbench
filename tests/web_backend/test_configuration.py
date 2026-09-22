@@ -257,6 +257,33 @@ def test_production_requires_the_exact_web_runtime_database_login() -> None:
     assert "top-secret" not in str(captured.value)
 
 
+@pytest.mark.parametrize(
+    "configured, expected",
+    [(None, 480), ("", 480), (" 480 ", 480), ("90", 90), ("3600", 3600)],
+)
+def test_agent_request_timeout_defaults_to_eight_minutes_and_allows_overrides(
+    configured: str | None, expected: int
+) -> None:
+    source = {
+        "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": "https://fixture.openai.azure.com/openai/v1/",
+        "GDS_WEB_FOUNDRY_API_KEY": "fixture-key",
+    }
+    if configured is not None:
+        source["GDS_WEB_AGENT_TIMEOUT_SECONDS"] = configured
+    configuration = AgentRuntimeConfiguration.from_environment(source, production=True)
+    assert configuration.timeout_seconds == expected
+    assert configuration.connections
+    assert all(connection.timeout_seconds == expected for connection in configuration.connections)
+
+
+@pytest.mark.parametrize("configured", ["0", "-1", "none", "invalid", "1.5"])
+def test_agent_request_timeout_rejects_invalid_overrides(configured: str) -> None:
+    with pytest.raises(ConfigurationError, match="positive integer"):
+        AgentRuntimeConfiguration.from_environment(
+            {"GDS_WEB_AGENT_TIMEOUT_SECONDS": configured}, production=False
+        )
+
+
 def test_remote_agent_settings_use_registered_foundry_model_deployment() -> None:
     settings = RuntimeSettings.from_environment(
         {

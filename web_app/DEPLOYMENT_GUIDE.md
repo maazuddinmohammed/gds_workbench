@@ -247,10 +247,20 @@ Databricks supplies `DATABRICKS_HOST`, `DATABRICKS_APP_NAME`,
 service principal. See
 [Databricks Apps system environment](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/system-env).
 
-The application also supports reviewed timing overrides, but the manifest uses
-safe defaults: agent timeout 120 seconds; workflow lease 30 seconds; heartbeat
-10 seconds; idle poll 1 second; error poll 5 seconds. Change these only through a
-reviewed `app.yaml` update, never as an untracked ambient variable.
+Model requests default to an **8-minute (480-second) timeout** in both execution
+modes. The Agents SDK model-call deadline and HTTP client deadlines use the same
+value. Set `GDS_WEB_AGENT_TIMEOUT_SECONDS=480` to configure it explicitly, or use
+another positive whole number of seconds. Unset or blank uses 480; zero and `none`
+are rejected. This is a per-model-call timeout, not a total workflow deadline.
+Timeouts and provider/network failures still become safe workflow diagnostics.
+Providers and hosting infrastructure may impose their own shorter limits.
+
+The manifest uses a workflow lease of 30 seconds, renewed by a heartbeat every
+10 seconds; this is not a workflow duration limit. Idle polling is 1 second and
+error polling is 5 seconds. Change these only through a reviewed `app.yaml`
+update, never as an untracked ambient variable. Tenant Lock expiry, claim loss,
+process shutdown, turn/retry budgets, and SQL execution limits remain separate
+from model-request timeouts.
 
 ### Agent context modes
 
@@ -259,11 +269,9 @@ agentic authoring to `tool_assisted`. Analysis, Conceptual, Logical,
 Dimensional, and Mapping expose both modes allowed by the selected model
 profile:
 
-- `one_shot` sends the complete frozen context once. It intentionally rejects a
-  scope that exceeds the one-shot request bound; there is no hidden fallback.
-- `tool_assisted` sends a compact manifest and serves immutable, byte-bounded
-  local pages. Each provider conversation also has one cumulative tool-result
-  allowance, reset for a validation-repair attempt.
+- `one_shot` sends the complete frozen context without a default input byte cap.
+- `tool_assisted` sends a compact manifest and serves immutable record pages,
+  without default per-result or cumulative tool-result byte caps.
 A provider profile must explicitly register the chosen mode; the UI hides and
 the backend rejects unsupported combinations.
 
