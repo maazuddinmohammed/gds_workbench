@@ -2,9 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query
 from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.tenants.contracts import (
     TenantCollection,
     TenantHome,
@@ -21,15 +23,16 @@ def create_tenants_router(
     service: TenantService,
 ) -> APIRouter:
     """Build the authenticated Tenant entry surface."""
+    authenticate = principal_dependency(identity_provider)
 
     router = APIRouter(prefix="/api/v1/tenants", tags=["tenants"])
 
     async def list_tenants(
-        request: Request,
         page_size: Annotated[int, Query(ge=1, le=200)] = 50,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> TenantCollection:
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_tenants(
             principal,
             page_size=page_size,
@@ -44,10 +47,8 @@ def create_tenants_router(
     )
 
     async def select_tenant(
-        request: Request,
-        tenant_id: int,
+        tenant_id: int, *, principal: RequestPrincipal = Depends(authenticate)
     ) -> TenantSelection:
-        principal = identity_provider.authenticate(request.headers)
         return await service.select_tenant(principal, tenant_id=tenant_id)
 
     router.add_api_route(
@@ -58,10 +59,8 @@ def create_tenants_router(
     )
 
     async def read_tenant_home(
-        request: Request,
-        tenant_id: int,
+        tenant_id: int, *, principal: RequestPrincipal = Depends(authenticate)
     ) -> TenantHome:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_tenant_home(principal, tenant_id=tenant_id)
 
     router.add_api_route(

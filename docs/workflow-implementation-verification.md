@@ -1,5 +1,8 @@
 # Workflow configuration implementation — 2026-09-07
 
+> Historical verification record. The interactive notebook runtime was retired
+> by [ADR 007](adr/007-web-owned-workflows-and-notebook-retirement.md); notebook checks below describe the earlier release.
+
 The user authorized implementation after the design review. Existing uncommitted
 work is preserved. No live database migration, deployment, push, or publication
 is part of this change.
@@ -61,7 +64,6 @@ PowerShell 5.1 execution remain outside this local verification.
 ## Local artifacts
 
 - [Web application source ZIP](../artifacts/databricks-ui/gds-workbench-app-source.zip)
-- [Notebook source ZIP](../artifacts/databricks-ui/gds-workbench-notebooks.zip)
 - [MCP App Service ZIP](../mcp_server/dist/gds-mcp-appservice-0.2.0.zip)
 - [GDS plugin ZIP](../plugins/v2/dist/gds-agent-plugin-0.5.0.zip)
 - [Stage Runner VSIX](../plugins/v2/dist/gds-stage-runner-0.1.0.vsix)

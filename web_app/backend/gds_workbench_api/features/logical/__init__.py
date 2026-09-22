@@ -55,18 +55,14 @@ from .read_service import (
     LogicalService,
 )
 from .router import LogicalWorkflowService, create_logical_workflow_router
-from .service import (
-    DatabaseLogicalExecutor,
-    LogicalExecutionFailedError,
-    LogicalWorkflow,
-)
+from .service import LogicalExecutionFailedError, LogicalWorkflow
 
 __all__ = [
     "AssertionRecordReference",
     "Cardinality",
     "Confidence",
     "ContractModel",
-    "DatabaseLogicalExecutor",
+    "LogicalWorkflow",
     "DatabaseLogicalService",
     "LogicalAssertionSource",
     "LogicalAttributeAssertionSource",
@@ -108,7 +104,6 @@ __all__ = [
     "LogicalSubmodelNotFoundError",
     "LogicalSubmodelPage",
     "LogicalSubmodelSummary",
-    "LogicalWorkflow",
     "LogicalWorkflowService",
     "ModeledFilters",
     "ModeledListQuery",

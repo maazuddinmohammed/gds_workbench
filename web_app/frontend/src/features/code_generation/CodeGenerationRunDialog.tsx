@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
-import { SelectField } from "../../shared/ui";
+import { useWorkflowRunSubmission } from "../workflows/useWorkflowRunSubmission";
+import { SelectField, Fact } from "../../shared/ui";
 import type { MappingEntityType } from "../mapping/api";
 import type { ModelDetail } from "../models/api";
 import {
@@ -11,7 +12,6 @@ import {
   reasoningEffortDisplayName,
   resolveDefaultAgent,
   workflowCreationQueryKeys,
-  type CreateWorkflowRunCommand,
 } from "../workflows/api";
 import {
   isTenantWorkflowConflict,
@@ -20,9 +20,6 @@ import {
 import type { CodeGenerationApi, CodeGenerationTarget } from "./api";
 
 export type CodeGenerationCoverage = "selected_targets" | "all_eligible_targets";
-type CodeGenerationRunSubmission =
-  | { kind: "create"; command: CreateWorkflowRunCommand }
-  | { kind: "retry"; workflowRunId: number };
 const CODE_GENERATION_AGENT_EXECUTION_MODE = "tool_assisted" as const;
 
 export function CodeGenerationRunDialog({
@@ -45,8 +42,6 @@ export function CodeGenerationRunDialog({
   onStarted: (workflowRunId: number) => Promise<void>;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
-  const createAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
-  const [pendingWorkflowRunId, setPendingWorkflowRunId] = useState<number | null>(null);
   const capabilitiesQuery = useQuery({
     queryKey: workflowCreationQueryKeys.capabilities,
     queryFn: api.readAgentCapabilities,
@@ -58,26 +53,23 @@ export function CodeGenerationRunDialog({
     },
     onSubmit: () => {
       if (pendingWorkflowRunId !== null) {
-        runMutation.mutate({ kind: "retry", workflowRunId: pendingWorkflowRunId });
+        runMutation.mutate(undefined);
         return;
       }
       if (!agentSelectionValid) return;
       runMutation.mutate({
-        kind: "create",
-        command: {
-          expected_model_revision: model.model_revision,
-          model_workflow: "code_generation",
-          workflow_execution_mode: null,
-          selected_object_ids: coverage === "selected_targets"
-            ? selectedTargets.map((item) => item.target.object_id)
-            : [],
-          modeled_entity_type: entityType,
-          requested_batch_id: null,
-          agent,
-          prompt_overrides: {},
-          code_generation_coverage_mode: coverage,
-          sql_generation_guide_version_id: null,
-        },
+        expected_model_revision: model.model_revision,
+        model_workflow: "code_generation",
+        workflow_execution_mode: null,
+        selected_object_ids: coverage === "selected_targets"
+          ? selectedTargets.map((item) => item.target.object_id)
+          : [],
+        modeled_entity_type: entityType,
+        requested_batch_id: null,
+        agent,
+        prompt_overrides: {},
+        code_generation_coverage_mode: coverage,
+        sql_generation_guide_version_id: null,
       });
     },
   });
@@ -108,37 +100,13 @@ export function CodeGenerationRunDialog({
   const agentSelectionValid = agent !== null && agent.model_code === values.modelCode
     && agent.reasoning_effort_code === values.reasoningEffortCode;
   const selectionValid = coverage === "all_eligible_targets" || selectedTargets.length > 0;
-  const runMutation = useMutation({
-    mutationFn: async (submission: CodeGenerationRunSubmission) => {
-      if (submission.kind === "retry") {
-        await api.executeCodeGenerationRun(
-          tenantId,
-          model.model_id,
-          submission.workflowRunId,
-          model.model_revision,
-        );
-        return submission.workflowRunId;
-      }
-      const { command } = submission;
-      const fingerprint = JSON.stringify(command);
-      if (createAttempt.current?.fingerprint !== fingerprint) {
-        createAttempt.current = { fingerprint, key: globalThis.crypto.randomUUID() };
-      }
-      const result = await api.createWorkflowRun(
-        tenantId,
-        model.model_id,
-        command,
-        createAttempt.current.key,
-      );
-      setPendingWorkflowRunId(result.workflow_run_id);
-      await api.executeCodeGenerationRun(
-        tenantId,
-        model.model_id,
-        result.workflow_run_id,
-        model.model_revision,
-      );
-      return result.workflow_run_id;
-    },
+  const { mutation: runMutation, pendingRunId: pendingWorkflowRunId } = useWorkflowRunSubmission({
+    api,
+    tenantId,
+    modelId: model.model_id,
+    execute: (workflowRunId, command) => api.executeCodeGenerationRun(
+      tenantId, model.model_id, workflowRunId, command.expected_model_revision,
+    ),
     onSuccess: async (workflowRunId) => {
       await onStarted(workflowRunId);
       onClose();
@@ -296,10 +264,6 @@ export function CodeGenerationRunDialog({
       </section>
     </div>
   );
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return <div><dt>{label}</dt><dd>{value}</dd></div>;
 }
 
 function selectedRunTitle(targets: CodeGenerationTarget[]): string {

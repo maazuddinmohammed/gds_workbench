@@ -183,6 +183,10 @@ def test_description_schema_is_exact_current_request_union_and_bounds() -> None:
     assert schema["minItems"] == 1 and schema["maxItems"] == 25
     validate = Draft202012Validator(schema).is_valid  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
     assert validate(request_rows())
+    large_rows = request_rows()
+    object_attributes = cast(list[JsonValue], large_rows[0]["attributes"])
+    large_rows[0]["attributes"] = object_attributes * 5001
+    assert validate(large_rows), "Complete Object evidence must not be capped by Attribute count."
     rows = request_rows()
     rows[1].update(
         inferred_type=None,

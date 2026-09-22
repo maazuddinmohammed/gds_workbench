@@ -1,8 +1,8 @@
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
-import { DetailState } from "../../shared/ui";
+import { DetailState, Fact } from "../../shared/ui";
 import { ApiError } from "../../core/http";
 import type {
   ConceptualObjectDetail,
@@ -190,88 +190,108 @@ function DetailHeader({
           ← Back to Conceptual
         </Link>
         <p className="eyebrow">{eyebrow}</p>
-        <h1 ref={heading} tabIndex={-1}>{title}</h1>
-      </div>
-      <div className="detail-badge-stack">
-        <span className={`status-badge ${status === "active" ? "is-success" : "is-warning"}`}>
-          {humanize(status)}
-        </span>
-        <span className={`status-badge ${locked ? "is-neutral" : "is-success"}`}>
-          {locked ? "Locked" : "Open"}
-        </span>
+        <div className="conceptual-detail-title">
+          <h1 ref={heading} tabIndex={-1}>{title}</h1>
+          <div className="detail-badge-stack">
+            <span className={`status-badge ${status === "active" ? "is-success" : "is-warning"}`}>
+              {humanize(status)}
+            </span>
+            <span className="status-badge is-neutral">{locked ? "Locked" : "Open"}</span>
+          </div>
+        </div>
       </div>
     </header>
   );
 }
 
 function SupportEvidence({ supports }: { supports: ConceptualSupport[] }) {
+  const [expandedSupportId, setExpandedSupportId] = useState<number | null>(null);
   return (
-    <section className="detail-section" aria-labelledby="conceptual-support-heading">
+    <section className="detail-section modeled-source-mappings conceptual-support" aria-labelledby="conceptual-support-heading">
       <header>
         <h2 id="conceptual-support-heading">Support evidence</h2>
-        <span>{supports.length} records</span>
+        <span>{supports.length} {supports.length === 1 ? "record" : "records"}</span>
       </header>
       {supports.length === 0 ? (
         <p className="detail-empty">No support evidence is recorded.</p>
       ) : (
-        <div className="support-ledger">
-          {supports.map((support, index) => (
-            <article
-              key={support.conceptual_support_id}
-              className="support-record"
-              aria-label={`Support ${support.conceptual_support_id}`}
-            >
-              <header>
-                <span className="support-index">{String(index + 1).padStart(2, "0")}</span>
-                <div>
-                  <small>{support.support_source_type === "object" ? "Physical Object" : "Modeling Assertion"}</small>
-                  <strong>
-                    {support.support_source_type === "object"
-                      ? `${support.source_object.object_schema}.${support.source_object.object_name}`
-                      : support.assertion_record.modeling_assertion_record_key}
-                  </strong>
-                </div>
-                <span className={`status-badge confidence-${support.support_confidence}`}>
-                  {humanize(support.support_confidence)}
-                </span>
-              </header>
-              <p>{support.support_reason}</p>
-              {support.support_reason_detail ? <p>{support.support_reason_detail}</p> : null}
-              {support.support_source_type === "assertion" ? (
-                <div className="assertion-support-detail">
-                  <p>{support.assertion_record.modeling_assertion_text}</p>
-                </div>
-              ) : null}
-              <dl className="support-facts">
-                <Fact label="Role" value={support.support_role ?? "Not assigned"} />
-                <Fact label="Status" value={humanize(support.support_status)} />
-                <Fact label="Lock" value={support.support_is_locked ? "Locked" : "Open"} />
-                {support.support_source_type === "object" ? (
-                  <>
-                    <Fact
-                      label="Source"
-                      value={`${support.source_object.tenant_code} · ${support.source_object.system_code} · ${support.source_object.connection_code}`}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <Fact label="Document" value={support.assertion_record.modeling_assertion_document_name} />
-                    <Fact label="Type" value={humanize(support.assertion_record.modeling_assertion_record_type)} />
-                    <Fact
-                      label="Assertion confidence"
-                      value={support.assertion_record.modeling_assertion_confidence
-                        ? humanize(support.assertion_record.modeling_assertion_confidence)
-                        : "Not recorded"}
-                    />
-                    <Fact
-                      label="Assertion status"
-                      value={humanize(support.assertion_record.modeling_assertion_record_status)}
-                    />
-                  </>
-                )}
-              </dl>
-            </article>
-          ))}
+        <div className="workflow-table-scroll table-scroll">
+          <table aria-label="Support evidence">
+            <thead>
+              <tr><th>Source</th><th>Rationale</th><th>Confidence</th><th>Status</th><th>Details</th></tr>
+            </thead>
+            <tbody>
+              {supports.map((support) => {
+                const name = support.support_source_type === "object"
+                  ? `${support.source_object.object_schema}.${support.source_object.object_name}`
+                  : support.assertion_record.modeling_assertion_record_key;
+                const expanded = expandedSupportId === support.conceptual_support_id;
+                const detailId = `conceptual-support-${support.conceptual_support_id}`;
+                return (
+                  <Fragment key={support.conceptual_support_id}>
+                    <tr aria-label={`Support ${support.conceptual_support_id}`}>
+                      <td>
+                        <strong>{name}</strong>
+                        <small className="modeled-source-role">
+                          {support.support_source_type === "object" ? "Physical Object" : "Modeling Assertion"}
+                        </small>
+                      </td>
+                      <td className="modeled-source-rationale">{support.support_reason}</td>
+                      <td>
+                        <span className={`status-badge confidence-${support.support_confidence}`}>
+                          {humanize(support.support_confidence)}
+                        </span>
+                      </td>
+                      <td>
+                        {humanize(support.support_status)}
+                        <small className="modeled-source-role">{support.support_is_locked ? "Locked" : "Open"}</small>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="text-action"
+                          aria-label={`${expanded ? "Hide" : "Show"} details for ${name}`}
+                          aria-expanded={expanded}
+                          aria-controls={detailId}
+                          onClick={() => setExpandedSupportId(expanded ? null : support.conceptual_support_id)}
+                        >
+                          {expanded ? "Hide details" : "Show details"}
+                        </button>
+                      </td>
+                    </tr>
+                    <tr id={detailId} aria-label={`Details for ${name}`} hidden={!expanded} className="conceptual-support-detail">
+                      <td colSpan={5}>
+                        <dl className="detail-fact-grid">
+                          <Fact label="Role" value={support.support_role ?? "Not assigned"} />
+                          {support.support_reason_detail ? <Fact label="Reason detail" value={support.support_reason_detail} /> : null}
+                          {support.support_source_type === "object" ? (
+                            <>
+                              <Fact label="Tenant" value={support.source_object.tenant_code} />
+                              <Fact label="System" value={support.source_object.system_code} />
+                              <Fact label="Connection" value={support.source_object.connection_code} />
+                            </>
+                          ) : (
+                            <>
+                              <Fact label="Assertion" value={support.assertion_record.modeling_assertion_text} />
+                              <Fact label="Document" value={support.assertion_record.modeling_assertion_document_name} />
+                              <Fact label="Type" value={humanize(support.assertion_record.modeling_assertion_record_type)} />
+                              <Fact
+                                label="Assertion confidence"
+                                value={support.assertion_record.modeling_assertion_confidence
+                                  ? humanize(support.assertion_record.modeling_assertion_confidence)
+                                  : "Not recorded"}
+                              />
+                              <Fact label="Assertion status" value={humanize(support.assertion_record.modeling_assertion_record_status)} />
+                            </>
+                          )}
+                        </dl>
+                      </td>
+                    </tr>
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </section>
@@ -282,10 +302,6 @@ function detailErrorLabel(error: Error, kind: "Object" | "Relationship"): string
   return error instanceof ApiError && error.status === 403
     ? `You do not have permission to view this Conceptual ${kind}.`
     : `Conceptual ${kind} details could not be loaded.`;
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return <div><dt>{label}</dt><dd>{value}</dd></div>;
 }
 
 function humanize(value: string): string {

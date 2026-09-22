@@ -137,7 +137,7 @@ class MappingPhysicalObject(_FrozenModel):
     scope_is_active: bool
     is_locked: bool
     is_active: bool
-    attributes: tuple[MappingPhysicalAttribute, ...] = Field(max_length=5_000)
+    attributes: tuple[MappingPhysicalAttribute, ...]
 
     @model_validator(mode="after")
     def validate_attributes(self) -> Self:
@@ -177,9 +177,9 @@ class MappingDependencyEdge(_FrozenModel):
 
 
 class MappingDependencyGraph(_FrozenModel):
-    nodes: tuple[MappingDependencyNode, ...] = Field(max_length=1_000)
-    edges: tuple[MappingDependencyEdge, ...] = Field(max_length=10_000)
-    malformed_reference_count: int = Field(ge=0, le=10_001)
+    nodes: tuple[MappingDependencyNode, ...]
+    edges: tuple[MappingDependencyEdge, ...]
+    malformed_reference_count: int = Field(ge=0)
 
 
 class MappingTargetDependencyNode(_FrozenModel):
@@ -196,10 +196,10 @@ class MappingTargetDependencyEdge(_FrozenModel):
 
 
 class MappingTargetDependencyGraph(_FrozenModel):
-    nodes: tuple[MappingTargetDependencyNode, ...] = Field(max_length=1_000)
-    edges: tuple[MappingTargetDependencyEdge, ...] = Field(max_length=10_000)
-    malformed_reference_count: int = Field(ge=0, le=10_001)
-    mixed_order_target_count: int = Field(ge=0, le=1_001)
+    nodes: tuple[MappingTargetDependencyNode, ...]
+    edges: tuple[MappingTargetDependencyEdge, ...]
+    malformed_reference_count: int = Field(ge=0)
+    mixed_order_target_count: int = Field(ge=0)
 
 
 class MappingOutputTemplateField(_FrozenModel):
@@ -231,8 +231,8 @@ class MappingOutputTemplate(_FrozenModel):
 
 
 class MappingOutputTemplateInventory(_FrozenModel):
-    ids: tuple[int, ...] = Field(max_length=20_066)
-    definitions: tuple[MappingOutputTemplate, ...] = Field(max_length=20_066)
+    ids: tuple[int, ...]
+    definitions: tuple[MappingOutputTemplate, ...]
 
 
 class MappingModeledAttribute(_FrozenModel):
@@ -256,7 +256,7 @@ class MappingModeledEntity(_FrozenModel):
     dependency_order: int = Field(ge=0)
     status: LifecycleStatus
     is_locked: bool
-    attributes: tuple[MappingModeledAttribute, ...] = Field(max_length=5_000)
+    attributes: tuple[MappingModeledAttribute, ...]
 
 
 class ExistingMappingAttribute(_FrozenModel):
@@ -282,7 +282,7 @@ class ExistingMappingHeader(_FrozenModel):
     agent_run_id: str | None = Field(default=None, max_length=500)
     workflow_run_id: int | None = Field(default=None, gt=0)
     output_template_id: int | None = Field(default=None, gt=0)
-    attribute_mappings: tuple[ExistingMappingAttribute, ...] = Field(max_length=20_000)
+    attribute_mappings: tuple[ExistingMappingAttribute, ...]
 
     @property
     def is_authored(self) -> bool:
@@ -301,7 +301,7 @@ class MappingSource(_FrozenModel):
 
 class MappingAuthoringPolicy(_FrozenModel):
     model_name: str = Field(min_length=1, max_length=255)
-    naming_instructions: str | None = Field(default=None, max_length=32_768, repr=False)
+    naming_instructions: str | None = Field(default=None, repr=False)
     audit_columns_template: JsonObject | None = Field(default=None, repr=False)
     technical_columns_template: JsonObject | None = Field(default=None, repr=False)
 
@@ -321,7 +321,7 @@ class MappingRunContext(_FrozenModel):
     target_dependency_graph: MappingTargetDependencyGraph = Field(repr=False)
     output_templates: MappingOutputTemplateInventory = Field(repr=False)
     target: MappingPhysicalObject = Field(repr=False)
-    sources: tuple[MappingSource, ...] = Field(max_length=128, repr=False)
+    sources: tuple[MappingSource, ...] = Field(repr=False)
     headers: tuple[ExistingMappingHeader, ...] = Field(min_length=1, max_length=1, repr=False)
     authoring: MappingAuthoringPolicy = Field(repr=False)
 

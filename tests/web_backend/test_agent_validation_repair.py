@@ -119,13 +119,44 @@ def _policy(*, one_shot_bytes: int = 4096) -> AgentContextPolicy:
     )
 
 
-def test_default_agent_context_policy_is_bounded_and_validated() -> None:
+def test_default_agent_context_policy_has_no_input_size_ceiling() -> None:
     policy = load_default_agent_context_policy()
 
     assert policy.schema_version == "1.0"
-    assert policy.one_shot_max_context_bytes <= policy.stage_max_context_bytes
+    assert policy.one_shot_max_context_bytes is None
+    assert policy.stage_max_context_bytes is None
     assert policy.max_candidate_bytes <= 10 * 1024 * 1024
     assert policy.max_validation_issues <= 200
+
+
+@pytest.mark.asyncio
+async def test_default_policy_preserves_large_input_and_complete_repair_feedback() -> None:
+    evidence = "Synthetic evidence. " * 60_000
+    previous: JsonValue = {"entities": [{"name": "x" * 1_100_000}]}
+    accepted: JsonValue = {"entities": []}
+    issue = AgentValidationIssue(
+        code="candidate.reference_not_found",
+        path=("entities", 0, "name"),
+        message="Referenced Entity is unavailable.",
+    )
+    executor = FakeExecutor(candidates=[previous, accepted])
+    request = _request(context={"evidence": evidence}).model_copy(
+        update={"instruction_prompt": evidence}
+    )
+
+    result = await ValidationRepairRunner(
+        executor=executor, policy=load_default_agent_context_policy()
+    ).run(request=request, validator=FakeValidator(outcomes=[(issue,), ()]))
+
+    assert result.candidate == accepted
+    assert result.was_repaired is True
+    assert len(executor.requests) == 2
+    repaired_context = cast(dict[str, JsonValue], executor.requests[1].context)
+    assert repaired_context["original_context"] == {"evidence": evidence}
+    repair = cast(dict[str, JsonValue], repaired_context["repair"])
+    assert repair["previous_candidate"] == previous
+    assert "previous_candidate_omitted" not in repair
+    assert executor.requests[1].instruction_prompt == evidence
 
 
 def test_pydantic_diagnostics_never_copy_candidate_values_or_messages() -> None:

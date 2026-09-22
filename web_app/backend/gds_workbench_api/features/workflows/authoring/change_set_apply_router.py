@@ -3,9 +3,11 @@
 from typing import Annotated, Protocol
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Path, Request
+from fastapi import APIRouter, Depends, Header, Path
 from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.authorization import RequestPrincipal
+
+from gds_workbench_api.dependencies import principal_dependency
 
 from .change_set_apply import ApplyWorkflowDraftRequest, ApplyWorkflowDraftResult
 
@@ -28,21 +30,23 @@ def create_workflow_draft_apply_router(
     identity_provider: IdentityProvider,
     service: WorkflowDraftApplyService,
 ) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/runs",
         tags=["workflow-drafts"],
     )
 
     async def apply_draft(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         workflow_run_id: Annotated[int, Path(gt=0)],
         command: ApplyWorkflowDraftRequest,
         idempotency_key: Annotated[UUID, Header(alias="Idempotency-Key")],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ApplyWorkflowDraftResult:
         return await service.apply(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             workflow_run_id=workflow_run_id,

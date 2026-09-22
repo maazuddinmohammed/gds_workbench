@@ -1626,7 +1626,7 @@ def test_create_validation_run_rejects_system_without_applied_mapping_atomically
     ("workflow", "object_selection", "system_selection", "message"),
     (
         ("validation", [1], ["erp"], "no Object selection"),
-        ("validation", [], [], "between 1 and 1000 Systems"),
+        ("validation", [], [], "selected Systems"),
         ("conceptual", [1], ["erp"], "only for Validation"),
     ),
 )
@@ -1916,7 +1916,7 @@ def test_create_workflow_run_rejects_invalid_selected_scope_atomically(
     context = seed_workflow_context(postgres_database)
     correlations = [uuid4(), uuid4(), uuid4()]
     invalid_selections: tuple[tuple[list[int], str], ...] = (
-        ([], "between"),
+        ([], "requires Objects"),
         (
             [context.selected_object_ids[0], context.selected_object_ids[0]],
             "unique",

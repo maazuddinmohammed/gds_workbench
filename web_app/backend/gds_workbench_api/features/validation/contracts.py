@@ -13,15 +13,15 @@ class ValidationEligibleSystem(_Contract):
     system_id: int = Field(gt=0)
     system_code: str = Field(min_length=1, max_length=100)
     system_name: str = Field(min_length=1, max_length=200)
-    mapping_target_count: int = Field(gt=0, le=50_000)
-    current_code_target_count: int = Field(ge=0, le=50_000)
+    mapping_target_count: int = Field(gt=0)
+    current_code_target_count: int = Field(ge=0)
     has_applied_validation: bool
 
 
 class ValidationEligibleSystemCollection(_Contract):
     model_id: int = Field(gt=0)
     model_revision: int = Field(gt=0)
-    items: tuple[ValidationEligibleSystem, ...] = Field(max_length=1_000)
+    items: tuple[ValidationEligibleSystem, ...]
     is_truncated: bool
 
 

@@ -8,6 +8,7 @@ DECLARE
     v_system_id BIGINT;
     v_source_connection_id BIGINT;
     v_gds_connection_id BIGINT;
+    v_gds_catalog TEXT;
     v_object_type_id BIGINT;
     v_source_zone_id BIGINT;
     v_bronze_zone_id BIGINT;
@@ -92,10 +93,11 @@ BEGIN
       INTO STRICT v_source_connection_id
       FROM core.connection
      WHERE connection_code = 'DEMO_SOURCE';
-    SELECT connection_id
-      INTO STRICT v_gds_connection_id
-      FROM core.connection
-     WHERE connection_code = 'DEMO_GDS';
+    SELECT connection.connection_id, tenant.tenant_catalog
+      INTO STRICT v_gds_connection_id, v_gds_catalog
+      FROM core.connection AS connection
+      JOIN core.tenant AS tenant USING (tenant_id)
+     WHERE connection.connection_code = 'DEMO_GDS';
     SELECT object_type_id
       INTO STRICT v_object_type_id
       FROM reference.object_type
@@ -830,17 +832,17 @@ BEGIN
         (v_validation_group_id, 'Order identifiers are unique',
          'No duplicate Order identifiers may reach the Gold fact.',
          'uniqueness', 'blocking',
-         'SELECT COUNT(*) - COUNT(DISTINCT order_id) FROM gold_demo.fact_order',
+         format('SELECT COUNT(*) - COUNT(DISTINCT order_id) FROM %I.gold_demo.fact_order', v_gds_catalog),
          'integer', 'equal', 'literal', '0'::JSONB),
         (v_validation_group_id, 'Every Order resolves a Customer',
          'All Order Customer keys must resolve to Dim Customer.',
          'referential_integrity', 'blocking',
-         'SELECT COUNT(*) FROM gold_demo.fact_order f LEFT ANTI JOIN gold_demo.dim_customer d ON f.customer_id = d.customer_id',
+         format('SELECT COUNT(*) FROM %I.gold_demo.fact_order f LEFT ANTI JOIN %I.gold_demo.dim_customer d ON f.customer_id = d.customer_id', v_gds_catalog, v_gds_catalog),
          'integer', 'equal', 'literal', '0'::JSONB),
         (v_validation_group_id, 'Order amount is populated',
          'Monitor missing gross amounts before release.',
          'completeness', 'warning',
-         'SELECT COUNT(*) FROM gold_demo.fact_order WHERE order_amount IS NULL',
+         format('SELECT COUNT(*) FROM %I.gold_demo.fact_order WHERE order_amount IS NULL', v_gds_catalog),
          'integer', 'equal', 'literal', '0'::JSONB);
 
     SELECT principal_id

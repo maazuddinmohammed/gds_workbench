@@ -8,14 +8,13 @@ import type { ModelDetail } from "../models/api";
 import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 import { mappingQueryKeys, type MappingApi, type MappingFilters } from "./api";
 import {
-  MappingAttributesLedger,
   MappingDependenciesLedger,
   MappingObjectsLedger,
   type MappingLedgerState,
 } from "./MappingLedgers";
 import { MappingRunDialog } from "./MappingRunDialog";
 
-type MappingView = "dependencies" | "objects" | "attributes";
+type MappingView = "dependencies" | "objects";
 
 export function MappingScreen({
   api,
@@ -40,7 +39,6 @@ export function MappingScreen({
   const [filters, setFilters] = useState<Record<MappingView, MappingFilters>>({
     dependencies: {},
     objects: {},
-    attributes: {},
   });
   const dependencies = useInfiniteQuery({
     queryKey: mappingQueryKeys.dependencies(tenantId, model.model_id, filters.dependencies),
@@ -68,20 +66,7 @@ export function MappingScreen({
     getNextPageParam: (page) => page.next_cursor ?? undefined,
     enabled: view === "objects",
   });
-  const attributes = useInfiniteQuery({
-    queryKey: mappingQueryKeys.attributes(tenantId, model.model_id, filters.attributes),
-    queryFn: ({ pageParam }) => api.listMappingAttributes(
-      tenantId,
-      model.model_id,
-      filters.attributes,
-      200,
-      pageParam,
-    ),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (page) => page.next_cursor ?? undefined,
-    enabled: view === "attributes",
-  });
-  const activeQuery = view === "dependencies" ? dependencies : view === "objects" ? objects : attributes;
+  const activeQuery = view === "dependencies" ? dependencies : objects;
   const permissionLabel = !hasAppPermission
     ? "Architect permission required to run"
     : !hasTenantLock
@@ -133,7 +118,6 @@ export function MappingScreen({
             {([
               ["dependencies", "Dependencies"],
               ["objects", "Object mappings"],
-              ["attributes", "Attribute mappings"],
             ] as const).map(([nextView, label]) => (
               <button
                 key={nextView}
@@ -178,7 +162,7 @@ export function MappingScreen({
       />
       <ModelRecordReview
         api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
-        dataset={view === "dependencies" ? "mapping_dependency" : view === "objects" ? "mapping_object" : "mapping_attribute"}
+        dataset={view === "dependencies" ? "mapping_dependency" : "mapping_object"}
         selectedIds={selectedIds} hasTenantLock={hasTenantLock && hasAppPermission}
         disabled={activeQuery.isPending || activeQuery.isError || activeQuery.data?.pages.some((page) => page.model_revision !== model.model_revision) === true}
         onApplied={async () => { setSelectedIds(new Set()); await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === tenantId }); }}
@@ -194,7 +178,7 @@ export function MappingScreen({
           onApplyFilters={setViewFilters}
           onLoadMore={() => void dependencies.fetchNextPage()}
         />
-      ) : view === "objects" ? (
+      ) : (
         <MappingObjectsLedger
           selectedIds={selectedIds} onSelectionChange={setSelectedIds}
           tenantId={tenantId}
@@ -204,17 +188,6 @@ export function MappingScreen({
           state={queryState(objects, model.model_revision)}
           onApplyFilters={setViewFilters}
           onLoadMore={() => void objects.fetchNextPage()}
-        />
-      ) : (
-        <MappingAttributesLedger
-          selectedIds={selectedIds} onSelectionChange={setSelectedIds}
-          tenantId={tenantId}
-          modelId={model.model_id}
-          items={attributes.data?.pages.flatMap((page) => page.items) ?? []}
-          filters={filters.attributes}
-          state={queryState(attributes, model.model_revision)}
-          onApplyFilters={setViewFilters}
-          onLoadMore={() => void attributes.fetchNextPage()}
         />
       )}
       {runDialogOpen ? (

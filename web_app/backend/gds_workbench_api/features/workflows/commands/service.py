@@ -214,13 +214,13 @@ def _raise_safe_workflow_error(error: Exception) -> Never:
     }:
         raise InvalidRequestError("The global Mapping output templates are unavailable.") from error
     if message in {
-        "Selected Scope must contain between 1 and 50000 Objects",
+        "Selected Scope requires Objects",
         "Selected Scope Object IDs must be positive",
         "Selected Scope Object IDs must be unique",
         "Selected Scope contains an unavailable or ineligible Object",
         "Selected Scope is required",
         "Invalid description regeneration target",
-        "Validation requires between 1 and 1000 Systems and no Object selection",
+        "Validation requires selected Systems and no Object selection",
         "System selection is available only for Validation",
         "Selected System Codes must be nonblank",
         "Selected System Codes must be unique",

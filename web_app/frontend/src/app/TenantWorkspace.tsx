@@ -52,7 +52,6 @@ export function TenantWorkspace({
         <Brand compact />
         <div className="tenant-context">
           <strong className="tenant-context-name">{home.tenant.tenant_name}</strong>
-          <span className="tenant-code-badge">{home.tenant.tenant_code}</span>
           {model ? (
             <>
               <span className="context-divider" aria-hidden="true" />

@@ -1,5 +1,8 @@
 # Atlas backend compatibility
 
+> Historical verification record. The interactive notebook runtime was retired
+> by [ADR 007](adr/007-web-owned-workflows-and-notebook-retirement.md); notebook checks below describe the earlier release.
+
 Local implementation. Deployment and changes to populated installations require separate operator approval. Fresh-install SQL remains a fresh-install sequence; no migration or backfill helper is provided.
 
 ## Contract and review index

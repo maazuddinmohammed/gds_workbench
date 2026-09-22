@@ -20,6 +20,7 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 
+import { Fact } from "../../shared/ui";
 import "../../styles/table-prototype.css";
 
 type Variant = "A" | "B" | "C";
@@ -236,5 +237,4 @@ function PrototypeSwitcher({ current, onChange }: { current: Variant; onChange: 
   return <div className="prototype-switcher" aria-label="Prototype variants"><button type="button" aria-label="Previous variant" onClick={() => cycle(-1)}>←</button><span><small>Prototype</small><strong>{current} — {variantNames[current]}</strong></span><button type="button" aria-label="Next variant" onClick={() => cycle(1)}>→</button></div>;
 }
 
-function Fact({ label, value }: { label: string; value: string }) { return <div><dt>{label}</dt><dd>{value}</dd></div>; }
 function Magnifier() { return <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg>; }

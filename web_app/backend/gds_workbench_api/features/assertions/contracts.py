@@ -219,7 +219,7 @@ class AssertionPayloadNotSafeError(WorkbenchError):
 def validate_safe_json(
     value: JsonObject,
     *,
-    maximum_bytes: int,
+    maximum_bytes: int | None,
     label: str,
 ) -> None:
     validate_assertion_json(

@@ -220,6 +220,10 @@ Run failures show only bounded server-approved diagnostics:
   “Tenant Lock required”.
 - State what happened before suggesting what to do next.
 - Use “Tenant”, “Model”, “Workflow Run”, and “Tenant Lock” consistently.
+- Use one identity label for Tenant, System, and Connection references. Prefer
+  codes in tables, pickers, and relationship details; do not stack the name,
+  code, or internal ID as a subtitle. Keep roles, visibility, locks, and counts
+  where relevant, and retain editable identity fields in the Metadata catalog.
 - Avoid celebratory language, vague “Something went wrong” text, and internal
   implementation jargon.
 - Use sentence case except for established identifiers and uppercase eyebrows.
@@ -261,8 +265,14 @@ Before completing a frontend change:
 
 ### Model metadata and target handoff
 
+- Models offers Create Model only to Super Admins and Tenant Admins; the backend
+  enforces the same restriction. Require a name and an owned Tenant Lock to save.
+  Keep description, Silver/Gold settings, and registered agent defaults optional.
+  Preserve form values on failure and open the new Model after creation.
 - Enrichment opens on current physical metadata. Keep Workflow history separate
   and collapsed; show run state, date, and scope count, with consumption on demand.
+- Scoped Object filters appear in this order: Source Tenant code, System code,
+  Schema or Object name, then Zone. Visual and keyboard order must match.
 - Use Schema before Object in scoped metadata tables. Object details contain
   Attribute descriptions and inferred types. Row Actions contain only Edit;
   Show details opens the Object's Attributes. Put selection before Schema and
@@ -283,6 +293,14 @@ Before completing a frontend change:
 - Logical Attributes live inside Entity details, including review actions and
   their source mapping links. Logical and Dimensional provenance use the same
   Source/Rationale/Status table and structured detail renderer as Mapping.
+- Mapping keeps Dependencies and Object mappings at the Model level. Show details
+  on an Object opens its source/target context and its Attribute mappings table.
+  Attribute filters, pagination, refresh, and review actions stay within that
+  Object; Attribute details return to their parent Object. Keep the Object
+  transformation available in a disclosure below the Attribute table.
+- Conceptual detail pages use the workspace width, with status beside the title.
+  Support evidence uses a Source/Rationale/Confidence/Status table; source codes,
+  assertion text, and detailed reasoning remain available through Show details.
 - Target Binding uses Logical/Dimensional segmented links and a rounded table of
   Entities, registered schema/Object, and lock state. Unbound targets show a dash.
   Search opens a schema/Object picker; Show details opens Attribute assignments.

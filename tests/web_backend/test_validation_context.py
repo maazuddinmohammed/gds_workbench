@@ -147,10 +147,8 @@ class ContextTransaction:
         self,
         *,
         target_rows: list[dict[str, Any]] | None = None,
-        aggregate_context_bytes: int = 4096,
     ) -> None:
         self.target_rows = target_rows if target_rows is not None else [_target_row()]
-        self.aggregate_context_bytes = aggregate_context_bytes
         self.full_context_fetched = False
 
     async def fetch_all(
@@ -159,19 +157,6 @@ class ContextTransaction:
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
         assert parameters == (7, 18, 1048, 7)
-        if "aggregate_context_bytes" in query:
-            assert "relevant_context.generated_code_bytes" in query
-            assert "matching_system.match_count" in query
-            assert query.count("\n          NULL\n") == 2
-            return [
-                {
-                    "selected_system_count": 1,
-                    "target_context_count": len(self.target_rows),
-                    "applied_group_count": 1,
-                    "applied_check_count": 1,
-                    "aggregate_context_bytes": self.aggregate_context_bytes,
-                }
-            ]
         if "target_context AS MATERIALIZED" in query:
             self.full_context_fetched = True
             assert "'logical_entity'" in query
@@ -256,14 +241,20 @@ async def test_repository_omits_absent_code_from_authoring_context() -> None:
 
 
 @pytest.mark.asyncio
-async def test_repository_rejects_oversize_aggregate_before_full_context_fetch() -> None:
-    transaction = ContextTransaction(aggregate_context_bytes=64 * 1024 * 1024 + 1)
+async def test_repository_preserves_large_mapping_evidence() -> None:
+    row = _target_row()
+    description = "Synthetic metadata. " * 60_000
+    row["source_context"]["target"]["object_description"] = description
+    transaction = ContextTransaction(target_rows=[row])
 
-    with pytest.raises(InvalidRequestError, match="bounded size"):
-        await PostgresValidationContextRepository().load(
-            transaction,
-            tenant_id=7,
-            plan=_plan(),
-        )
+    context = await PostgresValidationContextRepository().load(
+        transaction, tenant_id=7, plan=_plan()
+    )
 
-    assert transaction.full_context_fetched is False
+    assert transaction.full_context_fetched is True
+    assert isinstance(context.systems[0].agent_context, dict)
+    targets = context.systems[0].agent_context["mapping_targets"]
+    assert isinstance(targets, list) and isinstance(targets[0], dict)
+    source_context = targets[0]["context"]
+    assert isinstance(source_context, dict) and isinstance(source_context["target"], dict)
+    assert source_context["target"]["object_description"] == description

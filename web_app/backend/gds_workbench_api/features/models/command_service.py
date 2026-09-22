@@ -5,7 +5,12 @@ from typing import Never, Protocol
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal, ToolPolicy
+from gds_etl_workbench.domain.authorization import (
+    ActorKind,
+    RequestPrincipal,
+    TenantRole,
+    ToolPolicy,
+)
 from gds_etl_workbench.domain.errors import (
     AuthorizationDeniedError,
     DependencyUnavailableError,
@@ -23,6 +28,7 @@ from gds_workbench_api.features.models.command_contracts import (
     CompleteModelRequest,
     JsonObject,
     ModelCommandResult,
+    ModelNameConflictError,
     ModelRevisionConflictError,
     UpdateModelRequest,
 )
@@ -129,12 +135,17 @@ class DatabaseModelCommandService:
 
         try:
             async with self._database.write_transaction() as transaction:
-                await self._authorizer.authorize_tenant(
+                authorization = await self._authorizer.authorize_tenant(
                     transaction,
                     principal,
                     tenant_id=tenant_id,
                     policy=ToolPolicy.TENANT_MODEL_WRITE,
                 )
+                if authorization.effective_role not in (
+                    TenantRole.TENANT_ADMIN,
+                    TenantRole.SUPER_ADMIN,
+                ):
+                    raise AuthorizationDeniedError()
                 entra_tenant_id, entra_object_id, principal_type = _identity_triple(principal)
                 row = await transaction.fetch_one(
                     _CREATE_MODEL_SQL,
@@ -263,6 +274,18 @@ def _complete_model_parameters(request: CompleteModelRequest) -> tuple[object, .
 def _raise_safe_command_error(error: Exception) -> Never:
     if isinstance(error, WorkbenchError) and not isinstance(error, DependencyUnavailableError):
         raise error
+
+    cause: BaseException | None = error
+    for _ in range(4):
+        if cause is None:
+            break
+        if (
+            getattr(cause, "sqlstate", None) == "23505"
+            and getattr(getattr(cause, "diag", None), "constraint_name", None)
+            == "ux_model_tenant_name_ci"
+        ):
+            raise ModelNameConflictError() from error
+        cause = cause.__cause__
 
     message = _primary_database_message(error)
     if message == "stale_model_revision":

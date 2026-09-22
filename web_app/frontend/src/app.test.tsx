@@ -97,7 +97,7 @@ describe("Tenant Home", () => {
     expect(within(lock).queryByRole("button", { name: "Acquire Tenant Lock" })).not.toBeInTheDocument();
 
     const systems = screen.getByRole("table", { name: "Registered Systems" });
-    expect(within(systems).getByText("Customer Relationship Management")).toBeVisible();
+    expect(within(systems).getByText("CRM")).toBeVisible();
     expect(within(systems).getByText("63")).toBeVisible();
     expect(screen.queryByText("GDS Connection")).not.toBeInTheDocument();
     expect(screen.queryByText("Connected instance")).not.toBeInTheDocument();
@@ -352,6 +352,142 @@ describe("Tenant Home", () => {
 });
 
 describe("Models ledger", () => {
+  it.each(["viewer", "developer", "architect", "tenant_admin", "super_admin"])("offers creation only to admins: %s", async (role) => {
+    const base = tenantFetchStub();
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => String(input).endsWith("/home")
+      ? jsonResponse({ ...acquiredTenantHomePayload, tenant: { ...tenantHomePayload.tenant, effective_role: role } })
+      : base(input, init));
+    const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/models"] }) });
+    render(<WorkbenchApp router={router} />);
+    await screen.findByRole("table", { name: "Active Models" });
+    expect(Boolean(screen.queryByRole("button", { name: "Create Model" }))).toBe(["tenant_admin", "super_admin"].includes(role));
+  });
+
+  it("allows form inspection without a lock, blocks creation, and restores focus on Escape", async () => {
+    const router = createWorkbenchRouter({ api: createApiClient(tenantFetchStub()), history: createMemoryHistory({ initialEntries: ["/tenants/7/models"] }) });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={router} />);
+    const trigger = await screen.findByRole("button", { name: "Create Model" });
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Create Model" });
+    expect(within(dialog).getByRole("textbox", { name: /Model name/ })).toHaveFocus();
+    expect(within(dialog).getByRole("button", { name: "Create Model" })).toBeDisabled();
+    expect(within(dialog).getByRole("link", { name: "Home" })).toHaveAttribute("href", "/tenants/7");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(trigger).toHaveFocus();
+    await user.click(trigger);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("validates fields, preserves failed input, then creates and opens the Model without duplicate submissions", async () => {
+    const base = tenantFetchStub();
+    let posted = 0;
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).endsWith("/home")) return jsonResponse(acquiredTenantHomePayload);
+      if (String(input) === "/api/v1/tenants/7/models" && init?.method === "POST") {
+        posted += 1;
+        if (posted === 1) return jsonResponse({ error: { code: "model_name_conflict" } }, 409);
+        return jsonResponse({ model_id: 18, tenant_id: 7, model_revision: 1, is_active: true, updated_at: "2026-09-22T00:00:00Z" }, 201);
+      }
+      return base(input, init);
+    });
+    const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/models"] }) });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={router} />);
+    await user.click(await screen.findByRole("button", { name: "Create Model" }));
+    const dialog = screen.getByRole("dialog");
+    const submit = within(dialog).getByRole("button", { name: "Create Model" });
+    const name = within(dialog).getByRole("textbox", { name: /Model name/ });
+    await user.click(submit);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter a Model name");
+    expect(posted).toBe(0);
+    await user.type(name, "  Customer 360  ");
+    await user.type(within(dialog).getByRole("textbox", { name: /Description/ }), "Customer domain");
+    await user.click(within(dialog).getByText("Silver settings"));
+    const template = within(dialog).getByRole("textbox", { name: /Silver audit columns template/ });
+    await user.click(template);
+    await user.paste("[]");
+    await user.click(submit);
+    expect(await screen.findByRole("alert")).toHaveTextContent("must be a JSON object");
+    expect(template).toHaveFocus();
+    expect(posted).toBe(0);
+    await user.clear(template);
+    await user.click(template);
+    await user.paste('{"columns":[{"name":"created_at","type":"timestamp"}]}');
+    await user.type(within(dialog).getByRole("textbox", { name: "Silver naming instructions" }), "Use snake case.");
+    await user.click(submit);
+    expect(await screen.findByRole("alert")).toHaveTextContent("already has a Model with that name");
+    expect(name).toHaveValue("  Customer 360  ");
+    await user.clear(name);
+    await user.type(name, "Customer 361");
+    await user.dblClick(submit);
+    await waitFor(() => expect(router.state.location.pathname).toBe("/tenants/7/models/18"));
+    expect(posted).toBe(2);
+    const command = JSON.parse(String(fetcher.mock.calls.filter(([input, init]) => String(input) === "/api/v1/tenants/7/models" && init?.method === "POST")[1]?.[1]?.body));
+    expect(command).toMatchObject({ model_name: "Customer 361", model_description: "Customer domain", silver_model_naming_instructions: "Use snake case.", silver_model_audit_columns_template: { columns: [{ name: "created_at", type: "timestamp" }] }, default_agent_model_code: null, default_max_turns: null });
+    expect(Object.keys(command).some((key) => /tenant|principal|revision/.test(key))).toBe(false);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("validates and submits optional layer settings and compatible agent defaults", async () => {
+    const base = tenantFetchStub();
+    const capabilities = {
+      schema_version: "3.0",
+      sdks: [{ code: "openai_agents_sdk", name: "OpenAI Agents", provider_codes: ["microsoft_foundry"] }],
+      providers: [{ code: "microsoft_foundry", name: "Microsoft Foundry" }],
+      models: [{ code: "foundry-primary", name: "Primary agent", provider_code: "microsoft_foundry", deployment_name: "primary", execution_profiles: [{ sdk_code: "openai_agents_sdk", execution_mode: "one_shot", reasoning_effort_codes: ["medium"] }] }],
+      reasoning_efforts: [{ code: "medium", name: "Medium" }, { code: "high", name: "High" }],
+      max_turns: { minimum: 1, maximum: 50, default: 10 },
+      validation_retries: { minimum: 0, maximum: 5, default: 2 },
+    };
+    let command: Record<string, unknown> | undefined;
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).endsWith("/home")) return jsonResponse(acquiredTenantHomePayload);
+      if (String(input).endsWith("/agent-capabilities")) return jsonResponse(capabilities);
+      if (String(input) === "/api/v1/tenants/7/models" && init?.method === "POST") {
+        command = JSON.parse(String(init.body));
+        return jsonResponse({ error: { code: "tenant_lock_required" } }, 409);
+      }
+      return base(input, init);
+    });
+    const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/models"] }) });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={router} />);
+    await user.click(await screen.findByRole("button", { name: "Create Model" }));
+    const dialog = screen.getByRole("dialog");
+    await user.type(within(dialog).getByRole("textbox", { name: /Model name/ }), "New model");
+    await user.click(within(dialog).getByText("Gold settings"));
+    await user.type(within(dialog).getByRole("textbox", { name: "Gold naming instructions" }), "Use business names.");
+    for (const label of ["Gold technical columns template", "Gold audit columns template"]) {
+      await user.click(within(dialog).getByRole("textbox", { name: new RegExp(label) }));
+      await user.paste('{"columns":[]}');
+    }
+    await user.click(within(dialog).getByText("Agent defaults"));
+    await screen.findByRole("option", { name: "Primary agent" });
+    await user.selectOptions(within(dialog).getByRole("combobox", { name: "Agent model" }), "foundry-primary");
+    expect(within(dialog).queryByRole("option", { name: "High" })).not.toBeInTheDocument();
+    const turns = within(dialog).getByRole("spinbutton", { name: "Maximum turns" });
+    await user.clear(turns);
+    await user.type(turns, "51");
+    const submit = within(dialog).getByRole("button", { name: "Create Model" });
+    await user.click(submit);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter a whole number from 1 to 50");
+    expect(command).toBeUndefined();
+    await user.clear(turns);
+    await user.type(turns, "12");
+    await user.click(submit);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Acquire the Tenant Lock");
+    expect(command).toMatchObject({
+      model_name: "New model", gold_model_naming_instructions: "Use business names.",
+      gold_model_technical_columns_template: { columns: [] }, gold_model_audit_columns_template: { columns: [] },
+      default_agent_sdk_code: "openai_agents_sdk", default_agent_provider_code: "microsoft_foundry", default_agent_model_code: "foundry-primary",
+      default_reasoning_effort_code: "medium", default_max_turns: 12, default_validation_retry_count: 2,
+    });
+    expect(turns).toHaveValue(12);
+  });
+
   it("lists active Models and keeps Open links inside the active Tenant", async () => {
     const router = createWorkbenchRouter({
       api: createApiClient(tenantFetchStub()),

@@ -3,7 +3,7 @@
   "workflow_name": "Metadata Enrichment — Objects",
   "mode": "one_shot",
   "stage": "candidate_authoring",
-  "status": "approved",
+  "status": "implemented_default",
   "variables": [
     "source_context",
     "gds_context",

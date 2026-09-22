@@ -1,10 +1,10 @@
-"""Bounded, data-only Jinja rendering for workflow-local Prompt variables."""
+"""Data-only Jinja rendering for workflow-local Prompt variables."""
 
 from __future__ import annotations
 
 import json
 import math
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Literal, cast
@@ -13,12 +13,9 @@ from gds_etl_workbench.domain.errors import InvalidRequestError
 from jinja2 import StrictUndefined, TemplateError, meta, nodes
 from jinja2.runtime import LoopContext, Undefined
 from jinja2.sandbox import ImmutableSandboxedEnvironment
-from jinja2.visitor import NodeTransformer
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 type PromptVariableDataType = Literal["text", "integer", "number", "boolean", "json"]
-_MAX_COMPONENT_BYTES = 1_000_000
-_MAX_STEPS = 200_000
 _JSON_VALUE_ADAPTER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 _ALLOWED_NODES = frozenset(
     {
@@ -95,9 +92,9 @@ class PromptVariableDefinition(BaseModel):
 
 class PromptComponentTemplates(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-    system: str = Field(min_length=1, max_length=_MAX_COMPONENT_BYTES, repr=False)
-    instruction: str = Field(min_length=1, max_length=_MAX_COMPONENT_BYTES, repr=False)
-    tool_instruction: str | None = Field(default=None, max_length=_MAX_COMPONENT_BYTES, repr=False)
+    system: str = Field(min_length=1, repr=False)
+    instruction: str = Field(min_length=1, repr=False)
+    tool_instruction: str | None = Field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,23 +110,12 @@ def _finalize(value: object) -> str:
     if isinstance(value, Undefined):
         raise InvalidRequestError("A Prompt variable or field is unavailable.")
     if isinstance(value, (str, Decimal)):
-        rendered = str(value)
-        if len(rendered.encode("utf-8")) > _MAX_COMPONENT_BYTES:
-            raise InvalidRequestError("Rendered Prompt content exceeds the supported size.")
-        return rendered
+        return str(value)
     try:
-        chunks: list[str] = []
-        size = 0
-        encoder = json.JSONEncoder(
-            ensure_ascii=False, allow_nan=False, separators=(",", ":"), sort_keys=True
+        return json.dumps(
+            value, ensure_ascii=False, allow_nan=False, separators=(",", ":"), sort_keys=True
         )
-        for chunk in encoder.iterencode(value):
-            size += len(chunk.encode("utf-8"))
-            if size > _MAX_COMPONENT_BYTES:
-                raise InvalidRequestError("Rendered Prompt content exceeds the supported size.")
-            chunks.append(chunk)
-        return "".join(chunks)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         raise InvalidRequestError("A Prompt expression has an invalid value.") from None
 
 
@@ -157,24 +143,12 @@ class _DataEnvironment(ImmutableSandboxedEnvironment):
         if isinstance(obj, (list, tuple, str)) and isinstance(argument, (int, slice)):
             try:
                 return cast(Any, obj)[argument]
-            except (IndexError, TypeError, ValueError):
+            except IndexError, TypeError, ValueError:
                 pass
         return self.undefined(name="field")
 
     def is_safe_callable(self, obj: Any) -> bool:
         return False
-
-
-class _MeterLoops(NodeTransformer):
-    def visit_For(self, node: nodes.For, *args: Any, **kwargs: Any) -> nodes.For:  # noqa: N802
-        self.generic_visit(node, *args, **kwargs)
-        node.iter = nodes.Filter(node.iter, "_bounded", [], [], None, None)
-        return node
-
-    def visit_Filter(self, node: nodes.Filter, *args: Any, **kwargs: Any) -> nodes.Filter:  # noqa: N802
-        self.generic_visit(node, *args, **kwargs)
-        node.node = nodes.Filter(node.node, "_charge", [], [], None, None)
-        return node
 
 
 def render_prompt(
@@ -187,47 +161,21 @@ def render_prompt(
     by_name = {variable.name: variable for variable in variables}
     if len(by_name) != len(variables):
         raise InvalidRequestError("Prompt variable definitions are invalid.")
-    steps = 0
-
-    def charge(amount: int = 1) -> None:
-        nonlocal steps
-        steps += amount
-        if steps > _MAX_STEPS:
-            raise InvalidRequestError("Prompt rendering exceeds the supported work limit.")
-
-    def bounded(value: Any) -> Iterator[Any]:
-        if isinstance(value, Undefined) or not isinstance(value, Iterable):
-            raise InvalidRequestError("A Prompt loop requires an available collection.")
-        for item in cast(Iterable[Any], value):
-            charge()
-            yield item
-
-    def charge_value(value: Any) -> Any:
-        if isinstance(value, (list, tuple, dict, str)):
-            charge(len(cast(Any, value)))
-        elif isinstance(value, Iterator):
-            return bounded(value)
-        else:
-            charge()
-        return cast(Any, value)
-
     env = _DataEnvironment(undefined=StrictUndefined, autoescape=False, finalize=_finalize)
     env.globals.clear()
     env.filters = {key: val for key, val in env.filters.items() if key in _ALLOWED_FILTERS}
     env.tests = {key: val for key, val in env.tests.items() if key in _ALLOWED_TESTS}
     # tojson emits compact JSON data, not HTML-escaped text; finalization must not quote it again.
-    env.filters.update(tojson=_finalize, _bounded=bounded, _charge=charge_value)
+    env.filters.update(tojson=_finalize)
     output: list[str | None] = []
     for component in (templates.system, templates.instruction, templates.tool_instruction):
         if component is None:
             output.append(None)
             continue
-        if len(component.encode("utf-8")) > _MAX_COMPONENT_BYTES:
-            raise InvalidRequestError("Prompt content exceeds the supported size.")
         try:
             tree = env.parse(component)
-            for count, node in enumerate(tree.find_all(nodes.Node), start=1):
-                if count > 5_000 or type(node).__name__ not in _ALLOWED_NODES:
+            for node in tree.find_all(nodes.Node):
+                if type(node).__name__ not in _ALLOWED_NODES:
                     raise InvalidRequestError("The Prompt uses unsupported template syntax.")
                 if isinstance(node, nodes.For) and node.recursive:
                     raise InvalidRequestError("Recursive Prompt loops are not supported.")
@@ -249,19 +197,12 @@ def render_prompt(
                 if value is not None:
                     _validate_value(variable.data_type, value)
                 values[name] = value
-            compiled = env.compile(_MeterLoops().visit(tree))
+            compiled = env.compile(tree)
             template = env.template_class.from_code(env, compiled, {}, None)
-            chunks: list[str] = []
-            size = 0
-            for chunk in template.generate(values):
-                size += len(chunk.encode("utf-8"))
-                if size > _MAX_COMPONENT_BYTES:
-                    raise InvalidRequestError("Rendered Prompt content exceeds the supported size.")
-                chunks.append(chunk)
-            output.append("".join(chunks))
+            output.append(template.render(values))
         except InvalidRequestError:
             raise
-        except (TemplateError, TypeError, ValueError, RecursionError, OverflowError):
+        except TemplateError, TypeError, ValueError, RecursionError, OverflowError:
             raise InvalidRequestError(
                 "The Prompt contains invalid syntax, fields, or expressions."
             ) from None

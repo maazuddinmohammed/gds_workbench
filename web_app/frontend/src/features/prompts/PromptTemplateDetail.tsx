@@ -3,6 +3,7 @@ import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
+import { Fact } from "../../shared/ui";
 import { ApiError } from "../../core/http";
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 import {
@@ -284,7 +285,6 @@ export function PromptTemplateDetailPage({
       {!draftSeed && !(selected?.prompt_template_version_status === "draft" && canMutate) ? <AllowedVariables variables={detail.allowed_variables} /> : null}
 
 
-
       {editHeaderOpen ? (
         <EditPromptHeaderDialog
           api={api}
@@ -373,10 +373,7 @@ function PromptBodyEditor({
   const values = useStore(form.store, (state) => state.values);
   const isDirty = useStore(form.store, (state) => state.isDirty);
   const isValid = values.system.trim().length > 0
-    && values.instruction.trim().length > 0
-    && bodyBytes(values.system) <= 262_144
-    && bodyBytes(values.instruction) <= 262_144
-    && bodyBytes(values.tool) <= 262_144;
+    && values.instruction.trim().length > 0;
   const newDraft = version === null;
   const previewCommand = {
     system_prompt_template: values.system,
@@ -442,7 +439,7 @@ function PromptBodyEditor({
               onBlur={field.handleBlur}
               onChange={(event) => field.handleChange(event.target.value)}
             />
-            <small>{bodyBytes(field.state.value).toLocaleString()} / 262,144 UTF-8 bytes</small>
+            <small>{bodyBytes(field.state.value).toLocaleString()} UTF-8 bytes</small>
           </label>
         )}
       </form.Field>
@@ -461,7 +458,7 @@ function PromptBodyEditor({
               onBlur={field.handleBlur}
               onChange={(event) => field.handleChange(event.target.value)}
             />
-            <small>{bodyBytes(field.state.value).toLocaleString()} / 262,144 UTF-8 bytes</small>
+            <small>{bodyBytes(field.state.value).toLocaleString()} UTF-8 bytes</small>
           </label>
         )}
       </form.Field>
@@ -489,14 +486,14 @@ function PromptBodyEditor({
               onBlur={field.handleBlur}
               onChange={(event) => field.handleChange(event.target.value)}
             />
-            <small>{bodyBytes(field.state.value).toLocaleString()} / 262,144 UTF-8 bytes</small>
+            <small>{bodyBytes(field.state.value).toLocaleString()} UTF-8 bytes</small>
           </label>
         )}
         </form.Field>
       </details> : null}
       {!isValid ? (
         <p className="prompt-validation-note">
-          System and Instruction Prompts are required. Each body is limited to 262,144 UTF-8 bytes.
+          System and Instruction Prompts are required.
         </p>
       ) : null}
       {mutation.isError ? (
@@ -504,7 +501,7 @@ function PromptBodyEditor({
           {mutation.error instanceof ApiError && mutation.error.status === 409
             ? "This draft changed after you opened it. Your edits are still here; copy them before refreshing to inspect the newer version."
             : mutation.error instanceof ApiError && [400, 422].includes(mutation.error.status)
-              ? "The draft failed validation. Check variable names, expressions, tool choices, and body limits. Your edits are still here."
+              ? "The draft failed validation. Check variable names, expressions, and tool choices. Your edits are still here."
               : "The draft could not be saved. Your edits are still here. Check your permission and Tenant Lock, then retry."}
         </p>
       ) : null}
@@ -618,10 +615,6 @@ function AllowedVariables({ variables, onInsert, activePrompt, disabled }: {
 function VersionState({ status }: { status: PromptTemplateVersion["prompt_template_version_status"] }) {
   const tone = status === "published" ? "is-success" : status === "draft" ? "is-warning" : "is-neutral";
   return <span className={`status-badge ${tone}`}>{humanize(status)}</span>;
-}
-
-function Fact({ label, value, code = false }: { label: string; value: string; code?: boolean }) {
-  return <div><dt>{label}</dt><dd>{code ? <code title={value}>{value}</code> : value}</dd></div>;
 }
 
 async function invalidatePromptQueries(

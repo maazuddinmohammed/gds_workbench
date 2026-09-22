@@ -455,7 +455,7 @@ class _ObjectDescriptionRequest(_PromptInput):
     schema_name: str = Field(alias="schema", repr=False)
     system: str = Field(repr=False)
     current_description: str | None = Field(default=None, repr=False)
-    attributes: list[_DescriptionAttributeEvidence] = Field(max_length=5_000, repr=False)
+    attributes: list[_DescriptionAttributeEvidence] = Field(repr=False)
 
 
 class _AttributeDescriptionRequest(_PromptInput):
@@ -1207,7 +1207,7 @@ def project_prompt_input_values(
                     raise ValueError
                 values.setdefault(key, mapping_value)
             return values
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             raise InvalidRequestError("The Mapping Prompt inputs are inconsistent.") from None
 
     if plan.model_workflow in _AUTHORING_STAGES:
@@ -1288,7 +1288,7 @@ def project_prompt_input_values(
                     raise ValueError
                 values.setdefault(key, value)
             return values
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             raise InvalidRequestError(
                 "The authoring Prompt inputs are invalid or inconsistent."
             ) from None
@@ -1300,7 +1300,7 @@ def project_prompt_input_values(
         refs = [item.target_ref for item in requests]
         if len(refs) != len(set(refs)):
             raise ValueError
-    except (ValidationError, ValueError):
+    except ValidationError, ValueError:
         raise InvalidRequestError("The Metadata description Prompt inputs are invalid.") from None
 
     projected = {

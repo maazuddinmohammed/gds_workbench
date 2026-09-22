@@ -1,15 +1,9 @@
-# Manual Azure Databricks UI deployment
+# Manual Azure Databricks App deployment
 
-The builder creates two independent, source-only upload folders:
-
-- `gds-workbench-notebooks`: interactive workflows that execute inside the
-  notebook process using a fixed PostgreSQL-bound Super Admin workload identity;
-- `gds-workbench-app-source`: the optional web UI, HTTP backend, and background
-  workflow worker running as one Databricks App.
-
-The notebooks do not call or require the App. Neither upload requires a wheel.
-Both uploads receive their own source copy of the shared workflow modules; they
-do not call the separately deployed Azure App Service MCP server.
+The builder creates one source-only upload folder, `gds-workbench-app-source`,
+containing the web UI, FastAPI backend, and background workflow worker. It
+includes the shared governed domain code and runs independently of the Azure
+App Service MCP server.
 
 ## 1. Build and verify
 
@@ -36,158 +30,65 @@ Output:
 artifacts/databricks-ui/
 ├── gds-workbench-app-source/
 ├── gds-workbench-app-source.zip
-├── gds-workbench-notebooks/
-├── gds-workbench-notebooks.zip
 ├── UPLOAD_INSTRUCTIONS.md
 ├── artifact-manifest.json
 └── SHA256SUMS.txt
 ```
 
-Verify transport ZIPs before extracting them:
+Verify the transport ZIP before extracting it:
 
 ```bash
 cd artifacts/databricks-ui
 shasum -a 256 -c SHA256SUMS.txt
 ```
 
-Both checksum lines must end in `OK`.
+The checksum line must end in `OK`.
 
 ## 2. Do not import the ZIP in the Workspace UI
 
-The ZIPs are transport containers only. Azure Databricks can treat a mixed ZIP
+The ZIP is a transport container only. Azure Databricks can treat a mixed ZIP
 as a notebook import and flatten its nested source folders. If a ZIP was copied
 to the VM, extract it locally first. Upload the expanded same-named folder.
 
 Use [Workspace files](https://learn.microsoft.com/en-us/azure/databricks/files/workspace)
-to retain ordinary source files and nested directories. The notebook runtime is
-[DBR 16.4 LTS](https://learn.microsoft.com/en-us/azure/databricks/release-notes/runtime/16.4lts):
-Spark 3.5.2, Scala 2.13, and Python 3.12.3. Scala does not affect the Python
-notebook code.
+to retain ordinary source files and nested directories.
 
-## 3. Expected Workspace trees
+## 3. Expected Workspace tree
 
-After upload, compare the Workspace browser with these trees. Stop and reupload
+After upload, compare the Workspace browser with this tree. Stop and reupload
 from an expanded folder if any level was flattened.
 
 ```text
 <access-controlled Workspace parent>/
-├── gds-workbench-app-source/
-│   ├── app.yaml
-│   ├── DEPLOYMENT_GUIDE.md
-│   ├── package.json
-│   ├── package-lock.json
-│   ├── pyproject.toml
-│   ├── uv.lock
-│   ├── mcp_server/
-│   │   ├── pyproject.toml
-│   │   └── gds_etl_workbench/...
-│   └── web_app/
-│       ├── backend/
-│       │   ├── pyproject.toml
-│       │   ├── gds_workbench_api/...
-│       │   └── gds_workbench_runtime/...
-│       └── frontend/
-│           ├── package.json
-│           ├── index.html
-│           ├── tsconfig.json
-│           ├── tsconfig.build.json
-│           ├── vite.config.mjs
-│           └── src/...
-└── gds-workbench-notebooks/
-    ├── .env.example
-    ├── .env
-    ├── requirements.txt
-    ├── src/
-    │   ├── gds_workbench_notebooks/...
-    │   ├── gds_workbench_runtime/...
-    │   ├── gds_workbench_api/...
+└── gds-workbench-app-source/
+    ├── app.yaml
+    ├── DEPLOYMENT_GUIDE.md
+    ├── package.json
+    ├── package-lock.json
+    ├── pyproject.toml
+    ├── uv.lock
+    ├── mcp_server/
+    │   ├── pyproject.toml
     │   └── gds_etl_workbench/...
-    └── notebooks/
-        ├── 00_tenant_lock.py
-        ├── 01_runtime_preflight.py
-        ├── metadata_enrichment.py
-        ├── profiling.py
-        ├── analysis_inference.py
-        ├── analysis_validation.py
-        ├── conceptual.py
-        ├── logical.py
-        ├── dimensional.py
-        ├── mapping.py
-        ├── code_generation.py
-        ├── validation.py
-        └── 91_apply_workflow_draft.py
+    └── web_app/
+        ├── backend/
+        │   ├── pyproject.toml
+        │   └── gds_workbench_api/...
+        └── frontend/
+            ├── package.json
+            ├── index.html
+            ├── tsconfig.json
+            ├── tsconfig.build.json
+            ├── vite.config.mjs
+            └── src/...
 ```
 
-Databricks may display the marked entries under `notebooks/` without `.py`;
-the CLI explicitly strips notebook extensions. That is normal. Files below
-`src/` are ordinary Python modules: they must retain `.py` and their nested
-package paths. See the official
-[Workspace command reference](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/reference/workspace-commands).
+Python modules must retain `.py` and their nested package paths.
 
-The builder includes `.env.example`, never `.env`. Hidden files may be omitted
-by an OS or browser upload dialog. If `.env.example` is missing, upload it
-explicitly. Create the real `.env` manually in the notebook root after upload.
+## 4. Deploy the App in the UI
 
-## 4. Deploy the notebooks in the UI
-
-Database installation, the `gds_notebook_runtime` password, and its active
-`security.notebook_runtime_principal` binding to one Super Admin service
-Principal must already exist. See `databricks_notebooks/README.md` for the exact
-binding and `.env` shape.
-
-1. In **Workspace**, open an access-controlled user/team parent folder. Do not
-   pre-create a second same-named child folder.
-2. Drag the expanded local `gds-workbench-notebooks` folder into that parent.
-3. Confirm `requirements.txt`, `src/`, and `notebooks/` are siblings, and all
-   four Python packages remain under `src/`. Source-package `.py` files must be
-   regular Workspace files; entry-point `.py` files under `notebooks/` must be
-   Python notebook objects.
-4. Copy `.env.example` to `.env` in the uploaded root. Replace placeholders with
-   the PostgreSQL host, port, database, exact user `gds_notebook_runtime`, its
-   password, and the notebook Foundry resource URL plus one authentication
-   method. Follow the `GDS_NOTEBOOK_FOUNDRY_*` entries in `.env.example`; do not
-   substitute App or `GDS_WEB_*` variables. Model deployment names come from
-   the packaged registry.
-5. Limit read access to `.env`, the folder, and attached compute. This shared
-   credential maps every notebook user to the same high-trust Super Admin
-   workload identity; it does not provide individual user attribution.
-6. Attach compute using Azure Databricks Runtime 16.4 LTS, Spark 3.5.2, Scala
-   2.13, and Python 3.12.3.
-7. Install dependencies in a temporary setup cell:
-
-   ```python
-   %pip install -r /Workspace/Users/<workspace-user>/gds-workbench-notebooks/requirements.txt
-   dbutils.library.restartPython()
-   ```
-
-   A compute-scoped installation of the same pinned file is also valid.
-8. Run `01_runtime_preflight.py`.
-9. Open `00_tenant_lock.py`. Run its first cell to create its widget bar, fill
-   the inputs, then run the second cell: check first, then acquire the intended
-   Tenant Lock. The lock notebook can be checked before preflight while
-   diagnosing DB access, but preflight-first avoids holding a lock while the
-   full runtime is broken.
-10. Open a workflow notebook. Run its first cell to create that workflow's own
-    widgets, fill them, then run its second cell to execute. For an authoring
-    draft, review the bounded completion output in the workbench, then use
-    `91_apply_workflow_draft.py` with exact current revision/digest fences and
-    `Confirmation=APPLY`. No separate review command is required. Preflight alone has no widgets.
-11. Renew a long-running lock when required, and release it after the last
-    workflow.
-
-The source is imported through `<uploaded-root>/src`; no distribution or wheel
-is used. Drafts live in PostgreSQL `mcp.model_change_set`. `mcp` is a schema
-name here. `gds_etl_workbench` supplies shared domain/application code.
-`requirements.txt` pins the Python `mcp` package because `openai-agents`
-requires it transitively; no MCP server process is started or separately
-deployed.
-
-## 5. Deploy the optional App in the UI
-
-The App is a separate entry point with its own database role, resources, and
-native Databricks App access control. Deploying it does not enable or alter the
-notebooks. Databricks App users still need App `CAN USE`; this deployment is not
-a public unauthenticated web site.
+Databricks App users need App `CAN USE`. The App has its own database role,
+resources, and native Databricks App access control.
 
 The artifact exposes the registered Microsoft Foundry models through the
 OpenAI Agents SDK. Users choose the model and reasoning effort; execution mode
@@ -206,8 +107,7 @@ environment with `uv sync`, runs the root `npm run build`, and then runs the
 1. In **Workspace**, drag the expanded `gds-workbench-app-source` folder into
    the intended parent.
 2. Confirm `app.yaml` is directly inside it, with `mcp_server/` and `web_app/`
-   beside it. Confirm `gds_workbench_runtime/` is beside
-   `gds_workbench_api/` under `web_app/backend/`.
+   beside it. Confirm `gds_workbench_api/` is under `web_app/backend/`.
 3. Create or open the custom Databricks App and select **Medium** compute.
 4. Before adding App resources, store each sensitive value in an existing
    Databricks secret scope/key. In the App resource dialog, add a **Secret**,
@@ -291,31 +191,11 @@ source. The App starts the HTTP server and background workflow worker from
 `gds_workbench_api.app_process`; it does not require a separately deployed MCP
 server.
 
-## 6. CLI upload alternative
+## 5. CLI upload alternative
 
 Use this only when UI drag-and-drop is unreliable. Authenticate the current
 Databricks CLI profile to the target workspace, then run from the repository
 root.
-
-Use [`sync`](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/reference/sync-commands)
-for the notebook artifact's ordinary source files, excluding the marked entry
-points. Then use
-[`workspace import-dir`](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/reference/workspace-commands)
-only for `notebooks/` so those files become notebook objects. Databricks
-documents that imported notebooks have their extensions stripped; applying
-`import-dir` to `src/` would therefore break Python imports.
-
-```bash
-databricks workspace mkdirs "/Users/<workspace-user>/gds-workbench-notebooks"
-databricks sync \
-  artifacts/databricks-ui/gds-workbench-notebooks \
-  "/Users/<workspace-user>/gds-workbench-notebooks" \
-  --exclude "notebooks/**"
-databricks workspace import-dir \
-  artifacts/databricks-ui/gds-workbench-notebooks/notebooks \
-  "/Users/<workspace-user>/gds-workbench-notebooks/notebooks" \
-  --overwrite
-```
 
 Use `databricks sync`, not `workspace import-dir`, for the App. The App's
 Python packages must keep every `.py` suffix:
@@ -330,10 +210,8 @@ databricks apps deploy <app-name> \
   --source-code-path "/Workspace/Users/<workspace-user>/gds-workbench-app-source"
 ```
 
-Inspect both remote trees afterward. If notebook dotfiles were skipped,
-explicitly import `.env.example` and the securely prepared `.env`; never place
-the password in the command itself. Configure notebook compute and App
-resources/permissions in the UI as described above.
+Inspect the remote tree afterward. Configure App resources and permissions in
+the UI as described above.
 
 If neither folder upload nor the appropriate CLI command preserves the
 hierarchy, manually

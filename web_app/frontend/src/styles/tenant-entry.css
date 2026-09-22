@@ -199,7 +199,7 @@
   white-space: nowrap;
 }
 
-.tenant-code-line {
+.tenant-visibility {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 650;

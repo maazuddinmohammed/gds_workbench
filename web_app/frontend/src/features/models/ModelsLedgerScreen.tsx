@@ -1,7 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   flexRender,
   getCoreRowModel,
@@ -19,8 +19,10 @@ import type {
   ModelStatus,
 } from "./api";
 import { workflowLabel } from "./presentation";
+import { CreateModelDialog } from "./CreateModelDialog";
+import type { WorkflowsApi } from "../workflows/api";
 
-type ModelsLedgerApi = Pick<TenantsApi, "readTenantHome"> & ModelsApi;
+type ModelsLedgerApi = Pick<TenantsApi, "readTenantHome"> & ModelsApi & Pick<WorkflowsApi, "readAgentCapabilities">;
 
 export function ModelsLedgerScreen({
   api,
@@ -29,6 +31,9 @@ export function ModelsLedgerScreen({
   api: ModelsLedgerApi;
   tenantId: number;
 }) {
+  const [creating, setCreating] = useState(false);
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const isValidTenantId = Number.isSafeInteger(tenantId) && tenantId > 0;
   const statusForm = useForm({
     defaultValues: { status: "active" as ModelStatus },
@@ -50,6 +55,8 @@ export function ModelsLedgerScreen({
     return <LoadingPage label="Loading Models" />;
   }
   if (homeQuery.isError || modelsQuery.isError) return <ErrorPage />;
+  const canCreate = homeQuery.data.tenant.effective_role === "super_admin"
+    || homeQuery.data.tenant.effective_role === "tenant_admin";
 
   return (
     <TenantWorkspace home={homeQuery.data} activeNav="models">
@@ -60,7 +67,21 @@ export function ModelsLedgerScreen({
           tenantId={tenantId}
           tenantName={homeQuery.data.tenant.tenant_name}
           onStatusChange={(nextStatus) => statusForm.setFieldValue("status", nextStatus)}
+          onCreate={canCreate ? () => setCreating(true) : undefined}
         />
+        {creating && canCreate ? <CreateModelDialog
+          api={api}
+          tenantId={tenantId}
+          hasTenantLock={homeQuery.data.lock.owned_by_current_principal === true}
+          onClose={() => setCreating(false)}
+          onCreated={(created) => {
+            setCreating(false);
+            void queryClient.invalidateQueries({ queryKey: ["models", tenantId] });
+            void navigate({ to: "/tenants/$tenantId/models/$modelId", params: {
+              tenantId: String(tenantId), modelId: String(created.model_id),
+            } });
+          }}
+        /> : null}
       </main>
     </TenantWorkspace>
   );
@@ -72,12 +93,14 @@ function ModelLedgerTable({
   tenantId,
   tenantName,
   onStatusChange,
+  onCreate,
 }: {
   models: ModelLedgerRecord[];
   status: ModelStatus;
   tenantId: number;
   tenantName: string;
   onStatusChange: (status: ModelStatus) => void;
+  onCreate: (() => void) | undefined;
 }) {
   const columns = useMemo<ColumnDef<ModelLedgerRecord>[]>(() => [
     {
@@ -144,6 +167,7 @@ function ModelLedgerTable({
           <p className="eyebrow">Governed model register</p>
           <h1 id="models-heading">Models</h1>
         </div>
+        <div className="models-ledger-actions">
         <div className="models-mode-tabs" aria-label="Model status">
           {(["active", "archived"] as const).map((option) => (
             <button
@@ -156,6 +180,8 @@ function ModelLedgerTable({
               {option === "active" ? "Active" : "Archived"}
             </button>
           ))}
+        </div>
+        {onCreate ? <button className="button button-primary button-small" type="button" onClick={onCreate}>Create Model</button> : null}
         </div>
       </header>
       <div className="models-table-scroll table-scroll">

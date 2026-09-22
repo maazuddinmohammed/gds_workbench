@@ -1029,6 +1029,7 @@ async def test_tool_manifest_compacts_selected_objects_to_stay_within_result_bou
         max_page_records=200,
     )
     manifest = cast(dict[str, object], compact.manifest)
+    assert compact.max_result_bytes is not None
     assert "selected_objects" not in manifest
     assert manifest["selected_objects_dataset"] == "selected_object"
     assert (
@@ -1087,6 +1088,7 @@ async def test_tool_pages_byte_pack_and_reassemble_one_oversized_record() -> Non
     fragment_contract = cast(dict[str, object], manifest["fragment_contract"])
     assert fragment_contract["fragment_marker_field"] == "__gds_context_fragment__"
     assert fragment_contract["encoding"] == "canonical_json"
+    assert catalog.max_result_bytes is not None
     manifest_result = catalog.invoke("get_agent_context_manifest", {})
     assert (
         len(

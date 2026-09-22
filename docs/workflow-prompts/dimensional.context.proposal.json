@@ -5,7 +5,7 @@
     "one_shot",
     "tool_assisted"
   ],
-  "status": "twenty_four_variables_approved; one_shot_prompt_proposed; implementation_deferred",
+  "status": "implemented_contract",
   "scope": "Approved: all twenty-four Dimensional-local variables, compact binding lineage, excluded Source/Bronze/raw Mapping catalog inputs, and existing Gold policy ownership. One-shot prompt/default/quality review follows; tools remain undecided.",
   "selection": "All variables are Dimensional-local author choices; availability does not imply default inclusion. Do not automatically repeat compact/full forms. Variables have no tool arguments or page envelopes.",
   "physical_input_rule": "Existing runtime requires selected physical inputs to be eligible Silver contributions through active Logical Bindings and applied active Logical Mapping. Preserve actual physical keys; original Source/Bronze support under Logical records does not become a direct Dimensional source.",

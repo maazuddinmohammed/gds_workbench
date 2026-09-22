@@ -152,7 +152,6 @@ SELECT jsonb_build_object(
    AND dependency.modeled_entity_type = %s
    AND dependency.mapping_source_system_dependency_status = 'active'
  ORDER BY dependency.source_system_id
- LIMIT 1001
 """
 
 _MAPPING_TARGET_NODES_SQL: LiteralString = """
@@ -174,7 +173,6 @@ SELECT jsonb_build_object(
           binding.object_id,
           binding.model_object_binding_status
  ORDER BY binding.object_id
- LIMIT 1001
 """
 
 _MAPPING_TARGET_CONTEXT_SQL: LiteralString = """
@@ -476,7 +474,6 @@ SELECT jsonb_build_object(
         WHERE attribute.object_id = source_object.object_id
   ) AS attributes
  ORDER BY source.mapping_order NULLS LAST, source.source_mapping_id
- LIMIT 129
 """
 
 _MAPPING_OUTPUT_TEMPLATE_CONTEXT_SQL: LiteralString = """
@@ -550,7 +547,6 @@ SELECT jsonb_build_object(
   ) AS fields
  WHERE template.output_template_id = ANY(%s::BIGINT[])
  ORDER BY template.output_template_id
- LIMIT 20067
 """
 
 
@@ -615,7 +611,7 @@ class PostgresMappingRunPlanRepository:
             )
         except MappingRunPlanUnavailableError:
             raise
-        except (TypeError, ValueError, ValidationError):
+        except TypeError, ValueError, ValidationError:
             raise MappingRunPlanUnavailableError() from None
 
 
@@ -751,7 +747,7 @@ class PostgresMappingRunContextRepository:
             return context
         except MappingRunContextUnavailableError:
             raise
-        except (TypeError, ValueError, ValidationError):
+        except TypeError, ValueError, ValidationError:
             raise MappingRunContextUnavailableError() from None
 
 

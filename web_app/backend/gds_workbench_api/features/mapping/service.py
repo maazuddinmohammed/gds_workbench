@@ -1,4 +1,4 @@
-"""Execute one already-running governed Mapping authoring Run."""
+"""Start governed Mapping Runs and execute them after worker claim."""
 
 from __future__ import annotations
 
@@ -120,6 +120,18 @@ class MappingNoOpCompleter(Protocol):
 
 
 class MappingLifecycle(Protocol):
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: ModelWorkflow,
+        expected_execution_mode: WorkflowExecutionMode | None,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart: ...
+
     async def append_event(
         self,
         principal: RequestPrincipal,
@@ -142,33 +154,6 @@ class MappingLifecycle(Protocol):
     ) -> AgentWorkflowTerminalResult: ...
 
 
-class MappingRunLifecycle(Protocol):
-    async def start(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_execution_mode: WorkflowExecutionMode | None,
-        expected_model_revision: int,
-    ) -> AgentWorkflowRunStart: ...
-
-
-class MappingExecutor(Protocol):
-    async def execute_started(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        workflow_run_claim_token: UUID,
-        expected_model_revision: int,
-    ) -> MappingExecutionResult: ...
-
-
 class MappingExecutionFailedError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
@@ -189,59 +174,7 @@ type MappingExecutionResult = WorkflowChangeSetHandoffResult | AuthoringNoOpRece
 
 
 class MappingWorkflow:
-    """Bind the explicit Mapping route to the shared governed lifecycle."""
-
-    def __init__(
-        self,
-        *,
-        lifecycle: MappingRunLifecycle,
-        executor: MappingExecutor,
-    ) -> None:
-        self._lifecycle = lifecycle
-        self._executor = executor
-
-    async def start(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_execution_mode: WorkflowExecutionMode,
-        expected_model_revision: int,
-    ) -> AgentWorkflowRunStart:
-        return await self._lifecycle.start(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            workflow_run_id=workflow_run_id,
-            expected_workflow="mapping",
-            expected_execution_mode=expected_execution_mode,
-            expected_model_revision=expected_model_revision,
-        )
-
-    async def execute_started(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        workflow_run_claim_token: UUID,
-        expected_model_revision: int,
-    ) -> MappingExecutionResult:
-        return await self._executor.execute_started(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            workflow_run_id=workflow_run_id,
-            workflow_run_claim_token=workflow_run_claim_token,
-            expected_model_revision=expected_model_revision,
-        )
-
-
-class DatabaseMappingExecutor:
-    """Run one frozen Mapping plan and hand off only one complete atomic draft."""
+    """Start governed Runs; author a complete Mapping draft only after worker claim."""
 
     def __init__(
         self,
@@ -264,6 +197,26 @@ class DatabaseMappingExecutor:
         self._no_op = no_op
         self._lifecycle = lifecycle
         self._context_limits = context_limits
+
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_execution_mode: WorkflowExecutionMode,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart:
+        return await self._lifecycle.start(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            workflow_run_id=workflow_run_id,
+            expected_workflow="mapping",
+            expected_execution_mode=expected_execution_mode,
+            expected_model_revision=expected_model_revision,
+        )
 
     async def execute_started(
         self,
@@ -640,9 +593,4 @@ def _safe_execution_error(
     return MappingExecutionFailedError()
 
 
-__all__ = [
-    "DatabaseMappingExecutor",
-    "MappingExecutionFailedError",
-    "MappingFinalizationFailedError",
-    "MappingWorkflow",
-]
+__all__ = ["MappingWorkflow", "MappingExecutionFailedError", "MappingFinalizationFailedError"]

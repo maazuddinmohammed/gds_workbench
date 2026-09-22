@@ -3,12 +3,13 @@
 from typing import Annotated, Protocol
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Path, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Path, Query, Response, status
 from gds_etl_workbench.application.change_sets.contracts import MAX_STAGE_CHUNKS
 from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.snapshots.model import ModelDataset
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.model_change_sets.input_scope import AddInputScopeRequest
 from gds_workbench_api.features.model_targets.contracts import (
     ApplyModelBindingRequest,
@@ -206,20 +207,22 @@ def create_model_change_sets_router(
     identity_provider: IdentityProvider,
     service: ModelChangeSetService,
 ) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/change-sets",
         tags=["model-change-sets"],
     )
 
     async def add_input_scope(
-        request: Request,
         tenant_id: PositivePathId,
         model_id: PositivePathId,
         command: AddInputScopeRequest,
         idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ReviewModelRecordsResult:
         return await service.add_input_scope(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             command=command,
@@ -234,13 +237,14 @@ def create_model_change_sets_router(
     )
 
     async def preview_binding(
-        request: Request,
         tenant_id: PositivePathId,
         model_id: PositivePathId,
         command: PreviewModelBindingRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ModelBindingPreview | GeneratedBindingsPreview | ReviewModelRecordsResult:
         return await service.bind_registered_target(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             command=command,
@@ -251,14 +255,15 @@ def create_model_change_sets_router(
     )
 
     async def apply_binding(
-        request: Request,
         tenant_id: PositivePathId,
         model_id: PositivePathId,
         command: ApplyModelBindingRequest,
         idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ModelBindingPreview | GeneratedBindingsPreview | ReviewModelRecordsResult:
         return await service.bind_registered_target(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             command=command,
@@ -270,27 +275,29 @@ def create_model_change_sets_router(
     )
 
     async def generate_bindings(
-        request: Request,
         tenant_id: PositivePathId,
         model_id: PositivePathId,
         command: GenerateModelBindingsRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ModelBindingPreview | GeneratedBindingsPreview | ReviewModelRecordsResult:
         return await service.bind_registered_target(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             command=command,
         )
 
     async def apply_generated_bindings(
-        request: Request,
         tenant_id: PositivePathId,
         model_id: PositivePathId,
         command: GenerateModelBindingsRequest,
         idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ModelBindingPreview | GeneratedBindingsPreview | ReviewModelRecordsResult:
         return await service.bind_registered_target(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             command=command,
@@ -311,15 +318,16 @@ def create_model_change_sets_router(
     )
 
     async def list_review_records(
-        request: Request,
         tenant_id: PositivePathId,
         model_id: PositivePathId,
         dataset: ModelReviewDataset,
         expected_model_revision: Annotated[int, Query(gt=0)],
         page: Annotated[int, Query(ge=1, le=250)] = 1,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ModelRecordHistoryPage:
         return await service.list_review_records(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             dataset=dataset,
@@ -335,14 +343,15 @@ def create_model_change_sets_router(
     )
 
     async def preview_record_review(
-        request: Request,
         tenant_id: PositivePathId,
         model_id: PositivePathId,
         command: PreviewModelRecordsRequest,
         page: Annotated[int, Query(ge=1, le=250)] = 1,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> PreviewModelRecordsResult:
         return await service.preview_record_review(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             command=command,
@@ -357,14 +366,15 @@ def create_model_change_sets_router(
     )
 
     async def review_records(
-        request: Request,
         tenant_id: PositivePathId,
         model_id: PositivePathId,
         command: ReviewModelRecordsRequest,
         idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ReviewModelRecordsResult:
         return await service.review_records(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             command=command,
@@ -379,14 +389,14 @@ def create_model_change_sets_router(
     )
 
     async def create_or_resume(
-        request: Request,
         response: Response,
         tenant_id: PositivePathId,
         model_id: PositivePathId,
         command: CreateModelChangeSetRequest,
         idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> CreateModelChangeSetResult:
-        principal = identity_provider.authenticate(request.headers)
         result = await service.create_or_resume(
             principal,
             tenant_id=tenant_id,
@@ -406,15 +416,16 @@ def create_model_change_sets_router(
     )
 
     async def stage(
-        request: Request,
         tenant_id: PositivePathId,
         model_id: PositivePathId,
         change_set_id: UUID,
         command: StageModelChangeSetRequest,
         idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> StageModelChangeSetResult:
         return await service.stage(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             change_set_id=change_set_id,
@@ -430,15 +441,16 @@ def create_model_change_sets_router(
     )
 
     async def begin_stage_batch(
-        request: Request,
         tenant_id: PositivePathId,
         model_id: PositivePathId,
         change_set_id: UUID,
         command: BeginModelStageBatchRequest,
         idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> BeginModelStageBatchResult:
         return await service.begin_stage_batch(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             change_set_id=change_set_id,
@@ -455,7 +467,6 @@ def create_model_change_sets_router(
     )
 
     async def put_stage_chunk(
-        request: Request,
         tenant_id: PositivePathId,
         model_id: PositivePathId,
         change_set_id: UUID,
@@ -463,9 +474,11 @@ def create_model_change_sets_router(
         chunk_index: ChunkIndex,
         command: PutModelStageChunkRequest,
         idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> PutModelStageChunkResult:
         return await service.put_stage_chunk(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             change_set_id=change_set_id,
@@ -483,16 +496,17 @@ def create_model_change_sets_router(
     )
 
     async def commit_stage_batch(
-        request: Request,
         tenant_id: PositivePathId,
         model_id: PositivePathId,
         change_set_id: UUID,
         stage_batch_id: UUID,
         command: ExpectedDraftRevisionRequest,
         idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> CommitModelStageBatchResult:
         return await service.commit_stage_batch(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             change_set_id=change_set_id,
@@ -509,14 +523,15 @@ def create_model_change_sets_router(
     )
 
     async def get_change_set(
-        request: Request,
         tenant_id: PositivePathId,
         model_id: PositivePathId,
         change_set_id: UUID,
         dataset: Annotated[ModelDataset | None, Query()] = None,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> GetModelChangeSetResult:
         return await service.get(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             change_set_id=change_set_id,
@@ -538,16 +553,17 @@ def create_model_change_sets_router(
         ],
     ) -> None:
         async def command_route(
-            request: Request,
             tenant_id: PositivePathId,
             model_id: PositivePathId,
             change_set_id: UUID,
             command: ExpectedDraftRevisionRequest,
             idempotency_key: IdempotencyKey,
+            *,
+            principal: RequestPrincipal = Depends(authenticate),
         ) -> object:
             method = getattr(service, operation)
             return await method(
-                identity_provider.authenticate(request.headers),
+                principal,
                 tenant_id=tenant_id,
                 model_id=model_id,
                 change_set_id=change_set_id,

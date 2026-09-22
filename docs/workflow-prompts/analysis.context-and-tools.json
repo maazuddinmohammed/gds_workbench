@@ -1,6 +1,6 @@
 {
   "workflow": "analysis",
-  "status": "approved_design; implementation_deferred",
+  "status": "implemented_contract",
   "modes": [
     "one_shot",
     "tool_assisted"
@@ -1075,7 +1075,7 @@
     "source_filter": "get_objects accepts one complete originating Source Connection key (tenant_code, system_code, connection_code). Resolve registered ingestion Object mappings before intersecting with scoped physical Objects. Preserve returned physical keys and deduplicate matches by those keys.",
     "physical_keys": "get_object_details uses complete keys returned by get_objects: GDS keys for Bronze Objects, Source keys for scoped Source Objects. No database IDs or temporary aliases.",
     "output_shape": "All six readers return the shared page envelope. Reassembling complete entries and marked Object-group slices recovers the selected variable value; paging fields are not added to prompt variable or stored record schemas.",
-    "limits": "Use the accepted paging contract and existing response/cumulative/execution limits. Never silently truncate or split atomic evidence records; an indivisible oversized record is an explicit error.",
+    "limits": "The application imposes no default response-byte or cumulative-byte ceiling. Readers still page by record count, and the configured execution turn limit and provider context/output limits remain in force. Treat provider, tool, cursor, and key failures as errors, not complete empty evidence. Do not retry a failed read indefinitely, widen scope, truncate fields, assemble raw JSON fragments, or invent missing details. Base changes only on complete available evidence.",
     "errors": "Malformed, partial, unknown or out-of-scope keys, unavailable tools, and exhausted budgets are errors, not successful empty evidence. No error triggers an unfiltered fallback.",
     "analysis_shape_changes": "Analysis gds_context is a list of the same five-field placement dictionaries; enrichment retains its dictionary/null shape. Other variable structures remain unchanged.",
     "delivery": "Accepted defaults: One-shot embeds all seven workflow variables. Tool-assisted embeds ingestion_mapping and selects six readers for Source context, GDS context, Objects, Object details, Object relationships, and Modeling Assertions. Template authors can change variable/tool selection. Ingestion mapping has no tool; omitted evidence is never appended automatically.",
@@ -2079,17 +2079,17 @@
       "is_complete": "True exactly when next_cursor is null. Marks completion of the selected result across pages, not completeness of an isolated intermediate page.",
       "incomplete_object_key": "Physical key of the last Object group when its nested lists continue; otherwise null. Only Object details and Object relationships may set it."
     },
-    "first_call": "Use the accepted optional selection filters with cursor omitted/null. Existing all-scope defaults apply. No model-supplied page-size knob; the server uses frozen configured record and serialized-response byte caps.",
+    "first_call": "Use optional selection filters with cursor omitted/null. Existing all-scope defaults apply. The server uses the frozen record page count; no model-supplied page-size knob or default serialized-response byte ceiling.",
     "continuation": "Call the same tool with only cursor=next_cursor. The backend restores the original normalized filters and frozen position. Default-valued filter fields are harmless; any nondefault filter alongside cursor is an error. To change selection, start a new call with cursor=null.",
     "cursor_binding": "Bind cursors to the authorized frozen run, tool, normalized selection, and immutable paging position. Reject foreign/expired/invalid cursors. Repeating a cursor reproduces the same page; do not append a repeated page twice. A cursor is continuation metadata, not an Object/Attribute/assertion ID.",
     "flat_records": "Source entries, GDS entries, Object inventory entries, and assertion records are emitted whole. Ordinary pages append items in order; no field-level truncation.",
     "nested_order": "Process one Object group at a time. Details traverse Attributes in frozen order; relationships traverse incoming records then outgoing records in frozen order. At most the final group in a page can be unfinished, and the next page resumes that same key before later Objects.",
-    "detail_slices": "A detail slice retains the complete physical Object key and complete Attribute/Profile records. selected_attribute_names contains the original selected names among that slice's Attributes. Append attributes and selected names across the same Object key to recover the original variable group.",
-    "relationship_slices": "Retain the complete physical Object key. Append incoming_relationships and outgoing_relationships separately across slices. Each relationship record stays whole with the existing 17 fields. An empty list in an unfinished group may mean its records are still to come.",
+    "detail_slices": "Default readers return whole Object groups. Only explicitly byte-bounded compatibility catalogs use the following slice convention: A detail slice retains the complete physical Object key and complete Attribute/Profile records. selected_attribute_names contains the original selected names among that slice's Attributes. Append attributes and selected names across the same Object key to recover the original variable group.",
+    "relationship_slices": "Default readers return whole Object groups. Only explicitly byte-bounded compatibility catalogs use the following slice convention: Retain the complete physical Object key. Append incoming_relationships and outgoing_relationships separately across slices. Each relationship record stays whole with the existing 17 fields. An empty list in an unfinished group may mean its records are still to come.",
     "completion": "incomplete_object_key identifies the only group requiring more slices after this page. If it is null, groups present on this page are complete when combined with previously read slices, although next_cursor may point to later Objects. Do not finalize an unfinished group as complete or treat its empty lists as absence.",
     "empty_selection": "Return items=[], next_cursor=null, is_complete=true, incomplete_object_key=null for a complete empty result. An Object with no Attributes or relationships remains an explicit complete Object group with empty lists.",
-    "limits": "Size the entire serialized response including metadata under existing configured result budgets. Also preserve existing total-context, record-count, cumulative-result, and execution limits. Each nonfinal successful page makes progress. No silent truncation, omitted records, or unlimited-budget assumption.",
-    "oversized_atomic_record": "Never split descriptions, basis text, assertion text/details, or an individual Attribute/Profile/relationship/assertion record into raw JSON fragments. If one indivisible record plus its necessary envelope cannot fit, return the existing explicit size-error class. Do not retry indefinitely or pretend the selection was complete.",
+    "limits": "The application imposes no default response-byte or cumulative-byte ceiling. Readers still page by record count, and the configured execution turn limit and provider context/output limits remain in force. Treat provider, tool, cursor, and key failures as errors, not complete empty evidence. Do not retry a failed read indefinitely, widen scope, truncate fields, assemble raw JSON fragments, or invent missing details. Base changes only on complete available evidence.",
+    "oversized_atomic_record": "Default readers page between complete records, including each Object group and its nested Attributes/relationships and each model record with its supports, sources, and memberships. incomplete_object_key is null. Append page items in order until next_cursor is null; do not infer absence from an unfinished result.",
     "errors": "Errors use the existing tool-error path, not a successful empty page. Unknown keys, invalid cursors, changed continuation filters, and exhausted budgets never trigger unfiltered fallback.",
     "variable_relationship": "Prompt variables retain full list/group values without pagination metadata. Tool pages contain those same fields; only the result envelope and explicitly marked group slicing are added. Reassembled successful pages equal the corresponding selected variable value."
   },
@@ -2101,7 +2101,7 @@
     },
     {
       "group": "large_tool_results",
-      "decision": "Keep existing response byte limits; deliver all matching records across explicit pages rather than silently truncate or rely only on size errors. Page continuation must clearly mark incomplete results; a single large Object may require continuation of its Attribute/relationship lists. Exact page envelope remains pending.",
+      "decision": "Current default: retain all matching records through record-count cursor pages, with complete Object groups and no response-byte/cumulative-byte ceilings. Configured execution turn and provider limits still apply.",
       "status": "accepted"
     },
     {
@@ -2176,7 +2176,8 @@
           "object_description": "ERP customer accounts; one row per customer account.",
           "zone_code": "bronze"
         }
-      ]
+      ],
+      "execution_profile": "Explicitly byte-bounded compatibility catalog; default readers retain whole Object groups."
     },
     {
       "scenario": "One Object detail group spans two illustrative pages. Cursor strings are synthetic placeholders; real cursors are opaque.",
@@ -2380,7 +2381,8 @@
             "OrderNumber"
           ]
         }
-      ]
+      ],
+      "execution_profile": "Explicitly byte-bounded compatibility catalog; default readers retain whole Object groups."
     }
   ]
 }

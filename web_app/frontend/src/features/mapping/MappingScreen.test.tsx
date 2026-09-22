@@ -61,16 +61,19 @@ describe("Mapping journey", () => {
 
     const objectHeading = await screen.findByRole("heading", { name: "silver_nwa.customer", level: 1 });
     expect(objectHeading).toHaveFocus();
+    expect(await screen.findByRole("table", { name: "Attribute Mappings" })).toBeVisible();
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/tenants/7/models/18/mapping/attributes?mapping_object_id=81&page_size=200",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+    expect(screen.queryByRole("button", { name: "Attribute mappings" })).not.toBeInTheDocument();
+    await user.click(screen.getByText("Object transformation", { exact: true }));
     expect(screen.getByRole("heading", { name: "Transformation document" })).toBeVisible();
     expect(screen.getByText("Join strategy")).toBeVisible();
     expect(screen.getByRole("list", { name: 'Transformation document["join_strategy"]["joins"]' })).toHaveTextContent("customer_address_raw");
     expect(screen.getByText("customer_raw")).toBeVisible();
     expect(screen.queryByText(JSON.stringify(mappingObjectDetail.mapping_document))).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("link", { name: "Back to Mapping" }));
-    expect(await screen.findByRole("table", { name: "Object Mappings" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Attribute mappings" }));
-    expect(await screen.findByRole("table", { name: "Attribute Mappings" })).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Open Attribute Mapping 91" }));
 
     const attributeHeading = await screen.findByRole("heading", {
@@ -86,9 +89,11 @@ describe("Mapping journey", () => {
     expect(screen.getAllByText("mapping.attribute.standard")).toHaveLength(1);
     expect(screen.queryByText("c".repeat(64))).not.toBeInTheDocument();
     await user.click(screen.getByText("Connection and template details"));
-    await user.click(screen.getByRole("heading", { name: "Parent Object Mapping" }));
-    await user.click(screen.getByRole("link", { name: "Object Mapping 81" }));
+    await user.click(screen.getByRole("link", { name: "Back to Object Mapping" }));
     expect(await screen.findByRole("heading", { name: "silver_nwa.customer", level: 1 })).toHaveFocus();
+    expect(await screen.findByRole("table", { name: "Attribute Mappings" })).toBeVisible();
+    await user.click(screen.getByRole("link", { name: "Back to Object mappings" }));
+    expect(await screen.findByRole("table", { name: "Object Mappings" })).toBeVisible();
   });
 
   it("follows opaque Mapping cursors and refreshes the active ledger", async () => {
@@ -116,6 +121,58 @@ describe("Mapping journey", () => {
       expect.objectContaining({ credentials: "same-origin" }),
     );
     expect(await screen.findByText("silver_nwa.contact")).toBeVisible();
+  });
+
+  it("keeps Attribute filters, pagination, and refresh within the parent Object", async () => {
+    const fetcher = mappingFetchStub({ hasNextPage: true });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18/objects/81"] }),
+    })} />);
+    await screen.findByRole("table", { name: "Attribute Mappings" });
+    expect(screen.queryByLabelText("Entity type")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "Select Mapping Attributes 91" }));
+    await user.selectOptions(screen.getByLabelText("Mapping status"), "inactive");
+    await user.click(screen.getByRole("button", { name: "Apply Mapping filters" }));
+    expect(await screen.findByRole("checkbox", { name: "Select Mapping Attributes 91" })).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Load more Attribute Mappings" }));
+    expect(await screen.findByRole("link", { name: "Open Attribute Mapping 92" })).toBeVisible();
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/tenants/7/models/18/mapping/attributes?status=inactive&mapping_object_id=81&page_size=200&cursor=attributes-next",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Select Mapping Attributes 91" }));
+    await user.click(screen.getByRole("button", { name: "Refresh Attributes" }));
+    expect(await screen.findByRole("checkbox", { name: "Select Mapping Attributes 91" })).not.toBeChecked();
+    const calls = fetcher.mock.calls.filter(([input]) => String(input).includes("/mapping/attributes?"));
+    expect(calls.length).toBeGreaterThan(3);
+    expect(calls.every(([input]) => String(input).includes("mapping_object_id=81"))).toBe(true);
+  });
+
+  it.each([
+    [{ empty: true }, "No Attribute Mappings match these filters."],
+    [{ denied: true }, "You do not have permission to view Attribute Mappings."],
+    [{ error: true }, "Attribute Mappings could not be loaded."],
+    [{ modelRevision: 19 }, "The Model changed while Attribute Mappings were loading. Refresh to reconcile revisions."],
+  ] as const)("keeps nested Attribute states explicit: %s", async (options, message) => {
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(mappingFetchStub(options)),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18/objects/81"] }),
+    })} />);
+    expect(await screen.findByText(message)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Lock selected" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Back to Object mappings" })).toBeVisible();
+  });
+
+  it("opens old Attribute-list bookmarks at Object mappings", async () => {
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(mappingFetchStub()),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18?view=attributes"] }),
+    })} />);
+    expect(await screen.findByRole("table", { name: "Object Mappings" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Attribute mappings" })).not.toBeInTheDocument();
   });
 
   it("keeps Mapping empty, safe-error, denied, and revision states explicit", async () => {
@@ -450,7 +507,19 @@ function mappingFetchStub(options: {
     }
     if (url === "/api/v1/tenants/7/models/18/mapping/objects/81") return jsonResponse(mappingObjectDetail);
     if (url.startsWith("/api/v1/tenants/7/models/18/mapping/attributes?")) {
-      return jsonResponse({ model_id: 18, model_revision: 18, items: [mappingAttribute], next_cursor: null });
+      if (options.denied) return jsonResponse({ error: { code: "authorization_denied" } }, 403);
+      if (options.error) return jsonResponse({ error: { code: "unavailable" } }, 503);
+      const nextPage = url.includes("cursor=attributes-next");
+      const parentId = new URL(url, "http://localhost").searchParams.get("mapping_object_id");
+      return jsonResponse({
+        model_id: 18,
+        model_revision: options.modelRevision ?? 18,
+        items: options.empty || parentId !== "81" ? [] : [{
+          ...mappingAttribute,
+          ...(nextPage ? { mapping_attribute_id: 92, target: { ...mappingAttribute.target, attribute_name: "email" } } : {}),
+        }],
+        next_cursor: options.hasNextPage && !nextPage ? "attributes-next" : null,
+      });
     }
     if (url === "/api/v1/tenants/7/models/18/mapping/attributes/91") return jsonResponse(mappingAttributeDetail);
     if (url === "/api/v1/tenants/7/output-templates?target_type=mapping_object&active=true&page_size=200") {
@@ -711,7 +780,10 @@ it.each([["Dependencies", "mapping_dependency", 71], ["Object mappings", "mappin
     history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18"] }),
   })} />);
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: view }));
+  await user.click(await screen.findByRole("button", { name: view === "Attribute mappings" ? "Object mappings" : view }));
+  if (view === "Attribute mappings") {
+    await user.click(await screen.findByRole("link", { name: "Open Object Mapping 81" }));
+  }
   const selection = await screen.findByRole("checkbox", { name: new RegExp(`^Select Mapping .* ${recordId}$`) });
   await user.click(selection);
   await user.click(screen.getByRole("button", { name: "Lock selected" }));

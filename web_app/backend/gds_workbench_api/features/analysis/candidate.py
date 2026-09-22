@@ -208,7 +208,7 @@ def _parse_candidate(candidate: JsonValue) -> _AnalysisInferenceCandidate | None
             ),
             strict=True,
         )
-    except (TypeError, ValueError, ValidationError):
+    except TypeError, ValueError, ValidationError:
         return None
 
 

@@ -269,8 +269,7 @@
   overflow-wrap: anywhere;
 }
 
-.code-generation-run-targets span,
-.code-generation-system-ledger span {
+.code-generation-run-targets span {
   color: var(--muted);
   font-size: 0.63rem;
 }

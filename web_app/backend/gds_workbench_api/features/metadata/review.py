@@ -5,7 +5,7 @@ from contextlib import AbstractAsyncContextManager
 from typing import Annotated, Literal, LiteralString, Protocol, Self
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Path, Request
+from fastapi import APIRouter, Depends, Header, Path
 from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import (
@@ -22,6 +22,8 @@ from gds_etl_workbench.domain.errors import (
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+
+from gds_workbench_api.dependencies import principal_dependency
 
 type RecordId = Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)]
 type ReviewRevision = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$", min_length=64, max_length=64)]
@@ -196,15 +198,16 @@ class DatabaseMetadataReviewService:
 def create_metadata_review_router(
     *, identity_provider: IdentityProvider, service: MetadataReviewService
 ) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(prefix="/api/v1/tenants/{tenant_id}/metadata", tags=["metadata"])
 
     async def review_records(
-        request: Request,
-        tenant_id: Annotated[int, Path(gt=0, le=9_223_372_036_854_775_807)],
+        tenant_id: Annotated[int, Path(gt=0, le=9223372036854775807)],
         command: ReviewMetadataRecordsRequest,
         idempotency_key: Annotated[UUID, Header(alias="Idempotency-Key")],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ReviewMetadataRecordsResult:
-        principal = identity_provider.authenticate(request.headers)
         return await service.review_records(
             principal, tenant_id=tenant_id, command=command, idempotency_key=idempotency_key
         )

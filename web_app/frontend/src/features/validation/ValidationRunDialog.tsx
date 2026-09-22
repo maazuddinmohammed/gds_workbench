@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
+import { useWorkflowRunSubmission } from "../workflows/useWorkflowRunSubmission";
 import { SelectField } from "../../shared/ui";
 import type { ModelDetail } from "../models/api";
 import {
@@ -10,7 +11,6 @@ import {
   reasoningEffortDisplayName,
   resolveDefaultAgent,
   workflowCreationQueryKeys,
-  type CreateWorkflowRunCommand,
 } from "../workflows/api";
 import {
   isTenantWorkflowConflict,
@@ -19,10 +19,6 @@ import {
 import type { ValidationApi, ValidationEligibleSystem } from "./api";
 
 const VALIDATION_AGENT_EXECUTION_MODE = "tool_assisted" as const;
-
-type ValidationRunSubmission =
-  | { kind: "create"; command: CreateWorkflowRunCommand }
-  | { kind: "retry"; workflowRunId: number };
 
 export function ValidationRunDialog({
   api,
@@ -42,7 +38,6 @@ export function ValidationRunDialog({
   onStarted: (workflowRunId: number) => Promise<void>;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
-  const createAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
   const dialog = useRef<HTMLElement>(null);
   const returnFocus = useRef<HTMLElement | null>(
     document.activeElement instanceof HTMLElement ? document.activeElement : null,
@@ -53,7 +48,6 @@ export function ValidationRunDialog({
     portalHost.current.dataset.validationModalHost = "true";
   }
   const [selectedSystemIds, setSelectedSystemIds] = useState<Set<number>>(() => new Set());
-  const [pendingWorkflowRunId, setPendingWorkflowRunId] = useState<number | null>(null);
   const [modelCode, setModelCode] = useState(model.default_agent_model_code ?? "");
   const [reasoningEffortCode, setReasoningEffortCode] = useState(model.default_reasoning_effort_code ?? "");
   const capabilitiesQuery = useQuery({
@@ -90,36 +84,13 @@ export function ValidationRunDialog({
     selectedSystems.map((system) => system.system_code),
   );
   const allSelected = systems.length > 0 && selectedSystemIds.size === systems.length;
-  const runMutation = useMutation({
-    mutationFn: async (submission: ValidationRunSubmission) => {
-      if (submission.kind === "retry") {
-        await api.executeValidationRun(
-          tenantId,
-          model.model_id,
-          submission.workflowRunId,
-          model.model_revision,
-        );
-        return submission.workflowRunId;
-      }
-      const fingerprint = JSON.stringify(submission.command);
-      if (createAttempt.current?.fingerprint !== fingerprint) {
-        createAttempt.current = { fingerprint, key: globalThis.crypto.randomUUID() };
-      }
-      const result = await api.createWorkflowRun(
-        tenantId,
-        model.model_id,
-        submission.command,
-        createAttempt.current.key,
-      );
-      setPendingWorkflowRunId(result.workflow_run_id);
-      await api.executeValidationRun(
-        tenantId,
-        model.model_id,
-        result.workflow_run_id,
-        model.model_revision,
-      );
-      return result.workflow_run_id;
-    },
+  const { mutation: runMutation, pendingRunId: pendingWorkflowRunId } = useWorkflowRunSubmission({
+    api,
+    tenantId,
+    modelId: model.model_id,
+    execute: (workflowRunId, command) => api.executeValidationRun(
+      tenantId, model.model_id, workflowRunId, command.expected_model_revision,
+    ),
     onSuccess: async (workflowRunId) => {
       await onStarted(workflowRunId);
       onClose();
@@ -204,23 +175,20 @@ export function ValidationRunDialog({
           onSubmit={(event) => {
             event.preventDefault();
             if (pendingWorkflowRunId !== null) {
-              runMutation.mutate({ kind: "retry", workflowRunId: pendingWorkflowRunId });
+              runMutation.mutate(undefined);
               return;
             }
             if (!agentSelectionValid || !selectedCodes) return;
             runMutation.mutate({
-              kind: "create",
-              command: {
-                expected_model_revision: model.model_revision,
-                model_workflow: "validation",
-                workflow_execution_mode: null,
-                selected_object_ids: [],
-                selected_system_codes: selectedCodes,
-                modeled_entity_type: null,
-                requested_batch_id: null,
-                agent,
-                prompt_overrides: {},
-              },
+              expected_model_revision: model.model_revision,
+              model_workflow: "validation",
+              workflow_execution_mode: null,
+              selected_object_ids: [],
+              selected_system_codes: selectedCodes,
+              modeled_entity_type: null,
+              requested_batch_id: null,
+              agent,
+              prompt_overrides: {},
             });
           }}
         >
@@ -267,10 +235,7 @@ export function ValidationRunDialog({
                           });
                         }}
                       />
-                      <span>
-                        <strong>{system.system_name}</strong>
-                        <code>{system.system_code}</code>
-                      </span>
+                      <strong>{system.system_code}</strong>
                       <small>
                         {system.mapping_target_count} Mapping targets · {system.current_code_target_count} current Code targets
                       </small>

@@ -44,7 +44,7 @@ class MemoryRecorder:
         stage_code: str,
         invocation_id: UUID,
         authoring_attempt: int,
-    ) -> "MemoryRecorder":
+    ) -> MemoryRecorder:
         assert workflow_run_id == 101 and stage_code == "candidate_authoring"
         self.invocations.append((invocation_id, authoring_attempt))
         return self
@@ -82,7 +82,7 @@ class FixtureCatalog:
             },
         ),
     )
-    max_cumulative_result_bytes = 1024
+    max_cumulative_result_bytes: int | None = 1024
 
     def invoke(self, tool_name: str, arguments: Mapping[str, JsonValue]) -> JsonValue:
         assert tool_name == "read_fixture" and arguments == {}
@@ -144,7 +144,7 @@ def _response(
 
 def _router(
     monkeypatch: pytest.MonkeyPatch,
-    recorder: AgentUsageRecorder,
+    recorder: AgentUsageRecorder | None,
     handler: Any,
 ) -> AgentExecutionRouter:
     def client_factory(**options: Any) -> httpx2.AsyncClient:

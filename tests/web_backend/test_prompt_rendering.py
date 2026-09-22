@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_workbench_api.prompt_rendering import (
@@ -56,9 +58,7 @@ def test_prompt_renderer_uses_only_registered_data_and_renders_once() -> None:
 
 def test_known_missing_data_is_null_and_unreferenced_values_are_optional() -> None:
     rendered = render_prompt(
-        templates=PromptComponentTemplates(
-            system="Use metadata", instruction="{{stage_context}}"
-        ),
+        templates=PromptComponentTemplates(system="Use metadata", instruction="{{stage_context}}"),
         variables=_variables(),
         resolver_values={},
     )
@@ -110,17 +110,16 @@ def test_renderer_supports_projection_filtering_and_conditional_loops() -> None:
     assert rendered.instruction == '["Order"] 1=Order'
 
 
-def test_empty_output_nested_loops_still_have_work_budget() -> None:
-    with pytest.raises(InvalidRequestError, match="work limit"):
-        render_prompt(
-            templates=PromptComponentTemplates(
-                system="Use metadata",
-                instruction="{% for x in stage_context %}{% for y in stage_context %}"
-                "{% endfor %}{% endfor %}",
-            ),
-            variables=_variables(),
-            resolver_values={"context.stage": list(range(500))},
-        )
+def test_large_loops_render_every_item_without_work_budget() -> None:
+    rendered = render_prompt(
+        templates=PromptComponentTemplates(
+            system="Use metadata",
+            instruction="{% for value in stage_context %}{{value}}{% endfor %}",
+        ),
+        variables=_variables(),
+        resolver_values={"context.stage": ["x"] * 200_001},
+    )
+    assert rendered.instruction == "x" * 200_001
 
 
 @pytest.mark.parametrize(
@@ -156,12 +155,37 @@ def test_prompt_renderer_rejects_resolver_type_mismatch_without_value_disclosure
     assert str(invalid_value) not in str(captured.value)
 
 
-def test_large_json_projection_is_bounded_before_full_materialization() -> None:
-    with pytest.raises(InvalidRequestError, match="size"):
-        render_prompt(
-            templates=PromptComponentTemplates(
-                system="Metadata", instruction="{{stage_context}}"
-            ),
-            variables=_variables(),
-            resolver_values={"context.stage": ["x" * 2000] * 1000},
-        )
+@pytest.mark.parametrize("expression", ["{{stage_context}}", "{{stage_context|tojson}}"])
+def test_large_json_projection_renders_complete_content(expression: str) -> None:
+    value = ["é" * 2000] * 1000
+    rendered = render_prompt(
+        templates=PromptComponentTemplates(system="Metadata", instruction=expression),
+        variables=_variables(),
+        resolver_values={"context.stage": value},
+    )
+    assert json.loads(rendered.instruction) == value
+
+
+def test_large_template_and_filtered_text_are_not_truncated() -> None:
+    content = "é" * 1_000_001 + "complete suffix"
+    rendered = render_prompt(
+        templates=PromptComponentTemplates(
+            system=content,
+            instruction="{{model_name|default('missing')}}",
+            tool_instruction="{{model_name}}",
+        ),
+        variables=_variables(),
+        resolver_values={"model.name": content},
+    )
+    assert rendered.system == content
+    assert rendered.instruction == content
+    assert rendered.tool_instruction == content
+
+
+def test_large_template_keeps_all_valid_expressions() -> None:
+    rendered = render_prompt(
+        templates=PromptComponentTemplates(system="Metadata", instruction="{{model_name}}" * 5001),
+        variables=_variables(),
+        resolver_values={"model.name": "x"},
+    )
+    assert rendered.instruction == "x" * 5001

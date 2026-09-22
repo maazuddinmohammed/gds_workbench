@@ -8,6 +8,7 @@ export type MappingEntityType = "logical_entity" | "dimensional_entity";
 export type MappingStatus = ReviewStatus;
 
 export interface MappingFilters {
+  mappingObjectId?: number;
   entityType?: MappingEntityType;
   sourceSystemId?: number;
   sourceSystemCode?: string;
@@ -290,7 +291,6 @@ export function createMappingApi(request: HttpRequest): MappingTransport {
 }
 
 export const mappingQueryKeys = {
-  models: (tenantId: number) => ["mapping-models", tenantId] as const,
   dependencies: (tenantId: number, modelId: number, filters: unknown) => (
     ["mapping-dependencies", tenantId, modelId, filters] as const
   ),
@@ -436,6 +436,7 @@ function mappingCollectionPath(
   if (sourceSystemCode) query.set("source_system_code", sourceSystemCode);
   if (filters.status) query.set("status", filters.status);
   if (filters.locked !== undefined) query.set("locked", String(filters.locked));
+  if (filters.mappingObjectId !== undefined) query.set("mapping_object_id", String(filters.mappingObjectId));
   query.set("page_size", String(pageSize));
   if (cursor) query.set("cursor", cursor);
   return `/api/v1/tenants/${tenantId}/models/${modelId}/mapping/${collection}?${query}`;

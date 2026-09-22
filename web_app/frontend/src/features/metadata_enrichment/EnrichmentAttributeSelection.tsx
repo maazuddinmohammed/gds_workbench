@@ -51,11 +51,10 @@ export function EnrichmentAttributeSelection({
   )), [eligible, scopeMode, includedIds]);
   const chosenIds = useMemo(() => new Set(chosen.map((object) => object.object_id)), [chosen]);
   const duplicateScope = new Set(objects.map((object) => object.object_id)).size !== objects.length;
-  const tooManyObjects = chosen.length > 200;
 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
-    if (disabled || tooManyObjects || duplicateScope) return;
+    if (disabled || duplicateScope) return;
     const next = chosen.filter((object) => !details[object.object_id] && !inFlight.current.has(object.object_id))
       .slice(0, Math.max(0, 4 - inFlight.current.size));
     for (const object of next) {
@@ -71,7 +70,7 @@ export function EnrichmentAttributeSelection({
           || value.object_name !== object.object_name || value.object_schema !== object.object_schema
           || value.zone_code !== object.zone_code || !value.is_model_input_eligible
           || value.is_locked !== false || value.review_revision !== object.review_revision
-          || !Array.isArray(value.attributes) || value.attributes.length > 2000
+          || !Array.isArray(value.attributes)
           || !Number.isSafeInteger(value.attribute_count) || value.attribute_count < 0
           || value.attributes.length !== value.attribute_count
           || (object.attribute_count !== undefined && value.attribute_count !== object.attribute_count)
@@ -103,12 +102,12 @@ export function EnrichmentAttributeSelection({
         if (mounted.current) setDetails((old) => ({ ...old }));
       });
     }
-  }, [chosen, details, disabled, duplicateScope, modelId, readObject, tenantId, tooManyObjects]);
+  }, [chosen, details, disabled, duplicateScope, modelId, readObject, tenantId]);
 
   const selection = useMemo(() => {
     const targets: EnrichmentAttributeSelectionValue["targets"] = [];
     let storedAttributeCount = 0;
-    let complete = !duplicateScope && !tooManyObjects && inFlight.current.size === 0;
+    let complete = !duplicateScope && inFlight.current.size === 0;
     let failed = false;
     for (const object of chosen) {
       const entry = details[object.object_id];
@@ -126,8 +125,8 @@ export function EnrichmentAttributeSelection({
       }
     }
     return { targets, storedAttributeCount, complete, failed,
-      ready: complete && targets.length > 0 && storedAttributeCount <= 5000 };
-  }, [attributeChoices, chosen, details, duplicateScope, tooManyObjects]);
+      ready: complete && targets.length > 0 };
+  }, [attributeChoices, chosen, details, duplicateScope]);
   useEffect(() => { onChange({ targets: selection.targets, ready: selection.ready }); }, [onChange, selection]);
   useEffect(() => {
     setAttributePage(0);
@@ -153,12 +152,10 @@ export function EnrichmentAttributeSelection({
     </fieldset> : null}
     <div className="enrichment-selection-summary" aria-live="polite">
       <strong>{selection.targets.length} Attributes selected across {targetObjectCount} Objects</strong>
-      <span>{selection.storedAttributeCount} stored Attributes in context · limit 5,000</span>
+      <span>{selection.storedAttributeCount} stored Attributes in context</span>
     </div>
-    {tooManyObjects ? <p className="inline-error" role="alert">Select up to 200 Objects before loading Attributes. Choose Selected Objects to narrow this run.</p> : null}
     {duplicateScope ? <p className="inline-error" role="alert">Scope contains duplicate Objects. Close this dialog and refresh.</p> : null}
-    {selection.storedAttributeCount > 5000 ? <p className="inline-error" role="alert">The selected Objects contain more than 5,000 stored Attributes. Choose fewer Objects; unchecked, locked and inactive sibling Attributes still count as context.</p> : null}
-    {!selection.complete && !tooManyObjects && !duplicateScope ? <p className={selection.failed ? "inline-error" : "surface-state compact"} role={selection.failed ? "alert" : "status"} aria-busy={!selection.failed}>
+    {!selection.complete && !duplicateScope ? <p className={selection.failed ? "inline-error" : "surface-state compact"} role={selection.failed ? "alert" : "status"} aria-busy={!selection.failed}>
       {selection.failed ? "Complete Attribute selection could not be loaded. Retry failed Objects, or close and refresh if metadata changed. No partial run will be created."
         : "Loading complete Attribute selections…"}
     </p> : null}
@@ -190,7 +187,7 @@ export function EnrichmentAttributeSelection({
               {entry?.status === "error" && included ? <button type="button" className="text-action" aria-label={`Retry Attributes for ${object.object_name}`} onClick={() => setDetails((old) => {
                 const next = { ...old }; delete next[object.object_id]; return next;
               })}>Retry loading</button> : null}</td>
-            <td><span>{count} selected · {total - count} unselected</span>{included && !detail && !selection.failed && !tooManyObjects ? <small>Loading…</small> : null}</td>
+            <td><span>{count} selected · {total - count} unselected</span>{included && !detail && !selection.failed ? <small>Loading…</small> : null}</td>
             <td>{locked === undefined ? "Checked when selected" : `${locked} locked`}{object.is_locked ? <small>Object locked</small> : null}</td>
           </tr>;
         })}</tbody>

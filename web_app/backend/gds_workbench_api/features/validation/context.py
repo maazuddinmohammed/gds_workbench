@@ -6,7 +6,6 @@ author against renamed or inactive live metadata. Mapping drift fails closed.
 
 from __future__ import annotations
 
-import json
 from typing import Any, Literal, LiteralString, Protocol, cast
 
 from gds_etl_workbench.application.change_sets.model_validation import (
@@ -32,12 +31,6 @@ from gds_workbench_api.features.workflows.authoring.context import (
 )
 from gds_workbench_api.features.workflows.authoring.plan import AgentRunPlan
 
-_MAX_SYSTEMS = 1_000
-_MAX_TARGET_CONTEXTS = 50_000
-_MAX_APPLIED_GROUPS = 10_000
-_MAX_APPLIED_CHECKS = 50_000
-_MAX_SYSTEM_CONTEXT_BYTES = 10 * 1024 * 1024
-_MAX_AGGREGATE_CONTEXT_BYTES = 64 * 1024 * 1024
 _JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 _SYSTEM_SELECTION_SQL: LiteralString = """
@@ -218,135 +211,6 @@ SELECT tenant.tenant_code,
           lower(btrim(validation_check.validation_check_name)) NULLS LAST
 """
 
-_CONTEXT_BOUNDS_SQL: LiteralString = """
-WITH requested_run AS MATERIALIZED (
-    SELECT run.workflow_run_id,
-           run.model_id,
-           target_model.tenant_id
-      FROM application.workflow_run AS run
-      JOIN model.model AS target_model
-        ON target_model.model_id = run.model_id
-       AND target_model.tenant_id = %s
-       AND target_model.is_active
-       AND target_model.model_revision = run.model_revision
-     WHERE run.model_id = %s
-       AND run.workflow_run_id = %s
-       AND run.model_revision = %s
-       AND run.model_workflow = 'validation'
-       AND run.workflow_run_state = 'running'
-), selected_system AS MATERIALIZED (
-    SELECT selection.system_id
-      FROM requested_run AS run
-      JOIN application.workflow_run_system_selection AS selection
-        ON selection.workflow_run_id = run.workflow_run_id
-       AND selection.model_id = run.model_id
-), target_context AS MATERIALIZED (
-    SELECT context.*
-      FROM requested_run AS run
-      JOIN LATERAL workflow.list_code_generation_target_context(
-          run.model_id,
-          'logical_entity',
-          NULL
-      ) AS context ON TRUE
-    UNION ALL
-    SELECT context.*
-      FROM requested_run AS run
-      JOIN LATERAL workflow.list_code_generation_target_context(
-          run.model_id,
-          'dimensional_entity',
-          NULL
-      ) AS context ON TRUE
-), relevant_context AS MATERIALIZED (
-    SELECT context.*,
-           matching_system.match_count,
-           generated.generated_code_bytes
-      FROM target_context AS context
-      CROSS JOIN LATERAL (
-          SELECT count(*)::INTEGER AS match_count
-            FROM jsonb_array_elements(
-                     context.source_context -> 'source_systems'
-                 ) AS source_system(document)
-            JOIN selected_system AS selected
-              ON selected.system_id =
-                 (source_system.document ->> 'source_system_id')::BIGINT
-      ) AS matching_system
-      CROSS JOIN LATERAL (
-          SELECT coalesce(
-                     sum(octet_length(artifact.generated_code_content)),
-                     0
-                 )::BIGINT AS generated_code_bytes
-            FROM workflow.generated_code AS artifact
-           WHERE artifact.model_object_binding_id = (
-                     context.source_context -> 'object_mappings' -> 0
-                     ->> 'model_object_binding_id'
-                 )::BIGINT
-             AND artifact.generated_code_status = 'active'
-             AND artifact.code_input_digest = context.code_input_digest
-      ) AS generated
-     WHERE matching_system.match_count > 0
-), applied_group AS MATERIALIZED (
-    SELECT validation_group.validation_group_id,
-           validation_group.validation_group_name,
-           validation_group.validation_group_description
-      FROM requested_run AS run
-      JOIN workflow.validation_group AS validation_group
-        ON validation_group.model_id = run.model_id
-       AND validation_group.tenant_id = run.tenant_id
-      JOIN selected_system AS selected
-        ON selected.system_id = validation_group.system_id
-), applied_check AS MATERIALIZED (
-    SELECT validation_check.*
-      FROM applied_group
-      JOIN workflow.validation_check AS validation_check
-        ON validation_check.validation_group_id =
-           applied_group.validation_group_id
-)
-SELECT (SELECT count(*) FROM selected_system)::INTEGER AS selected_system_count,
-       (SELECT count(*) FROM relevant_context)::INTEGER AS target_context_count,
-       (SELECT count(*) FROM applied_group)::INTEGER AS applied_group_count,
-       (SELECT count(*) FROM applied_check)::INTEGER AS applied_check_count,
-       (
-           coalesce((
-               SELECT sum(
-                   relevant_context.match_count * (
-                       octet_length(relevant_context.source_context::TEXT)
-                       + relevant_context.generated_code_bytes
-                   )
-               )
-                 FROM relevant_context
-           ), 0)
-           + coalesce((
-               SELECT sum(
-                   octet_length(applied_group.validation_group_name)
-                   + coalesce(
-                       octet_length(applied_group.validation_group_description),
-                       0
-                   )
-               )
-                 FROM applied_group
-           ), 0)
-           + coalesce((
-               SELECT sum(
-                   octet_length(applied_check.validation_check_name)
-                   + coalesce(
-                       octet_length(applied_check.validation_check_description),
-                       0
-                   )
-                   + octet_length(applied_check.validation_query_sql)
-                   + coalesce(
-                       octet_length(applied_check.validation_comparison_query_sql),
-                       0
-                   )
-                   + coalesce(
-                       octet_length(applied_check.validation_comparison_value::TEXT),
-                       0
-                   )
-               )
-                 FROM applied_check
-           ), 0)
-       )::BIGINT AS aggregate_context_bytes
-"""
-
 
 class ValidationContextTransaction(Protocol):
     async def fetch_all(
@@ -357,7 +221,7 @@ class ValidationContextTransaction(Protocol):
 
 
 class ValidationGeneratedCodeArtifact(GeneratedCodeRecord):
-    source_system_codes: tuple[str, ...] = Field(max_length=1_000)
+    source_system_codes: tuple[str, ...]
 
 
 class ValidationMappingTargetContext(BaseModel):
@@ -371,12 +235,11 @@ class ValidationMappingTargetContext(BaseModel):
     connection_code: str = Field(min_length=1, max_length=100)
     object_schema: str = Field(min_length=1, max_length=400)
     object_name: str = Field(min_length=1, max_length=400)
-    source_system_codes: tuple[str, ...] = Field(min_length=1, max_length=1_000)
+    source_system_codes: tuple[str, ...] = Field(min_length=1)
     code_input_digest: str = Field(pattern=r"^[0-9a-f]{64}$", repr=False)
     source_context: JsonValue = Field(repr=False)
     generated_code: tuple[ValidationGeneratedCodeArtifact, ...] = Field(
         default=(),
-        max_length=5_000,
         repr=False,
     )
 
@@ -399,12 +262,12 @@ class ValidationMappingTargetContext(BaseModel):
 class ValidationSystemAuthoringContext(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    system_ref: str = Field(pattern=r"^system_[1-9][0-9]{0,3}$")
+    system_ref: str = Field(pattern=r"^system_[1-9][0-9]*$")
     tenant_code: str = Field(min_length=1, max_length=100)
     system_code: str = Field(min_length=1, max_length=100)
-    applied_groups: tuple[ValidationGroupRecord, ...] = Field(max_length=10_000)
-    applied_checks: tuple[ValidationCheckRecord, ...] = Field(max_length=50_000)
-    current_group_names: tuple[str, ...] = Field(default=(), max_length=10_000)
+    applied_groups: tuple[ValidationGroupRecord, ...]
+    applied_checks: tuple[ValidationCheckRecord, ...]
+    current_group_names: tuple[str, ...] = ()
     agent_context: JsonValue = Field(repr=False)
 
 
@@ -416,7 +279,6 @@ class ValidationExecutionContext(BaseModel):
 
     systems: tuple[ValidationSystemAuthoringContext, ...] = Field(
         min_length=1,
-        max_length=_MAX_SYSTEMS,
     )
 
 
@@ -443,8 +305,6 @@ class PostgresValidationContextRepository:
             plan.model_revision,
         )
         system_rows = await transaction.fetch_all(_SYSTEM_SELECTION_SQL, parameters)
-        bounds_rows = await transaction.fetch_all(_CONTEXT_BOUNDS_SQL, parameters)
-        _validate_context_bounds(bounds_rows)
         target_rows = await transaction.fetch_all(_TARGET_CONTEXT_SQL, parameters)
         applied_rows = await transaction.fetch_all(_APPLIED_VALIDATION_SQL, parameters)
         try:
@@ -462,7 +322,7 @@ class PostgresValidationContextRepository:
             )
         except InvalidRequestError:
             raise
-        except (TypeError, ValueError, ValidationError):
+        except TypeError, ValueError, ValidationError:
             raise InvalidRequestError("The Validation context is unavailable.") from None
 
 
@@ -473,14 +333,8 @@ def _assemble_context(
     target_rows: list[dict[str, Any]],
     applied_rows: list[dict[str, Any]],
 ) -> ValidationExecutionContext:
-    if (
-        not system_rows
-        or len(system_rows) > _MAX_SYSTEMS
-        or not target_rows
-        or len(target_rows) > _MAX_TARGET_CONTEXTS
-        or len(applied_rows) > _MAX_APPLIED_CHECKS + _MAX_APPLIED_GROUPS
-    ):
-        raise InvalidRequestError("The Validation Mapping context is incomplete or too large.")
+    if not system_rows or not target_rows:
+        raise InvalidRequestError("The Validation Mapping context is incomplete.")
     tenant_code, selected_systems = _selected_systems(plan, system_rows)
     targets = tuple(validation_mapping_target_from_row(row) for row in target_rows)
     target_keys = [(target.object_id, target.modeled_entity_type) for target in targets]
@@ -495,7 +349,6 @@ def _assemble_context(
     digest_contexts = tuple(target.digest_context() for target in targets)
     generated_code = tuple(artifact for target in targets for artifact in target.generated_code)
     systems: list[ValidationSystemAuthoringContext] = []
-    aggregate_context_bytes = 0
     for position, system_code in enumerate(selected_systems, start=1):
         normalized_system = normalize_model_key_value(system_code)
         relevant_targets = tuple(
@@ -549,12 +402,6 @@ def _assemble_context(
             groups=system_groups,
             checks=system_checks,
         )
-        provider_context_bytes = len(_canonical_json(provider_context))
-        if provider_context_bytes > _MAX_SYSTEM_CONTEXT_BYTES:
-            raise InvalidRequestError("The Validation context exceeds its bounded size.")
-        aggregate_context_bytes += provider_context_bytes
-        if aggregate_context_bytes > _MAX_AGGREGATE_CONTEXT_BYTES:
-            raise InvalidRequestError("The aggregate Validation context exceeds its bounded size.")
         systems.append(
             ValidationSystemAuthoringContext(
                 system_ref=f"system_{position}",
@@ -567,35 +414,6 @@ def _assemble_context(
             )
         )
     return ValidationExecutionContext(systems=tuple(systems))
-
-
-def _validate_context_bounds(rows: list[dict[str, Any]]) -> None:
-    if len(rows) != 1:
-        raise InvalidRequestError("The Validation context bounds are unavailable.")
-    row = rows[0]
-    values = {
-        key: row.get(key)
-        for key in (
-            "selected_system_count",
-            "target_context_count",
-            "applied_group_count",
-            "applied_check_count",
-            "aggregate_context_bytes",
-        )
-    }
-    if any(
-        isinstance(value, bool) or not isinstance(value, int) or value < 0
-        for value in values.values()
-    ):
-        raise InvalidRequestError("The Validation context bounds are unavailable.")
-    if (
-        not 1 <= cast(int, values["selected_system_count"]) <= _MAX_SYSTEMS
-        or not 1 <= cast(int, values["target_context_count"]) <= _MAX_TARGET_CONTEXTS
-        or cast(int, values["applied_group_count"]) > _MAX_APPLIED_GROUPS
-        or cast(int, values["applied_check_count"]) > _MAX_APPLIED_CHECKS
-        or cast(int, values["aggregate_context_bytes"]) > _MAX_AGGREGATE_CONTEXT_BYTES
-    ):
-        raise InvalidRequestError("The Validation context exceeds its bounded size.")
 
 
 def _selected_systems(
@@ -767,8 +585,6 @@ def _applied_validation(
         if check_key in checks:
             raise InvalidRequestError("The applied Validation context is ambiguous.")
         checks[check_key] = check
-    if len(groups) > _MAX_APPLIED_GROUPS or len(checks) > _MAX_APPLIED_CHECKS:
-        raise InvalidRequestError("The applied Validation context is too large.")
     return tuple(groups.values()), tuple(checks.values()), group_witnesses
 
 
@@ -808,16 +624,6 @@ def _provider_context(
             "applied_validation_checks": [check.model_dump(mode="json") for check in checks],
         },
     )
-
-
-def _canonical_json(value: JsonValue) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        allow_nan=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
 
 
 def _positive_int(row: dict[str, Any], key: str) -> int:

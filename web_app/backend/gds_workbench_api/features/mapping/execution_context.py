@@ -45,22 +45,33 @@ _PAGE_SIZE_SENTINEL = 9_999_999_999
 class MappingExecutionContextLimits(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    max_tool_result_bytes: int = Field(ge=1, le=10 * 1024 * 1024)
-    max_tool_transcript_bytes: int = Field(
-        default=256 * 1024,
-        ge=1,
-        le=10 * 1024 * 1024,
-    )
-    max_tool_catalog_bytes: int = Field(ge=1, le=128 * 1024 * 1024)
+    max_tool_result_bytes: int | None = Field(default=None, ge=1)
+    max_tool_transcript_bytes: int | None = Field(default=None, ge=1)
+    max_tool_catalog_bytes: int | None = Field(default=None, ge=1)
     max_tool_page_records: int = Field(ge=1, le=1_000)
+
+    def result_bytes_per_turn(self, max_turns: int) -> int | None:
+        return min(
+            (
+                value
+                for value in (
+                    self.max_tool_result_bytes,
+                    None
+                    if self.max_tool_transcript_bytes is None
+                    else max(1, self.max_tool_transcript_bytes // max_turns),
+                )
+                if value is not None
+            ),
+            default=None,
+        )
 
 
 def load_default_mapping_execution_context_limits() -> MappingExecutionContextLimits:
     policy = load_default_agent_context_policy()
     return MappingExecutionContextLimits(
-        max_tool_result_bytes=2 * 1024 * 1024,
-        max_tool_transcript_bytes=max(1, policy.stage_max_context_bytes // 2),
-        max_tool_catalog_bytes=128 * 1024 * 1024,
+        max_tool_transcript_bytes=None
+        if policy.stage_max_context_bytes is None
+        else max(1, policy.stage_max_context_bytes // 2),
         max_tool_page_records=200,
     )
 
@@ -84,10 +95,7 @@ class InMemoryMappingContextToolCatalog:
                 )
         self._limits = limits
         max_turns = preparation.plan.agent_plan.selection.max_turns
-        self._max_result_bytes = min(
-            limits.max_tool_result_bytes,
-            max(1, limits.max_tool_transcript_bytes // max_turns),
-        )
+        self._max_result_bytes = limits.result_bytes_per_turn(max_turns)
         self._total_result_budget_bytes = limits.max_tool_transcript_bytes
         (
             self._datasets,
@@ -115,7 +123,10 @@ class InMemoryMappingContextToolCatalog:
                 },
             )
         )
-        if self._serialized_size_bytes > limits.max_tool_catalog_bytes:
+        if (
+            limits.max_tool_catalog_bytes is not None
+            and self._serialized_size_bytes > limits.max_tool_catalog_bytes
+        ):
             raise AgentContextTooLargeError()
 
     @property
@@ -135,13 +146,13 @@ class InMemoryMappingContextToolCatalog:
         return self._serialized_size_bytes
 
     @property
-    def max_cumulative_result_bytes(self) -> int:
+    def max_cumulative_result_bytes(self) -> int | None:
         """Maximum serialized tool output allowed for one provider execution."""
 
         return self._total_result_budget_bytes
 
     @property
-    def max_result_bytes(self) -> int:
+    def max_result_bytes(self) -> int | None:
         return self._max_result_bytes
 
     def invoke(
@@ -158,7 +169,7 @@ class InMemoryMappingContextToolCatalog:
         else:
             raise AgentContextToolRequestError()
         result_bytes = _json_size(result)
-        if result_bytes > self._max_result_bytes:
+        if self._max_result_bytes is not None and result_bytes > self._max_result_bytes:
             raise AgentContextToolResultTooLargeError()
         return result
 
@@ -203,7 +214,7 @@ class InMemoryMappingContextToolCatalog:
                 offset=offset,
                 end=candidate_end,
             )
-            if _json_size(candidate) <= self._max_result_bytes:
+            if self._max_result_bytes is None or _json_size(candidate) <= self._max_result_bytes:
                 accepted_end = candidate_end
                 low = candidate_end + 1
             else:
@@ -241,20 +252,18 @@ def build_mapping_execution_context(
     selected_limits = limits or load_default_mapping_execution_context_limits()
     raw = cast(dict[str, JsonValue], _mapping_provider_context(preparation))
     values = project_downstream_inputs("mapping", raw)
-    if _json_size(cast(JsonValue, values)) > selected_limits.max_tool_catalog_bytes:
+    if (
+        selected_limits.max_tool_catalog_bytes is not None
+        and _json_size(cast(JsonValue, values)) > selected_limits.max_tool_catalog_bytes
+    ):
         raise AgentContextTooLargeError()
     embedded = cast(JsonValue, {"__gds_downstream_inputs__": "mapping", "values": values})
     if execution_mode == "tool_assisted":
         catalog = build_downstream_readers(
             "mapping",
             values,
-            max_result_bytes=min(
-                selected_limits.max_tool_result_bytes,
-                max(
-                    1,
-                    selected_limits.max_tool_transcript_bytes
-                    // preparation.plan.agent_plan.selection.max_turns,
-                ),
+            max_result_bytes=selected_limits.result_bytes_per_turn(
+                preparation.plan.agent_plan.selection.max_turns
             ),
             max_page_records=selected_limits.max_tool_page_records,
             max_cumulative_result_bytes=selected_limits.max_tool_transcript_bytes,
@@ -455,7 +464,7 @@ def _mapping_context_manifest(
 def _bounded_mapping_context_datasets(
     datasets: Mapping[str, tuple[JsonValue, ...]],
     *,
-    max_result_bytes: int,
+    max_result_bytes: int | None,
 ) -> tuple[dict[str, tuple[JsonValue, ...]], dict[str, int], dict[str, int]]:
     bounded: dict[str, tuple[JsonValue, ...]] = {}
     record_counts: dict[str, int] = {}
@@ -467,7 +476,7 @@ def _bounded_mapping_context_datasets(
         for record_index, row in enumerate(rows):
             if isinstance(row, dict) and _CONTEXT_FRAGMENT_KEY in row:
                 raise AgentContextTooLargeError()
-            if _mapping_page_item_fits(
+            if max_result_bytes is None or _mapping_page_item_fits(
                 dataset=dataset,
                 item=row,
                 max_result_bytes=max_result_bytes,
@@ -633,7 +642,7 @@ def _json_text(value: JsonValue) -> str:
             sort_keys=True,
             separators=(",", ":"),
         )
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         raise AgentContextToolRequestError() from None
 
 

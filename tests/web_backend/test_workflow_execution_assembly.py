@@ -66,13 +66,13 @@ def test_workflow_runtime_services_share_one_executor_graph(
         create_agent_executor,
     )
     for executor_name in (
-        "DatabaseAnalysisInferenceExecutor",
-        "DatabaseConceptualExecutor",
-        "DatabaseLogicalExecutor",
-        "DatabaseDimensionalExecutor",
-        "DatabaseMappingExecutor",
-        "DatabaseCodeGenerationExecutor",
-        "DatabaseValidationExecutor",
+        "AnalysisInferenceWorkflow",
+        "ConceptualWorkflow",
+        "LogicalWorkflow",
+        "DimensionalWorkflow",
+        "MappingWorkflow",
+        "CodeGenerationWorkflow",
+        "ValidationWorkflow",
         "DatabaseMetadataEnrichmentExecutor",
     ):
         monkeypatch.setattr(
@@ -95,19 +95,19 @@ def test_workflow_runtime_services_share_one_executor_graph(
     authoring = tuple(
         captured[name]
         for name in (
-            "DatabaseAnalysisInferenceExecutor",
-            "DatabaseConceptualExecutor",
-            "DatabaseLogicalExecutor",
-            "DatabaseDimensionalExecutor",
-            "DatabaseMappingExecutor",
-            "DatabaseValidationExecutor",
+            "AnalysisInferenceWorkflow",
+            "ConceptualWorkflow",
+            "LogicalWorkflow",
+            "DimensionalWorkflow",
+            "MappingWorkflow",
+            "ValidationWorkflow",
         )
     )
     for dependency in ("agent_executor", "handoff", "no_op", "lifecycle"):
         expected = authoring[0][dependency]
         assert all(arguments[dependency] is expected for arguments in authoring)
-    assert captured["DatabaseCodeGenerationExecutor"]["agent_executor"] is shared_agent_executor
-    assert captured["DatabaseCodeGenerationExecutor"]["lifecycle"] is authoring[0]["lifecycle"]
+    assert captured["CodeGenerationWorkflow"]["agent_executor"] is shared_agent_executor
+    assert captured["CodeGenerationWorkflow"]["lifecycle"] is authoring[0]["lifecycle"]
     enrichment = captured["DatabaseMetadataEnrichmentExecutor"]
     assert enrichment["agent_executor"] is shared_agent_executor
     assert enrichment["lifecycle"] is authoring[0]["lifecycle"]

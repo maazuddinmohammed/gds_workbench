@@ -2,7 +2,7 @@
   "workflow": "dimensional",
   "stage": "candidate_authoring",
   "mode": "tool_assisted",
-  "status": "authorized_for_implementation",
+  "status": "implemented_contract",
   "tools": [
     {
       "name": "get_gds_context",
@@ -1600,7 +1600,7 @@
     {
       "name": "list_logical_attributes",
       "variable": "logical_attribute_list",
-      "description": "Read compact logical attribute natural keys. Relationships match either endpoint and appear once. Omitted/empty selectors return all eligible records, paged. Read only this frozen Dimensional run. Continue with cursor only.",
+      "description": "Read compact logical attribute natural keys. Attribute filters match their owning Entity names. Omitted/empty selectors return all eligible records, paged. Read only this frozen Dimensional run. Continue with cursor only.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -3017,7 +3017,7 @@
     {
       "name": "list_dimensional_attributes",
       "variable": "dimensional_attribute_list",
-      "description": "Read compact dimensional attribute natural keys. Relationships match either endpoint and appear once. Omitted/empty selectors return all eligible records, paged. Read only this frozen Dimensional run. Continue with cursor only.",
+      "description": "Read compact dimensional attribute natural keys. Attribute filters match their owning Entity names. Omitted/empty selectors return all eligible records, paged. Read only this frozen Dimensional run. Continue with cursor only.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -3965,6 +3965,6 @@
       "get_dimensional_relationships"
     ]
   },
-  "paging": "All selections optional. Empty means all eligible. Frozen cursor restores original filter; changed selection with cursor is rejected. Full model records stay whole; oversized indivisible record is an explicit error. Physical Object Attribute groups may continue only at the last group, using incomplete_object_key and matching selected_attribute_names. No raw-JSON fragments, silent truncation, hidden context append, live DB or SQL tools.",
+  "paging": "All selections optional. Empty means all eligible. Frozen cursor restores the original filter; changed selection with cursor is rejected. Default readers page between complete records, including each Object group and its nested Attributes/relationships and each model record with its supports, sources, and memberships. incomplete_object_key is null. Append page items in order until next_cursor is null; do not infer absence from an unfinished result. The application imposes no default response-byte or cumulative-byte ceiling. Readers still page by record count, and the configured execution turn limit and provider context/output limits remain in force. Treat provider, tool, cursor, and key failures as errors, not complete empty evidence. Do not retry a failed read indefinitely, widen scope, truncate fields, assemble raw JSON fragments, or invent missing details. Base changes only on complete available evidence. No hidden context append, live DB or SQL tools.",
   "null_semantics": "[] known empty; null input section unavailable. Unavailable reader errors rather than returning [] and implying absence."
 }

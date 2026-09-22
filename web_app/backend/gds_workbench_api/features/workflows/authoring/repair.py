@@ -162,14 +162,14 @@ def parse_pydantic_candidate[CandidateT: BaseModel](
             allow_nan=False,
             separators=(",", ":"),
         )
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None, (_pydantic_fallback_issue(),)
     try:
         return model.model_validate_json(raw, strict=True), ()
     except ValidationError as error:
         issues = pydantic_validation_issues(error, maximum_issues=maximum_issues)
         return None, issues or (_pydantic_fallback_issue(),)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None, (_pydantic_fallback_issue(),)
 
 
@@ -279,8 +279,8 @@ class AgentContextPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     schema_version: Literal["1.0"] = "1.0"
-    one_shot_max_context_bytes: int = Field(ge=1, le=10 * 1024 * 1024)
-    stage_max_context_bytes: int = Field(ge=1, le=10 * 1024 * 1024)
+    one_shot_max_context_bytes: int | None = Field(default=None, ge=1)
+    stage_max_context_bytes: int | None = Field(default=None, ge=1)
     max_candidate_bytes: int = Field(ge=1, le=10 * 1024 * 1024)
     max_validation_issues: int = Field(ge=1, le=200)
 
@@ -364,9 +364,10 @@ class ValidationRepairRunner:
             if request.execution_mode == "one_shot"
             else self._policy.stage_max_context_bytes
         )
-        context_budget = _request_context_budget(
-            request=request,
-            maximum_bytes=context_limit,
+        context_budget = (
+            None
+            if context_limit is None
+            else _request_context_budget(request=request, maximum_bytes=context_limit)
         )
         output_schema_validator = _output_schema_validator(request.output_schema)
         attempt_count = 0
@@ -383,7 +384,10 @@ class ValidationRepairRunner:
             attempt_request = request.model_copy(
                 update={"context": attempt_context, "authoring_attempt": attempt_count + 1}
             )
-            if agent_request_envelope_bytes(attempt_request) > context_limit:
+            if (
+                context_limit is not None
+                and agent_request_envelope_bytes(attempt_request) > context_limit
+            ):
                 raise AgentContextTooLargeError()
             execution = await self._executor.execute(attempt_request)
             attempt_count += 1
@@ -438,7 +442,7 @@ def _bounded_attempt_context(
     *,
     original_context: JsonValue,
     repair: dict[str, JsonValue] | None,
-    maximum_bytes: int,
+    maximum_bytes: int | None,
 ) -> JsonValue:
     attempt = cast(
         JsonValue,
@@ -447,7 +451,7 @@ def _bounded_attempt_context(
             "repair": deepcopy(repair),
         },
     )
-    if _json_bytes({"repair": repair}) <= maximum_bytes:
+    if maximum_bytes is None or _json_bytes({"repair": repair}) <= maximum_bytes:
         return attempt
     if repair is None:
         raise AgentContextTooLargeError()
@@ -534,7 +538,7 @@ def _json_data(value: JsonValue) -> bytes:
             separators=(",", ":"),
             sort_keys=True,
         ).encode("utf-8")
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         raise AgentCandidateValidationError() from None
 
 

@@ -25,7 +25,6 @@ from .contracts import (
     ValidationValidationGroup,
 )
 
-_MAX_SYSTEMS = 1_000
 _MAX_GROUPS = 10_000
 _MAX_CHECKS = 50_000
 _MAX_CONTEXTS = 50_000
@@ -110,7 +109,6 @@ SELECT source_system.system_id,
           source_system.system_name
  ORDER BY lower(btrim(source_system.system_code)),
           source_system.system_id
- LIMIT 1001
 """
 
 _LEDGER_BOUNDS_SQL: LiteralString = """
@@ -403,11 +401,8 @@ class DatabaseValidationReadService:
         return ValidationEligibleSystemCollection(
             model_id=model_id,
             model_revision=header["model_revision"],
-            items=tuple(
-                ValidationEligibleSystem.model_validate(row, strict=False)
-                for row in rows[:_MAX_SYSTEMS]
-            ),
-            is_truncated=len(rows) > _MAX_SYSTEMS,
+            items=tuple(ValidationEligibleSystem.model_validate(row, strict=False) for row in rows),
+            is_truncated=False,
         )
 
     async def read_ledger(
@@ -605,7 +600,7 @@ def _ledger_digest_context(
         if not isinstance(raw_sources, list):
             raise InvalidRequestError("The current Validation context is invalid.")
         source_objects = cast(list[object], raw_sources)
-        if not 1 <= len(source_objects) <= _MAX_SYSTEMS or any(
+        if not source_objects or any(
             not isinstance(value, str) or not value.strip() or len(value) > 100
             for value in source_objects
         ):

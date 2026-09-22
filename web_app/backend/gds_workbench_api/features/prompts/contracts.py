@@ -161,12 +161,11 @@ class PromptTemplateVersion(PromptContract):
             raise ValueError("Prompt tool names must be unique")
         return sorted(value) if value is not None else None
 
-    system_prompt_template: str = Field(min_length=1, max_length=262144)
-    instruction_prompt_template: str = Field(min_length=1, max_length=262144)
+    system_prompt_template: str = Field(min_length=1)
+    instruction_prompt_template: str = Field(min_length=1)
     tool_instruction_prompt_template: str | None = Field(
         default=None,
         min_length=1,
-        max_length=262144,
     )
     prompt_template_digest: str = Field(
         min_length=64,
@@ -278,12 +277,11 @@ class SavePromptDraftRequest(PromptRequest):
             raise ValueError("Prompt tool names must be unique")
         return sorted(value) if value is not None else None
 
-    system_prompt_template: str = Field(min_length=1, max_length=262144)
-    instruction_prompt_template: str = Field(min_length=1, max_length=262144)
+    system_prompt_template: str = Field(min_length=1)
+    instruction_prompt_template: str = Field(min_length=1)
     tool_instruction_prompt_template: str | None = Field(
         default=None,
         min_length=1,
-        max_length=262144,
     )
 
     @field_validator(
@@ -297,8 +295,6 @@ class SavePromptDraftRequest(PromptRequest):
             return None
         if not value.strip():
             raise ValueError("Prompt Template body must be nonblank")
-        if len(value.encode("utf-8")) > 262144:
-            raise ValueError("Prompt Template body exceeds 262144 UTF-8 bytes")
         return value
 
     @model_validator(mode="after")
@@ -309,11 +305,9 @@ class SavePromptDraftRequest(PromptRequest):
 
 
 class PromptPreview(PromptContract):
-    rendered_system_prompt: str = Field(max_length=1_000_000, repr=False)
-    rendered_instruction_prompt: str = Field(max_length=1_000_000, repr=False)
-    rendered_tool_instruction_prompt: str | None = Field(
-        default=None, max_length=1_000_000, repr=False
-    )
+    rendered_system_prompt: str = Field(repr=False)
+    rendered_instruction_prompt: str = Field(repr=False)
+    rendered_tool_instruction_prompt: str | None = Field(default=None, repr=False)
 
 
 class SetModelPromptAssignmentRequest(PromptRequest):

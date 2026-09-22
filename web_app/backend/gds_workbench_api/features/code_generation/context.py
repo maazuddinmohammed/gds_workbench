@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any, LiteralString, Protocol, cast
 
 from gds_etl_workbench.application.change_sets.model_validation import PhysicalModelCatalog
@@ -23,9 +22,6 @@ from gds_workbench_api.features.workflows.authoring.plan import AgentRunPlan
 
 from .artifact_context import CodeGenerationArtifactContext
 
-_MAX_OBJECT_MAPPINGS = 200
-_MAX_ATTRIBUTE_MAPPINGS = 5_000
-_MAX_CONTEXT_BYTES = 10 * 1024 * 1024
 _JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 _CONTEXT_SQL: LiteralString = """
@@ -152,7 +148,6 @@ class CodeGenerationExecutionContext(BaseModel):
 
     targets: tuple[CodeGenerationArtifactContext, ...] = Field(
         min_length=1,
-        max_length=50_000,
     )
     agent_context: JsonValue = Field(repr=False)
     snapshot: ModelSnapshot | None = Field(default=None, repr=False, exclude=True)
@@ -191,7 +186,7 @@ class PostgresCodeGenerationContextRepository:
             )
         except InvalidRequestError:
             raise
-        except (TypeError, ValueError, ValidationError):
+        except TypeError, ValueError, ValidationError:
             raise InvalidRequestError("The Code Generation context is unavailable.") from None
 
 
@@ -218,8 +213,6 @@ def _assemble_context(
         mapping_count = _positive_int(row, "mapping_count")
         attribute_count = _nonnegative_int(row, "attribute_mapping_count")
         source_system_count = _positive_int(row, "source_system_count")
-        if mapping_count > _MAX_OBJECT_MAPPINGS or attribute_count > _MAX_ATTRIBUTE_MAPPINGS:
-            raise InvalidRequestError("The Code Generation context exceeds bounded collections.")
         source_context = _JSON_VALUE.validate_python(row.get("source_context"), strict=True)
         guide_document = _JSON_VALUE.validate_python(
             row.get("guide_document"),
@@ -298,22 +291,10 @@ def _assemble_context(
             }
         )
     agent_context = cast(JsonValue, {"targets": agent_targets})
-    if len(_canonical_json(agent_context)) > _MAX_CONTEXT_BYTES:
-        raise InvalidRequestError("The Code Generation context exceeds its bounded size.")
     return CodeGenerationExecutionContext(
         targets=tuple(targets),
         agent_context=agent_context,
     )
-
-
-def _canonical_json(value: JsonValue) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        allow_nan=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
 
 
 def _positive_int(row: dict[str, Any], key: str) -> int:

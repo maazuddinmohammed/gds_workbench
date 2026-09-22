@@ -3,14 +3,14 @@ from gds_workbench_api.features.analysis.validation_execution import (
     AnalysisValidationQuery,
     ConnectorAnalysisValidationExecutor,
 )
+from gds_workbench_api.features.profiling.execution import (
+    ConnectorProfilingExecutor,
+    ProfileQuery,
+)
 from gds_workbench_api.integrations.databricks import (
     LocalFakeAnalysisValidationExecutor,
     LocalFakeProfilingExecutor,
     create_databricks_execution_adapters,
-)
-from gds_workbench_runtime.profiling.execution import (
-    ConnectorProfilingExecutor,
-    ProfileQuery,
 )
 
 

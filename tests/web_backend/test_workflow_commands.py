@@ -41,17 +41,22 @@ def test_metadata_enrichment_request_requires_one_shot(mode: str | None) -> None
         )
 
 
-def test_metadata_enrichment_rejects_an_unbounded_selection() -> None:
-    with pytest.raises(ValidationError, match="at most 200"):
-        CreateWorkflowRunRequest.model_validate(
-            {
-                "expected_model_revision": 4,
-                "model_workflow": "metadata_enrichment",
-                "workflow_execution_mode": "one_shot",
-                "selected_object_ids": list(range(1, 202)),
-            },
-            strict=True,
-        )
+@pytest.mark.parametrize("workflow", ["metadata_enrichment", "conceptual", "validation"])
+def test_workflow_request_preserves_large_explicit_selection(workflow: str) -> None:
+    objects = list(range(1, 50_002)) if workflow != "validation" else []
+    systems = [f"system_{index}" for index in range(1001)] if workflow == "validation" else []
+    request = CreateWorkflowRunRequest.model_validate(
+        {
+            "expected_model_revision": 4,
+            "model_workflow": workflow,
+            "workflow_execution_mode": None if workflow == "validation" else "one_shot",
+            "selected_object_ids": objects,
+            "selected_system_codes": systems,
+        },
+        strict=True,
+    )
+    assert request.selected_object_ids == objects
+    assert request.selected_system_codes == systems
 
 
 class StaticWorkflowCommandService:

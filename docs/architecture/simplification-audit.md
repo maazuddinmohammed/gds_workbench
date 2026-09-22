@@ -1,5 +1,8 @@
 # Ponytail simplification audit — 2026-09-05
 
+> Historical verification record. The interactive notebook runtime was retired
+> by [ADR 007](../adr/007-web-owned-workflows-and-notebook-retirement.md); notebook checks below describe the earlier release.
+
 The audit removed **424 net lines of production source** while keeping the
 existing deployment model and public behavior. No dependencies were added or
 removed. The largest runtime improvement is faster local Stage chunk planning.

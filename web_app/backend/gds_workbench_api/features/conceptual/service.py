@@ -1,4 +1,4 @@
-"""Execute one already-running Conceptual authoring run."""
+"""Start governed Conceptual Runs and execute them after worker claim."""
 
 from __future__ import annotations
 
@@ -148,6 +148,18 @@ class ConceptualNoOpCompleter(Protocol):
 
 
 class ConceptualLifecycle(Protocol):
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: ModelWorkflow,
+        expected_execution_mode: WorkflowExecutionMode | None,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart: ...
+
     async def append_event(
         self,
         principal: RequestPrincipal,
@@ -189,87 +201,8 @@ class ConceptualFinalizationFailedError(WorkbenchError):
 type ConceptualExecutionResult = WorkflowChangeSetHandoffResult | AuthoringNoOpReceipt
 
 
-class ConceptualRunLifecycle(Protocol):
-    async def start(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_execution_mode: WorkflowExecutionMode | None,
-        expected_model_revision: int,
-    ) -> AgentWorkflowRunStart: ...
-
-
-class ConceptualExecutor(Protocol):
-    async def execute_started(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-    ) -> ConceptualExecutionResult: ...
-
-
 class ConceptualWorkflow:
-    """Bind the public route to one explicit supported Conceptual mode."""
-
-    def __init__(
-        self,
-        *,
-        lifecycle: ConceptualRunLifecycle,
-        executor: ConceptualExecutor,
-    ) -> None:
-        self._lifecycle = lifecycle
-        self._executor = executor
-
-    async def start(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_execution_mode: WorkflowExecutionMode,
-        expected_model_revision: int,
-    ) -> AgentWorkflowRunStart:
-        return await self._lifecycle.start(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            workflow_run_id=workflow_run_id,
-            expected_workflow="conceptual",
-            expected_execution_mode=expected_execution_mode,
-            expected_model_revision=expected_model_revision,
-        )
-
-    async def execute_started(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-    ) -> ConceptualExecutionResult:
-        return await self._executor.execute_started(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            workflow_run_id=workflow_run_id,
-            expected_model_revision=expected_model_revision,
-            workflow_run_claim_token=workflow_run_claim_token,
-        )
-
-
-class DatabaseConceptualExecutor:
-    """Load frozen inputs, repair one candidate, and hand off one validated draft."""
+    """Start governed Runs; author a complete Conceptual draft only after worker claim."""
 
     def __init__(
         self,
@@ -296,6 +229,26 @@ class DatabaseConceptualExecutor:
         self._handoff = handoff
         self._no_op = no_op
         self._lifecycle = lifecycle
+
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_execution_mode: WorkflowExecutionMode,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart:
+        return await self._lifecycle.start(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            workflow_run_id=workflow_run_id,
+            expected_workflow="conceptual",
+            expected_execution_mode=expected_execution_mode,
+            expected_model_revision=expected_model_revision,
+        )
 
     async def execute_started(
         self,
@@ -589,5 +542,4 @@ __all__ = [
     "ConceptualWorkflow",
     "ConceptualExecutionFailedError",
     "ConceptualFinalizationFailedError",
-    "DatabaseConceptualExecutor",
 ]

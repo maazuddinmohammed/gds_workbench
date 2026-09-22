@@ -14,7 +14,7 @@ _RESERVED_TOP_LEVEL_PATHS = frozenset({"api", "docs", "healthz", "openapi.json",
 
 
 class RequestBodyLimitMiddleware:
-    """Reject request bodies larger than the former NGINX boundary."""
+    """Bound ordinary uploads while allowing complete agent authoring inputs."""
 
     def __init__(self, app: ASGIApp, *, maximum_bytes: int = _MAX_REQUEST_BYTES) -> None:
         self._app = app
@@ -22,6 +22,24 @@ class RequestBodyLimitMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+
+        path = scope.get("path", "").strip("/").split("/")
+        if (
+            len(path) >= 5
+            and path[:3] == ["api", "v1", "tenants"]
+            and path[3].isdecimal()
+            and (
+                path[4] in {"prompts", "sql-generation-guides"}
+                or (
+                    len(path) >= 7
+                    and path[4] == "models"
+                    and path[5].isdecimal()
+                    and path[6] == "runs"
+                )
+            )
+        ):
             await self._app(scope, receive, send)
             return
 

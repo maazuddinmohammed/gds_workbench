@@ -2622,7 +2622,7 @@ def _decode_canonical_stage_payload(
 ) -> list[dict[str, object]]:
     try:
         parsed = cast(object, json.loads(payload.decode("utf-8")))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except UnicodeDecodeError, json.JSONDecodeError:
         raise InvalidRequestError("The Stage payload is not valid UTF-8 JSON.") from None
     records = cast(list[object], parsed) if isinstance(parsed, list) else None
     if (
@@ -2686,6 +2686,8 @@ async def _validate_locked_change_set(
     transaction: WriteTransaction,
     model: ModelReadContext,
     row: Mapping[str, Any],
+    *,
+    enforce_row_limits: bool = True,
 ) -> ValidatedModelChangeSet:
     if row["base_model_revision"] != model.model_revision:
         issue = ModelValidationIssue(
@@ -2706,7 +2708,7 @@ async def _validate_locked_change_set(
         dict[ModelChangeSetDataset, list[dict[str, object]]],
         _pending_datasets(row),
     )
-    snapshot = await build_model_snapshot(transaction, model)
+    snapshot = await build_model_snapshot(transaction, model, enforce_row_limits=enforce_row_limits)
     physical_scope = await _load_physical_scope(transaction, model)
     return validate_future_graph(
         snapshot=snapshot,

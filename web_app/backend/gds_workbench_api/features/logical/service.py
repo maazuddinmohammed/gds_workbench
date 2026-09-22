@@ -1,4 +1,4 @@
-"""Execute one already-running Logical authoring run."""
+"""Start governed Logical Runs and execute them after worker claim."""
 
 from __future__ import annotations
 
@@ -150,6 +150,18 @@ class LogicalNoOpCompleter(Protocol):
 
 
 class LogicalLifecycle(Protocol):
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: ModelWorkflow,
+        expected_execution_mode: WorkflowExecutionMode | None,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart: ...
+
     async def append_event(
         self,
         principal: RequestPrincipal,
@@ -191,82 +203,8 @@ class LogicalFinalizationFailedError(WorkbenchError):
 type LogicalExecutionResult = WorkflowChangeSetHandoffResult | AuthoringNoOpReceipt
 
 
-class LogicalRunLifecycle(Protocol):
-    async def start(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_execution_mode: WorkflowExecutionMode | None,
-        expected_model_revision: int,
-    ) -> AgentWorkflowRunStart: ...
-
-
-class LogicalExecutor(Protocol):
-    async def execute_started(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-    ) -> LogicalExecutionResult: ...
-
-
 class LogicalWorkflow:
-    """Bind the public route to one explicit Logical execution mode."""
-
-    def __init__(self, *, lifecycle: LogicalRunLifecycle, executor: LogicalExecutor) -> None:
-        self._lifecycle = lifecycle
-        self._executor = executor
-
-    async def start(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_execution_mode: WorkflowExecutionMode,
-        expected_model_revision: int,
-    ) -> AgentWorkflowRunStart:
-        return await self._lifecycle.start(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            workflow_run_id=workflow_run_id,
-            expected_workflow="logical",
-            expected_execution_mode=expected_execution_mode,
-            expected_model_revision=expected_model_revision,
-        )
-
-    async def execute_started(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-    ) -> LogicalExecutionResult:
-        return await self._executor.execute_started(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            workflow_run_id=workflow_run_id,
-            expected_model_revision=expected_model_revision,
-            workflow_run_claim_token=workflow_run_claim_token,
-        )
-
-
-class DatabaseLogicalExecutor:
-    """Load frozen inputs, repair one candidate, and hand off one atomic draft."""
+    """Start governed Runs; author a complete Logical draft only after worker claim."""
 
     def __init__(
         self,
@@ -293,6 +231,26 @@ class DatabaseLogicalExecutor:
         self._handoff = handoff
         self._no_op = no_op
         self._lifecycle = lifecycle
+
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_execution_mode: WorkflowExecutionMode,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart:
+        return await self._lifecycle.start(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            workflow_run_id=workflow_run_id,
+            expected_workflow="logical",
+            expected_execution_mode=expected_execution_mode,
+            expected_model_revision=expected_model_revision,
+        )
 
     async def execute_started(
         self,
@@ -624,9 +582,4 @@ def _safe_execution_error(
     return LogicalExecutionFailedError()
 
 
-__all__ = [
-    "DatabaseLogicalExecutor",
-    "LogicalExecutionFailedError",
-    "LogicalFinalizationFailedError",
-    "LogicalWorkflow",
-]
+__all__ = ["LogicalWorkflow", "LogicalExecutionFailedError", "LogicalFinalizationFailedError"]

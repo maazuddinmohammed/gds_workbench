@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
+import { Fact } from "../../shared/ui";
 import type { ModelDetail } from "../models/api";
 import type {
   WorkflowRunEvent,
@@ -19,7 +20,6 @@ import {
 import { profilingQueryKeys, type ProfilingApi } from "./api";
 import {
   DrawerHeader,
-  Fact,
   WorkflowTable,
   stageLabel,
 } from "./shared";

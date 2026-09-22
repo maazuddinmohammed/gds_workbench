@@ -83,7 +83,7 @@ class MappingReadinessService:
                 model_revision=plan.model_revision,
                 readable_source_tenant_ids=source_tenants,
             )
-            snapshot = await build_model_snapshot(transaction, model)
+            snapshot = await build_model_snapshot(transaction, model, enforce_row_limits=False)
             physical_scope = await load_model_physical_scope(transaction, model)
         return MappingPreparation(
             plan=plan,

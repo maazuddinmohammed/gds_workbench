@@ -41,10 +41,10 @@ _FORBIDDEN_JSON_KEYS = frozenset(
 def validate_assertion_json(
     value: Mapping[str, object],
     *,
-    maximum_bytes: int,
+    maximum_bytes: int | None,
     label: str,
 ) -> None:
-    """Reject oversized, complex, or prohibited normalized Assertion JSON."""
+    """Reject prohibited JSON; optionally enforce the Assertion storage envelope."""
     try:
         encoded = json.dumps(
             value,
@@ -54,7 +54,7 @@ def validate_assertion_json(
         ).encode()
     except (TypeError, ValueError) as error:
         raise ValueError(f"{label} is not safe JSON") from error
-    if len(encoded) > maximum_bytes:
+    if maximum_bytes is not None and len(encoded) > maximum_bytes:
         raise ValueError(f"{label} is too large")
 
     node_count = 0
@@ -62,9 +62,9 @@ def validate_assertion_json(
     while pending:
         item, depth = pending.pop()
         node_count += 1
-        if node_count > 4096 or depth > 12:
+        if maximum_bytes is not None and (node_count > 4096 or depth > 12):
             raise ValueError(f"{label} is too complex")
-        if isinstance(item, str) and len(item) > 32_768:
+        if maximum_bytes is not None and isinstance(item, str) and len(item) > 32_768:
             raise ValueError(f"{label} contains an oversized string")
         if isinstance(item, list):
             pending.extend((child, depth + 1) for child in cast(list[object], item))

@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
-import { DetailState } from "../../shared/ui";
+import { DetailState, Fact } from "../../shared/ui";
 import { ApiError } from "../../core/http";
 import type {
   DimensionalAttributeDetail,
@@ -175,7 +175,6 @@ function DimensionalObjectView({
   );
 }
 
-
 function DimensionalAttributeView({
   tenantId,
   modelId,
@@ -241,7 +240,6 @@ function DimensionalAttributeView({
     </article>
   );
 }
-
 
 function DimensionalRelationshipView({
   tenantId,
@@ -339,10 +337,6 @@ function detailErrorLabel(error: Error, artifact: "Attribute" | "Relationship"):
   return error instanceof ApiError && error.status === 403
     ? `You do not have permission to view this Dimensional ${artifact}.`
     : `Dimensional ${artifact} details could not be loaded.`;
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return <div><dt>{label}</dt><dd>{value}</dd></div>;
 }
 
 function humanize(value: string): string {

@@ -10,7 +10,9 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import PhysicalModelCatalog
+from gds_etl_workbench.application.change_sets.model_validation import (
+    PhysicalModelCatalog,
+)
 from gds_etl_workbench.domain.authorization import (
     ActorKind,
     RequestPrincipal,
@@ -24,7 +26,7 @@ from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.conceptual.service import (
     ConceptualExecutionFailedError,
     ConceptualFinalizationFailedError,
-    DatabaseConceptualExecutor,  # pyright: ignore[reportPrivateUsage]
+    ConceptualWorkflow,
 )
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
@@ -41,6 +43,7 @@ from gds_workbench_api.features.workflows.authoring.context import (
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
+    AgentWorkflowRunStart,
     AgentWorkflowTerminalResult,
 )
 from gds_workbench_api.features.workflows.authoring.no_op import (
@@ -50,9 +53,13 @@ from gds_workbench_api.features.workflows.authoring.no_op import (
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
+    WorkflowExecutionMode,
     FrozenAgentStage,
 )
-from gds_workbench_api.features.workflows.authoring.repair import AgentContextPolicy, AgentExecutor
+from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentContextPolicy,
+    AgentExecutor,
+)
 from gds_workbench_api.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
@@ -254,7 +261,9 @@ def _candidate(*, source_name: str = "customer_raw") -> JsonValue:
 
 @dataclass
 class _Database:
-    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
+    isolations: list[ReadIsolation] = field(
+        default_factory=lambda: list[ReadIsolation]()
+    )
 
     @asynccontextmanager
     async def write_transaction(
@@ -398,7 +407,9 @@ class _NoOp:
             model_revision=request.expected_model_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
-                "completed_with_repair" if request.final_event.attempt > 1 else "completed"
+                "completed_with_repair"
+                if request.final_event.attempt > 1
+                else "completed"
             ),
             model_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
@@ -412,7 +423,45 @@ class _NoOp:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
+    starts: list[tuple[RequestPrincipal, int, int, int, str, str | None, int]] = field(
+        default_factory=lambda: list[
+            tuple[RequestPrincipal, int, int, int, str, str | None, int]
+        ]()
+    )
+
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: str,
+        expected_execution_mode: str | None,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart:
+        self.starts.append(
+            (
+                principal,
+                tenant_id,
+                model_id,
+                workflow_run_id,
+                expected_workflow,
+                expected_execution_mode,
+                expected_model_revision,
+            )
+        )
+        return AgentWorkflowRunStart(
+            changed=True,
+            workflow_run_id=workflow_run_id,
+            workflow_run_state="running",
+            started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
+            model_revision=expected_model_revision,
+        )
+
+    events: list[AgentWorkflowEvent] = field(
+        default_factory=lambda: list[AgentWorkflowEvent]()
+    )
     failed: tuple[str, str] | None = None
 
     async def append_event(
@@ -456,7 +505,7 @@ def _service(
     bundle: AgentContextBundle | None = None,
     context_policy: AgentContextPolicy | None = None,
 ) -> tuple[
-    DatabaseConceptualExecutor,
+    ConceptualWorkflow,
     _Database,
     _Authorizer,
     _Handoff,
@@ -530,7 +579,9 @@ def _service(
                 "modeling_assertion_record": [
                     item.model_dump(mode="json") for item in context.assertion.records
                 ],
-                "conceptual_object": [item.model_dump(mode="json") for item in applied.objects]
+                "conceptual_object": [
+                    item.model_dump(mode="json") for item in applied.objects
+                ]
                 if applied
                 else [],
                 "conceptual_relationship": [
@@ -540,11 +591,16 @@ def _service(
                 else [],
             }
         ).model_copy(
-            update={"model_id": context.model_id, "model_revision": context.model_revision}
+            update={
+                "model_id": context.model_id,
+                "model_revision": context.model_revision,
+            }
         )
-        selected_bundle = replace(selected_bundle, snapshot=snapshot, physical_scope=physical_scope)
+        selected_bundle = replace(
+            selected_bundle, snapshot=snapshot, physical_scope=physical_scope
+        )
     return (
-        DatabaseConceptualExecutor(
+        ConceptualWorkflow(
             database=database,
             authorizer=cast(Any, authorizer),
             agent_executor=agent,
@@ -568,6 +624,35 @@ def _service(
         handoff,
         lifecycle,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+async def test_start_binds_conceptual_workflow_without_executing(
+    mode: WorkflowExecutionMode,
+) -> None:
+    agent = _AgentExecutor(responses=[])
+    service, database, authorizer, handoff, lifecycle = _service(agent=agent)
+    principal = _principal()
+
+    result = await service.start(
+        principal,
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_execution_mode=mode,
+        expected_model_revision=7,
+    )
+
+    assert lifecycle.starts == [(principal, 7, 18, 1048, "conceptual", mode, 7)]
+    assert result.workflow_run_id == 1048
+    assert result.model_revision == 7
+    assert database.isolations == []
+    assert authorizer.calls == []
+    assert handoff.calls == []
+    assert agent.requests == []
+    assert lifecycle.events == []
+    assert lifecycle.failed is None
 
 
 @pytest.mark.asyncio
@@ -603,7 +688,8 @@ async def test_executor_authors_validated_draft_without_applying_model() -> None
     assert handoff.final_events[-1].finding_count == 1
     assert lifecycle.failed is None
     assert [
-        (event.sequence, event.stage) for event in (*lifecycle.events, *handoff.final_events)
+        (event.sequence, event.stage)
+        for event in (*lifecycle.events, *handoff.final_events)
     ] == [
         (2, "conceptual.candidate_authoring"),
         (3, "conceptual.backend_validation"),
@@ -649,7 +735,9 @@ async def test_empty_candidate_completes_with_atomic_no_op_receipt() -> None:
 async def test_repaired_empty_candidate_preserves_attempt_and_warning() -> None:
     no_op = _NoOp()
     service, _database, _authorizer, handoff, lifecycle = _service(
-        agent=_AgentExecutor(responses=[{"invalid": True}, {"objects": [], "relationships": []}]),
+        agent=_AgentExecutor(
+            responses=[{"invalid": True}, {"objects": [], "relationships": []}]
+        ),
         no_op=no_op,
     )
 
@@ -704,7 +792,9 @@ async def test_no_op_error_never_marks_the_run_failed(
 
 @pytest.mark.asyncio
 async def test_executor_repairs_invalid_candidate_before_single_handoff() -> None:
-    agent = _AgentExecutor(responses=[_candidate(source_name="outside_selection"), _candidate()])
+    agent = _AgentExecutor(
+        responses=[_candidate(source_name="outside_selection"), _candidate()]
+    )
     service, _database, _authorizer, handoff, _lifecycle = _service(agent=agent)
 
     await service.execute_started(

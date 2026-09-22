@@ -48,13 +48,10 @@ export function TenantHomeScreen({ api, tenantId }: { api: TenantHomeApi; tenant
 
 const systemColumns: ColumnDef<SystemRecord>[] = [
   {
-    accessorKey: "system_name",
+    accessorKey: "system_code",
     header: "System",
     cell: ({ row }) => (
-      <span className="system-name">
-        <strong>{row.original.system_name}</strong>
-        <span>{row.original.system_code}</span>
-      </span>
+      <strong>{row.original.system_code}</strong>
     ),
   },
   { accessorKey: "system_type_name", header: "Type" },

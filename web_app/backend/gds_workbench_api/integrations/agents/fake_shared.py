@@ -107,12 +107,50 @@ def conceptual_source_objects(
     return tuple(sources)
 
 
+def named_tool_items(
+    request: AgentExecutionRequest, tool_name: str
+) -> tuple[list[dict[str, JsonValue]], int]:
+    """Read the same cursor pages available to the remote model, without private catalog access."""
+    catalog = request.local_tool_catalog
+    if catalog is None or tool_name not in request.allowed_tool_names:
+        raise InvalidRequestError("The local fake agent context is invalid.")
+    rows: list[dict[str, JsonValue]] = []
+    arguments: dict[str, JsonValue] = {}
+    cursors: set[str] = set()
+    calls = 0
+    while True:
+        page = catalog.invoke(tool_name, arguments)
+        calls += 1
+        if not isinstance(page, dict) or not isinstance(page.get("items"), list):
+            raise InvalidRequestError("The local fake agent context is invalid.")
+        for item in cast(list[JsonValue], page["items"]):
+            if not isinstance(item, dict):
+                raise InvalidRequestError("The local fake agent context is invalid.")
+            rows.append(item)
+        cursor = page.get("next_cursor")
+        if cursor is None:
+            if page.get("is_complete") is not True:
+                raise InvalidRequestError("The local fake agent context is invalid.")
+            return rows, calls
+        if not isinstance(cursor, str) or not cursor or cursor in cursors:
+            raise InvalidRequestError("The local fake agent context is invalid.")
+        cursors.add(cursor)
+        arguments = {"cursor": cursor}
+
+
 def tool_assisted_conceptual_sources(
     request: AgentExecutionRequest,
 ) -> tuple[tuple[dict[str, JsonValue], ...], int]:
     catalog = request.local_tool_catalog
     if catalog is None:
         raise InvalidRequestError("The local fake agent context is invalid.")
+    if "get_objects" in request.allowed_tool_names:
+        rows, calls = named_tool_items(request, "get_objects")
+        context: JsonValue = {
+            "original_context": {"selected_objects": [{"object": row} for row in rows]},
+            "repair": None,
+        }
+        return conceptual_source_objects(context), calls
     manifest_calls = int("get_agent_context_manifest" in request.allowed_tool_names)
     manifest = (
         catalog.invoke("get_agent_context_manifest", {})
@@ -223,6 +261,27 @@ def tool_assisted_logical_sources(
     int,
 ]:
     source_objects, tool_call_count = tool_assisted_conceptual_sources(request)
+    if "get_objects" in request.allowed_tool_names:
+        groups, calls = named_tool_items(request, "get_object_details")
+        selected: list[JsonValue] = []
+        for group in groups:
+            source = _conceptual_source_from_tool_item(group)
+            attributes = group.get("attributes")
+            if not isinstance(attributes, list) or any(
+                not isinstance(attribute, dict) for attribute in attributes
+            ):
+                raise InvalidRequestError("The local fake agent context is invalid.")
+            selected.append(
+                {
+                    "object": source,
+                    "attributes": [
+                        {**source, **cast(dict[str, JsonValue], attribute)}
+                        for attribute in attributes
+                    ],
+                }
+            )
+        context: JsonValue = {"original_context": {"selected_objects": selected}, "repair": None}
+        return source_objects, analysis_selected_attributes(context), tool_call_count + calls
     catalog = request.local_tool_catalog
     context = request.context
     if catalog is None or not isinstance(context, dict):

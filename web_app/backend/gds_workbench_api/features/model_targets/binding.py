@@ -99,7 +99,7 @@ async def load_model_binding(
     masked = await transaction.fetch_all(masked_sql, (model.model_id,))
     return prepare_model_binding(
         model=model,
-        review=await read_model_review_snapshot(transaction, model),
+        review=await read_model_review_snapshot(transaction, model, enforce_row_limits=False),
         physical_scope=await load_model_physical_scope(transaction, model),
         command=command,
         target=target,
@@ -383,7 +383,7 @@ async def load_generated_bindings(
     )
     if len(targets) > 5000:
         raise InvalidRequestError("Select a schema with at most 5,000 registered Objects.")
-    review = await read_model_review_snapshot(transaction, model)
+    review = await read_model_review_snapshot(transaction, model, enforce_row_limits=False)
     physical_scope = await load_model_physical_scope(transaction, model)
     masked_sql = (
         _MASKED_SQL if command.layer == "logical" else _MASKED_SQL.replace("logical", "dimensional")

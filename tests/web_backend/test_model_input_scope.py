@@ -606,8 +606,36 @@ async def test_database_scope_candidates_use_authorized_visible_closure() -> Non
 
 
 @pytest.mark.asyncio
-async def test_database_scope_detail_is_bound_to_active_model_input_scope() -> None:
+@pytest.mark.parametrize("attribute_count", (1, 2_001))
+async def test_database_scope_detail_is_bound_to_active_model_input_scope(
+    attribute_count: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
     database = ScopeDatabase()
+    original_fetch_one = database.transaction.fetch_one
+    original_fetch_all = database.transaction.fetch_all
+
+    async def fetch_one(query: LiteralString, parameters: tuple[Any, ...] = ()):
+        row = await original_fetch_one(query, parameters)
+        if row is not None and "total_attribute_count" in row:
+            row = {
+                **row,
+                "attribute_count": attribute_count,
+                "total_attribute_count": attribute_count + 1,
+            }
+        return row
+
+    async def fetch_all(query: LiteralString, parameters: tuple[Any, ...] = ()):
+        rows = await original_fetch_all(query, parameters)
+        if "SELECT attribute.attribute_id" in query:
+            assert "LIMIT" not in query
+            return [
+                {**rows[0], "attribute_id": 601 + index, "attribute_name": f"field_{index}"}
+                for index in range(attribute_count)
+            ]
+        return rows
+
+    monkeypatch.setattr(database.transaction, "fetch_one", fetch_one)
+    monkeypatch.setattr(database.transaction, "fetch_all", fetch_all)
     service = DatabaseModelInputScopeService(
         database=database,
         authorizer=AuthorizationService(),
@@ -627,8 +655,9 @@ async def test_database_scope_detail_is_bound_to_active_model_input_scope() -> N
     )
 
     assert detail.object_name == "customer_raw"
-    assert detail.attributes[0].attribute_name == "customer_id"
-    assert detail.total_attribute_count == 2 and detail.attribute_count == 1
+    assert detail.attributes[0].attribute_name == "field_0"
+    assert len(detail.attributes) == detail.attribute_count == attribute_count
+    assert detail.total_attribute_count == attribute_count + 1
 
 
 @pytest.mark.asyncio

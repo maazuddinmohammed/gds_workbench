@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime
+from functools import partial
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
@@ -115,11 +116,13 @@ class WorkflowChangeSetHandoff:
         *,
         database: WorkflowChangeSetDatabase,
         authorizer: AuthorizationService,
-        validator: ChangeSetValidator = validate_locked_model_change_set,
+        validator: ChangeSetValidator | None = None,
     ) -> None:
         self._database = database
         self._authorizer = authorizer
-        self._validator = validator
+        self._validator = validator or partial(
+            validate_locked_model_change_set, enforce_row_limits=False
+        )
 
     async def handoff(
         self,

@@ -24,7 +24,7 @@ from gds_workbench_api.features.validation.context import (
     ValidationExecutionContext,
     ValidationSystemAuthoringContext,
 )
-from gds_workbench_api.features.validation.service import DatabaseValidationExecutor
+from gds_workbench_api.features.validation.service import ValidationWorkflow
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
@@ -35,6 +35,7 @@ from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
+    AgentWorkflowRunStart,
     AgentWorkflowTerminalResult,
 )
 from gds_workbench_api.features.workflows.authoring.no_op import (
@@ -201,7 +202,9 @@ def _candidate() -> JsonValue:
 
 @dataclass
 class _Database:
-    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
+    isolations: list[ReadIsolation] = field(
+        default_factory=lambda: list[ReadIsolation]()
+    )
 
     @asynccontextmanager
     async def write_transaction(
@@ -244,7 +247,9 @@ class _PlanRepository:
 class _ContextRepository:
     context: ValidationExecutionContext
 
-    async def load(self, transaction: object, **_: object) -> ValidationExecutionContext:
+    async def load(
+        self, transaction: object, **_: object
+    ) -> ValidationExecutionContext:
         del transaction
         return validation_graph_context(self.context)
 
@@ -340,7 +345,45 @@ class _NoOp:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
+    starts: list[tuple[RequestPrincipal, int, int, int, str, str | None, int]] = field(
+        default_factory=lambda: list[
+            tuple[RequestPrincipal, int, int, int, str, str | None, int]
+        ]()
+    )
+
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: str,
+        expected_execution_mode: str | None,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart:
+        self.starts.append(
+            (
+                principal,
+                tenant_id,
+                model_id,
+                workflow_run_id,
+                expected_workflow,
+                expected_execution_mode,
+                expected_model_revision,
+            )
+        )
+        return AgentWorkflowRunStart(
+            changed=True,
+            workflow_run_id=workflow_run_id,
+            workflow_run_state="running",
+            started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
+            model_revision=expected_model_revision,
+        )
+
+    events: list[AgentWorkflowEvent] = field(
+        default_factory=lambda: list[AgentWorkflowEvent]()
+    )
     failed: tuple[str, str] | None = None
 
     async def append_event(
@@ -375,7 +418,7 @@ class _Lifecycle:
 def _service(
     *, context: ValidationExecutionContext
 ) -> tuple[
-    DatabaseValidationExecutor,
+    ValidationWorkflow,
     _Database,
     _AgentExecutor,
     _Handoff,
@@ -387,7 +430,7 @@ def _service(
     handoff = _Handoff()
     no_op = _NoOp()
     lifecycle = _Lifecycle()
-    service = DatabaseValidationExecutor(
+    service = ValidationWorkflow(
         database=database,
         authorizer=cast(Any, _Authorizer()),
         agent_executor=agent,
@@ -407,7 +450,33 @@ def _service(
 
 
 @pytest.mark.asyncio
-async def test_executor_stages_validation_groups_and_checks_through_change_set_handoff() -> None:
+async def test_start_binds_validation_workflow_without_executing() -> None:
+    service, database, agent, handoff, no_op, lifecycle = _service(context=_context())
+    principal = _principal()
+
+    result = await service.start(
+        principal,
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_model_revision=7,
+    )
+
+    assert lifecycle.starts == [(principal, 7, 18, 1048, "validation", None, 7)]
+    assert result.workflow_run_id == 1048
+    assert result.model_revision == 7
+    assert database.isolations == []
+    assert handoff.calls == []
+    assert no_op.requests == []
+    assert agent.requests == []
+    assert lifecycle.events == []
+    assert lifecycle.failed is None
+
+
+@pytest.mark.asyncio
+async def test_executor_stages_validation_groups_and_checks_through_change_set_handoff() -> (
+    None
+):
     service, database, agent, handoff, no_op, lifecycle = _service(context=_context())
 
     result = await service.execute_started(
@@ -483,10 +552,14 @@ def validation_graph_context(
         if document.get("tenant_code") is not None:
             document["tenant_code"] = "acme"
     graph["validation_group"] = [
-        row.model_dump(mode="json") for system in context.systems for row in system.applied_groups
+        row.model_dump(mode="json")
+        for system in context.systems
+        for row in system.applied_groups
     ]
     graph["validation_check"] = [
-        row.model_dump(mode="json") for system in context.systems for row in system.applied_checks
+        row.model_dump(mode="json")
+        for system in context.systems
+        for row in system.applied_checks
     ]
     return context.model_copy(
         update={

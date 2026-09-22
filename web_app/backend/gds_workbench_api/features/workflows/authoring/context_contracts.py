@@ -410,7 +410,7 @@ INPUT_SHAPES: dict[str, Any] = {
         },
     },
     "modeling_assertions": {
-        "description": "Active governed Analysis-applicable assertion records "
+        "description": "Active governed assertion records applicable to this workflow "
         "from active documents within authorized Model/source "
         "scope; includes applicable Model-wide assertions.",
         "schema": {
@@ -4950,5 +4950,19 @@ for _enrichment_workflow in ("metadata_enrichment_object", "metadata_enrichment_
         )
     }
     INPUT_EXAMPLES[_enrichment_workflow] = {
-        name: INPUT_EXAMPLES["analysis"][name] for name in WORKFLOW_INPUTS[_enrichment_workflow]
+        name: deepcopy(INPUT_EXAMPLES["analysis"][name][:1])
+        for name in WORKFLOW_INPUTS[_enrichment_workflow]
     }
+    _attribute_group = INPUT_EXAMPLES[_enrichment_workflow]["object_attribute_context"][0]
+    _attribute_group["attributes"].append(
+        {
+            **deepcopy(_attribute_group["attributes"][0]),
+            "attribute_name": "OrderID",
+            "attribute_description": "Business identifier of this ERP sales order.",
+            "is_natural_key": True,
+            "profile": None,
+        }
+    )
+    _attribute_group["selected_attribute_names"] = (
+        [] if _enrichment_workflow == "metadata_enrichment_object" else ["CustomerCode"]
+    )

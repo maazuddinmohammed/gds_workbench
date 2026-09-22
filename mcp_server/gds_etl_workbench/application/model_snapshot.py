@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from functools import partial
 from typing import LiteralString, cast
 
 from gds_etl_workbench.application.model_read import ModelReadContext
@@ -466,18 +467,26 @@ class ModelReviewSnapshot:
 async def build_model_snapshot(
     transaction: ReadTransaction,
     model: ModelReadContext,
+    *,
+    enforce_row_limits: bool = True,
 ) -> ModelSnapshot:
-    return (await read_model_review_snapshot(transaction, model)).snapshot
+    return (
+        await read_model_review_snapshot(transaction, model, enforce_row_limits=enforce_row_limits)
+    ).snapshot
 
 
 async def read_model_review_snapshot(
     transaction: ReadTransaction,
     model: ModelReadContext,
+    *,
+    enforce_row_limits: bool = True,
 ) -> ModelReviewSnapshot:
-    """Select, bound, clean, and validate one complete effective Model."""
-    limit = _MAX_DATASET_ROWS + 1
+    """Validate the complete Model; MCP limits apply unless a backend caller opts out."""
+    # PostgreSQL LIMIT NULL retains all rows for authorized web agent context.
+    limit = _MAX_DATASET_ROWS + 1 if enforce_row_limits else None
+    fetch = partial(_fetch, enforce_row_limits=enforce_row_limits)
     rows: dict[str, list[dict[str, object]]] = {}
-    rows["model_details"] = await _fetch(
+    rows["model_details"] = await fetch(
         transaction,
         "model_details",
         _MODEL_DETAILS_SQL,
@@ -485,43 +494,43 @@ async def read_model_review_snapshot(
     )
     if len(rows["model_details"]) != 1:
         raise InvalidRequestError("Model details could not be resolved.")
-    rows["model_input_scope"] = await _fetch(
+    rows["model_input_scope"] = await fetch(
         transaction,
         "model_input_scope",
         _MODEL_INPUT_SCOPE_SQL,
         (model.model_id, limit),
     )
-    rows["profiling_profile"] = await _fetch(
+    rows["profiling_profile"] = await fetch(
         transaction,
         "profiling_profile",
         HISTORICAL_PROFILING_SQL,
         (model.model_id, list(model.readable_source_tenant_ids), [], [], limit, 0),
     )
-    rows["analysis_result"] = await _fetch(
+    rows["analysis_result"] = await fetch(
         transaction,
         "analysis_result",
         HISTORICAL_ANALYSIS_SQL,
         (model.model_id, list(model.readable_source_tenant_ids), [], [], [], limit, 0),
     )
-    rows["modeling_assertion_document"] = await _fetch(
+    rows["modeling_assertion_document"] = await fetch(
         transaction,
         "modeling_assertion_document",
         DOCUMENTS_SQL,
         (model.model_id, limit, 0),
     )
-    rows["modeling_assertion_record"] = await _fetch(
+    rows["modeling_assertion_record"] = await fetch(
         transaction,
         "modeling_assertion_record",
         RECORDS_SQL,
         (model.model_id, [], [], limit, 0),
     )
-    rows["conceptual_object"] = await _fetch(
+    rows["conceptual_object"] = await fetch(
         transaction,
         "conceptual_object",
         HISTORICAL_CONCEPTUAL_OBJECTS_SQL,
         (model.model_id, list(model.readable_source_tenant_ids), [], [], limit, 0),
     )
-    rows["conceptual_relationship"] = await _fetch(
+    rows["conceptual_relationship"] = await fetch(
         transaction,
         "conceptual_relationship",
         HISTORICAL_CONCEPTUAL_RELATIONSHIPS_SQL,
@@ -541,7 +550,7 @@ async def read_model_review_snapshot(
         ("validation_check", _VALIDATION_CHECK_SQL),
     )
     for dataset, query in binding_queries:
-        rows[dataset] = await _fetch(
+        rows[dataset] = await fetch(
             transaction,
             dataset,
             query,
@@ -552,7 +561,10 @@ async def read_model_review_snapshot(
         name: _validate_records(DATASETS_BY_NAME[name], dataset_rows)
         for name, dataset_rows in rows.items()
     }
-    if sum(len(dataset_records) for dataset_records in records.values()) > _MAX_TOTAL_ROWS:
+    if (
+        enforce_row_limits
+        and sum(len(dataset_records) for dataset_records in records.values()) > _MAX_TOTAL_ROWS
+    ):
         raise InvalidRequestError(
             "The Model Snapshot exceeds the bounded row count; use focused reads."
         )
@@ -669,27 +681,28 @@ async def _fetch_layer(
     model: ModelReadContext,
     config: LayerConfig,
     rows: dict[str, list[dict[str, object]]],
-    limit: int,
+    limit: int | None,
 ) -> None:
-    rows[f"{config.layer}_submodel"] = await _fetch(
+    fetch = partial(_fetch, enforce_row_limits=limit is not None)
+    rows[f"{config.layer}_submodel"] = await fetch(
         transaction,
         f"{config.layer}_submodel",
         submodels_sql(config),
         (model.model_id, limit, 0),
     )
-    rows[f"{config.layer}_entity"] = await _fetch(
+    rows[f"{config.layer}_entity"] = await fetch(
         transaction,
         f"{config.layer}_entity",
         entities_sql(config, historical=True),
         (model.model_id, list(model.readable_source_tenant_ids), [], [], limit, 0),
     )
-    rows[f"{config.layer}_attribute"] = await _fetch(
+    rows[f"{config.layer}_attribute"] = await fetch(
         transaction,
         f"{config.layer}_attribute",
         attributes_sql(config, historical=True),
         (model.model_id, list(model.readable_source_tenant_ids), [], [], limit, 0),
     )
-    rows[f"{config.layer}_relationship"] = await _fetch(
+    rows[f"{config.layer}_relationship"] = await fetch(
         transaction,
         f"{config.layer}_relationship",
         relationships_sql(config),
@@ -702,9 +715,11 @@ async def _fetch(
     dataset: str,
     query: LiteralString,
     parameters: tuple[object, ...],
+    *,
+    enforce_row_limits: bool = True,
 ) -> list[dict[str, object]]:
     rows = await transaction.fetch_all(query, parameters)
-    if len(rows) > _MAX_DATASET_ROWS:
+    if enforce_row_limits and len(rows) > _MAX_DATASET_ROWS:
         raise InvalidRequestError(f"The {dataset} Snapshot dataset exceeds its bounded row count.")
     return rows
 

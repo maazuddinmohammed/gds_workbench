@@ -157,7 +157,7 @@ Implementation was authorized on 2026-09-07. The current change adds the
 Object/Attribute enrichment split, natural-key description targets, five scoped
 enrichment inputs, workflow-local variable catalogs, optional frozen readers,
 and restricted Jinja rendering. The same saved prompt configurations run in the
-web worker and packaged notebooks. Backend scope, lock, revision, candidate,
+web worker. Backend scope, lock, revision, candidate,
 whole-graph, and transaction checks remain authoritative.
 
 Connection description is now an optional foundational field. Saved Profile

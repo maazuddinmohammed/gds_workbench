@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
+import { useWorkflowRunSubmission } from "../workflows/useWorkflowRunSubmission";
 import { SelectField } from "../../shared/ui";
 import type { ModelDetail } from "../models/api";
 import {
@@ -30,14 +31,6 @@ import {
 import { MappingOutputTemplateSelection } from "./MappingOutputTemplateSelection";
 
 type ExecutionMode = NonNullable<CreateWorkflowRunCommand["workflow_execution_mode"]>;
-type PendingMappingStart = {
-  workflowRunId: number;
-  executionMode: ExecutionMode;
-};
-type MappingRunSubmission =
-  | { kind: "create"; command: CreateWorkflowRunCommand }
-  | ({ kind: "retry" } & PendingMappingStart);
-
 export function MappingRunDialog({
   api,
   tenantId,
@@ -52,8 +45,6 @@ export function MappingRunDialog({
   onCompleted: (workflowRunId: number) => Promise<void>;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
-  const createAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
-  const [pendingStart, setPendingStart] = useState<PendingMappingStart | null>(null);
   const capabilitiesQuery = useQuery({
     queryKey: workflowCreationQueryKeys.capabilities,
     queryFn: api.readAgentCapabilities,
@@ -76,7 +67,7 @@ export function MappingRunDialog({
     },
     onSubmit: ({ value }) => {
       if (pendingStart) {
-        runMutation.mutate({ kind: "retry", ...pendingStart });
+        runMutation.mutate(undefined);
         return;
       }
       if (!agentSelectionValid) return;
@@ -95,21 +86,18 @@ export function MappingRunDialog({
         || (attributeOutputTemplateId !== null && !Number.isSafeInteger(attributeOutputTemplateId))
       ) return;
       runMutation.mutate({
-        kind: "create",
-        command: {
-          expected_model_revision: model.model_revision,
-          model_workflow: "mapping",
-          workflow_execution_mode: value.executionMode,
-          selected_object_ids: [targetObjectId],
-          requested_batch_id: null,
-          agent,
-          prompt_overrides: {},
-          mapping_operation: value.operation,
-          mapping_coverage_mode: "selected_targets",
-          mapping_source_system_id: sourceSystemId,
-          mapping_object_output_template_id: objectOutputTemplateId,
-          mapping_attribute_output_template_id: attributeOutputTemplateId,
-        },
+        expected_model_revision: model.model_revision,
+        model_workflow: "mapping",
+        workflow_execution_mode: value.executionMode,
+        selected_object_ids: [targetObjectId],
+        requested_batch_id: null,
+        agent,
+        prompt_overrides: {},
+        mapping_operation: value.operation,
+        mapping_coverage_mode: "selected_targets",
+        mapping_source_system_id: sourceSystemId,
+        mapping_object_output_template_id: objectOutputTemplateId,
+        mapping_attribute_output_template_id: attributeOutputTemplateId,
       });
     },
   });
@@ -124,13 +112,12 @@ export function MappingRunDialog({
   });
   const targets = useMemo(() => targetsQuery.data?.items ?? [], [targetsQuery.data?.items]);
   const sourceSystems = useMemo(() => {
-    const byId = new Map<number, { system_id: number; system_code: string; system_name: string }>();
+    const byId = new Map<number, { system_id: number; system_code: string }>();
     for (const item of dependenciesQuery.data?.items ?? []) {
       if (item.status !== "active") continue;
       byId.set(item.source_system.system_id, {
         system_id: item.source_system.system_id,
         system_code: item.source_system.system_code,
-        system_name: item.source_system.system_name,
       });
     }
     return [...byId.values()].sort((left, right) => left.system_code.localeCompare(right.system_code));
@@ -180,42 +167,16 @@ export function MappingRunDialog({
     dependenciesQuery.data !== undefined
     && dependenciesQuery.data.modelRevision !== model.model_revision
   );
-  const runMutation = useMutation({
-    mutationFn: async (submission: MappingRunSubmission) => {
-      if (submission.kind === "retry") {
-        await api.executeMappingRun(
-          tenantId,
-          model.model_id,
-          submission.workflowRunId,
-          submission.executionMode,
-          model.model_revision,
-        );
-        return submission.workflowRunId;
-      }
-      const { command } = submission;
-      const fingerprint = JSON.stringify(command);
-      if (createAttempt.current?.fingerprint !== fingerprint) {
-        createAttempt.current = { fingerprint, key: globalThis.crypto.randomUUID() };
-      }
-      const result = await api.createWorkflowRun(
-        tenantId,
-        model.model_id,
-        command,
-        createAttempt.current.key,
+  const { mutation: runMutation, pendingRunId: pendingStart } = useWorkflowRunSubmission({
+    api,
+    tenantId,
+    modelId: model.model_id,
+    execute: (workflowRunId, command) => {
+      if (!command.workflow_execution_mode) throw new Error("Mapping execution mode is required.");
+      return api.executeMappingRun(
+        tenantId, model.model_id, workflowRunId, command.workflow_execution_mode,
+        command.expected_model_revision,
       );
-      const pending = {
-        workflowRunId: result.workflow_run_id,
-        executionMode: command.workflow_execution_mode as ExecutionMode,
-      };
-      setPendingStart(pending);
-      await api.executeMappingRun(
-        tenantId,
-        model.model_id,
-        pending.workflowRunId,
-        pending.executionMode,
-        model.model_revision,
-      );
-      return pending.workflowRunId;
     },
     onSuccess: async (workflowRunId) => {
       await onCompleted(workflowRunId);
@@ -318,7 +279,7 @@ export function MappingRunDialog({
                   value={field.state.value}
                   options={sourceSystems.map((system) => [
                     String(system.system_id),
-                    `${system.system_name} (${system.system_code})`,
+                    system.system_code,
                   ])}
                   onChange={field.handleChange}
                 />}

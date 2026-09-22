@@ -724,22 +724,6 @@ tbody tr:hover {
   background: #fafbfc;
 }
 
-.system-name {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.system-name strong {
-  color: var(--ink);
-  font-size: 0.82rem;
-}
-
-.system-name span {
-  color: var(--muted);
-  font-size: 0.68rem;
-}
-
 .message-page {
   display: grid;
   min-height: 100vh;

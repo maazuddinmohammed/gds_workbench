@@ -155,7 +155,7 @@ class _AgentValidationSystemCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     system_ref: str = Field(
-        pattern=r"^system_[1-9][0-9]{0,3}$",
+        pattern=r"^system_[1-9][0-9]*$",
         description="Copy the exact opaque System reference supplied in frozen context.",
     )
     validation_groups: list[_AgentValidationGroup] = Field(
@@ -189,7 +189,7 @@ class ValidationSystemCandidateValidator:
             return AgentCandidateValidation(issues=(error.issue,))
         except ValidationError as error:
             return AgentCandidateValidation(issues=pydantic_validation_issues(error))
-        except (InvalidRequestError, TypeError, ValueError):
+        except InvalidRequestError, TypeError, ValueError:
             return AgentCandidateValidation(
                 issues=(
                     AgentValidationIssue(
@@ -209,7 +209,7 @@ class ValidationSystemCandidateValidator:
                 allow_nan=False,
                 separators=(",", ":"),
             ).encode("utf-8")
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             raise InvalidRequestError("The Validation candidate is invalid.") from None
         if len(encoded) > _MAX_CANDIDATE_BYTES:
             raise _CandidateIssueError(
@@ -350,7 +350,7 @@ class ValidationSystemCandidateValidator:
                         message=diagnostic.message,
                     )
                 ) from None
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 raise _CandidateIssueError(
                     AgentValidationIssue(
                         code="candidate.validation_contract_invalid",

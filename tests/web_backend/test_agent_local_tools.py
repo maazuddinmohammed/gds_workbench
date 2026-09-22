@@ -241,7 +241,7 @@ async def test_openai_agents_adapter_wraps_only_the_attached_local_catalog(
 async def test_tool_wrapper_construction_failure_is_redacted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fail(_: object) -> tuple[object, ...]:
+    def fail(_: object, _hooks: object) -> tuple[object, ...]:
         raise RuntimeError("sensitive schema diagnostic")
 
     monkeypatch.setattr(agent_adapters, "_openai_tools", fail)

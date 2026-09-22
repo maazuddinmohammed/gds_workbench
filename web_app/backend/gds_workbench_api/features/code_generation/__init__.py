@@ -35,11 +35,7 @@ from .router import (
     ExecuteCodeGenerationRunRequest,
     create_code_generation_workflow_router,
 )
-from .service import (
-    CodeGenerationExecutionFailedError,
-    CodeGenerationWorkflow,
-    DatabaseCodeGenerationExecutor,
-)
+from .service import CodeGenerationExecutionFailedError, CodeGenerationWorkflow
 
 __all__ = [
     "CodeGenerationCandidateValidator",
@@ -56,7 +52,6 @@ __all__ = [
     "CodeGenerationTargetReference",
     "CodeGenerationTargetSummary",
     "CodeMappingSupport",
-    "DatabaseCodeGenerationExecutor",
     "DatabaseCodeGenerationService",
     "GeneratedSqlArtifact",
     "GeneratedSqlArtifactDetail",

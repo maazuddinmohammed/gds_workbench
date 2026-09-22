@@ -1,19 +1,17 @@
 # GDS Workbench architecture
 
-GDS Workbench has three workflow entry points over one governed PostgreSQL
+GDS Workbench has two workflow entry points over one governed PostgreSQL
 model:
 
 ```text
 VS Code Agent Plugin --> Azure App Service MCP --> PostgreSQL
 Databricks web App -----------------------------> PostgreSQL
-Databricks notebooks ----------------------------> PostgreSQL
 ```
 
 The Agent Plugin is the primary developer experience. The web application runs
-equivalent workflows for users who do not use the plugin. Databricks notebooks
-use OpenAI Agents SDK with Microsoft Foundry deployments; they share the
-same in-process workflow implementation with the web App. Neither the web App
-nor notebooks call the MCP server.
+equivalent workflows for users who do not use the plugin. It uses OpenAI Agents
+SDK with Microsoft Foundry deployments and executes workflows in its background
+worker. The web App does not call the MCP server.
 
 ## Plugin
 
@@ -64,13 +62,57 @@ until a fresh Snapshot is downloaded and reassessed. The server derives
 technical digests and provenance; agent-authored documents do not carry
 server-internal integrity fields.
 
+## Web backend ownership
+
+The backend is one `gds_workbench_api` Python package. Each feature keeps its
+HTTP endpoints, workflow/service logic, and PostgreSQL access together.
+
+| Module | Responsibility |
+|---|---|
+| `runtime.py` | Creates settings, database access, identity providers, services, and application lifespan. |
+| `main.py` | Creates the FastAPI application, mounts feature routers, and installs shared error handling and health endpoints. |
+| `dependencies.py` | Supplies one reusable FastAPI authentication dependency, bound to the router's identity provider. Services still enforce authorization. |
+| `features/` | Owns each feature's inputs, responses, business rules, and database access. |
+| `features/workflows/execution/assembly.py` | Connects workflow orchestrators, repositories, and external adapters for the background worker. |
+| `features/profiling/router.py` | Validates HTTP requests and starts governed Profiling Runs. |
+| `features/profiling/repository.py` | Reads and writes Profiling state through governed PostgreSQL functions. |
+| `features/profiling/workflow.py` | Coordinates Profiling execution, claim checks, and result persistence. |
+| `features/profiling/execution.py` | Builds and evaluates bounded Profiling queries using the packaged `config/profiling.json` policy. |
+| `integrations/` | Owns Microsoft Foundry and Databricks execution adapters. |
+
+Routers resolve the authenticated Principal through FastAPI `Depends` and pass
+it to services. They do not accept caller-authored identity or replace
+backend authorization, Tenant Locks, revision checks, or idempotency rules.
+
+Authoring `Workflow` classes own both `start` and `execute_started`. Starting records a governed Run; the worker claims it before
+execution. Assembly supplies the lifecycle, Agent, repository, and Change Set
+handoff dependencies directly. There is no separate forwarding Workflow wrapper
+around a database executor.
+
+## Frontend ownership
+
+`web_app/frontend/src/features/` owns screens and their temporary form state.
+`shared/ui.tsx` supplies common controls and display components;
+`shared/presentation.ts` supplies matching formatters.
+
+`features/models/WorkflowModels.tsx` owns the active-Model picker used by
+Mapping, Code Generation, and Validation. Callers select the workflow and supply
+the Model reader; the component handles paging, refresh, table states, labels,
+and navigation.
+
+`features/workflows/useWorkflowRunSubmission.ts` owns create/start retry state
+for the four run dialogs. It remembers the original command, idempotency key,
+and created Run before starting it. A start retry reuses that Run and its
+original settings. Each dialog supplies its workflow's start operation and
+keeps its own form, validation, errors, and success refresh behavior. Profiling
+keeps its separate queued-Run interaction.
+
 ## Database and deployment
 
 There is no shared deployed Python process. Build packaging copies the shared
 `gds_etl_workbench` application/domain source into each independent artifact:
-the Azure App Service MCP ZIP, the Databricks App upload, and the Databricks
-notebook upload. The web App also packages `gds_workbench_api` and
-`gds_workbench_runtime`; notebooks package only their pruned in-process subset.
+the Azure App Service MCP ZIP and the Databricks App upload. The web App owns
+its HTTP API, workflow execution, and integrations in `gds_workbench_api`.
 Each runtime connects directly to PostgreSQL with its own least-privilege
 database role.
 
@@ -85,4 +127,4 @@ secrets are excluded.
 See [security](../security.md), [database architecture](database.md), and
 [ADR 001](../adr/001-direct-principal-authorization-and-tenant-locks.md). The
 deployment/source boundary is recorded in
-[ADR 005](../adr/005-independent-deployments-with-shared-source.md).
+[ADR 007](../adr/007-web-owned-workflows-and-notebook-retirement.md).

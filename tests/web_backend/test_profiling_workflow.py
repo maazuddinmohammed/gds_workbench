@@ -23,18 +23,19 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
     WriteTransaction,
 )
-from gds_workbench_api.features.profiling.workflow import (
-    DatabaseProfilingWorkflowRepository,
-    ExecuteProfilingRunRequest,
-)
-from gds_workbench_api.main import create_app
-from gds_workbench_runtime.profiling.execution import (
+from gds_workbench_api.features.profiling.execution import (
     ProfileAttribute,
     ProfileMetric,
     ProfileObject,
     ProfileQuery,
 )
-from gds_workbench_runtime.profiling.workflow import (
+from gds_workbench_api.features.profiling.repository import (
+    DatabaseProfilingWorkflowRepository,
+)
+from gds_workbench_api.features.profiling.router import (
+    ExecuteProfilingRunRequest,
+)
+from gds_workbench_api.features.profiling.workflow import (
     ProfilingCommitResult,
     ProfilingExecutionContext,
     ProfilingExecutionTarget,
@@ -42,6 +43,7 @@ from gds_workbench_runtime.profiling.workflow import (
     ProfilingWorkflowOrchestrator,
     _intermediate_progress_points,  # pyright: ignore[reportPrivateUsage]
 )
+from gds_workbench_api.main import create_app
 
 _CLAIM_TOKEN = UUID("33333333-3333-3333-3333-333333333333")
 

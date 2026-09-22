@@ -63,10 +63,9 @@ flowchart LR
 
     webIdentity["Databricks OAuth<br/>Entra User Identity"]
 
-    subgraph userAccess["WEB & NOTEBOOK ACCESS"]
+    subgraph userAccess["WEB ACCESS"]
         direction TB
         browser["Web Browser"]
-        notebooks["Databricks Notebooks"]
     end
 
     vscode --> mcpIdentity
@@ -75,7 +74,6 @@ flowchart LR
 
     postgres <-->|"Governed state"| workflows
     workflows <-->|"API"| fastapi
-    workflows <-->|"Run"| notebooks
     react <-->|"HTTPS"| webIdentity
     webIdentity <-->|"Sign in"| browser
 
@@ -85,7 +83,7 @@ flowchart LR
     classDef source fill:#ECFDF5,stroke:#059669,color:#052E16,stroke-width:3px;
     classDef service fill:#F8FAFC,stroke:#64748B,color:#0F172A,stroke-width:1px;
 
-    class developer,vscode,localHtml,browser,notebooks access;
+    class developer,vscode,localHtml,browser access;
     class mcpIdentity,webIdentity,easyAuth auth;
     class mcp,workflows,profiling,analysis,conceptual,logical,dimensional,fastapi,react app;
     class postgres source;
@@ -105,12 +103,11 @@ flowchart LR
 - The left path is VS Code → Entra ID → Azure App Service → MCP → PostgreSQL.
 - The right path is Browser → Databricks Web App → shared workflows →
   PostgreSQL.
-- Notebooks run the same workflow logic directly.
 - PostgreSQL authorizes access. Entra ID and Databricks OAuth authenticate
   users.
 
-The workflow box is a logical view. Its code is packaged separately with the
-Web App and notebooks; it is not another deployed service.
+The workflow box is a logical view of code inside the Web App backend. It is
+not another deployed service.
 
 Profiling uses governed Databricks data reads. The agent workflows use the
 selected Microsoft Foundry model through OpenAI Agents SDK.
@@ -121,4 +118,3 @@ selected Microsoft Foundry model through OpenAI Agents SDK.
 - [Security](../security.md)
 - [MCP deployment](../AZURE_FRESH_DEPLOYMENT.md)
 - [Web App deployment](../../web_app/DEPLOYMENT_GUIDE.md)
-- [Notebook deployment](../../databricks_notebooks/README.md)

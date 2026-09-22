@@ -25,7 +25,7 @@ describe("Add Input Scope Objects", () => {
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <AddScopeDialog api={api} tenantId={1} modelId={7} modelRevision={4} hasTenantLock onClose={closed} onAdded={added} />
     </QueryClientProvider>);
-    await screen.findByRole("option", { name: "Global Store (GDS)" });
+    await screen.findByRole("option", { name: "GDS" });
     expect(screen.getByLabelText("System")).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Source Tenant"), { target: { value: "2" } });
     fireEvent.change(screen.getByLabelText("System"), { target: { value: "GDS" } });

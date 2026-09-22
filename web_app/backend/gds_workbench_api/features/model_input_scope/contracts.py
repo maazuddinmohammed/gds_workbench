@@ -108,7 +108,7 @@ class ModelInputScopeCandidatePage(BaseModel):
 
 
 class ModelInputScopeDetail(ModelInputScopeObject):
-    attributes: tuple[ObjectAttribute, ...] = Field(max_length=2000)
+    attributes: tuple[ObjectAttribute, ...]
     total_attribute_count: int = Field(ge=0)
 
     @model_validator(mode="after")

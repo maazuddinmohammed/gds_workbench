@@ -43,7 +43,7 @@ export function ModelRecordReview({
           ))}
         </div>
       </div>
-      {reason ? <p className="field-help">{reason}</p> : null}
+      {hasTenantLock && reason ? <p className="field-help">{reason}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
       {command ? (
         <ReviewDialog key={`${command.dataset}:${command.action}:${command.record_ids.join(",")}`}

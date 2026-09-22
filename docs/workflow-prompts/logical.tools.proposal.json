@@ -2,7 +2,7 @@
   "workflow": "logical",
   "stage": "candidate_authoring",
   "mode": "tool_assisted",
-  "status": "approved_design; implementation_deferred",
+  "status": "implemented_contract",
   "contract_reuse": "First ten reference the approved foundational/Conceptual readers; eight Logical readers reuse exact approved result shapes. All are Logical-local against one frozen snapshot. These are design artifacts, not runtime registrations.",
   "tools": [
     {
@@ -174,9 +174,9 @@
         "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
         "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
         "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
-        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Use the common page envelope and record paging and configured execution turn limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
         "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
-        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. Default readers have no response-byte or cumulative-byte ceiling; do not invent a partial-record format.",
         "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
         "Return the complete compact business-capability directory. Submodels have no own physical sources; no source filter is invented. Entity memberships already provide exact Submodel names when a targeted get is sufficient."
       ],
@@ -317,9 +317,9 @@
         "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
         "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
         "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
-        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Use the common page envelope and record paging and configured execution turn limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
         "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
-        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. Default readers have no response-byte or cumulative-byte ceiling; do not invent a partial-record format.",
         "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
         "Return only complete existing Submodel records; do not attach Entity copies or derived support lists. A preceding list call is unnecessary when a supplied membership already gives the key."
       ],
@@ -464,9 +464,9 @@
         "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
         "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
         "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
-        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Use the common page envelope and record paging and configured execution turn limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
         "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
-        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. Default readers have no response-byte or cumulative-byte ceiling; do not invent a partial-record format.",
         "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
         "Match source entries with support_source_type=object directly on each Entity. Do not infer Entity matches through Attribute sources, Assertions, Conceptual support, relationships, or ingestion mappings.",
         "For Bronze use actual GDS keys; for Source use actual Source keys. Historical source matches remain visible; inspect detail status. Source-filtered absence is not proof of absent Entity meaning or absent Attribute contributions."
@@ -619,9 +619,9 @@
         "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
         "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
         "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
-        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Use the common page envelope and record paging and configured execution turn limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
         "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
-        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. Default readers have no response-byte or cumulative-byte ceiling; do not invent a partial-record format.",
         "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
         "Return full Entities with all sources and memberships, including those unrelated to an earlier Object filter. Attributes remain in the separate approved logical_attributes structure. No physical Object selector on this detail reader."
       ],
@@ -808,9 +808,9 @@
         "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
         "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
         "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
-        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Use the common page envelope and record paging and configured execution turn limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
         "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
-        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. Default readers have no response-byte or cumulative-byte ceiling; do not invent a partial-record format.",
         "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
         "Match logical_entity_name on each Attribute. Keep the Entity/Attribute pair intact. This is modeled-parent navigation, not physical-source filtering. Include existing audit, source-free, and historical Attributes when matched; detail establishes meaning and lifecycle.",
         "Validate supplied names against existing Logical Entities even if an Entity currently has no Attributes. A known parent without Attributes yields an empty page; an unknown name is an error."
@@ -958,9 +958,9 @@
         "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
         "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
         "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
-        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Use the common page envelope and record paging and configured execution turn limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
         "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
-        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. Default readers have no response-byte or cumulative-byte ceiling; do not invent a partial-record format.",
         "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
         "Return full Attribute records and all their sources. Do not interpret a bare Attribute name as a key. Saved audit Attributes are valid input evidence, although the Logical AI candidate cannot author them."
       ],
@@ -1147,9 +1147,9 @@
         "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
         "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
         "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
-        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Use the common page envelope and record paging and configured execution turn limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
         "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
-        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. Default readers have no response-byte or cumulative-byte ceiling; do not invent a partial-record format.",
         "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
         "Return each complete five-field relationship key once when either endpoint Entity matches. Self-Entity relationships between distinct Attributes remain one result. No incoming/outgoing duplicates or physical Object filter.",
         "Logical relationships have no own sources/supports list. Source-based exploration must first discover relevant Logical Entities, then inspect their incident relationships. Endpoint navigation is not evidence of direct source support or a measured join.",
@@ -1298,9 +1298,9 @@
         "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
         "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
         "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
-        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Use the common page envelope and record paging and configured execution turn limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
         "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
-        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. Default readers have no response-byte or cumulative-byte ceiling; do not invent a partial-record format.",
         "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
         "Return existing full relationship records exactly once. Do not attach inferred supports, use a relationship name alone, or mix an Entity filter with exact relationship keys."
       ],
@@ -2203,9 +2203,9 @@
   },
   "paging": {
     "shared_contract_reference": "analysis.context-and-tools.json#/paging_contract",
-    "physical": "Preserve accepted continuation of the last physical Object details/relationship group.",
-    "conceptual": "Preserve approved whole-record paging and explicit indivisible-record size errors.",
-    "logical": "Use the approved whole-record rule for all eight Logical readers. Page between complete keys/records including nested sources and memberships; incomplete_object_key is always null. An oversized single record returns an explicit size error."
+    "physical": "Default readers page between complete records, including each Object group and its nested Attributes/relationships and each model record with its supports, sources, and memberships. incomplete_object_key is null. Append page items in order until next_cursor is null; do not infer absence from an unfinished result.",
+    "conceptual": "Default readers page between complete records, including each Object group and its nested Attributes/relationships and each model record with its supports, sources, and memberships. incomplete_object_key is null. Append page items in order until next_cursor is null; do not infer absence from an unfinished result.",
+    "logical": "Default readers page between complete records, including each Object group and its nested Attributes/relationships and each model record with its supports, sources, and memberships. incomplete_object_key is null. Append page items in order until next_cursor is null; do not infer absence from an unfinished result."
   },
   "tool_availability": "Optional per saved template and optional to call. All eighteen support initial no-input calls. Complete inline values can replace matching reads. Omitted/empty selection means all eligible records of that type, with paging; cursor-only calls restore the original selection.",
   "usage_examples": [

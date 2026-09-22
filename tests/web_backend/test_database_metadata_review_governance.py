@@ -482,7 +482,7 @@ def test_review_audit_is_private_append_only_and_helpers_never_gain_definer_auth
             "has_function_privilege(role,'application.review_metadata_records("
             "uuid,uuid,character varying,bigint,character varying,character varying,jsonb,uuid)',"
             "'EXECUTE') AS review FROM unnest(ARRAY["
-            "'gds_app_write','gds_web_write','gds_notebook_runtime']) AS role ORDER BY role"
+            "'gds_app_write','gds_web_write']) AS role ORDER BY role"
         ).fetchall()
         assert all(not row["audit_access"] and not row["core_mutation"] for row in rows)
         assert [row["role"] for row in rows if row["review"]] == ["gds_web_write"]

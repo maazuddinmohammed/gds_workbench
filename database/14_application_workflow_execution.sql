@@ -2552,16 +2552,9 @@ BEGIN
        AND object.is_active AND object.source_tenant_id = v_run.tenant_id
        AND connection.is_active AND system.is_active AND tenant.is_active
        AND zone.is_active AND lower(btrim(zone.zone_code)) IN ('source', 'bronze');
-    IF v_count <> v_run.selected_scope_count OR v_count NOT BETWEEN 1 AND 200 THEN
+    IF v_count <> v_run.selected_scope_count OR v_count < 1 THEN
         RAISE EXCEPTION 'metadata_enrichment_scope_changed';
     END IF;
-    SELECT count(*) INTO v_count FROM core.attribute AS attribute
-      JOIN application.workflow_run_object_selection AS selection USING (object_id)
-     WHERE selection.workflow_run_id = p_workflow_run_id;
-    IF v_count > 5000 THEN
-        RAISE EXCEPTION 'metadata_enrichment_context_too_large';
-    END IF;
-
     -- All mapped candidates (including ambiguous/inactive ones) participate in
     -- the baseline. Only one active, same-owner Source is exposed as evidence.
     WITH selected AS MATERIALIZED (
@@ -2785,9 +2778,6 @@ BEGIN
                       ELSE application.metadata_attribute_review_revision(attribute, object) = target->>'expected_revision' END
             )
         ));
-    IF octet_length(v_context::TEXT) > 16777216 OR octet_length(v_baseline::TEXT) > 16777216 THEN
-        RAISE EXCEPTION 'metadata_enrichment_context_too_large';
-    END IF;
     RETURN v_context;
 END;
 $get_metadata_enrichment_execution_context$;

@@ -207,12 +207,12 @@ export function DimensionalScreen({
           model={model}
           kind="inference"
           workflow="dimensional"
-          executeCreated={(workflowRunId, executionMode) => api.executeDimensionalRun(
+          executeCreated={(workflowRunId, executionMode, expectedModelRevision) => api.executeDimensionalRun(
             tenantId,
             model.model_id,
             workflowRunId,
             executionMode,
-            model.model_revision,
+            expectedModelRevision,
           ).then(() => undefined)}
           onClose={() => setRunDialogOpen(false)}
           onCreated={async (workflowRunId) => {

@@ -91,10 +91,6 @@ export function DrawerHeader({
   );
 }
 
-export function Fact({ label, value }: { label: string; value: string }) {
-  return <div><dt>{label}</dt><dd>{value}</dd></div>;
-}
-
 export function stageLabel(stage: string): string {
   return stage
     .replaceAll("_", " ")

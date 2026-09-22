@@ -1,6 +1,6 @@
 """Metadata enrichment registration preserves governed scope and claim boundaries."""
 
-# These tests reuse fixture-only workflow and notebook setup helpers.
+# These tests reuse fixture-only web workflow setup helpers.
 # pyright: reportPrivateUsage=false
 
 from dataclasses import replace
@@ -12,17 +12,8 @@ import pytest
 from psycopg.errors import InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
 
+from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.database_test_support import require_row
-from tests.mcp.test_database_notebook_workflows import (
-    CREATE_NOTEBOOK_WORKFLOW_SQL,
-    START_AND_CLAIM_WORKFLOW_SQL,
-    NotebookActor,
-    _bind_notebook_tenant_lock,
-    _seed_missing_model_prompt_assignments,
-)
-from tests.mcp.test_database_notebook_workflows import (
-    notebook_actor as notebook_actor,
-)
 from tests.mcp.test_database_workflow_run_lifecycle import (
     CREATE_WORKFLOW_RUN_SQL,
     WorkflowContext,
@@ -32,10 +23,133 @@ from tests.mcp.test_database_workflow_run_lifecycle import (
 )
 
 
-def _context(actor: NotebookActor) -> WorkflowContext:
-    context = seed_workflow_context(actor.database)
+def _seed_missing_model_prompt_assignments(
+    database: DisposablePostgres,
+    context: WorkflowContext,
+    *,
+    workflow: str,
+    execution_mode: str | None,
+) -> None:
+    suffix = uuid4().hex
+    with database.connect_owner() as connection:
+        stages = connection.execute(
+            """
+            SELECT stage.workflow_stage_id
+              FROM application.workflow_stage AS stage
+             WHERE stage.model_workflow = %s
+               AND stage.workflow_execution_mode IS NOT DISTINCT FROM %s
+               AND stage.workflow_stage_is_agentic
+               AND stage.is_active
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM application.prompt_assignment AS assignment
+                    WHERE assignment.workflow_stage_id = stage.workflow_stage_id
+                      AND assignment.prompt_assignment_scope = 'model_default'
+                      AND assignment.model_id = %s
+                      AND assignment.is_active
+               )
+             ORDER BY stage.workflow_stage_order
+            """,
+            (workflow, execution_mode, context.model_id),
+        ).fetchall()
+        prompt_digest = require_row(
+            connection.execute(
+                """
+                SELECT encode(
+                           sha256(
+                               convert_to(
+                                   jsonb_build_object(
+                                       'system_prompt_template',
+                                           '{{ stage_context }}'::TEXT,
+                                       'instruction_prompt_template',
+                                           '{{ stage_context }}'::TEXT,
+                                       'tool_instruction_prompt_template',
+                                           NULL::TEXT
+                                   )::TEXT,
+                                   'UTF8'
+                               )
+                           ),
+                           'hex'
+                       ) AS digest
+                """
+            ).fetchone()
+        )["digest"]
+        for stage_number, stage in enumerate(stages, start=1):
+            stage_id = stage["workflow_stage_id"]
+            template_id = require_row(
+                connection.execute(
+                    """
+                    INSERT INTO application.prompt_template (
+                        workflow_stage_id,
+                        prompt_template_ownership_scope,
+                        owner_tenant_id,
+                        prompt_template_code,
+                        prompt_template_name,
+                        created_by_principal_id,
+                        updated_by_principal_id
+                    ) VALUES (%s, 'tenant', %s, %s, %s, %s, %s)
+                    RETURNING prompt_template_id
+                    """,
+                    (
+                        stage_id,
+                        context.tenant_id,
+                        f"enrichment_{workflow}_{stage_number}_{suffix}",
+                        f"Enrichment {workflow} fixture {stage_number} {suffix}",
+                        context.principal_id,
+                        context.principal_id,
+                    ),
+                ).fetchone()
+            )["prompt_template_id"]
+            version_id = require_row(
+                connection.execute(
+                    """
+                    INSERT INTO application.prompt_template_version (
+                        prompt_template_id,
+                        workflow_stage_id,
+                        prompt_template_version_number,
+                        system_prompt_template,
+                        instruction_prompt_template,
+                        prompt_template_digest,
+                        prompt_template_version_status,
+                        created_by_principal_id,
+                        updated_by_principal_id,
+                        published_time,
+                        published_by_principal_id
+                    ) VALUES (
+                        %s, %s, 1, '{{ stage_context }}',
+                        '{{ stage_context }}', %s, 'published', %s, %s,
+                        CURRENT_TIMESTAMP, %s
+                    )
+                    RETURNING prompt_template_version_id
+                    """,
+                    (
+                        template_id,
+                        stage_id,
+                        prompt_digest,
+                        context.principal_id,
+                        context.principal_id,
+                        context.principal_id,
+                    ),
+                ).fetchone()
+            )["prompt_template_version_id"]
+            connection.execute(
+                """
+                INSERT INTO application.prompt_assignment (
+                    workflow_stage_id,
+                    prompt_template_version_id,
+                    prompt_assignment_scope,
+                    model_id,
+                    assigned_by_principal_id
+                ) VALUES (%s, %s, 'model_default', %s, %s)
+                """,
+                (stage_id, version_id, context.model_id, context.principal_id),
+            )
+
+
+def _context(database: DisposablePostgres) -> WorkflowContext:
+    context = seed_workflow_context(database)
     # This disposable bootstrap fixture installs schema but not deployment seed files.
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         connection.execute(
             """
             INSERT INTO application.workflow_stage (
@@ -54,13 +168,13 @@ def _context(actor: NotebookActor) -> WorkflowContext:
         )
     for workflow in ("metadata_enrichment_object", "metadata_enrichment_attribute"):
         _seed_missing_model_prompt_assignments(
-            actor, context, workflow=workflow, execution_mode="one_shot"
+            database, context, workflow=workflow, execution_mode="one_shot"
         )
     return context
 
 
 def _create(
-    actor: NotebookActor,
+    database: DisposablePostgres,
     context: WorkflowContext,
     **overrides: Any,
 ) -> dict[str, Any]:
@@ -68,7 +182,7 @@ def _create(
         context, workflow="metadata_enrichment", **overrides
     )
     with psycopg.Connection[dict[str, Any]].connect(
-        actor.database.web_runtime_dsn(), row_factory=dict_row
+        database.web_runtime_dsn(), row_factory=dict_row
     ) as connection:
         connection.execute("SET LOCAL ROLE gds_web_write")
         return require_row(
@@ -77,9 +191,9 @@ def _create(
 
 
 def _physical_snapshot(
-    actor: NotebookActor, context: WorkflowContext
+    database: DisposablePostgres, context: WorkflowContext
 ) -> dict[str, Any]:
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         return require_row(
             connection.execute(
                 """
@@ -96,18 +210,16 @@ def _physical_snapshot(
         )
 
 
-@pytest.mark.parametrize("notebook", [False, True], ids=["web", "notebook_exact_claim"])
 def test_enrichment_registers_locked_source_and_bronze_on_shared_placement_without_writes(
-    notebook_actor: NotebookActor,
-    notebook: bool,
+    bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
-    actor = notebook_actor
-    context = _context(actor)
+    database = bootstrap_postgres_database
+    context = _context(database)
     source_id = _seed_model_input_scope_object_in_zone(
-        actor.database, context, zone_code="source"
+        database, context, zone_code="source"
     )
-    placement = seed_workflow_context(actor.database)
-    with actor.database.connect_owner() as connection:
+    placement = seed_workflow_context(database)
+    with database.connect_owner() as connection:
         connection.execute(
             """
             UPDATE core.connection SET tenant_id = %s, is_global_data_store = TRUE
@@ -136,74 +248,23 @@ def test_enrichment_registers_locked_source_and_bronze_on_shared_placement_witho
             (context.model_id,),
         )
     selected = [source_id, *reversed(context.selected_object_ids)]
-    before = _physical_snapshot(actor, context)
+    before = _physical_snapshot(database, context)
     correlation_id = uuid4()
-    if notebook:
-        _bind_notebook_tenant_lock(actor, context)
-        with actor.database.connect_notebook_runtime() as connection:
-            created = require_row(
-                connection.execute(
-                    CREATE_NOTEBOOK_WORKFLOW_SQL,
-                    (
-                        context.tenant_id,
-                        context.model_id,
-                        context.model_revision,
-                        "metadata_enrichment",
-                        "one_shot",
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        selected,
-                        [],
-                        None,
-                        None,
-                        correlation_id,
-                        "{}",
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                    ),
-                ).fetchone()
-            )
-            claim = require_row(
-                connection.execute(
-                    START_AND_CLAIM_WORKFLOW_SQL,
-                    (
-                        context.tenant_id,
-                        context.model_id,
-                        created["workflow_run_id"],
-                        context.model_revision,
-                        "metadata_enrichment",
-                    ),
-                ).fetchone()
-            )
-            assert claim["workflow_run_id"] == created["workflow_run_id"]
-            assert claim["model_workflow"] == "metadata_enrichment"
-            assert claim["workflow_execution_mode"] == "one_shot"
-            assert claim["workflow_run_claim_token"] is not None
-    else:
-        created = _create(
-            actor, context, correlation_id=correlation_id, selected_object_ids=selected
-        )
-        assert (
-            _create(
-                actor,
-                context,
-                correlation_id=correlation_id,
-                selected_object_ids=selected,
-            )["created"]
-            is False
-        )
+    created = _create(
+        database, context, correlation_id=correlation_id, selected_object_ids=selected
+    )
+    assert (
+        _create(
+            database,
+            context,
+            correlation_id=correlation_id,
+            selected_object_ids=selected,
+        )["created"]
+        is False
+    )
     assert created["created"] is True
     assert created["selected_scope_count"] == len(selected)
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         snapshot = connection.execute(
             """
             SELECT stage.workflow_stage_code
@@ -218,7 +279,7 @@ def test_enrichment_registers_locked_source_and_bronze_on_shared_placement_witho
             "SELECT object_id FROM application.workflow_run_object_selection WHERE workflow_run_id = %s ORDER BY selection_order",
             (created["workflow_run_id"],),
         ).fetchall() == [{"object_id": value} for value in sorted(selected)]
-    assert _physical_snapshot(actor, context) == before
+    assert _physical_snapshot(database, context) == before
 
 
 @pytest.mark.parametrize(
@@ -233,19 +294,19 @@ def test_enrichment_registers_locked_source_and_bronze_on_shared_placement_witho
     ],
 )
 def test_enrichment_rejects_ineligible_scope_atomically(
-    notebook_actor: NotebookActor,
+    bootstrap_postgres_database: DisposablePostgres,
     case: str,
 ) -> None:
-    actor = notebook_actor
-    context = _context(actor)
+    database = bootstrap_postgres_database
+    context = _context(database)
     object_id = context.selected_object_ids[0]
     if case in {"silver", "gold"}:
         object_id = _seed_model_input_scope_object_in_zone(
-            actor.database, context, zone_code=case
+            database, context, zone_code=case
         )
     elif case == "foreign_owner":
-        foreign = seed_workflow_context(actor.database)
-        with actor.database.connect_owner() as connection:
+        foreign = seed_workflow_context(database)
+        with database.connect_owner() as connection:
             connection.execute(
                 "UPDATE core.object SET source_tenant_id = %s WHERE object_id = %s",
                 (foreign.tenant_id, object_id),
@@ -259,7 +320,7 @@ def test_enrichment_rejects_ineligible_scope_atomically(
             ) SELECT connection_id, source_tenant_id, object_schema, 'unscoped', object_type_id, zone_id
                 FROM core.object WHERE source_tenant_id = %s AND object_id = %s RETURNING object_id""",
         }
-        with actor.database.connect_owner() as connection:
+        with database.connect_owner() as connection:
             cursor = connection.execute(
                 statements[case],
                 (
@@ -273,12 +334,12 @@ def test_enrichment_rejects_ineligible_scope_atomically(
     expected_error = InsufficientPrivilege if case == "foreign_owner" else RaiseException
     with pytest.raises(expected_error):
         _create(
-            actor,
+            database,
             context,
             correlation_id=correlation_id,
             selected_object_ids=[object_id],
         )
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         assert (
             connection.execute(
                 "SELECT 1 FROM application.workflow_run WHERE correlation_id = %s",
@@ -290,21 +351,21 @@ def test_enrichment_rejects_ineligible_scope_atomically(
 
 @pytest.mark.parametrize("mode", [None, "tool_assisted"])
 def test_enrichment_rejects_unsupported_execution_modes(
-    notebook_actor: NotebookActor,
+    bootstrap_postgres_database: DisposablePostgres,
     mode: str | None,
 ) -> None:
-    context = _context(notebook_actor)
+    context = _context(bootstrap_postgres_database)
     with pytest.raises(RaiseException):
-        _create(notebook_actor, context, correlation_id=uuid4(), execution_mode=mode)
+        _create(bootstrap_postgres_database, context, correlation_id=uuid4(), execution_mode=mode)
 
 
-def test_enrichment_rejects_more_than_200_selected_objects(
-    notebook_actor: NotebookActor,
+def test_large_enrichment_selection_still_rejects_ineligible_objects(
+    bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
-    context = _context(notebook_actor)
-    with pytest.raises(RaiseException, match="200"):
+    context = _context(bootstrap_postgres_database)
+    with pytest.raises(RaiseException, match="unavailable or ineligible"):
         _create(
-            notebook_actor,
+            bootstrap_postgres_database,
             context,
             correlation_id=uuid4(),
             selected_object_ids=list(range(1, 202)),
@@ -313,17 +374,17 @@ def test_enrichment_rejects_more_than_200_selected_objects(
 
 @pytest.mark.parametrize("fence", ["revision", "identity", "role", "lock"])
 def test_enrichment_registration_keeps_revision_identity_role_and_lock_fences(
-    notebook_actor: NotebookActor,
+    bootstrap_postgres_database: DisposablePostgres,
     fence: str,
 ) -> None:
-    actor = notebook_actor
-    context = _context(actor)
+    database = bootstrap_postgres_database
+    context = _context(database)
     if fence == "revision":
         context = replace(context, model_revision=context.model_revision + 1)
     elif fence == "identity":
         context = replace(context, entra_object_id=uuid4())
     else:
-        with actor.database.connect_owner() as connection:
+        with database.connect_owner() as connection:
             if fence == "role":
                 connection.execute(
                     "UPDATE security.tenant_principal_access SET tenant_role = 'viewer' WHERE tenant_id = %s AND principal_id = %s",
@@ -336,8 +397,8 @@ def test_enrichment_registration_keeps_revision_identity_role_and_lock_fences(
                 )
     correlation_id = uuid4()
     with pytest.raises(RaiseException):
-        _create(actor, context, correlation_id=correlation_id)
-    with actor.database.connect_owner() as connection:
+        _create(database, context, correlation_id=correlation_id)
+    with database.connect_owner() as connection:
         assert (
             connection.execute(
                 "SELECT 1 FROM application.workflow_run WHERE correlation_id = %s",

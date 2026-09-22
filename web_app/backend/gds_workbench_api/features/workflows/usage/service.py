@@ -63,7 +63,7 @@ class DatabaseWorkflowUsageRecorder:
         self._pricing_by_model = dict(pricing_by_model or {})
 
     @asynccontextmanager
-    async def track_run(self, claim: WorkflowExecutionClaim) -> AsyncGenerator[None, None]:
+    async def track_run(self, claim: WorkflowExecutionClaim) -> AsyncGenerator[None]:
         identity = workflow_identity_triple(claim.principal)
         async with self._database.write_transaction() as transaction:
             row = await transaction.fetch_one(

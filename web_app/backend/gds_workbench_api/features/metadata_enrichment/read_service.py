@@ -109,5 +109,5 @@ class DatabaseMetadataEnrichmentReadService:
             ):
                 raise ValueError("Enrichment result identity differs from the route")
             return page
-        except (KeyError, TypeError, ValueError, ValidationError):
+        except KeyError, TypeError, ValueError, ValidationError:
             raise DependencyUnavailableError() from None

@@ -2,11 +2,12 @@
 
 from typing import Annotated, Literal, Protocol
 
-from fastapi import APIRouter, Path, Request, Response, status
+from fastapi import APIRouter, Depends, Path, Response, status
 from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 from pydantic import BaseModel, ConfigDict, Field
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.workflows.authoring.lifecycle import AgentWorkflowRunStart
 
 
@@ -32,21 +33,23 @@ class MetadataEnrichmentWorkflowService(Protocol):
 def create_metadata_enrichment_workflow_router(
     *, identity_provider: IdentityProvider, service: MetadataEnrichmentWorkflowService
 ) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/metadata-enrichment/runs",
         tags=["metadata-enrichment"],
     )
 
     async def execute_run(
-        request: Request,
         response: Response,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         workflow_run_id: Annotated[int, Path(gt=0)],
         command: ExecuteMetadataEnrichmentRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> AgentWorkflowRunStart:
         result = await service.start(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             workflow_run_id=workflow_run_id,

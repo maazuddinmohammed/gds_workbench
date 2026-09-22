@@ -215,8 +215,8 @@ class AgentRunPlan(BaseModel):
         pattern=r"^[0-9a-f]{64}$",
     )
     selected_scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    selected_object_ids: tuple[int, ...] = Field(max_length=50_000)
-    selected_system_codes: tuple[str, ...] = Field(default=(), max_length=1_000)
+    selected_object_ids: tuple[int, ...]
+    selected_system_codes: tuple[str, ...] = ()
     selection: AgentRunSelection
     stages: tuple[FrozenAgentStage, ...] = Field(min_length=1, max_length=100)
 

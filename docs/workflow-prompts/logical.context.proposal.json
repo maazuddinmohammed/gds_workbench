@@ -5,7 +5,7 @@
     "one_shot",
     "tool_assisted"
   ],
-  "status": "approved_design; implementation_deferred",
+  "status": "implemented_contract",
   "scope": "Approved on 2026-09-07: twenty-one Logical-local variables, both complete prompt pairs, defaults, eighteen optional readers, selectors, and paging. read_only_dependencies stays excluded; backend checks remain. Continue Dimensional design.",
   "selection": "All variables are workflow-local and optional for template authors. Availability does not imply inclusion. Do not include compact and full copies of the same records by default. Variables have no tool-call inputs or page envelopes.",
   "applied_logical_rule": "All eight Logical values project one frozen authorized applied Logical section. [] is known empty; null is unavailable. Retain saved lifecycle and locks. Do not filter out Assertion-only records or history merely because they have no direct physical support. These input records are not generated output.",

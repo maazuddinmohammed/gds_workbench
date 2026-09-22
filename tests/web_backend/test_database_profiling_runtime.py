@@ -14,7 +14,7 @@ from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.analysis.validation_service import (
     DatabaseAnalysisValidationRepository,
 )
-from gds_workbench_api.features.profiling.workflow import (
+from gds_workbench_api.features.profiling.repository import (
     DatabaseProfilingWorkflowRepository,
 )
 
@@ -33,12 +33,12 @@ def runtime_postgres() -> Iterator[DisposablePostgres]:
 
 
 @pytest.mark.asyncio
-async def test_notebook_runtime_loads_the_locked_profiling_context(
+async def test_web_runtime_loads_the_locked_profiling_context(
     runtime_postgres: DisposablePostgres,
 ) -> None:
     seed = _seed_profiling_execution(runtime_postgres)
     database = WebPostgresDatabase(
-        dsn=runtime_postgres.notebook_runtime_dsn(),
+        dsn=runtime_postgres.web_runtime_dsn(),
         pool_min=1,
         pool_max=1,
         pool_timeout_seconds=5,
@@ -70,12 +70,12 @@ async def test_notebook_runtime_loads_the_locked_profiling_context(
 
 
 @pytest.mark.asyncio
-async def test_notebook_runtime_loads_the_locked_analysis_validation_context(
+async def test_web_runtime_loads_the_locked_analysis_validation_context(
     runtime_postgres: DisposablePostgres,
 ) -> None:
     seed = _seed_analysis_validation(runtime_postgres)
     database = WebPostgresDatabase(
-        dsn=runtime_postgres.notebook_runtime_dsn(),
+        dsn=runtime_postgres.web_runtime_dsn(),
         pool_min=1,
         pool_max=1,
         pool_timeout_seconds=5,
@@ -107,7 +107,7 @@ async def test_notebook_runtime_loads_the_locked_analysis_validation_context(
 
 
 @pytest.mark.asyncio
-async def test_notebook_runtime_allows_locking_write_authorization(
+async def test_web_runtime_allows_locking_write_authorization(
     runtime_postgres: DisposablePostgres,
 ) -> None:
     seed = _seed_profiling_execution(runtime_postgres)
@@ -117,7 +117,7 @@ async def test_notebook_runtime_allows_locking_write_authorization(
         entra_object_id=seed.context.entra_object_id,
     )
     database = WebPostgresDatabase(
-        dsn=runtime_postgres.notebook_runtime_dsn(),
+        dsn=runtime_postgres.web_runtime_dsn(),
         pool_min=1,
         pool_max=1,
         pool_timeout_seconds=5,

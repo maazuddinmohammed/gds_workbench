@@ -1,4 +1,5 @@
 import type { HttpRequest } from "../../core/http";
+import type { JsonObject } from "../../shared/contracts";
 import type { ModelWorkflow, WorkflowRunState } from "../workflows/api";
 
 export type { ModelWorkflow, WorkflowRunState } from "../workflows/api";
@@ -85,7 +86,32 @@ export interface ModelWorkflowOverview {
   items: WorkflowLedgerEntry[];
 }
 
+export interface CreateModelCommand {
+  model_name: string;
+  model_description: string | null;
+  silver_model_naming_instructions: string | null;
+  silver_model_audit_columns_template: JsonObject | null;
+  gold_model_naming_instructions: string | null;
+  gold_model_technical_columns_template: JsonObject | null;
+  gold_model_audit_columns_template: JsonObject | null;
+  default_agent_sdk_code: string | null;
+  default_agent_provider_code: string | null;
+  default_agent_model_code: string | null;
+  default_reasoning_effort_code: string | null;
+  default_max_turns: number | null;
+  default_validation_retry_count: number | null;
+}
+
+export interface ModelCommandResult {
+  model_id: number;
+  tenant_id: number;
+  model_revision: number;
+  is_active: boolean;
+  updated_at: string;
+}
+
 export interface ModelsApi {
+  createModel: (tenantId: number, command: CreateModelCommand) => Promise<ModelCommandResult>;
   listModels: (
     tenantId: number,
     status: ModelStatus,
@@ -101,6 +127,11 @@ export interface ModelsApi {
 
 export function createModelsApi(request: HttpRequest): ModelsApi {
   return {
+    createModel: (tenantId, command) => request<ModelCommandResult>(`/api/v1/tenants/${tenantId}/models`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(command),
+    }),
     listModels: (tenantId, status, pageSize = 200, cursor) => {
       const query = new URLSearchParams({ status, page_size: String(pageSize) });
       if (cursor) query.set("cursor", cursor);

@@ -220,3 +220,24 @@ async def test_plan_freezes_tool_permissions_and_rejects_inconsistent_rows() -> 
             model_id=18,
             workflow_run_id=1048,
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("workflow,count", [("conceptual", 50_001), ("validation", 1001)])
+async def test_run_plan_keeps_complete_large_selection(workflow: str, count: int) -> None:
+    row = _stage_row(variable_id=None)
+    row.update(model_workflow=workflow, selected_scope_count=count)
+    if workflow == "validation":
+        row.update(workflow_execution_mode=None, workflow_stage_code="validation_generation")
+    objects = [
+        {"object_id": index, "selection_order": index} for index in range(1, count + 1)
+    ] if workflow != "validation" else []
+    systems = [
+        {"system_code": f"system_{index}", "selection_order": index}
+        for index in range(1, count + 1)
+    ] if workflow == "validation" else []
+    plan = await PostgresAgentRunPlanRepository().load(
+        PlanTransaction(rows=[row], selection=objects, system_selection=systems),
+        tenant_id=7, model_id=18, workflow_run_id=1048,
+    )
+    assert len(plan.selected_object_ids if objects else plan.selected_system_codes) == count

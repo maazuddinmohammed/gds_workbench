@@ -19,6 +19,7 @@ from gds_workbench_api.features.mapping import (
     MappingDependencyFilters,
     MappingObjectNotFoundError,
 )
+from gds_workbench_api.features.mapping.read_contracts import MappingAttributeFilters
 from psycopg import Connection
 
 
@@ -173,7 +174,7 @@ async def test_mapping_and_code_reads_round_trip_through_web_role(
             principal,
             tenant_id=tenant_id,
             model_id=model_id,
-            filters=MappingDependencyFilters(),
+            filters=MappingAttributeFilters(),
             page_size=25,
             cursor=None,
         )

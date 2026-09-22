@@ -43,7 +43,7 @@ from gds_workbench_api.features.code_generation.context import (
 from gds_workbench_api.features.code_generation.service import (
     CodeGenerationExecutionFailedError,
     CodeGenerationFinalizationFailedError,
-    DatabaseCodeGenerationExecutor,
+    CodeGenerationWorkflow,
 )
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
@@ -56,6 +56,7 @@ from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
+    AgentWorkflowRunStart,
     AgentWorkflowTerminalResult,
 )
 from gds_workbench_api.features.workflows.authoring.no_op import (
@@ -64,6 +65,7 @@ from gds_workbench_api.features.workflows.authoring.no_op import (
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
+    WorkflowExecutionMode,
     FrozenAgentStage,
 )
 from gds_workbench_api.features.workflows.authoring.repair import (
@@ -517,6 +519,40 @@ class _NoOp:
 
 @dataclass
 class _Lifecycle:
+    starts: list[tuple[RequestPrincipal, int, int, int, str, str | None, int]] = field(
+        default_factory=lambda: list[tuple[RequestPrincipal, int, int, int, str, str | None, int]]()
+    )
+
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: str,
+        expected_execution_mode: str | None,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart:
+        self.starts.append(
+            (
+                principal,
+                tenant_id,
+                model_id,
+                workflow_run_id,
+                expected_workflow,
+                expected_execution_mode,
+                expected_model_revision,
+            )
+        )
+        return AgentWorkflowRunStart(
+            changed=True,
+            workflow_run_id=workflow_run_id,
+            workflow_run_state="running",
+            started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
+            model_revision=expected_model_revision,
+        )
+
     events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
     failed: tuple[str, str] | None = None
     claim_tokens: list[UUID] = field(default_factory=lambda: list[UUID]())
@@ -570,7 +606,7 @@ def _service(
     context: CodeGenerationExecutionContext | None = None,
     context_policy: AgentContextPolicy | None = None,
 ) -> tuple[
-    DatabaseCodeGenerationExecutor,
+    CodeGenerationWorkflow,
     _Database,
     _Authorizer,
     _Handoff,
@@ -583,7 +619,7 @@ def _service(
     selected_no_op = no_op or _NoOp()
     selected_lifecycle = lifecycle or _Lifecycle()
     return (
-        DatabaseCodeGenerationExecutor(
+        CodeGenerationWorkflow(
             database=database,
             authorizer=cast(Any, authorizer),
             agent_executor=executor,
@@ -606,6 +642,36 @@ def _service(
         selected_no_op,
         selected_lifecycle,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+async def test_start_binds_code_generation_workflow_without_executing(
+    mode: WorkflowExecutionMode,
+) -> None:
+    agent = _AgentExecutor(responses=[])
+    service, database, authorizer, handoff, no_op, lifecycle = _service(executor=agent)
+    principal = _principal()
+
+    result = await service.start(
+        principal,
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_model_revision=7,
+    )
+
+    assert lifecycle.starts == [(principal, 7, 18, 1048, "code_generation", None, 7)]
+    assert result.workflow_run_id == 1048
+    assert result.model_revision == 7
+    assert database.write_isolations == []
+    assert authorizer.calls == []
+    assert handoff.calls == []
+    assert agent.requests == []
+    assert lifecycle.events == []
+    assert lifecycle.failed is None
+    assert lifecycle.claim_tokens == []
+    assert no_op.requests == []
 
 
 @pytest.mark.asyncio
@@ -1081,6 +1147,7 @@ async def test_executor_keeps_maximal_multibyte_guide_and_mapping_in_bounded_req
     assert len(handoff.calls) == 1
     assert no_op.requests == []
     assert len(guide.encode("utf-8")) == 262_144
+    assert policy.stage_max_context_bytes is not None
     assert all(
         agent_request_envelope_bytes(request) <= policy.stage_max_context_bytes
         for request in agent.requests
@@ -1426,10 +1493,12 @@ async def test_executor_honors_saved_optional_reader_selection(
     agent = _AgentExecutor(
         responses=[
             cast(
-                JsonValue, {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]}
+                JsonValue,
+                {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]},
             ),
             cast(
-                JsonValue, {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]}
+                JsonValue,
+                {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]},
             ),
         ]
     )

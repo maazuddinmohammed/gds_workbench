@@ -136,8 +136,8 @@ export function TenantEntryScreen({
                       <span className="badge badge-success">Last accessed</span>
                     ) : null}
                   </span>
-                  <span className="tenant-code-line">
-                    {tenant.tenant_code} · {tenant.tenant_visibility === "global" ? "Global" : "Private"}
+                  <span className="tenant-visibility">
+                    {tenant.tenant_visibility === "global" ? "Global" : "Private"}
                   </span>
                   <span className="tenant-card-meta">{roleLabel(tenant.effective_role)}</span>
                 </span>
@@ -156,7 +156,7 @@ export function TenantEntryScreen({
             <strong>{selectedTenant?.tenant_name ?? "Choose a Tenant"}</strong>
             <span>
               {selectedTenant
-                ? `${roleLabel(selectedTenant.effective_role)} · ${selectedTenant.tenant_code}`
+                ? roleLabel(selectedTenant.effective_role)
                 : "Select a workspace to continue"}
             </span>
           </div>

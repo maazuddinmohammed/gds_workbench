@@ -192,7 +192,7 @@ def decode_canonical_base64_fragment(value: str) -> bytes:
         raise ValueError("Stage payload fragment is invalid.")
     try:
         decoded = base64.b64decode(value, validate=True)
-    except (binascii.Error, ValueError):
+    except binascii.Error, ValueError:
         raise ValueError("Stage payload fragment is invalid.") from None
     if (
         not decoded

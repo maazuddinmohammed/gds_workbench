@@ -30,7 +30,6 @@
 
 --DROP OWNED BY gds_mcp_runtime CASCADE;
 --DROP OWNED BY gds_web_runtime CASCADE;
---DROP OWNED BY gds_notebook_runtime CASCADE;
 --DROP OWNED BY gds_app_write CASCADE;
 --DROP OWNED BY gds_web_write CASCADE;
 --DROP OWNED BY gds_migration CASCADE;
@@ -40,7 +39,6 @@
 
 --DROP ROLE gds_mcp_runtime;
 --DROP ROLE gds_web_runtime;
---DROP ROLE gds_notebook_runtime;
 --DROP ROLE gds_app_write;
 --DROP ROLE gds_web_write;
 --DROP ROLE gds_migration;
@@ -83,8 +81,7 @@ BEGIN
      FROM pg_catalog.pg_roles AS role_record
      WHERE role_record.rolname IN (
                'gds_migration', 'gds_app_write', 'gds_web_write',
-               'gds_mcp_runtime', 'gds_web_runtime',
-               'gds_notebook_runtime'
+               'gds_mcp_runtime', 'gds_web_runtime'
            )
      ORDER BY role_record.rolname
      LIMIT 1;

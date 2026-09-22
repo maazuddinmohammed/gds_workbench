@@ -2,9 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query
 from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.model_input_scope.contracts import (
     ModelInputScopeCandidatePage,
     ModelInputScopeDetail,
@@ -20,13 +22,13 @@ def create_input_scope_router(
     identity_provider: IdentityProvider,
     service: ModelInputScopeService,
 ) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/input-scope",
         tags=["model-input-scope"],
     )
 
     async def list_input_scope(
-        request: Request,
         tenant_id: int,
         model_id: int,
         zone: Annotated[str | None, Query(max_length=30)] = None,
@@ -35,6 +37,8 @@ def create_input_scope_router(
         object_name: Annotated[str | None, Query(max_length=400)] = None,
         page_size: Annotated[int, Query(ge=1, le=200)] = 50,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ModelInputScopePage:
         query = ModelInputScopeQuery.model_validate(
             {
@@ -46,7 +50,6 @@ def create_input_scope_router(
                 "cursor": cursor,
             }
         )
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_input_scope(
             principal,
             tenant_id=tenant_id,
@@ -67,20 +70,15 @@ def create_input_scope_router(
     )
 
     async def search_options(
-        request: Request,
-        tenant_id: int,
-        model_id: int,
+        tenant_id: int, model_id: int, *, principal: RequestPrincipal = Depends(authenticate)
     ) -> ScopeSearchOptions:
-        return await service.search_options(
-            identity_provider.authenticate(request.headers), tenant_id=tenant_id, model_id=model_id
-        )
+        return await service.search_options(principal, tenant_id=tenant_id, model_id=model_id)
 
     router.add_api_route(
         "/options", search_options, methods=["GET"], response_model=ScopeSearchOptions
     )
 
     async def list_candidates(
-        request: Request,
         tenant_id: int,
         model_id: int,
         placement_tenant_id: Annotated[int | None, Query(gt=0)] = None,
@@ -90,6 +88,8 @@ def create_input_scope_router(
         object_name: Annotated[str | None, Query(max_length=400)] = None,
         page_size: Annotated[int, Query(ge=1, le=200)] = 50,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ModelInputScopeCandidatePage:
         query = ModelInputScopeQuery.model_validate(
             {
@@ -101,7 +101,6 @@ def create_input_scope_router(
                 "cursor": cursor,
             }
         )
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_candidates(
             principal,
             tenant_id=tenant_id,
@@ -123,12 +122,12 @@ def create_input_scope_router(
     )
 
     async def read_input_scope_object(
-        request: Request,
         tenant_id: int,
         model_id: int,
         object_id: int,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ModelInputScopeDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_input_scope_object(
             principal,
             tenant_id=tenant_id,

@@ -2,10 +2,12 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query, Request
+from fastapi import APIRouter, Depends, Path, Query
 from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.assertions.contracts import (
     ApplicableLayer,
     AssertionDocumentDetail,
@@ -68,18 +70,19 @@ def create_assertions_router(
     service: AssertionsService,
 ) -> APIRouter:
     """Create the Modeling Assertion read router for runtime composition."""
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/assertions",
         tags=["assertions"],
     )
 
     async def list_documents(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         query: Annotated[AssertionDocumentListQuery, Query()],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> AssertionDocumentPage:
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_documents(
             principal,
             tenant_id=tenant_id,
@@ -105,12 +108,12 @@ def create_assertions_router(
     )
 
     async def read_document(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         modeling_assertion_document_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> AssertionDocumentDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_document(
             principal,
             tenant_id=tenant_id,
@@ -126,12 +129,12 @@ def create_assertions_router(
     )
 
     async def list_records(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         query: Annotated[AssertionRecordListQuery, Query()],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> AssertionRecordPage:
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_records(
             principal,
             tenant_id=tenant_id,
@@ -161,12 +164,12 @@ def create_assertions_router(
     )
 
     async def read_record(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         modeling_assertion_record_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> AssertionRecordDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_record(
             principal,
             tenant_id=tenant_id,

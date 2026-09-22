@@ -14,6 +14,9 @@ from gds_workbench_api.features.metadata_enrichment.read_service import (
 from gds_workbench_api.features.workflows.runs import WorkflowRunNotFoundError
 
 from tests.mcp.conftest import (
+    DisposablePostgres,
+)
+from tests.mcp.conftest import (
     bootstrap_postgres_database as bootstrap_postgres_database,
 )
 from tests.mcp.test_database_metadata_enrichment_execution import (
@@ -22,24 +25,18 @@ from tests.mcp.test_database_metadata_enrichment_execution import (
     _load,
     _start,
 )
-from tests.mcp.test_database_notebook_workflows import (
-    NotebookActor,
-)
-from tests.mcp.test_database_notebook_workflows import (
-    notebook_actor as notebook_actor,
-)
 from tests.mcp.test_database_workflow_run_lifecycle import seed_workflow_context
 
 
 async def test_enrichment_results_are_readable_without_lock_and_hide_reowned_labels(
-    notebook_actor: NotebookActor,
+    bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
-    actor = notebook_actor
-    context, run_id, claim, attributes = _start(actor)
+    database = bootstrap_postgres_database
+    context, run_id, claim, attributes = _start(database)
     object_id, attribute_id = attributes[0]
-    snapshot = _load(actor, context, run_id)
+    snapshot = _load(database, context, run_id)
     completed = _complete(
-        actor,
+        database,
         context,
         run_id,
         claim,
@@ -54,7 +51,7 @@ async def test_enrichment_results_are_readable_without_lock_and_hide_reowned_lab
             )
         ],
     )
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         connection.execute(
             (
                 "UPDATE security.tenant_principal_access SET tenant_role = 'viewer' WHERE "
@@ -75,7 +72,7 @@ async def test_enrichment_results_are_readable_without_lock_and_hide_reowned_lab
         entra_object_id=context.entra_object_id,
     )
     runtime = WebPostgresDatabase(
-        dsn=actor.database.web_runtime_dsn(),
+        dsn=database.web_runtime_dsn(),
         pool_min=1,
         pool_max=1,
         pool_timeout_seconds=5,
@@ -119,7 +116,7 @@ async def test_enrichment_results_are_readable_without_lock_and_hide_reowned_lab
                 model_id=context.model_id + 1_000_000,
                 workflow_run_id=run_id,
             )
-        foreign = seed_workflow_context(actor.database)
+        foreign = seed_workflow_context(database)
         with pytest.raises(TenantNotFoundError):
             await service.read_results(
                 principal,
@@ -127,7 +124,7 @@ async def test_enrichment_results_are_readable_without_lock_and_hide_reowned_lab
                 model_id=context.model_id,
                 workflow_run_id=run_id,
             )
-        with actor.database.connect_owner() as connection:
+        with database.connect_owner() as connection:
             connection.execute(
                 "UPDATE core.object SET source_tenant_id = %s WHERE object_id = %s",
                 (foreign.tenant_id, object_id),

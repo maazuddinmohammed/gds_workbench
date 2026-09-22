@@ -138,7 +138,7 @@ describe("Validation journey", () => {
     const submit = within(dialog).getByRole("button", { name: "Create and start Validation" });
     expect(submit).toBeDisabled();
 
-    await user.click(within(dialog).getByRole("checkbox", { name: /Customer CRM/ }));
+    await user.click(within(dialog).getByRole("checkbox", { name: /CRM/ }));
     expect(within(dialog).getByText("1 of 2 Systems selected")).toBeVisible();
     await user.click(submit);
 
@@ -194,7 +194,7 @@ describe("Validation journey", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Run Validation" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "Run Validation" }));
     await screen.findByRole("dialog", { name: "Configure Validation run" });
-    await user.click(screen.getByRole("checkbox", { name: /Customer CRM/ }));
+    await user.click(screen.getByRole("checkbox", { name: /CRM/ }));
     const submit = await screen.findByRole("button", { name: "Create and start Validation" });
     await waitFor(() => expect(submit).toBeEnabled());
     for (const label of ["Agent SDK", "Provider", "Maximum turns", "Validation retries"]) {
@@ -240,7 +240,7 @@ describe("Validation journey", () => {
     expect(within(within(dialog).getByLabelText("Reasoning effort")).queryByRole("option", { name: "Medium" })).not.toBeInTheDocument();
     await user.selectOptions(within(dialog).getByLabelText("Reasoning effort"), "high");
     expect(within(dialog).queryByLabelText("Execution mode")).not.toBeInTheDocument();
-    await user.click(within(dialog).getByRole("checkbox", { name: /Customer CRM/ }));
+    await user.click(within(dialog).getByRole("checkbox", { name: /CRM/ }));
     await user.click(within(dialog).getByRole("button", { name: "Create and start Validation" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     const create = fetcher.mock.calls.find(([input, init]) =>

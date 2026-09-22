@@ -2,9 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query, Request
+from fastapi import APIRouter, Depends, Path, Query
 from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.conceptual.read_contracts import (
     ConceptualFilters,
     ConceptualListQuery,
@@ -22,16 +24,18 @@ def create_conceptual_router(
     service: ConceptualService,
 ) -> APIRouter:
     """Create the Conceptual read router for later runtime composition."""
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/conceptual",
         tags=["conceptual"],
     )
 
     async def list_objects(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         query: Annotated[ConceptualListQuery, Query()],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ConceptualObjectPage:
         filters = ConceptualFilters.model_validate(
             {
@@ -42,7 +46,6 @@ def create_conceptual_router(
             },
             strict=True,
         )
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_objects(
             principal,
             tenant_id=tenant_id,
@@ -60,12 +63,12 @@ def create_conceptual_router(
     )
 
     async def read_object(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         conceptual_object_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ConceptualObjectDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_object(
             principal,
             tenant_id=tenant_id,
@@ -81,10 +84,11 @@ def create_conceptual_router(
     )
 
     async def list_relationships(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         query: Annotated[ConceptualListQuery, Query()],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ConceptualRelationshipPage:
         filters = ConceptualFilters.model_validate(
             {
@@ -95,7 +99,6 @@ def create_conceptual_router(
             },
             strict=True,
         )
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_relationships(
             principal,
             tenant_id=tenant_id,
@@ -113,12 +116,12 @@ def create_conceptual_router(
     )
 
     async def read_relationship(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         conceptual_relationship_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ConceptualRelationshipDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_relationship(
             principal,
             tenant_id=tenant_id,

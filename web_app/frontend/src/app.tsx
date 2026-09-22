@@ -1,5 +1,6 @@
 import { ModelTargetsScreen } from "./features/model_targets/ModelTargetsScreen";
 import { TablePrototype } from "./features/table_prototype/TablePrototype";
+import { ObjectCardsPrototype, type CardVariant } from "./features/models/ObjectCardsPrototype";
 import {
   QueryClient,
   QueryClientProvider,
@@ -46,16 +47,13 @@ import {
   DimensionalRelationshipDetailPage,
 } from "./features/dimensional/DimensionalDetail";
 import { DimensionalScreen } from "./features/dimensional/DimensionalScreen";
-import { MappingModels } from "./features/mapping/MappingModels";
 import { MappingScreen } from "./features/mapping/MappingScreen";
 import {
   MappingAttributeDetailPage,
   MappingObjectDetailPage,
 } from "./features/mapping/MappingDetail";
-import { CodeGenerationModels } from "./features/code_generation/CodeGenerationModels";
 import { CodeGenerationScreen } from "./features/code_generation/CodeGenerationScreen";
 import { GeneratedSqlDetailPage } from "./features/code_generation/GeneratedSqlDetail";
-import { ValidationModels } from "./features/validation/ValidationModels";
 import { ValidationScreen } from "./features/validation/ValidationScreen";
 import { ModelPromptSettings } from "./features/prompts/ModelPromptSettings";
 import { PromptsScreen } from "./features/prompts/PromptsScreen";
@@ -64,6 +62,7 @@ import { MetadataScreen } from "./features/metadata/MetadataScreen";
 import { PhysicalMetadataScreen } from "./features/metadata/PhysicalMetadataScreen";
 import { TenantEntryScreen } from "./features/tenants/TenantEntryScreen";
 import { TenantHomeScreen } from "./features/tenants/TenantHomeScreen";
+import { WorkflowModels } from "./features/models/WorkflowModels";
 import { ModelsLedgerScreen } from "./features/models/ModelsLedgerScreen";
 import { ModelOverviewScreen } from "./features/models/ModelOverviewScreen";
 import { ModelRouteFrame } from "./features/models/ModelRouteFrame";
@@ -81,7 +80,7 @@ interface RouterContext {
 }
 
 interface MappingRouteSearch {
-  view?: "dependencies" | "objects" | "attributes";
+  view?: "dependencies" | "objects";
 }
 
 type TablePrototypeVariant = "A" | "B" | "C";
@@ -112,6 +111,16 @@ const tablePrototypeRoute = createRoute({
     variant: search.variant === "B" || search.variant === "C" ? search.variant : "A",
   }),
   component: DataTablePrototype,
+});
+
+const objectCardsPrototypeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/prototype/object-cards",
+  validateSearch: (search: Record<string, unknown>): { variant: CardVariant; stage: number } => ({
+    variant: search.variant === "B" || search.variant === "C" ? search.variant : "A",
+    stage: Number.isInteger(Number(search.stage)) && Number(search.stage) >= 0 && Number(search.stage) <= 5 ? Number(search.stage) : 1,
+  }),
+  component: ModelObjectCardsPrototype,
 });
 
 const tenantHomeRoute = createRoute({
@@ -153,9 +162,8 @@ const tenantMappingModelRoute = createRoute({
   path: "/tenants/$tenantId/mapping/models/$modelId",
   component: TenantMappingModel,
   validateSearch: (search: Record<string, unknown>): MappingRouteSearch => (
-    search.view === "objects" || search.view === "attributes" || search.view === "dependencies"
-      ? { view: search.view }
-      : {}
+    search.view === "attributes" ? { view: "objects" }
+      : search.view === "objects" || search.view === "dependencies" ? { view: search.view } : {}
   ),
 });
 
@@ -375,6 +383,7 @@ const tenantModelDimensionalRelationshipRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   tenantEntryRoute,
   tablePrototypeRoute,
+  objectCardsPrototypeRoute,
   tenantHomeRoute,
   tenantMetadataRoute,
   tenantMetadataObjectsRoute,
@@ -472,6 +481,15 @@ function DataTablePrototype() {
   );
 }
 
+function ModelObjectCardsPrototype() {
+  const { variant, stage } = objectCardsPrototypeRoute.useSearch();
+  const navigate = useNavigate({ from: "/prototype/object-cards" });
+  if (!import.meta.env.DEV) return <ErrorPage />;
+  return <ObjectCardsPrototype variant={variant} stage={stage} onNavigate={(nextVariant, nextStage) => {
+    void navigate({ search: { variant: nextVariant, stage: nextStage }, replace: true });
+  }} />;
+}
+
 function TenantEntry() {
   const { api } = rootRoute.useRouteContext();
   const navigate = useNavigate({ from: "/" });
@@ -546,7 +564,7 @@ function TenantMapping() {
     >
       {() => (
         <main className="workspace workspace-ledger">
-          <MappingModels api={api} tenantId={numericTenantId} />
+          <WorkflowModels api={api} tenantId={numericTenantId} workflow="mapping" />
         </main>
       )}
     </TenantRouteFrame>
@@ -627,10 +645,13 @@ function TenantMappingDetail({
       activeNav="mapping"
       loadingLabel="Loading Mapping"
     >
-      {() => (
+      {({ home, model }) => (
         <main className="workspace mapping-workspace">
           {kind === "object" ? (
-            <MappingObjectDetailPage api={api} tenantId={tenantId} modelId={modelId} mappingObjectId={detailId} />
+            <MappingObjectDetailPage api={api} tenantId={tenantId} modelId={modelId} mappingObjectId={detailId}
+              modelRevision={model.model_revision}
+              hasTenantLock={home.lock.owned_by_current_principal === true && canAuthorModels(home.tenant.effective_role)}
+            />
           ) : (
             <MappingAttributeDetailPage api={api} tenantId={tenantId} modelId={modelId} mappingAttributeId={detailId} />
           )}
@@ -653,7 +674,7 @@ function TenantCodeGeneration() {
     >
       {() => (
         <main className="workspace workspace-ledger">
-          <CodeGenerationModels api={api} tenantId={numericTenantId} />
+          <WorkflowModels api={api} tenantId={numericTenantId} workflow="code_generation" />
         </main>
       )}
     </TenantRouteFrame>
@@ -732,7 +753,7 @@ function TenantValidation() {
     >
       {() => (
         <main className="workspace workspace-ledger">
-          <ValidationModels api={api} tenantId={numericTenantId} />
+          <WorkflowModels api={api} tenantId={numericTenantId} workflow="validation" />
         </main>
       )}
     </TenantRouteFrame>

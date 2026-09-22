@@ -1,6 +1,6 @@
 """Profiling review, planning, and execution feature."""
 
-from gds_workbench_runtime.profiling.execution import (
+from gds_workbench_api.features.profiling.execution import (
     ConnectorProfilingExecutor,
     ProfileAttribute,
     ProfileMetric,
@@ -11,7 +11,6 @@ from gds_workbench_runtime.profiling.execution import (
     build_profile_queries,
     load_default_profiling_policy,
 )
-
 from gds_workbench_api.features.profiling.read_contracts import (
     AttributeProfile,
     ProfileWorkflowProvenance,
@@ -27,18 +26,22 @@ from gds_workbench_api.features.profiling.read_service import (
     ProfilingReviewDatabase,
     ProfilingReviewService,
 )
-from gds_workbench_api.features.profiling.workflow import (
+from gds_workbench_api.features.profiling.repository import (
     DatabaseProfilingWorkflowRepository,
+    ProfilingWorkflowDatabase,
+)
+from gds_workbench_api.features.profiling.router import (
     ExecuteProfilingRunRequest,
+    ProfilingWorkflowService,
+    create_profiling_workflow_router,
+)
+from gds_workbench_api.features.profiling.workflow import (
     ProfilingCommitResult,
     ProfilingExecutionContext,
     ProfilingExecutionTarget,
     ProfilingRunStart,
-    ProfilingWorkflowDatabase,
     ProfilingWorkflowOrchestrator,
     ProfilingWorkflowRepository,
-    ProfilingWorkflowService,
-    create_profiling_workflow_router,
 )
 
 __all__ = [

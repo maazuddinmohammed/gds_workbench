@@ -155,20 +155,14 @@ function ScopeView({
       accessorKey: "source_tenant_code",
       header: "Source Tenant",
       cell: ({ row }) => (
-        <span className="scope-secondary">
-          <strong>{row.original.source_tenant_code}</strong>
-          <span>{row.original.source_tenant_name}</span>
-        </span>
+        <strong>{row.original.source_tenant_code}</strong>
       ),
     },
     {
       accessorKey: "system_code",
       header: "System",
       cell: ({ row }) => (
-        <span className="scope-secondary">
-          <strong>{row.original.system_code}</strong>
-          <span>{row.original.system_name}</span>
-        </span>
+        <strong>{row.original.system_code}</strong>
       ),
     },
     { accessorKey: "object_schema", header: "Schema" },
@@ -463,6 +457,19 @@ export function ScopeFilterForm({
           </label>
         )}
       </form.Field>
+      <form.Field name="objectName">
+        {(field) => (
+          <label>
+            <span>Schema or Object name</span>
+            <input
+              maxLength={400}
+              value={field.state.value}
+              onBlur={field.handleBlur}
+              onChange={(event) => field.handleChange(event.target.value)}
+            />
+          </label>
+        )}
+      </form.Field>
       <form.Field name="zone">
         {(field) => (
           <label>
@@ -476,19 +483,6 @@ export function ScopeFilterForm({
               <option value="source">Source</option>
               <option value="bronze">Bronze</option>
             </select>
-          </label>
-        )}
-      </form.Field>
-      <form.Field name="objectName">
-        {(field) => (
-          <label>
-            <span>Schema or Object name</span>
-            <input
-              maxLength={400}
-              value={field.state.value}
-              onBlur={field.handleBlur}
-              onChange={(event) => field.handleChange(event.target.value)}
-            />
           </label>
         )}
       </form.Field>

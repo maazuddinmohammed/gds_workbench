@@ -1,23 +1,28 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { DetailState } from "../../shared/ui";
+import { DetailState, Fact } from "../../shared/ui";
 
 import { ApiError } from "../../core/http";
 import type { MappingAttributeDetail, MappingObjectDetail } from "./api";
 import { mappingQueryKeys, type MappingApi } from "./api";
 import { MappingDocumentView } from "./MappingDocumentView";
+import { MappingObjectAttributes } from "./MappingObjectAttributes";
 
 export function MappingObjectDetailPage({
   api,
   tenantId,
   modelId,
   mappingObjectId,
+  modelRevision,
+  hasTenantLock,
 }: {
   api: MappingApi;
   tenantId: number;
   modelId: number;
   mappingObjectId: number;
+  modelRevision: number;
+  hasTenantLock: boolean;
 }) {
   const query = useQuery({
     queryKey: mappingQueryKeys.object(tenantId, modelId, mappingObjectId),
@@ -25,7 +30,12 @@ export function MappingObjectDetailPage({
   });
   if (query.isPending) return <DetailState label="Loading Object Mapping…" />;
   if (query.isError) return <DetailState label={detailError(query.error, "Object")} error />;
-  return <MappingObjectDetailView tenantId={tenantId} modelId={modelId} detail={query.data} />;
+  return (
+    <MappingObjectDetailView tenantId={tenantId} modelId={modelId} detail={query.data}>
+      <MappingObjectAttributes key={mappingObjectId} api={api} tenantId={tenantId} modelId={modelId}
+        mappingObjectId={mappingObjectId} modelRevision={modelRevision} hasTenantLock={hasTenantLock} />
+    </MappingObjectDetailView>
+  );
 }
 
 export function MappingAttributeDetailPage({
@@ -52,10 +62,12 @@ function MappingObjectDetailView({
   tenantId,
   modelId,
   detail,
+  children,
 }: {
   tenantId: number;
   modelId: number;
   detail: MappingObjectDetail;
+  children: ReactNode;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
@@ -64,7 +76,6 @@ function MappingObjectDetailView({
       <DetailHeader
         tenantId={tenantId}
         modelId={modelId}
-        view="objects"
         eyebrow={`Object Mapping ${detail.mapping_object_id}`}
         title={`${detail.target.object_schema}.${detail.target.object_name}`}
         status={detail.status}
@@ -80,16 +91,20 @@ function MappingObjectDetailView({
         </div>
         <details className="support-record-details"><summary>Connection and template details</summary>
         <dl className="detail-fact-grid">
-          <Fact label="Target Tenant" value={`${detail.target.tenant_name} (${detail.target.tenant_code})`} />
-          <Fact label="Target System" value={`${detail.target.system_name} (${detail.target.system_code})`} />
+          <Fact label="Target Tenant" value={detail.target.tenant_code} />
+          <Fact label="Target System" value={detail.target.system_code} />
           <Fact label="Connection" value={detail.target.connection_code} />
-          <Fact label="Source System" value={`${detail.source_system.system_name} (${detail.source_system.system_code})`} />
+          <Fact label="Source System" value={detail.source_system.system_code} />
           <Fact label="Dependency order" value={String(detail.dependency_order)} />
         </dl>
         <OutputTemplate template={detail.output_template} />
         </details>
       </section>
-      <MappingDocumentView title="Transformation document" document={detail.mapping_document} />
+      {children}
+      <details className="detail-section detail-disclosure mapping-transformation">
+        <summary>Object transformation</summary>
+        <MappingDocumentView title="Transformation document" document={detail.mapping_document} />
+      </details>
     </article>
   );
 }
@@ -111,7 +126,7 @@ function MappingAttributeDetailView({
       <DetailHeader
         tenantId={tenantId}
         modelId={modelId}
-        view="attributes"
+        parentObjectId={detail.parent_object_mapping.mapping_object_id}
         eyebrow={`Attribute Mapping ${detail.mapping_attribute_id}`}
         title={`${target.object.object_schema}.${target.object.object_name}.${target.attribute_name}`}
         status={detail.status}
@@ -127,10 +142,10 @@ function MappingAttributeDetailView({
         </div>
         <details className="support-record-details"><summary>Connection and template details</summary>
         <dl className="detail-fact-grid">
-          <Fact label="Target Tenant" value={`${target.object.tenant_name} (${target.object.tenant_code})`} />
-          <Fact label="Target System" value={`${target.object.system_name} (${target.object.system_code})`} />
+          <Fact label="Target Tenant" value={target.object.tenant_code} />
+          <Fact label="Target System" value={target.object.system_code} />
           <Fact label="Connection" value={target.object.connection_code} />
-          <Fact label="Source System" value={`${detail.source_system.system_name} (${detail.source_system.system_code})`} />
+          <Fact label="Source System" value={detail.source_system.system_code} />
           <Fact label="Ordinal" value={String(target.attribute_ordinal_position)} />
         </dl>
         <OutputTemplate template={detail.output_template} />
@@ -158,7 +173,7 @@ function MappingAttributeDetailView({
 function DetailHeader({
   tenantId,
   modelId,
-  view,
+  parentObjectId,
   eyebrow,
   title,
   status,
@@ -167,7 +182,7 @@ function DetailHeader({
 }: {
   tenantId: number;
   modelId: number;
-  view: "objects" | "attributes";
+  parentObjectId?: number;
   eyebrow: string;
   title: string;
   status: string;
@@ -179,12 +194,15 @@ function DetailHeader({
       <div>
         <Link
           className="text-action"
-          aria-label="Back to Mapping"
-          to="/tenants/$tenantId/mapping/models/$modelId"
-          params={{ tenantId: String(tenantId), modelId: String(modelId) }}
-          search={{ view }}
+          aria-label={parentObjectId ? "Back to Object Mapping" : "Back to Object mappings"}
+          to={parentObjectId
+            ? "/tenants/$tenantId/mapping/models/$modelId/objects/$mappingObjectId"
+            : "/tenants/$tenantId/mapping/models/$modelId"}
+          params={{ tenantId: String(tenantId), modelId: String(modelId),
+            ...(parentObjectId ? { mappingObjectId: String(parentObjectId) } : {}) }}
+          search={parentObjectId ? {} : { view: "objects" }}
         >
-          ← Back to Mapping
+          ← {parentObjectId ? "Back to Object Mapping" : "Back to Object mappings"}
         </Link>
         <p className="eyebrow">{eyebrow}</p>
         <h1 ref={headingRef} tabIndex={-1}>{title}</h1>
@@ -208,10 +226,6 @@ function OutputTemplate({ template }: { template: MappingObjectDetail["output_te
       </> : null}
     </dl>
   );
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return <div><dt>{label}</dt><dd>{value}</dd></div>;
 }
 
 function detailError(error: Error, kind: "Object" | "Attribute"): string {

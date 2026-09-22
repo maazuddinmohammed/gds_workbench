@@ -105,9 +105,9 @@ def build_downstream_readers(
     workflow: str,
     values: dict[str, Any],
     *,
-    max_result_bytes: int,
+    max_result_bytes: int | None,
     max_page_records: int,
-    max_cumulative_result_bytes: int,
+    max_cumulative_result_bytes: int | None,
 ) -> DownstreamContextReaders:
     specs = downstream_reader_specs(workflow)
     tool_values = deepcopy(values)
@@ -210,7 +210,7 @@ def project_downstream_inputs(workflow: str, context: dict[str, Any]) -> dict[st
                 "applied_groups": deepcopy(context["applied_validation_groups"]),
                 "applied_checks": deepcopy(context["applied_validation_checks"]),
             }
-    except (KeyError, TypeError, ValueError, IndexError):
+    except KeyError, TypeError, ValueError, IndexError:
         raise InvalidRequestError(
             "The frozen downstream prompt context has broken references."
         ) from None

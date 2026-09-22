@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
-import { DetailState } from "../../shared/ui";
+import { DetailState, Fact } from "../../shared/ui";
 import type {
   LogicalAttributeDetail,
   LogicalEntityDetail,
@@ -177,7 +177,6 @@ function LogicalEntityView({
   );
 }
 
-
 function LogicalAttributeView({
   tenantId,
   modelId,
@@ -331,7 +330,6 @@ function LogicalSubmodelView({
   );
 }
 
-
 function LogicalDetailHeader({
   tenantId,
   modelId,
@@ -371,10 +369,6 @@ function LogicalDetailHeader({
       </div>
     </header>
   );
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return <div><dt>{label}</dt><dd>{value}</dd></div>;
 }
 
 function humanize(value: string): string {

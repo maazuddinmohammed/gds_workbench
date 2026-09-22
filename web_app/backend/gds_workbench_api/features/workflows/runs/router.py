@@ -3,11 +3,13 @@
 import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Path, Query, Request
+from fastapi import APIRouter, Depends, Header, Path, Query, Request
 from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from starlette.responses import StreamingResponse
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.workflows.runs.contracts import (
     ModelWorkflow,
     RunEventCollection,
@@ -23,21 +25,22 @@ def create_workflow_runs_router(
     identity_provider: IdentityProvider,
     service: WorkflowRunService,
 ) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/runs",
         tags=["workflow-runs"],
     )
 
     async def list_runs(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         workflow: Annotated[ModelWorkflow | None, Query()] = None,
         run_state: Annotated[RunState | None, Query(alias="state")] = None,
         page_size: Annotated[int, Query(ge=1, le=200)] = 50,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> WorkflowRunCollection:
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_runs(
             principal,
             tenant_id=tenant_id,
@@ -56,12 +59,12 @@ def create_workflow_runs_router(
     )
 
     async def read_run(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         workflow_run_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> WorkflowRunDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_run(
             principal,
             tenant_id=tenant_id,
@@ -77,14 +80,14 @@ def create_workflow_runs_router(
     )
 
     async def list_events(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         workflow_run_id: Annotated[int, Path(gt=0)],
         after_sequence: Annotated[int, Query(ge=0)] = 0,
         page_size: Annotated[int, Query(ge=1, le=200)] = 200,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> RunEventCollection:
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_events(
             principal,
             tenant_id=tenant_id,
@@ -107,12 +110,10 @@ def create_workflow_runs_router(
         model_id: Annotated[int, Path(gt=0)],
         workflow_run_id: Annotated[int, Path(gt=0)],
         after_sequence: Annotated[int, Query(ge=0)] = 0,
-        last_event_id: Annotated[
-            str | None,
-            Header(alias="Last-Event-ID", max_length=20),
-        ] = None,
+        last_event_id: Annotated[str | None, Header(alias="Last-Event-ID", max_length=20)] = None,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> StreamingResponse:
-        principal = identity_provider.authenticate(request.headers)
         sequence = after_sequence
         if last_event_id is not None:
             try:

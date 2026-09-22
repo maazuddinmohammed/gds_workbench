@@ -583,7 +583,7 @@ def test_review_helper_is_web_only_and_preserves_tenant_lock_privileges(
             "SELECT role,has_function_privilege(role,%s,'EXECUTE') AS can_review,"
             "has_any_column_privilege(role,'security.tenant_lock','UPDATE') AS can_update_lock "
             "FROM unnest(ARRAY['public','gds_app_write','gds_web_write',"
-            "'gds_mcp_runtime','gds_notebook_runtime']) AS role ORDER BY role",
+            "'gds_mcp_runtime']) AS role ORDER BY role",
             (AUTHORIZE_SIGNATURE,),
         ).fetchall()
         assert [row["role"] for row in rows if row["can_review"]] == ["gds_web_write"]

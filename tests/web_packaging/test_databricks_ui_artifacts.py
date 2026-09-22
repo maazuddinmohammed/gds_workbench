@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import hashlib
 import importlib.util
 import json
@@ -27,104 +26,6 @@ APP_ROOT_FILES = {
     "uv.lock",
 }
 APP_ROOT_DIRECTORIES = {"mcp_server", "web_app"}
-NOTEBOOK_PACKAGE_SOURCES = {
-    "gds_workbench_notebooks": (
-        ROOT / "databricks_notebooks" / "src" / "gds_workbench_notebooks",
-        {".py"},
-    ),
-    "gds_workbench_runtime": (
-        ROOT / "web_app" / "backend" / "gds_workbench_runtime",
-        {".json", ".py"},
-    ),
-    "gds_workbench_api": (
-        ROOT / "web_app" / "backend" / "gds_workbench_api",
-        {".json", ".py"},
-    ),
-    "gds_etl_workbench": (
-        ROOT / "mcp_server" / "gds_etl_workbench",
-        {".py"},
-    ),
-}
-NOTEBOOK_SOURCE_ROOT = ROOT / "databricks_notebooks" / "notebooks"
-NOTEBOOK_PACKAGE_EXCLUSIONS = {
-    "gds_workbench_api": (
-        {
-            "app_process.py",
-            "authentication.py",
-            "config/workflow_execution.json",
-            "configuration.py",
-            "errors.py",
-            "features/model_change_sets/router.py",
-            "features/model_targets/router.py",
-            "features/model_targets/service.py",
-            "features/workflows/authoring/change_set_apply_router.py",
-            "features/workflows/execution/configuration.py",
-            "frontend.py",
-            "main.py",
-            "runtime.py",
-            "workflow_worker.py",
-        },
-        {
-            "features/metadata",
-            "features/metadata_change_sets",
-            "features/model_input_scope",
-            "features/output_templates",
-            "features/prompts",
-            "features/session",
-            "features/sql_generation_guides",
-            "features/tenant_locks",
-            "features/tenants",
-            "features/workflows/commands",
-            "features/workflows/overview",
-        },
-    ),
-    "gds_etl_workbench": (
-        {
-            "adapters/auth/middleware.py",
-            "application/change_sets/metadata.py",
-            "domain/snapshots/metadata_guidance.py",
-            "runtime.py",
-            "tools/catalog/get_object_lineage.py",
-            "tools/catalog/get_objects.py",
-            "tools/catalog/inspect_metadata.py",
-            "tools/catalog/list_objects.py",
-            "tools/change_sets/metadata.py",
-            "tools/change_sets/model.py",
-            "tools/databricks/execute_sql.py",
-            "tools/modeling/model_details.py",
-            "tools/modeling/model_input_scope.py",
-            "tools/modeling/read_model_section.py",
-            "tools/modeling/read_mapping_context.py",
-            "tools/snapshots/archive.py",
-            "tools/snapshots/metadata/archive.py",
-            "tools/snapshots/metadata/describe_metadata_dataset.py",
-            "tools/snapshots/metadata/get_metadata_snapshot.py",
-            "tools/snapshots/metadata/projection.py",
-            "tools/snapshots/metadata/sql.py",
-            "tools/snapshots/model/archive.py",
-            "tools/snapshots/model/describe_model_dataset.py",
-            "tools/snapshots/model/get_model_snapshot.py",
-            "tools/snapshots/service.py",
-            "tools/snapshots/storage.py",
-        },
-        {
-            "adapters/mcp",
-            "diagnostics",
-            "tools/ingestion",
-            "tools/processing",
-            "tools/tenants",
-        },
-    ),
-}
-IGNORED_RUNTIME_PARTS = {
-    ".pytest_cache",
-    ".ruff_cache",
-    ".venv",
-    "__pycache__",
-    "node_modules",
-    "test",
-    "tests",
-}
 FORBIDDEN_PARTS = {
     ".git",
     ".pytest_cache",
@@ -170,113 +71,51 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _expected_runtime_files(source_root: Path, suffixes: set[str]) -> set[str]:
-    return {
-        path.relative_to(source_root).as_posix()
-        for path in source_root.rglob("*")
-        if path.is_file()
-        and path.name not in {".DS_Store", "README.md"}
-        and not (set(path.relative_to(source_root).parts) & IGNORED_RUNTIME_PARTS)
-        and ".test." not in path.name
-        and path.suffix in suffixes
-    }
-
-
-def _is_notebook_excluded(package_name: str, relative: str) -> bool:
-    excluded_files, excluded_prefixes = NOTEBOOK_PACKAGE_EXCLUSIONS.get(
-        package_name, (set(), set())
-    )
-    return relative in excluded_files or any(
-        relative == prefix or relative.startswith(f"{prefix}/")
-        for prefix in excluded_prefixes
-    )
-
-
 def test_builder_creates_exact_ui_upload_roots(tmp_path: Path) -> None:
     builder = _load_builder()
 
     result = builder.build_uploads(tmp_path / "release")
 
     app_root = result.app_source_directory
-    notebook_root = result.notebook_source_directory
     assert {path.name for path in app_root.iterdir()} == (
         APP_ROOT_FILES | APP_ROOT_DIRECTORIES
     )
-    assert {path.name for path in notebook_root.iterdir()} == {
-        ".env.example",
-        "notebooks",
-        "requirements.txt",
-        "src",
+    assert {path.name for path in result.output_directory.iterdir()} == {
+        "gds-workbench-app-source",
+        "gds-workbench-app-source.zip",
+        "artifact-manifest.json",
+        "SHA256SUMS.txt",
+        "UPLOAD_INSTRUCTIONS.md",
+        builder.GENERATED_MARKER,
     }
-    assert {path.name for path in (notebook_root / "src").iterdir()} == set(
-        NOTEBOOK_PACKAGE_SOURCES
-    )
-    assert _relative_files(notebook_root / "notebooks") == {
-        path.name for path in NOTEBOOK_SOURCE_ROOT.glob("*.py")
-    }
-    for package_name, (source_root, suffixes) in NOTEBOOK_PACKAGE_SOURCES.items():
-        generated_root = notebook_root / "src" / package_name
-        expected_files = {
-            relative
-            for relative in _expected_runtime_files(source_root, suffixes)
-            if not _is_notebook_excluded(package_name, relative)
-        }
-        assert _relative_files(generated_root) == expected_files
-        for relative in expected_files:
-            assert (generated_root / relative).read_bytes() == (
-                source_root / relative
-            ).read_bytes()
     assert "/artifacts/databricks-ui/" in ROOT_GITIGNORE.read_text(encoding="utf-8")
     assert "/artifacts/databricks-ui-foundry/" in ROOT_GITIGNORE.read_text(
         encoding="utf-8"
     )
 
 
-def test_notebook_pruning_does_not_remove_sources_from_the_app_artifact(
-    tmp_path: Path,
-) -> None:
-    builder = _load_builder()
-    result = builder.build_uploads(tmp_path / "release")
-    app_roots = {
-        "gds_workbench_api": (
-            result.app_source_directory / "web_app/backend/gds_workbench_api"
-        ),
-        "gds_etl_workbench": result.app_source_directory
-        / "mcp_server/gds_etl_workbench",
-    }
-
-    for package_name, (source_root, suffixes) in NOTEBOOK_PACKAGE_SOURCES.items():
-        if package_name not in NOTEBOOK_PACKAGE_EXCLUSIONS:
-            continue
-        generated_root = result.notebook_source_directory / "src" / package_name
-        excluded = {
-            relative
-            for relative in _expected_runtime_files(source_root, suffixes)
-            if _is_notebook_excluded(package_name, relative)
-        }
-        assert excluded
-        for relative in excluded:
-            assert not (generated_root / relative).exists()
-            assert (app_roots[package_name] / relative).read_bytes() == (
-                source_root / relative
-            ).read_bytes()
-
-
 def test_generated_app_contains_runtime_source_only(tmp_path: Path) -> None:
     builder = _load_builder()
     result = builder.build_uploads(tmp_path / "release")
     app_files = _relative_files(result.app_source_directory)
+    assert {
+        path.name
+        for path in (result.app_source_directory / "web_app/backend").iterdir()
+    } == {"pyproject.toml", "gds_workbench_api"}
 
     assert "mcp_server/pyproject.toml" in app_files
     assert "mcp_server/gds_etl_workbench/runtime.py" in app_files
     assert "web_app/backend/pyproject.toml" in app_files
     assert "web_app/backend/uv.lock" not in app_files
     assert "web_app/backend/gds_workbench_api/app_process.py" in app_files
+    assert "web_app/backend/gds_workbench_api/dependencies.py" in app_files
     assert (
         "web_app/backend/gds_workbench_api/config/agent_capabilities.json" in app_files
     )
-    assert "web_app/backend/gds_workbench_runtime/profiling/execution.py" in app_files
-    assert "web_app/backend/gds_workbench_runtime/config/profiling.json" in app_files
+    assert (
+        "web_app/backend/gds_workbench_api/features/profiling/execution.py" in app_files
+    )
+    assert "web_app/backend/gds_workbench_api/config/profiling.json" in app_files
     assert "web_app/frontend/index.html" in app_files
     assert "web_app/frontend/src/main.tsx" in app_files
     assert "web_app/frontend/src/styles.css" in app_files
@@ -302,95 +141,13 @@ def test_generated_app_contains_runtime_source_only(tmp_path: Path) -> None:
     )
 
 
-def test_generated_notebook_is_source_only_and_has_unambiguous_markers(
-    tmp_path: Path,
-) -> None:
-    builder = _load_builder()
-    result = builder.build_uploads(tmp_path / "release")
-    source_root = result.notebook_source_directory / "src"
-    package_root = source_root / "gds_workbench_notebooks"
-    notebook_root = result.notebook_source_directory / "notebooks"
-    notebook_files = _relative_files(result.notebook_source_directory)
-
-    assert ".env.example" in notebook_files
-    assert ".env" not in notebook_files
-    assert "requirements.txt" in notebook_files
-    assert "notebooks/00_tenant_lock.py" in notebook_files
-    assert not any(Path(relative).name == ".env" for relative in notebook_files)
-    assert not any(Path(relative).suffix == ".whl" for relative in notebook_files)
-
-    for path in package_root.rglob("*.py"):
-        assert not path.read_text(encoding="utf-8").startswith(
-            "# Databricks notebook source\n"
-        )
-    for path in notebook_root.glob("*.py"):
-        assert path.read_text(encoding="utf-8").startswith(
-            "# Databricks notebook source\n"
-        )
-
-    for relative in notebook_files:
-        path = Path(relative)
-        assert not (set(path.parts) & FORBIDDEN_PARTS)
-        assert ".test." not in path.name
-        assert path.suffix not in {".key", ".p12", ".pem", ".pfx", ".pyc"}
-
-
-def test_generated_notebook_python_is_valid_for_databricks_runtime_16_4(
-    tmp_path: Path,
-) -> None:
-    builder = _load_builder()
-    result = builder.build_uploads(tmp_path / "release")
-
-    for path in result.notebook_source_directory.rglob("*.py"):
-        ast.parse(
-            path.read_text(encoding="utf-8"),
-            filename=str(path),
-            feature_version=(3, 12),
-        )
-
-
-def test_notebook_entrypoints_do_not_start_app_or_mcp_servers(tmp_path: Path) -> None:
-    builder = _load_builder()
-    result = builder.build_uploads(tmp_path / "release")
-    forbidden_imports = {
-        "gds_etl_workbench.adapters.mcp.server",
-        "gds_etl_workbench.runtime",
-        "gds_workbench_api.app_process",
-        "gds_workbench_api.workflow_worker",
-        "gunicorn",
-        "mcp",
-        "subprocess",
-        "uvicorn",
-    }
-
-    for path in (result.notebook_source_directory / "notebooks").glob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        imports = {
-            alias.name
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Import)
-            for alias in node.names
-        }
-        imports.update(
-            node.module
-            for node in ast.walk(tree)
-            if isinstance(node, ast.ImportFrom) and node.module is not None
-        )
-        assert not any(
-            imported == forbidden or imported.startswith(f"{forbidden}.")
-            for imported in imports
-            for forbidden in forbidden_imports
-        )
-
-
 def test_operator_instructions_use_folder_upload_as_the_primary_ui_path() -> None:
     instructions = INSTRUCTIONS_PATH.read_text(encoding="utf-8")
     normalized = " ".join(instructions.split())
 
     assert "Do not import the ZIP in the Workspace UI" in normalized
-    assert "The ZIPs are transport containers only" in normalized
+    assert "The ZIP is a transport container only" in normalized
     assert "Upload the expanded same-named folder" in normalized
-    assert "Drag the expanded local `gds-workbench-notebooks` folder" in normalized
     assert "drag the expanded `gds-workbench-app-source` folder" in normalized
     assert "flatten its nested source folders" in normalized
     assert "CLI upload alternative" in instructions
@@ -408,7 +165,6 @@ def test_archives_have_explicit_hierarchy_and_match_expanded_trees(
 
     for source_directory, archive in (
         (result.app_source_directory, result.app_archive),
-        (result.notebook_source_directory, result.notebook_archive),
     ):
         expected_files = _relative_files(source_directory)
         expected_directories = _relative_directories(source_directory)
@@ -448,7 +204,7 @@ def test_archive_members_are_safe_reproducible_files_and_directories(
     builder = _load_builder()
     result = builder.build_uploads(tmp_path / "release")
 
-    for archive in (result.app_archive, result.notebook_archive):
+    for archive in (result.app_archive,):
         with ZipFile(archive) as package:
             names = package.namelist()
             assert names == sorted(names)
@@ -480,11 +236,9 @@ def test_manifest_matches_every_generated_source_file(tmp_path: Path) -> None:
     result = builder.build_uploads(tmp_path / "release")
     manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
     assert manifest["agent_provider"] == "microsoft_foundry"
+    assert set(manifest) == {"agent_provider", "app_source"}
 
-    for key, directory in (
-        ("app_source", result.app_source_directory),
-        ("notebook_source", result.notebook_source_directory),
-    ):
+    for key, directory in (("app_source", result.app_source_directory),):
         records = {record["path"]: record for record in manifest[key]}
         assert set(records) == _relative_files(directory)
         for relative, record in records.items():
@@ -493,7 +247,7 @@ def test_manifest_matches_every_generated_source_file(tmp_path: Path) -> None:
             assert record["sha256"] == hashlib.sha256(content).hexdigest()
 
 
-def test_checksum_file_matches_both_archives(tmp_path: Path) -> None:
+def test_checksum_file_matches_app_archive(tmp_path: Path) -> None:
     builder = _load_builder()
     result = builder.build_uploads(tmp_path / "release")
     records = {
@@ -506,104 +260,41 @@ def test_checksum_file_matches_both_archives(tmp_path: Path) -> None:
 
     assert records == {
         result.app_archive.name: _sha256(result.app_archive),
-        result.notebook_archive.name: _sha256(result.notebook_archive),
     }
 
 
-def test_extracted_notebook_package_imports_without_repository_paths(
-    tmp_path: Path,
-) -> None:
-    builder = _load_builder()
-    result = builder.build_uploads(tmp_path / "release")
-    extracted = tmp_path / "extracted-notebooks"
-    with ZipFile(result.notebook_archive) as package:
-        package.extractall(extracted)
-
-    environment = os.environ.copy()
-    artifact_source = extracted / "src"
-    environment["PYTHONPATH"] = str(artifact_source)
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                "from pathlib import Path; "
-                "import gds_etl_workbench, gds_workbench_api, gds_workbench_notebooks, "
-                "gds_workbench_runtime; "
-                "from gds_workbench_notebooks.notebook import run_notebook; "
-                "source = Path('src').resolve(); "
-                "modules = (gds_etl_workbench, gds_workbench_api, "
-                "gds_workbench_notebooks, gds_workbench_runtime); "
-                "assert callable(run_notebook); "
-                "assert all(Path(module.__file__).resolve().is_relative_to(source) "
-                "for module in modules)"
-            ),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=environment,
-        cwd=extracted,
-    )
-    assert completed.returncode == 0, completed.stderr
-
-
-def test_every_packaged_notebook_module_imports_from_the_extracted_artifact(
-    tmp_path: Path,
-) -> None:
-    builder = _load_builder()
-    result = builder.build_uploads(tmp_path / "release")
-    extracted = tmp_path / "extracted-all-modules"
-    with ZipFile(result.notebook_archive) as package:
-        package.extractall(extracted)
-
-    source_root = extracted / "src"
-    modules: set[str] = set()
-    for path in source_root.rglob("*.py"):
-        relative = path.relative_to(source_root)
-        parts = relative.with_suffix("").parts
-        modules.add(".".join(parts[:-1] if parts[-1] == "__init__" else parts))
-
-    environment = os.environ.copy()
-    environment["PYTHONPATH"] = str(source_root)
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import importlib, json, sys; "
-                "[importlib.import_module(name) for name in json.loads(sys.argv[1])]"
-            ),
-            json.dumps(sorted(modules)),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=environment,
-        cwd=extracted,
-    )
-    assert completed.returncode == 0, completed.stderr
-
-
-def test_extracted_notebook_shared_workflow_runtime_assembles_from_source(
+def test_extracted_app_workflow_runtime_assembles_from_source(
     tmp_path: Path,
 ) -> None:
     builder = _load_builder()
     result = builder.build_uploads(tmp_path / "release")
     extracted = tmp_path / "extracted-runtime"
-    with ZipFile(result.notebook_archive) as package:
+    with ZipFile(result.app_archive) as package:
         package.extractall(extracted)
 
     environment = os.environ.copy()
-    environment["PYTHONPATH"] = str(extracted / "src")
+    environment["PYTHONPATH"] = os.pathsep.join(
+        str(extracted / relative) for relative in ("mcp_server", "web_app/backend")
+    )
     completed = subprocess.run(
         [
             sys.executable,
             "-c",
             (
-                "import asyncio; "
+                "import asyncio, json; "
+                "from importlib.resources import files; "
+                "from pathlib import Path; "
+                "import gds_etl_workbench, gds_workbench_api; "
+                "source = Path.cwd().resolve(); "
+                "assert all(Path(module.__file__).resolve().is_relative_to(source) "
+                "for module in (gds_etl_workbench, gds_workbench_api)); "
                 "from gds_etl_workbench.application.authorization import AuthorizationService; "
                 "from gds_workbench_api.capabilities import load_default_agent_capabilities; "
+                "from gds_workbench_api.features.profiling.execution import "
+                "load_default_profiling_policy; "
+                "assert load_default_profiling_policy().model_dump() == "
+                "json.loads(files('gds_workbench_api').joinpath('config', "
+                "'profiling.json').read_text(encoding='utf-8')); "
                 "from gds_workbench_api.features.workflows.execution.assembly import "
                 "create_workflow_runtime_services; "
                 "from gds_workbench_api.integrations.agents.configuration import "
@@ -641,17 +332,8 @@ def test_archives_are_reproducible_and_source_files_are_unchanged(
     second = builder.build_uploads(tmp_path / "second")
 
     assert _sha256(first.app_archive) == _sha256(second.app_archive)
-    assert _sha256(first.notebook_archive) == _sha256(second.notebook_archive)
     assert (first.app_source_directory / "app.yaml").read_bytes() == (
         ROOT / "app.yaml"
-    ).read_bytes()
-    assert (
-        first.notebook_source_directory
-        / "src"
-        / "gds_workbench_notebooks"
-        / "runtime.py"
-    ).read_bytes() == (
-        ROOT / "databricks_notebooks" / "src" / "gds_workbench_notebooks" / "runtime.py"
     ).read_bytes()
 
 
@@ -672,6 +354,7 @@ def test_explicit_foundry_build_uses_canonical_manifest_and_is_self_contained(
     assert app_yaml.read_bytes() == (ROOT / "app.yaml").read_bytes()
     assert guide.read_bytes() == (ROOT / "web_app/DEPLOYMENT_GUIDE.md").read_bytes()
     assert manifest["agent_provider"] == "microsoft_foundry"
+    assert set(manifest) == {"agent_provider", "app_source"}
     assert app_records["app.yaml"]["sha256"] == _sha256(app_yaml)
     with ZipFile(result.app_archive) as package:
         assert package.read("app.yaml") == app_yaml.read_bytes()

@@ -83,12 +83,8 @@ class MetadataEnrichmentRepository:
             raise DependencyUnavailableError()
         try:
             raw = json.dumps(row["context"], ensure_ascii=False, allow_nan=False)
-            if len(raw.encode("utf-8")) > 16 * 1024 * 1024:
-                raise InvalidRequestError(
-                    "The selected metadata exceeds the enrichment context limit."
-                )
             context = MetadataEnrichmentContext.model_validate_json(raw, strict=True)
-        except (KeyError, TypeError, ValueError, ValidationError):
+        except KeyError, TypeError, ValueError, ValidationError:
             raise DependencyUnavailableError() from None
         if (
             context.workflow_run_id != workflow_run_id
@@ -99,7 +95,6 @@ class MetadataEnrichmentRepository:
             or plan.model_revision != expected_model_revision
             or set(plan.selected_object_ids) != {item.object_id for item in context.objects}
             or any(item.source_tenant_id != tenant_id for item in context.objects)
-            or sum(len(item.attributes) for item in context.objects) > 5_000
         ):
             raise InvalidRequestError("The selected metadata enrichment context is unavailable.")
         input_contracts = workflow_input_contracts("metadata_enrichment_object")
@@ -188,5 +183,5 @@ class MetadataEnrichmentRepository:
             raise DependencyUnavailableError()
         try:
             return MetadataEnrichmentCompletion.model_validate(row["result"], strict=True)
-        except (KeyError, ValidationError):
+        except KeyError, ValidationError:
             raise DependencyUnavailableError() from None

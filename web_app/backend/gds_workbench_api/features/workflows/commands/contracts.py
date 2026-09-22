@@ -1,6 +1,5 @@
 """Governed Workflow Run creation contracts."""
 
-import json
 from datetime import datetime
 from typing import Annotated, Literal, Self
 from uuid import UUID
@@ -16,8 +15,6 @@ from gds_workbench_api.features.workflows.runs import (
     RunState,
 )
 
-_MAX_PROMPT_OVERRIDES_BYTES = 32 * 1024
-
 
 class CreateWorkflowRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -25,12 +22,10 @@ class CreateWorkflowRunRequest(BaseModel):
     expected_model_revision: int = Field(gt=0)
     model_workflow: ModelWorkflow
     workflow_execution_mode: ExecutionMode | None = None
-    selected_object_ids: list[Annotated[int, Field(gt=0, strict=True)]] = Field(
-        max_length=50_000,
-    )
+    selected_object_ids: list[Annotated[int, Field(gt=0, strict=True)]]
     selected_system_codes: list[
         Annotated[str, Field(min_length=1, max_length=100, strict=True)]
-    ] = Field(default_factory=list, max_length=1_000)
+    ] = Field(default_factory=list)
     modeled_entity_type: ModeledEntityType | None = None
     requested_batch_id: str | None = Field(default=None, min_length=1, max_length=500)
     mapping_operation: Literal["build", "extend"] | None = None
@@ -60,11 +55,10 @@ class CreateWorkflowRunRequest(BaseModel):
     sql_generation_guide_version_id: int | None = Field(default=None, gt=0)
     agent: AgentRunSelection | None = None
     description_targets: list[EnrichmentDescriptionTarget] | None = Field(
-        default=None, min_length=1, max_length=5_000
+        default=None, min_length=1
     )
     prompt_overrides: dict[str, Annotated[int, Field(gt=0, strict=True)]] = Field(
         default_factory=dict,
-        max_length=200,
     )
 
     @field_validator("requested_batch_id")
@@ -93,11 +87,6 @@ class CreateWorkflowRunRequest(BaseModel):
     ) -> dict[str, int]:
         if any(not key.isascii() or not key.isdigit() or key.startswith("0") for key in value):
             raise ValueError("Prompt override keys must be positive Workflow Stage IDs")
-        if (
-            len(json.dumps(value, separators=(",", ":"), sort_keys=True).encode())
-            > _MAX_PROMPT_OVERRIDES_BYTES
-        ):
-            raise ValueError("Prompt overrides are too large")
         return value
 
     @model_validator(mode="after")
@@ -155,8 +144,6 @@ class CreateWorkflowRunRequest(BaseModel):
             self.workflow_execution_mode != "one_shot"
         ):
             raise ValueError("Metadata enrichment requires one-shot execution")
-        if self.model_workflow == "metadata_enrichment" and len(self.selected_object_ids) > 200:
-            raise ValueError("Metadata enrichment supports at most 200 selected Objects per run")
         agentic = self.model_workflow in {"code_generation", "validation"} or (
             self.workflow_execution_mode is not None
         )
@@ -214,7 +201,7 @@ class WorkflowRunCommandResult(BaseModel):
     prompt_snapshot_count: int = Field(ge=0)
     model_revision: int = Field(gt=0)
     selected_scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    selected_scope_count: int = Field(gt=0, le=50_000)
+    selected_scope_count: int = Field(gt=0)
     code_generation_coverage_mode: (
         Literal[
             "selected_targets",

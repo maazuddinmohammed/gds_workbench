@@ -187,11 +187,11 @@ async def test_context_rejects_missing_selected_object_without_truncation() -> N
 
 
 @pytest.mark.asyncio
-async def test_context_rejects_oversized_mapping_collections() -> None:
+async def test_context_rejects_inconsistent_mapping_counts() -> None:
     row = _row(501)
     row["mapping_count"] = 201
 
-    with pytest.raises(InvalidRequestError, match="bounded"):
+    with pytest.raises(InvalidRequestError, match="unavailable"):
         await PostgresCodeGenerationContextRepository().load(
             ContextTransaction([row, _row(502)]),
             tenant_id=7,
@@ -200,9 +200,7 @@ async def test_context_rejects_oversized_mapping_collections() -> None:
 
 
 @pytest.mark.asyncio
-async def test_context_allows_complete_object_mapping_without_attribute_mappings() -> (
-    None
-):
+async def test_context_allows_complete_object_mapping_without_attribute_mappings() -> None:
     first = _row(501)
     second = _row(502)
     first["attribute_mapping_count"] = 0

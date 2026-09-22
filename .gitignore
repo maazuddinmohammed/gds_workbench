@@ -16,3 +16,4 @@ mcp_server/dist/
 web_app/frontend/dist/
 /artifacts/databricks-ui/
 /artifacts/databricks-ui-foundry/
+/artifacts/workflow-build-*/

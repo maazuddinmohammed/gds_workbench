@@ -1,16 +1,12 @@
 """Fully wired web API process factory."""
 
 from collections.abc import AsyncGenerator
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import asynccontextmanager
 from typing import Protocol
 
 from fastapi import FastAPI
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import Environment
-from gds_etl_workbench.infrastructure.postgres import (
-    ReadIsolation,
-    WriteTransaction,
-)
 
 from gds_workbench_api.authentication import (
     DatabricksUserResolver,
@@ -24,106 +20,47 @@ from gds_workbench_api.capabilities import (
 )
 from gds_workbench_api.configuration import RuntimeSettings
 from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.analysis import (
-    AnalysisReviewDatabase,
-    DatabaseAnalysisReviewService,
-)
-from gds_workbench_api.features.assertions import (
-    AssertionsReadDatabase,
-    DatabaseAssertionsService,
-)
-from gds_workbench_api.features.code_generation import (
-    CodeGenerationReadDatabase,
-    DatabaseCodeGenerationService,
-)
-from gds_workbench_api.features.conceptual import (
-    ConceptualReadDatabase,
-    DatabaseConceptualService,
-)
-from gds_workbench_api.features.dimensional import (
-    DatabaseDimensionalService,
-    DimensionalReadDatabase,
-)
-from gds_workbench_api.features.logical import DatabaseLogicalService, LogicalReadDatabase
-from gds_workbench_api.features.mapping import (
-    DatabaseMappingReviewService,
-    MappingReadDatabase,
-)
+from gds_workbench_api.features.analysis import DatabaseAnalysisReviewService
+from gds_workbench_api.features.assertions import DatabaseAssertionsService
+from gds_workbench_api.features.code_generation import DatabaseCodeGenerationService
+from gds_workbench_api.features.conceptual import DatabaseConceptualService
+from gds_workbench_api.features.dimensional import DatabaseDimensionalService
+from gds_workbench_api.features.logical import DatabaseLogicalService
+from gds_workbench_api.features.mapping import DatabaseMappingReviewService
 from gds_workbench_api.features.metadata import (
     DatabaseMetadataService,
-    MetadataDatabase,
     PostgresMetadataRepository,
 )
 from gds_workbench_api.features.metadata.review import DatabaseMetadataReviewService
-from gds_workbench_api.features.metadata_change_sets import (
-    DatabaseMetadataChangeSetService,
-    MetadataChangeSetDatabase,
-)
+from gds_workbench_api.features.metadata_change_sets import DatabaseMetadataChangeSetService
 from gds_workbench_api.features.metadata_enrichment.read_service import (
     DatabaseMetadataEnrichmentReadService,
-    MetadataEnrichmentReadDatabase,
 )
-from gds_workbench_api.features.model_change_sets.service import (
-    DatabaseModelChangeSetService,
-    ModelChangeSetDatabase,
-)
-from gds_workbench_api.features.model_input_scope import (
-    DatabaseModelInputScopeService,
-    ModelInputScopeReadDatabase,
-)
+from gds_workbench_api.features.model_change_sets.service import DatabaseModelChangeSetService
+from gds_workbench_api.features.model_input_scope import DatabaseModelInputScopeService
 from gds_workbench_api.features.model_targets.service import DatabaseModelTargetsService
 from gds_workbench_api.features.models import (
     DatabaseModelCommandService,
     DatabaseModelService,
-    ModelCommandDatabase,
-    ModelReadDatabase,
 )
-from gds_workbench_api.features.output_templates import (
-    DatabaseOutputTemplateService,
-    OutputTemplateDatabase,
-)
-from gds_workbench_api.features.profiling import (
-    DatabaseProfilingReviewService,
-    ProfilingReviewDatabase,
-)
-from gds_workbench_api.features.prompts import DatabasePromptService, PromptDatabase
-from gds_workbench_api.features.session import (
-    DatabaseSessionService,
-    SessionReadDatabase,
-)
-from gds_workbench_api.features.sql_generation_guides import (
-    DatabaseSqlGenerationGuideService,
-    SqlGenerationGuideDatabase,
-)
-from gds_workbench_api.features.tenant_locks import (
-    DatabaseTenantLockService,
-    TenantLockDatabase,
-)
-from gds_workbench_api.features.tenants import DatabaseTenantService, TenantDatabase
-from gds_workbench_api.features.validation import (
-    DatabaseValidationReadService,
-    ValidationReadDatabase,
-)
+from gds_workbench_api.features.output_templates import DatabaseOutputTemplateService
+from gds_workbench_api.features.profiling import DatabaseProfilingReviewService
+from gds_workbench_api.features.prompts import DatabasePromptService
+from gds_workbench_api.features.session import DatabaseSessionService
+from gds_workbench_api.features.sql_generation_guides import DatabaseSqlGenerationGuideService
+from gds_workbench_api.features.tenant_locks import DatabaseTenantLockService
+from gds_workbench_api.features.tenants import DatabaseTenantService
+from gds_workbench_api.features.validation import DatabaseValidationReadService
 from gds_workbench_api.features.workflows.authoring.change_set_apply import (
     DatabaseWorkflowDraftApplyService,
-    WorkflowDraftApplyDatabase,
 )
-from gds_workbench_api.features.workflows.commands import (
-    DatabaseWorkflowCommandService,
-    WorkflowCommandDatabase,
-)
+from gds_workbench_api.features.workflows.commands import DatabaseWorkflowCommandService
 from gds_workbench_api.features.workflows.execution.assembly import (
     WorkflowRuntimeDatabase,
     create_workflow_runtime_services,
 )
-from gds_workbench_api.features.workflows.overview import (
-    DatabaseWorkflowOverviewService,
-    WorkflowOverviewDatabase,
-)
-from gds_workbench_api.features.workflows.runs import (
-    DatabaseWorkflowRunService,
-    WorkflowRunDatabase,
-)
+from gds_workbench_api.features.workflows.overview import DatabaseWorkflowOverviewService
+from gds_workbench_api.features.workflows.runs import DatabaseWorkflowRunService
 from gds_workbench_api.frontend import (
     RequestBodyLimitMiddleware,
     SecurityHeadersMiddleware,
@@ -133,46 +70,10 @@ from gds_workbench_api.integrations.databricks import create_databricks_executio
 from gds_workbench_api.main import ReadinessDependency, create_app
 
 
-class RuntimeDatabase(
-    ReadinessDependency,
-    SessionReadDatabase,
-    TenantDatabase,
-    ModelReadDatabase,
-    ModelCommandDatabase,
-    ModelChangeSetDatabase,
-    WorkflowDraftApplyDatabase,
-    ModelInputScopeReadDatabase,
-    TenantLockDatabase,
-    MetadataDatabase,
-    MetadataChangeSetDatabase,
-    MetadataEnrichmentReadDatabase,
-    OutputTemplateDatabase,
-    PromptDatabase,
-    SqlGenerationGuideDatabase,
-    ProfilingReviewDatabase,
-    AnalysisReviewDatabase,
-    ConceptualReadDatabase,
-    LogicalReadDatabase,
-    DimensionalReadDatabase,
-    MappingReadDatabase,
-    CodeGenerationReadDatabase,
-    ValidationReadDatabase,
-    WorkflowOverviewDatabase,
-    WorkflowRunDatabase,
-    WorkflowCommandDatabase,
-    WorkflowRuntimeDatabase,
-    AssertionsReadDatabase,
-    Protocol,
-):
+class RuntimeDatabase(ReadinessDependency, WorkflowRuntimeDatabase, Protocol):
     async def open(self) -> None: ...
 
     async def close(self) -> None: ...
-
-    def write_transaction(
-        self,
-        *,
-        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AbstractAsyncContextManager[WriteTransaction]: ...
 
 
 def create_runtime_app(

@@ -1,4 +1,4 @@
-"""Execute one already-running Dimensional authoring run."""
+"""Start governed Dimensional Runs and execute them after worker claim."""
 
 from __future__ import annotations
 
@@ -148,6 +148,18 @@ class DimensionalChangeSetFinalizer(Protocol):
 
 
 class DimensionalLifecycle(Protocol):
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: ModelWorkflow,
+        expected_execution_mode: WorkflowExecutionMode | None,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart: ...
+
     async def append_event(
         self,
         principal: RequestPrincipal,
@@ -202,87 +214,8 @@ class DimensionalFinalizationFailedError(WorkbenchError):
 type DimensionalExecutionResult = WorkflowChangeSetHandoffResult | AuthoringNoOpReceipt
 
 
-class DimensionalRunLifecycle(Protocol):
-    async def start(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_execution_mode: WorkflowExecutionMode | None,
-        expected_model_revision: int,
-    ) -> AgentWorkflowRunStart: ...
-
-
-class DimensionalExecutor(Protocol):
-    async def execute_started(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        workflow_run_claim_token: UUID,
-        expected_model_revision: int,
-    ) -> DimensionalExecutionResult: ...
-
-
 class DimensionalWorkflow:
-    """Bind the public route to one explicit Dimensional execution mode."""
-
-    def __init__(
-        self,
-        *,
-        lifecycle: DimensionalRunLifecycle,
-        executor: DimensionalExecutor,
-    ) -> None:
-        self._lifecycle = lifecycle
-        self._executor = executor
-
-    async def start(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_execution_mode: WorkflowExecutionMode,
-        expected_model_revision: int,
-    ) -> AgentWorkflowRunStart:
-        return await self._lifecycle.start(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            workflow_run_id=workflow_run_id,
-            expected_workflow="dimensional",
-            expected_execution_mode=expected_execution_mode,
-            expected_model_revision=expected_model_revision,
-        )
-
-    async def execute_started(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        workflow_run_claim_token: UUID,
-        expected_model_revision: int,
-    ) -> DimensionalExecutionResult:
-        return await self._executor.execute_started(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            workflow_run_id=workflow_run_id,
-            workflow_run_claim_token=workflow_run_claim_token,
-            expected_model_revision=expected_model_revision,
-        )
-
-
-class DatabaseDimensionalExecutor:
-    """Load frozen Silver inputs, validate one candidate, and hand off atomically."""
+    """Start governed Runs; author a complete Dimensional draft only after worker claim."""
 
     def __init__(
         self,
@@ -309,6 +242,26 @@ class DatabaseDimensionalExecutor:
         self._handoff = handoff
         self._no_op = no_op
         self._lifecycle = lifecycle
+
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_execution_mode: WorkflowExecutionMode,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart:
+        return await self._lifecycle.start(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            workflow_run_id=workflow_run_id,
+            expected_workflow="dimensional",
+            expected_execution_mode=expected_execution_mode,
+            expected_model_revision=expected_model_revision,
+        )
 
     async def execute_started(
         self,
@@ -667,8 +620,7 @@ def _safe_execution_error(
 
 
 __all__ = [
-    "DatabaseDimensionalExecutor",
+    "DimensionalWorkflow",
     "DimensionalExecutionFailedError",
     "DimensionalFinalizationFailedError",
-    "DimensionalWorkflow",
 ]

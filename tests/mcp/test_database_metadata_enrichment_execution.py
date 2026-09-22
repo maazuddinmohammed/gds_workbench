@@ -11,12 +11,9 @@ from psycopg.errors import InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.database_test_support import require_row
 from tests.mcp.test_database_metadata_enrichment_registration import _context, _create
-from tests.mcp.test_database_notebook_workflows import (
-    NotebookActor,
-    notebook_actor as notebook_actor,
-)
 from tests.mcp.test_database_profiling_persistence import _seed_attributes
 from tests.mcp.test_database_workflow_run_lifecycle import (
     WorkflowContext,
@@ -29,12 +26,12 @@ READ_SQL = "SELECT application.get_metadata_enrichment_results(%s,%s,'user',%s,%
 
 
 def _start(
-    actor: NotebookActor,
+    database: DisposablePostgres,
 ) -> tuple[WorkflowContext, int, UUID, tuple[tuple[int, int], ...]]:
-    context = _context(actor)
-    attributes = _seed_attributes(actor.database, context)
-    run_id = _create(actor, context, correlation_id=uuid4())["workflow_run_id"]
-    with actor.database.connect_owner() as connection:
+    context = _context(database)
+    attributes = _seed_attributes(database, context)
+    run_id = _create(database, context, correlation_id=uuid4())["workflow_run_id"]
+    with database.connect_owner() as connection:
         connection.execute(
             "SELECT application.start_workflow_run(%s,%s,'user',%s,%s)",
             (
@@ -44,15 +41,15 @@ def _start(
                 context.model_revision,
             ),
         )
-    claim = _claim_specific_workflow_run(actor.database, run_id)
+    claim = _claim_specific_workflow_run(database, run_id)
     return context, run_id, UUID(str(claim["workflow_run_claim_token"])), attributes
 
 
 def _load(
-    actor: NotebookActor, context: WorkflowContext, run_id: int
+    database: DisposablePostgres, context: WorkflowContext, run_id: int
 ) -> dict[str, Any]:
     with psycopg.Connection[dict[str, Any]].connect(
-        actor.database.web_runtime_dsn(), row_factory=dict_row
+        database.web_runtime_dsn(), row_factory=dict_row
     ) as connection:
         connection.execute("SET LOCAL ROLE gds_web_write")
         return require_row(
@@ -69,7 +66,7 @@ def _load(
 
 
 def _complete(
-    actor: NotebookActor,
+    database: DisposablePostgres,
     context: WorkflowContext,
     run_id: int,
     claim: UUID,
@@ -79,9 +76,9 @@ def _complete(
     full: bool = True,
 ) -> dict[str, Any]:
     if full:
-        results = _full_results(actor, run_id, results)
+        results = _full_results(database, run_id, results)
     with psycopg.Connection[dict[str, Any]].connect(
-        actor.database.web_runtime_dsn(), row_factory=dict_row
+        database.web_runtime_dsn(), row_factory=dict_row
     ) as connection:
         connection.execute("SET LOCAL ROLE gds_web_write")
         return require_row(
@@ -101,13 +98,13 @@ def _complete(
 
 
 def _full_results(
-    actor: NotebookActor, run_id: int, results: list[dict[str, Any]]
+    database: DisposablePostgres, run_id: int, results: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     keyed = {
         (row["object_id"], row["attribute_id"], row["field_name"]): row
         for row in results
     }
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         objects = connection.execute(
             "SELECT object_id FROM application.workflow_run_object_selection WHERE workflow_run_id=%s ORDER BY object_id",
             (run_id,),
@@ -150,11 +147,11 @@ def _field(
 
 
 def test_context_missing_relations_and_atomic_completion_replay(
-    notebook_actor: NotebookActor,
+    bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
-    actor = notebook_actor
-    context, run_id, claim, attributes = _start(actor)
-    snapshot = _load(actor, context, run_id)
+    database = bootstrap_postgres_database
+    context, run_id, claim, attributes = _start(database)
+    snapshot = _load(database, context, run_id)
     object_id, attribute_id = attributes[0]
     assert len(snapshot["baseline_digest"]) == 64
     assert snapshot["objects"][0]["relation"] is None
@@ -173,13 +170,13 @@ def test_context_missing_relations_and_atomic_completion_replay(
         ),
     ]
     result = _complete(
-        actor, context, run_id, claim, snapshot["baseline_digest"], fields
+        database, context, run_id, claim, snapshot["baseline_digest"], fields
     )
     assert result["counts"]["applied"] == 3
     assert result["workflow_run_state"] == "completed"
     assert "applied_field_counts" not in result
     with psycopg.Connection[dict[str, Any]].connect(
-        actor.database.web_runtime_dsn(), row_factory=dict_row
+        database.web_runtime_dsn(), row_factory=dict_row
     ) as connection:
         connection.execute("SET LOCAL ROLE gds_web_write")
         for offset in (0, 1, 2, 10200):
@@ -201,14 +198,14 @@ def test_context_missing_relations_and_atomic_completion_replay(
                 "attribute_inferred_data_type": 1,
             }
     assert (
-        _complete(actor, context, run_id, claim, snapshot["baseline_digest"], fields)
+        _complete(database, context, run_id, claim, snapshot["baseline_digest"], fields)
         == result
     )
     with pytest.raises(RaiseException, match="conflict"):
         _complete(
-            actor, context, run_id, claim, snapshot["baseline_digest"], fields[:1]
+            database, context, run_id, claim, snapshot["baseline_digest"], fields[:1]
         )
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         row = require_row(
             connection.execute(
                 "SELECT attribute_data_type, attribute_inferred_data_type, attribute_description, is_locked FROM core.attribute WHERE attribute_id=%s",
@@ -235,7 +232,7 @@ def test_context_missing_relations_and_atomic_completion_replay(
                 "SELECT count(*) AS count FROM application.metadata_enrichment_result WHERE workflow_run_id=%s",
                 (run_id,),
             ).fetchone()
-        )["count"] == len(_full_results(actor, run_id, fields))
+        )["count"] == len(_full_results(database, run_id, fields))
         with pytest.raises(RaiseException, match="durable"):
             connection.execute(
                 "SELECT application.fail_workflow_run(%s,%s,'user',%s,%s,'failure','Safe failure.')",
@@ -249,12 +246,12 @@ def test_context_missing_relations_and_atomic_completion_replay(
 
 
 def test_completion_replaces_unlocked_descriptions_and_preserves_locked_inactive_fields(
-    notebook_actor: NotebookActor,
+    bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
-    actor = notebook_actor
-    context, run_id, claim, attributes = _start(actor)
+    database = bootstrap_postgres_database
+    context, run_id, claim, attributes = _start(database)
     first, second = attributes[:2]
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         connection.execute(
             "UPDATE core.object SET object_description='Existing object.' WHERE object_id=%s",
             (first[0],),
@@ -268,22 +265,22 @@ def test_completion_replaces_unlocked_descriptions_and_preserves_locked_inactive
             "UPDATE core.attribute SET is_active=FALSE WHERE attribute_id=%s",
             (second[1],),
         )
-    snapshot = _load(actor, context, run_id)
+    snapshot = _load(database, context, run_id)
     results = [
         _field(first[0], None, "object_description", "Replacement."),
         _field(*first, "attribute_description", "Replacement."),
         _field(*second, "attribute_description", "Replacement."),
     ]
     result = _complete(
-        actor, context, run_id, claim, snapshot["baseline_digest"], results
+        database, context, run_id, claim, snapshot["baseline_digest"], results
     )
     assert result["counts"] == {
         "applied": 1,
         "locked": 2,
         "inactive": 2,
-        "inconclusive": len(_full_results(actor, run_id, [])) - 5,
+        "inconclusive": len(_full_results(database, run_id, [])) - 5,
     }
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         assert (
             connection.execute(
                 "SELECT applied_value FROM application.metadata_enrichment_result WHERE workflow_run_id=%s AND applied_value IS NOT NULL",
@@ -294,12 +291,12 @@ def test_completion_replaces_unlocked_descriptions_and_preserves_locked_inactive
 
 
 def test_generated_null_clears_unlocked_description_but_not_inferred_type(
-    notebook_actor: NotebookActor,
+    bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
-    actor = notebook_actor
-    context, run_id, claim, attributes = _start(actor)
+    database = bootstrap_postgres_database
+    context, run_id, claim, attributes = _start(database)
     first = attributes[0]
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         connection.execute(
             "UPDATE core.object SET object_description='Existing description.' WHERE object_id=%s",
             (first[0],),
@@ -308,9 +305,9 @@ def test_generated_null_clears_unlocked_description_but_not_inferred_type(
             "UPDATE core.attribute SET attribute_description='Existing meaning.', attribute_inferred_data_type='BIGINT' WHERE attribute_id=%s",
             (first[1],),
         )
-    snapshot = _load(actor, context, run_id)
+    snapshot = _load(database, context, run_id)
     _complete(
-        actor,
+        database,
         context,
         run_id,
         claim,
@@ -326,7 +323,7 @@ def test_generated_null_clears_unlocked_description_but_not_inferred_type(
             ),
         ],
     )
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         row = require_row(
             connection.execute(
                 "SELECT object_description, attribute_description, attribute_inferred_data_type FROM core.object JOIN core.attribute USING(object_id) WHERE attribute_id=%s",
@@ -342,13 +339,13 @@ def test_generated_null_clears_unlocked_description_but_not_inferred_type(
 
 @pytest.mark.parametrize("drift", ["description", "lock", "attribute", "mapping"])
 def test_baseline_drift_completes_changed_without_writes(
-    notebook_actor: NotebookActor, drift: str
+    bootstrap_postgres_database: DisposablePostgres, drift: str
 ) -> None:
-    actor = notebook_actor
-    context, run_id, claim, attributes = _start(actor)
-    snapshot = _load(actor, context, run_id)
+    database = bootstrap_postgres_database
+    context, run_id, claim, attributes = _start(database)
+    snapshot = _load(database, context, run_id)
     first, second = attributes[:2]
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         if drift == "description":
             connection.execute(
                 "UPDATE core.object SET object_description='Changed.' WHERE object_id=%s",
@@ -369,16 +366,16 @@ def test_baseline_drift_completes_changed_without_writes(
                 (second[0], first[0]),
             )
     result = _complete(
-        actor,
+        database,
         context,
         run_id,
         claim,
         snapshot["baseline_digest"],
         [_field(*first, "attribute_description", "Candidate.")],
     )
-    assert result["counts"] == {"changed": len(_full_results(actor, run_id, []))}
-    assert result["warning_count"] == len(_full_results(actor, run_id, []))
-    with actor.database.connect_owner() as connection:
+    assert result["counts"] == {"changed": len(_full_results(database, run_id, []))}
+    assert result["warning_count"] == len(_full_results(database, run_id, []))
+    with database.connect_owner() as connection:
         assert (
             require_row(
                 connection.execute(
@@ -394,11 +391,11 @@ def test_baseline_drift_completes_changed_without_writes(
     "fence", ["claim", "revision", "identity", "scope", "role", "lock", "object_owner"]
 )
 def test_completion_denials_leave_no_receipt_or_writes(
-    notebook_actor: NotebookActor, fence: str
+    bootstrap_postgres_database: DisposablePostgres, fence: str
 ) -> None:
-    actor = notebook_actor
-    context, run_id, claim, attributes = _start(actor)
-    snapshot = _load(actor, context, run_id)
+    database = bootstrap_postgres_database
+    context, run_id, claim, attributes = _start(database)
+    snapshot = _load(database, context, run_id)
     first = attributes[0]
     if fence == "claim":
         claim = uuid4()
@@ -407,7 +404,7 @@ def test_completion_denials_leave_no_receipt_or_writes(
     elif fence == "identity":
         context = replace(context, entra_object_id=uuid4())
     else:
-        with actor.database.connect_owner() as connection:
+        with database.connect_owner() as connection:
             if fence == "scope":
                 connection.execute(
                     "UPDATE model.model_input_scope SET is_active=FALSE WHERE model_id=%s AND object_id=%s",
@@ -430,14 +427,14 @@ def test_completion_denials_leave_no_receipt_or_writes(
                 )
     with pytest.raises(RaiseException):
         _complete(
-            actor,
+            database,
             context,
             run_id,
             claim,
             snapshot["baseline_digest"],
             [_field(*first, "attribute_description", "Candidate.")],
         )
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         assert (
             require_row(
                 connection.execute(
@@ -457,11 +454,11 @@ def test_completion_denials_leave_no_receipt_or_writes(
 
 
 def test_generic_completion_denied_and_paginated_read_needs_no_lock(
-    notebook_actor: NotebookActor,
+    bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
-    actor = notebook_actor
-    context, run_id, claim, attributes = _start(actor)
-    with actor.database.connect_owner() as connection:
+    database = bootstrap_postgres_database
+    context, run_id, claim, attributes = _start(database)
+    with database.connect_owner() as connection:
         with pytest.raises(RaiseException, match="receipt"):
             connection.execute(
                 "SELECT application.complete_workflow_run(%s,%s,'user',%s,%s,0)",
@@ -472,22 +469,22 @@ def test_generic_completion_denied_and_paginated_read_needs_no_lock(
                     context.model_revision,
                 ),
             )
-    snapshot = _load(actor, context, run_id)
+    snapshot = _load(database, context, run_id)
     _complete(
-        actor,
+        database,
         context,
         run_id,
         claim,
         snapshot["baseline_digest"],
         [_field(*attributes[0], "attribute_description", "Candidate.")],
     )
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         connection.execute(
             "UPDATE security.tenant_lock SET tenant_lock_expires_time=clock_timestamp()-INTERVAL '1 second', tenant_lock_acquired_time=clock_timestamp()-INTERVAL '1 hour' WHERE tenant_id=%s",
             (context.tenant_id,),
         )
     with psycopg.Connection[dict[str, Any]].connect(
-        actor.database.web_runtime_dsn(), row_factory=dict_row
+        database.web_runtime_dsn(), row_factory=dict_row
     ) as connection:
         connection.execute("SET LOCAL ROLE gds_web_write")
         page = require_row(
@@ -499,7 +496,7 @@ def test_generic_completion_denied_and_paginated_read_needs_no_lock(
         assert page["tenant_id"] == context.tenant_id
         assert page["model_id"] == context.model_id
         assert len(page["results"]) == 1
-        assert page["total_count"] == len(_full_results(actor, run_id, []))
+        assert page["total_count"] == len(_full_results(database, run_id, []))
         with pytest.raises(InsufficientPrivilege):
             connection.execute("SELECT * FROM application.metadata_enrichment_result")
 
@@ -520,20 +517,20 @@ def test_generic_completion_denied_and_paginated_read_needs_no_lock(
     ],
 )
 def test_completion_rejects_incomplete_or_invalid_ledger(
-    notebook_actor: NotebookActor, invalid: str
+    bootstrap_postgres_database: DisposablePostgres, invalid: str
 ) -> None:
-    actor = notebook_actor
-    context, run_id, claim, attributes = _start(actor)
+    database = bootstrap_postgres_database
+    context, run_id, claim, attributes = _start(database)
     first = attributes[0]
     if invalid == "masked_sample":
-        with actor.database.connect_owner() as connection:
+        with database.connect_owner() as connection:
             connection.execute(
                 "UPDATE core.attribute SET is_masking_required=TRUE WHERE attribute_id=%s",
                 (first[1],),
             )
-    snapshot = _load(actor, context, run_id)
+    snapshot = _load(database, context, run_id)
     fields = _full_results(
-        actor, run_id, [_field(*first, "attribute_description", "Candidate.")]
+        database, run_id, [_field(*first, "attribute_description", "Candidate.")]
     )
     target = next(
         row
@@ -582,7 +579,7 @@ def test_completion_rejects_incomplete_or_invalid_ledger(
         )
     with pytest.raises(RaiseException):
         _complete(
-            actor,
+            database,
             context,
             run_id,
             claim,
@@ -590,7 +587,7 @@ def test_completion_rejects_incomplete_or_invalid_ledger(
             fields,
             full=False,
         )
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         assert (
             connection.execute(
                 "SELECT 1 FROM application.metadata_enrichment_result WHERE workflow_run_id=%s",
@@ -622,22 +619,22 @@ def test_completion_rejects_incomplete_or_invalid_ledger(
     ],
 )
 def test_source_evidence_requires_exact_active_unambiguous_ingestion(
-    notebook_actor: NotebookActor, mapping: str
+    bootstrap_postgres_database: DisposablePostgres, mapping: str
 ) -> None:
     from tests.mcp.test_database_workflow_run_lifecycle import (
         _seed_model_input_scope_object_in_zone,
         seed_workflow_context,
     )
 
-    actor = notebook_actor
-    context, run_id, claim, attributes = _start(actor)
+    database = bootstrap_postgres_database
+    context, run_id, claim, attributes = _start(database)
     target_object, target_attribute = attributes[0]
     source_ids: list[int] = []
     for _ in range(2 if mapping == "ambiguous" else 1):
         source_object = _seed_model_input_scope_object_in_zone(
-            actor.database, context, zone_code="source"
+            database, context, zone_code="source"
         )
-        with actor.database.connect_owner() as connection:
+        with database.connect_owner() as connection:
             source_attribute = require_row(
                 connection.execute(
                     "INSERT INTO core.attribute(object_id,attribute_name,attribute_ordinal_position,attribute_data_type,attribute_description) VALUES (%s,'registered_id',1,'bigint','Registered source identifier.') RETURNING attribute_id",
@@ -673,13 +670,13 @@ def test_source_evidence_requires_exact_active_unambiguous_ingestion(
                     (source_attribute,),
                 )
         if mapping == "foreign_source":
-            foreign = seed_workflow_context(actor.database)
-            with actor.database.connect_owner() as connection:
+            foreign = seed_workflow_context(database)
+            with database.connect_owner() as connection:
                 connection.execute(
                     "UPDATE core.object SET source_tenant_id=%s WHERE object_id=%s",
                     (foreign.tenant_id, source_object),
                 )
-    snapshot = _load(actor, context, run_id)
+    snapshot = _load(database, context, run_id)
     target = next(
         row for row in snapshot["objects"] if row["object_id"] == target_object
     )["attributes"][0]
@@ -690,13 +687,13 @@ def test_source_evidence_requires_exact_active_unambiguous_ingestion(
         assert target["source"]["attribute_id"] == source_ids[0]
         assert target["source"]["attribute_data_type"] == "bigint"
         assert target["source"]["relation"] is None
-        with actor.database.connect_owner() as connection:
+        with database.connect_owner() as connection:
             connection.execute(
                 "UPDATE core.attribute SET attribute_description='Changed source.' WHERE attribute_id=%s",
                 (source_ids[0],),
             )
         result = _complete(
-            actor,
+            database,
             context,
             run_id,
             claim,
@@ -716,18 +713,18 @@ def test_source_evidence_requires_exact_active_unambiguous_ingestion(
 
 
 def test_source_relation_uses_gds_execution_connection_and_credentials_are_exact(
-    notebook_actor: NotebookActor,
+    bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
     from tests.mcp.test_database_workflow_run_lifecycle import (
         _seed_model_input_scope_object_in_zone,
     )
 
-    actor = notebook_actor
-    context = _context(actor)
+    database = bootstrap_postgres_database
+    context = _context(database)
     source_object = _seed_model_input_scope_object_in_zone(
-        actor.database, context, zone_code="source"
+        database, context, zone_code="source"
     )
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         source_connection = require_row(
             connection.execute(
                 "SELECT connection_id FROM core.object WHERE object_id=%s",
@@ -781,9 +778,9 @@ def test_source_relation_uses_gds_execution_connection_and_credentials_are_exact
                 (gds_connection, environment_id, parameter_id, uuid4().hex),
             )
     run_id = _create(
-        actor, context, correlation_id=uuid4(), selected_object_ids=[source_object]
+        database, context, correlation_id=uuid4(), selected_object_ids=[source_object]
     )["workflow_run_id"]
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         connection.execute(
             "SELECT application.start_workflow_run(%s,%s,'user',%s,%s)",
             (
@@ -793,7 +790,7 @@ def test_source_relation_uses_gds_execution_connection_and_credentials_are_exact
                 context.model_revision,
             ),
         )
-    snapshot = _load(actor, context, run_id)
+    snapshot = _load(database, context, run_id)
     obj = snapshot["objects"][0]
     assert obj["connection_id"] == source_connection
     assert obj["relation"] == dict(
@@ -805,7 +802,7 @@ def test_source_relation_uses_gds_execution_connection_and_credentials_are_exact
     assert obj["attributes"][0]["source"]["attribute_id"] == source_attribute
     assert obj["attributes"][0]["source"]["relation"]["connection_id"] == gds_connection
     with psycopg.Connection[dict[str, Any]].connect(
-        actor.database.web_runtime_dsn(), row_factory=dict_row
+        database.web_runtime_dsn(), row_factory=dict_row
     ) as connection:
         connection.execute("SET LOCAL ROLE gds_web_write")
         values = require_row(
@@ -845,27 +842,27 @@ def test_source_relation_uses_gds_execution_connection_and_credentials_are_exact
 
 
 def test_new_attribute_baseline_drift_completes_all_current_fields_changed(
-    notebook_actor: NotebookActor,
+    bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
-    actor = notebook_actor
-    context, run_id, claim, attributes = _start(actor)
-    snapshot = _load(actor, context, run_id)
+    database = bootstrap_postgres_database
+    context, run_id, claim, attributes = _start(database)
+    snapshot = _load(database, context, run_id)
     fields = _full_results(
-        actor, run_id, [_field(*attributes[0], "attribute_description", "Candidate.")]
+        database, run_id, [_field(*attributes[0], "attribute_description", "Candidate.")]
     )
-    with actor.database.connect_owner() as connection:
+    with database.connect_owner() as connection:
         connection.execute(
             "INSERT INTO core.attribute(object_id,attribute_name,attribute_ordinal_position,attribute_data_type) VALUES (%s,'new_registered',2,'string')",
             (attributes[0][0],),
         )
     result = _complete(
-        actor, context, run_id, claim, snapshot["baseline_digest"], fields, full=False
+        database, context, run_id, claim, snapshot["baseline_digest"], fields, full=False
     )
     assert result["counts"] == {"changed": len(fields) + 2}
     assert result["warning_count"] == len(fields) + 2
     assert (
         _complete(
-            actor,
+            database,
             context,
             run_id,
             claim,
@@ -878,17 +875,17 @@ def test_new_attribute_baseline_drift_completes_all_current_fields_changed(
 
 
 def test_multiline_description_and_result_labels_hide_reowned_metadata(
-    notebook_actor: NotebookActor,
+    bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
     from tests.mcp.test_database_workflow_run_lifecycle import seed_workflow_context
 
-    actor = notebook_actor
-    context, run_id, claim, attributes = _start(actor)
-    snapshot = _load(actor, context, run_id)
+    database = bootstrap_postgres_database
+    context, run_id, claim, attributes = _start(database)
+    snapshot = _load(database, context, run_id)
     first = attributes[0]
     description = "First line.\n\tSecond line.\r\nThird line."
     _complete(
-        actor,
+        database,
         context,
         run_id,
         claim,
@@ -896,7 +893,7 @@ def test_multiline_description_and_result_labels_hide_reowned_metadata(
         [_field(*first, "attribute_description", description)],
     )
     with psycopg.Connection[dict[str, Any]].connect(
-        actor.database.web_runtime_dsn(), row_factory=dict_row
+        database.web_runtime_dsn(), row_factory=dict_row
     ) as connection:
         connection.execute("SET LOCAL ROLE gds_web_write")
         page = require_row(
@@ -914,14 +911,14 @@ def test_multiline_description_and_result_labels_hide_reowned_metadata(
         assert result["applied_value"] == description
         assert result["storage_type"] == "string"
         assert result["object_name"] and result["attribute_name"]
-    foreign = seed_workflow_context(actor.database)
-    with actor.database.connect_owner() as connection:
+    foreign = seed_workflow_context(database)
+    with database.connect_owner() as connection:
         connection.execute(
             "UPDATE core.object SET source_tenant_id=%s,object_name='New owner name' WHERE object_id=%s",
             (foreign.tenant_id, first[0]),
         )
     with psycopg.Connection[dict[str, Any]].connect(
-        actor.database.web_runtime_dsn(), row_factory=dict_row
+        database.web_runtime_dsn(), row_factory=dict_row
     ) as connection:
         connection.execute("SET LOCAL ROLE gds_web_write")
         page = require_row(

@@ -163,7 +163,7 @@ class DatabaseModelChangeSetService:
             )
             if model.model_revision != expected_model_revision:
                 raise ModelRevisionConflictError()
-            review = await read_model_review_snapshot(transaction, model)
+            review = await read_model_review_snapshot(transaction, model, enforce_row_limits=False)
             rows = sorted(review.records_by_id.get(dataset, {}).items())
             if page < 1 or (page > 1 and (page - 1) * 200 >= len(rows)):
                 raise InvalidRequestError("The record page is unavailable.")
@@ -493,7 +493,9 @@ class DatabaseModelChangeSetService:
             )
             changed_rows: list[tuple[str, int, bool, str]] = []
             if command.dataset != "analysis_result":
-                review = await read_model_review_snapshot(transaction, model_context)
+                review = await read_model_review_snapshot(
+                    transaction, model_context, enforce_row_limits=False
+                )
                 snapshot = review.snapshot
                 prepared = prepare_model_record_review(
                     review,
@@ -575,7 +577,9 @@ class DatabaseModelChangeSetService:
 
                 # Review changes only these two lifecycle fields. Generic authoring
                 # validation and its prohibition on changing locked content remain intact.
-                snapshot = await build_model_snapshot(transaction, model_context)
+                snapshot = await build_model_snapshot(
+                    transaction, model_context, enforce_row_limits=False
+                )
                 validation_snapshot = snapshot
                 if command.action == "unlock":
                     validation_snapshot = snapshot.model_copy(
@@ -717,7 +721,9 @@ class DatabaseModelChangeSetService:
                 model_revision=model["model_revision"],
                 readable_source_tenant_ids=model["readable_source_tenant_ids"],
             )
-            review = await read_model_review_snapshot(transaction, model_context)
+            review = await read_model_review_snapshot(
+                transaction, model_context, enforce_row_limits=False
+            )
             prepared = prepare_model_record_review(
                 review,
                 physical_scope=await load_model_physical_scope(transaction, model_context),
@@ -1412,7 +1418,9 @@ class DatabaseModelChangeSetService:
             require_mutable_model_change_set(row)
             self._require_draft_revision(row, command.expected_draft_revision)
             self._require_web_writable_pending(row)
-            validation = await validate_locked_model_change_set(transaction, model, row)
+            validation = await validate_locked_model_change_set(
+                transaction, model, row, enforce_row_limits=False
+            )
             updated = await repository.record_validation(
                 change_set_id=change_set_id,
                 status="validated" if validation.valid else "active",
@@ -1483,7 +1491,9 @@ class DatabaseModelChangeSetService:
                 raise ModelChangeSetNotValidatedError()
             self._require_draft_revision(row, command.expected_draft_revision)
             self._require_web_writable_pending(row)
-            validation = await validate_locked_model_change_set(transaction, model, row)
+            validation = await validate_locked_model_change_set(
+                transaction, model, row, enforce_row_limits=False
+            )
             if not validation.valid or validation.candidate_digest is None:
                 raise CandidateDigestConflictError()
             if validation.candidate_digest != row["candidate_digest"]:

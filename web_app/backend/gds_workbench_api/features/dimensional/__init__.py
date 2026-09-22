@@ -51,18 +51,14 @@ from .read_service import (
     DimensionalService,
 )
 from .router import DimensionalWorkflowService, create_dimensional_workflow_router
-from .service import (
-    DatabaseDimensionalExecutor,
-    DimensionalExecutionFailedError,
-    DimensionalWorkflow,
-)
+from .service import DimensionalExecutionFailedError, DimensionalWorkflow
 
 __all__ = [
     "AssertionRecordReference",
     "Cardinality",
     "Confidence",
     "ContractModel",
-    "DatabaseDimensionalExecutor",
+    "DimensionalWorkflow",
     "DatabaseDimensionalService",
     "DIMENSIONAL_ATTRIBUTE_SOURCES_SQL",
     "DIMENSIONAL_OBJECT_SOURCES_SQL",
@@ -97,7 +93,6 @@ __all__ = [
     "DimensionalRelationshipSummary",
     "DimensionalService",
     "DimensionalSubmodelMembership",
-    "DimensionalWorkflow",
     "DimensionalWorkflowService",
     "ModeledFilters",
     "ModeledListQuery",

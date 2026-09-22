@@ -4,7 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from gds_workbench_runtime.profiling.execution import (
+from gds_workbench_api.features.profiling.execution import (
     ProfileObject,
     build_profile_queries,
 )

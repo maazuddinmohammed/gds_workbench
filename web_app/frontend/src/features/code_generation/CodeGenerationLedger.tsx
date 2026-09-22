@@ -94,7 +94,7 @@ export function CodeGenerationLedger({
         <span className="code-target-name">
           <strong>{targetName(row.original)}</strong>
           <span>
-            {row.original.target.system_name} ({row.original.target.system_code}) · {row.original.target.zone_code}
+            {row.original.target.system_code} · {row.original.target.zone_code}
           </span>
         </span>
       ),

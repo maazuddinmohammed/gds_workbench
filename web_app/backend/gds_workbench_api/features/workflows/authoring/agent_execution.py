@@ -91,7 +91,7 @@ class LocalAgentToolCatalog(Protocol):
     def definitions(self) -> tuple[LocalAgentToolDefinition, ...]: ...
 
     @property
-    def max_cumulative_result_bytes(self) -> int: ...
+    def max_cumulative_result_bytes(self) -> int | None: ...
 
     def invoke(
         self,
@@ -122,11 +122,10 @@ class AgentExecutionRequest(BaseModel):
         exclude=True,
         repr=False,
     )
-    system_prompt: str = Field(min_length=1, max_length=1_000_000, repr=False)
-    instruction_prompt: str = Field(min_length=1, max_length=1_000_000, repr=False)
+    system_prompt: str = Field(min_length=1, repr=False)
+    instruction_prompt: str = Field(min_length=1, repr=False)
     tool_instruction: str | None = Field(
         default=None,
-        max_length=1_000_000,
         repr=False,
     )
     context: JsonValue = Field(repr=False)
@@ -207,12 +206,57 @@ class AgentExecutionResource(Protocol):
     async def close(self) -> None: ...
 
 
+type AgentFailureReason = Literal[
+    "execution_failed",
+    "context_exhausted",
+    "output_truncated",
+    "timeout",
+    "rate_limited",
+    "authentication_failed",
+    "provider_unavailable",
+    "provider_request_rejected",
+    "tool_failed",
+    "turn_limit_exceeded",
+    "output_refused",
+]
+
+
 class AgentExecutionFailedError(WorkbenchError):
-    def __init__(self) -> None:
-        super().__init__(
-            code="agent_execution_failed",
-            message="The selected agent could not complete this stage.",
-        )
+    """Only fixed public diagnostics cross the provider boundary."""
+
+    def __init__(self, reason: AgentFailureReason = "execution_failed") -> None:
+        messages: dict[AgentFailureReason, str] = {
+            "execution_failed": "The selected agent could not complete this stage.",
+            "context_exhausted": (
+                "The selected model's context window is full. Reduce the selected scope "
+                "or choose a model with a larger context window."
+            ),
+            "output_truncated": (
+                "The selected model stopped at its output limit. "
+                "No partial candidate was accepted. "
+                "Reduce the selected scope or choose a model with a larger output limit."
+            ),
+            "timeout": "The selected model timed out. Retry this run.",
+            "rate_limited": "The model provider is rate limited. Wait before retrying this run.",
+            "authentication_failed": (
+                "The model provider rejected authentication or access. "
+                "Ask an administrator to check the provider configuration."
+            ),
+            "provider_unavailable": "The model provider is unavailable. Retry this run later.",
+            "provider_request_rejected": (
+                "The model provider rejected this request. "
+                "Ask an administrator to check the model configuration."
+            ),
+            "tool_failed": (
+                "A local agent tool could not complete. No partial candidate was accepted."
+            ),
+            "turn_limit_exceeded": (
+                "The agent reached its turn limit before completing this stage. "
+                "Reduce the selected scope or increase the run's turn limit."
+            ),
+            "output_refused": "The model provider declined to produce this stage's output.",
+        }
+        super().__init__(code=f"agent_{reason}", message=messages[reason])
 
 
 class AgentContextToolRequestError(WorkbenchError):
@@ -278,7 +322,7 @@ class AgentExecutionRouter:
         try:
             result = await adapter.execute(request)
             if result.turn_count > request.selection.max_turns:
-                raise AgentExecutionFailedError()
+                raise AgentExecutionFailedError("turn_limit_exceeded")
             return result
         except WorkbenchError:
             raise

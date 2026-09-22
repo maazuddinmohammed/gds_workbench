@@ -41,6 +41,7 @@ from gds_workbench_api.integrations.agents.fake_shared import (
     analysis_selected_attributes,
     code_generation_target_refs,
     conceptual_source_objects,
+    named_tool_items,
     original_context,
     tool_assisted_conceptual_sources,
     tool_assisted_logical_sources,
@@ -104,6 +105,9 @@ class LocalFakeAgentAdapter:
                 values = cast(dict[str, JsonValue], code_context["values"])
                 target_ref = values.get("target_ref")
                 systems = values.get("source_systems")
+                if "get_code_source_systems" in request.allowed_tool_names:
+                    systems, calls = named_tool_items(request, "get_code_source_systems")
+                    tool_call_count += calls
                 if not isinstance(target_ref, str) or not isinstance(systems, list):
                     raise InvalidRequestError("The local Code context is unavailable.")
                 target_systems = {
@@ -150,6 +154,27 @@ class LocalFakeAgentAdapter:
                 raise InvalidRequestError(
                     "The local fake does not support this agent execution path."
                 )
+            evidence_counts: dict[str, int] = {}
+            for reader in ("get_mapping_evidence", "get_current_code"):
+                if reader in request.allowed_tool_names:
+                    rows, calls = named_tool_items(request, reader)
+                    tool_call_count += calls
+                    evidence_counts[reader] = len(rows)
+            description = "Confirms the governed validation query executes."
+            if evidence_counts:
+                description += (
+                    " Frozen evidence: "
+                    + "; ".join(
+                        f"{count} "
+                        + (
+                            "mapped targets"
+                            if reader == "get_mapping_evidence"
+                            else "SQL artifacts"
+                        )
+                        for reader, count in evidence_counts.items()
+                    )
+                    + "."
+                )
             candidate = cast(
                 JsonValue,
                 {
@@ -163,9 +188,7 @@ class LocalFakeAgentAdapter:
                             "validation_checks": [
                                 {
                                     "validation_check_name": "validation_session_executes",
-                                    "validation_check_description": (
-                                        "Confirms the governed validation query executes."
-                                    ),
+                                    "validation_check_description": description,
                                     "validation_category_code": "technical.execution",
                                     "validation_severity": "blocking",
                                     "validation_query_sql": "SELECT 1",

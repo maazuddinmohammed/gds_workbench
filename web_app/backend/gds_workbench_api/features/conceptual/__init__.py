@@ -34,11 +34,7 @@ from .read_service import (
     DatabaseConceptualService,
 )
 from .router import ConceptualWorkflowService, create_conceptual_workflow_router
-from .service import (
-    ConceptualExecutionFailedError,
-    ConceptualWorkflow,
-    DatabaseConceptualExecutor,
-)
+from .service import ConceptualExecutionFailedError, ConceptualWorkflow
 
 __all__ = [
     "AssertionRecordReference",
@@ -71,7 +67,6 @@ __all__ = [
     "Confidence",
     "ContractModel",
     "DatabaseConceptualService",
-    "DatabaseConceptualExecutor",
     "PhysicalObjectReference",
     "create_conceptual_router",
     "create_conceptual_workflow_router",

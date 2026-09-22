@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
+import { Fact } from "../../shared/ui";
 import { analysisQueryKeys, type AnalysisApi, type AnalysisEndpoint } from "./api";
 
 export function AnalysisDetail({
@@ -125,12 +126,8 @@ function EndpointDetail({
       <h3>{endpoint.object_name}</h3>
       <strong>{endpoint.attribute_name}</strong>
       <span>{endpoint.attribute_data_type}</span>
-      <p>{endpoint.source_tenant_name} ({endpoint.source_tenant_code}) · {endpoint.system_name} ({endpoint.system_code})</p>
+      <p>{endpoint.source_tenant_code} · {endpoint.system_code}</p>
       <p>Connection: {endpoint.connection_code} · Schema: {endpoint.object_schema}</p>
     </section>
   );
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return <div><dt>{label}</dt><dd>{value}</dd></div>;
 }

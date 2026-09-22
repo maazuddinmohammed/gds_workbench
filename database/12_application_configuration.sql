@@ -728,12 +728,6 @@ CREATE TABLE application.prompt_template_version (
             tool_instruction_prompt_template IS NULL
             OR reference.is_nonblank(tool_instruction_prompt_template)
         )
-        AND octet_length(system_prompt_template) <= 262144
-        AND octet_length(instruction_prompt_template) <= 262144
-        AND (
-            tool_instruction_prompt_template IS NULL
-            OR octet_length(tool_instruction_prompt_template) <= 262144
-        )
     ),
     CONSTRAINT ck_prompt_template_version_digest CHECK (
         prompt_template_digest ~ '^[0-9a-f]{64}$'
@@ -1368,16 +1362,11 @@ DECLARE
 BEGIN
     IF p_system_prompt_template IS NULL
        OR btrim(p_system_prompt_template) = ''
-       OR octet_length(p_system_prompt_template) > 262144
        OR p_instruction_prompt_template IS NULL
        OR btrim(p_instruction_prompt_template) = ''
-       OR octet_length(p_instruction_prompt_template) > 262144
        OR (
            p_tool_instruction_prompt_template IS NOT NULL
-           AND (
-               btrim(p_tool_instruction_prompt_template) = ''
-               OR octet_length(p_tool_instruction_prompt_template) > 262144
-           )
+           AND btrim(p_tool_instruction_prompt_template) = ''
        ) THEN
         RAISE EXCEPTION 'Prompt Template content is invalid';
     END IF;
@@ -2651,7 +2640,6 @@ CREATE TABLE application.sql_generation_guide_version (
     ),
     CONSTRAINT ck_sql_generation_guide_content CHECK (
         reference.is_nonblank(sql_generation_guide_content)
-        AND octet_length(sql_generation_guide_content) <= 262144
     ),
     CONSTRAINT ck_sql_generation_guide_digest CHECK (
         sql_generation_guide_digest ~ '^[0-9a-f]{64}$'
@@ -2986,8 +2974,7 @@ DECLARE
     v_updated_time TIMESTAMPTZ;
 BEGIN
     IF p_sql_generation_guide_content IS NULL
-       OR btrim(p_sql_generation_guide_content) = ''
-       OR octet_length(p_sql_generation_guide_content) > 262144 THEN
+       OR btrim(p_sql_generation_guide_content) = '' THEN
         RAISE EXCEPTION 'SQL generation guide content is invalid';
     END IF;
 

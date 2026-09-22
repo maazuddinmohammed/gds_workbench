@@ -96,8 +96,7 @@ _GUIDE_VERSIONS_SQL = """
 SELECT version.sql_generation_guide_version_id,
        version.sql_generation_guide_id,
        version.sql_generation_guide_version_number,
-       left(version.sql_generation_guide_content, 262144)
-           AS sql_generation_guide_content,
+       version.sql_generation_guide_content,
        version.sql_generation_guide_digest,
        version.sql_generation_guide_version_status,
        version.published_time AS published_at,

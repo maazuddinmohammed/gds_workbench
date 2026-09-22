@@ -4,9 +4,9 @@ import json
 from datetime import date, datetime
 from typing import Annotated, Literal, cast
 
-from fastapi import APIRouter, Path, Query, Response
-from fastapi.requests import Request
+from fastapi import APIRouter, Depends, Path, Query, Response
 from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS_BY_NAME,
@@ -23,6 +23,7 @@ from pydantic import (
     field_validator,
 )
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.metadata.contracts import (
     ActiveState,
     MetadataDatasetDetail,
@@ -126,13 +127,14 @@ def create_metadata_router(
     service: MetadataService,
 ) -> APIRouter:
     """Create the metadata router for later application/runtime composition."""
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(prefix="/api/v1/tenants/{tenant_id}/metadata", tags=["metadata"])
 
     async def list_datasets(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> MetadataDatasetRegistry:
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_datasets(principal, tenant_id=tenant_id)
 
     router.add_api_route(
@@ -143,11 +145,11 @@ def create_metadata_router(
     )
 
     async def describe_dataset(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         dataset: MetadataDataset,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> MetadataDatasetDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.describe_dataset(
             principal,
             tenant_id=tenant_id,
@@ -162,12 +164,12 @@ def create_metadata_router(
     )
 
     async def list_rows(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         dataset: MetadataDataset,
         query: Annotated[DatasetRowsQuery, Query()],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> MetadataRowPage:
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_rows(
             principal,
             tenant_id=tenant_id,
@@ -185,11 +187,11 @@ def create_metadata_router(
     )
 
     async def export_workbook(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         command: MetadataWorkbookExportRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> Response:
-        principal = identity_provider.authenticate(request.headers)
         requested = command.sheet_codes
         sheet_codes: Literal["all"] | tuple[str, ...] = (
             tuple(requested) if isinstance(requested, list) else requested
@@ -218,11 +220,11 @@ def create_metadata_router(
     )
 
     async def list_objects(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         query: Annotated[ObjectListQuery, Query()],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ObjectCatalogPage:
-        principal = identity_provider.authenticate(request.headers)
         filters = ObjectCatalogFilters.model_validate(
             {
                 "zone": query.zone,
@@ -248,11 +250,11 @@ def create_metadata_router(
     )
 
     async def get_object(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         object_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ObjectCatalogDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.get_object(
             principal,
             tenant_id=tenant_id,

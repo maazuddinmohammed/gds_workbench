@@ -12,6 +12,7 @@ from typing import Any, Protocol, cast
 from agents import (
     Agent,
     FunctionTool,
+    MaxTurnsExceeded,
     ModelSettings,
     OpenAIChatCompletionsModel,
     RunConfig,
@@ -19,14 +20,27 @@ from agents import (
     Tool,
     ToolCallItem,
 )
+from agents.exceptions import ModelRefusalError, ModelTimeoutError, ToolTimeoutError
+from azure.core.exceptions import ClientAuthenticationError
 from azure.identity.aio import ClientSecretCredential as AsyncClientSecretCredential
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from openai import AsyncOpenAI, DefaultAsyncHttpxClient
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AsyncOpenAI,
+    AuthenticationError,
+    DefaultAsyncHttpxClient,
+    LengthFinishReasonError,
+    PermissionDeniedError,
+    RateLimitError,
+)
 from openai.types.shared import Reasoning, ReasoningEffort
 from pydantic import JsonValue, SecretStr, TypeAdapter
 
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AGENT_OUTPUT_CONTRACT_INSTRUCTION,
+    AgentContextToolRequestError,
     AgentContextToolResultTooLargeError,
     AgentExecutionFailedError,
     AgentExecutionRequest,
@@ -179,6 +193,8 @@ class OpenAIAgentsSdkAdapter:
         names = tuple(definition.name for definition in catalog.definitions)
         if names != request.allowed_tool_names or len(names) != len(set(names)):
             raise InvalidRequestError("A selected local agent tool is unavailable.")
+        if catalog.max_cumulative_result_bytes is None:
+            return catalog
         if catalog.max_cumulative_result_bytes < 1:
             raise InvalidRequestError("A selected local agent tool is unavailable.")
         return _PerExecutionToolCatalog(catalog)
@@ -187,15 +203,13 @@ class OpenAIAgentsSdkAdapter:
         connection = self._connection(request)
         client: AsyncOpenAI | None = None
         http_client = None
-        hooks: ProviderUsageHooks | None = None
+        hooks = ProviderUsageHooks(request.model_request_recorder)
         try:
             credentials = await self._authentication(connection).authenticate()
-            tools = cast(Sequence[Tool], _openai_tools(self._tool_catalog(request)))
-            if request.model_request_recorder is not None:
-                hooks = ProviderUsageHooks(request.model_request_recorder)
-                http_client = DefaultAsyncHttpxClient(
-                    event_hooks={"request": [hooks.on_request], "response": [hooks.on_response]},
-                )
+            tools = cast(Sequence[Tool], _openai_tools(self._tool_catalog(request), hooks))
+            http_client = DefaultAsyncHttpxClient(
+                event_hooks={"request": [hooks.on_request], "response": [hooks.on_response]},
+            )
             client = AsyncOpenAI(
                 api_key=credentials.api_key.get_secret_value(),
                 base_url=credentials.base_url,
@@ -241,7 +255,7 @@ class OpenAIAgentsSdkAdapter:
                     workflow_name="GDS Workbench agent stage",
                 ),
             )
-            if hooks is not None and hooks.error is not None:
+            if hooks.error is not None:
                 raise hooks.error
             return AgentExecutionResult(
                 candidate=_candidate(result.final_output),
@@ -250,9 +264,39 @@ class OpenAIAgentsSdkAdapter:
             )
         except WorkbenchError:
             raise
-        except Exception:
-            if hooks is not None and hooks.error is not None:
+        except Exception as error:
+            if hooks.error is not None:
                 raise hooks.error from None
+            if isinstance(error, APITimeoutError | ModelTimeoutError | TimeoutError):
+                raise AgentExecutionFailedError("timeout") from None
+            if isinstance(error, RateLimitError):
+                raise AgentExecutionFailedError("rate_limited") from None
+            if isinstance(
+                error, AuthenticationError | PermissionDeniedError | ClientAuthenticationError
+            ):
+                raise AgentExecutionFailedError("authentication_failed") from None
+            if isinstance(error, APIConnectionError):
+                raise AgentExecutionFailedError("provider_unavailable") from None
+            if isinstance(error, APIStatusError):
+                # Compare structured codes only; provider messages/bodies may contain input data.
+                if isinstance(error.code, str) and error.code in {
+                    "context_length_exceeded",
+                    "context_window_exceeded",
+                }:
+                    raise AgentExecutionFailedError("context_exhausted") from None
+                if error.status_code in {408, 504}:
+                    raise AgentExecutionFailedError("timeout") from None
+                if error.status_code >= 500:
+                    raise AgentExecutionFailedError("provider_unavailable") from None
+                raise AgentExecutionFailedError("provider_request_rejected") from None
+            if isinstance(error, LengthFinishReasonError):
+                raise AgentExecutionFailedError("output_truncated") from None
+            if isinstance(error, MaxTurnsExceeded):
+                raise AgentExecutionFailedError("turn_limit_exceeded") from None
+            if isinstance(error, ToolTimeoutError):
+                raise AgentExecutionFailedError("tool_failed") from None
+            if isinstance(error, ModelRefusalError):
+                raise AgentExecutionFailedError("output_refused") from None
             raise AgentExecutionFailedError() from None
         finally:
             if client is not None:
@@ -267,6 +311,8 @@ class _PerExecutionToolCatalog:
     def __init__(self, catalog: LocalAgentToolCatalog) -> None:
         self._catalog = catalog
         self._maximum_bytes = catalog.max_cumulative_result_bytes
+        if self._maximum_bytes is None:
+            raise ValueError("A bounded tool catalog requires an explicit result limit")
         self._used_bytes = 0
         self._budget_lock = Lock()
 
@@ -276,6 +322,7 @@ class _PerExecutionToolCatalog:
 
     @property
     def max_cumulative_result_bytes(self) -> int:
+        assert self._maximum_bytes is not None
         return self._maximum_bytes
 
     def invoke(
@@ -294,6 +341,7 @@ class _PerExecutionToolCatalog:
             ).encode("utf-8")
         )
         with self._budget_lock:
+            assert self._maximum_bytes is not None
             if self._used_bytes + result_bytes > self._maximum_bytes:
                 raise AgentContextToolResultTooLargeError()
             self._used_bytes += result_bytes
@@ -310,32 +358,41 @@ def _system_prompt(request: AgentExecutionRequest) -> str:
 
 def _openai_tools(
     catalog: LocalAgentToolCatalog | None,
+    hooks: ProviderUsageHooks,
 ) -> tuple[FunctionTool, ...]:
     if catalog is None:
         return ()
-    return tuple(_openai_tool(catalog, definition) for definition in catalog.definitions)
+    return tuple(_openai_tool(catalog, definition, hooks) for definition in catalog.definitions)
 
 
 def _openai_tool(
     catalog: LocalAgentToolCatalog,
     definition: LocalAgentToolDefinition,
+    hooks: ProviderUsageHooks,
 ) -> FunctionTool:
     async def invoke(_: object, raw_arguments: str) -> str:
+        # The SDK can wrap tool exceptions. Preserve only our safe error outside that wrapper.
+        if hooks.error is not None:
+            raise hooks.error
         try:
-            value = _JSON_OBJECT.validate_json(raw_arguments, strict=True)
-        except ValueError:
-            raise InvalidRequestError("The local agent tool arguments are invalid.") from None
-        result = catalog.invoke(
-            definition.name,
-            value,
-        )
-        return json.dumps(
-            result,
-            ensure_ascii=False,
-            allow_nan=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
+            try:
+                value = _JSON_OBJECT.validate_json(raw_arguments, strict=True)
+            except ValueError:
+                raise AgentContextToolRequestError() from None
+            result = catalog.invoke(definition.name, value)
+            return json.dumps(
+                result,
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        except WorkbenchError as error:
+            hooks.error = error
+            raise
+        except Exception:
+            hooks.error = AgentExecutionFailedError("tool_failed")
+            raise hooks.error from None
 
     return FunctionTool(
         name=definition.name,
@@ -369,7 +426,7 @@ def _candidate(value: object) -> JsonValue:
             decoded: object = json.loads(value, object_pairs_hook=unique_object)
             return _JSON_VALUE.validate_python(decoded, strict=True)
         return _JSON_VALUE.validate_python(value, strict=True)
-    except (ValueError, RecursionError):
+    except ValueError, RecursionError:
         if isinstance(value, str):
             # Keep malformed output ephemeral so the schema gate can request a repair.
             return value

@@ -1,6 +1,7 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any, LiteralString, cast
 from uuid import UUID
 
@@ -172,7 +173,8 @@ def test_archive_model_route_is_explicit_and_revision_fenced() -> None:
 
 
 class CreateModelTransaction:
-    def __init__(self) -> None:
+    def __init__(self, role: str = "tenant_admin") -> None:
+        self.role = role
         self.create_parameters: tuple[Any, ...] | None = None
 
     async def fetch_one(
@@ -191,8 +193,8 @@ class CreateModelTransaction:
             return {
                 "principal_id": 41,
                 "principal_display_name": "Maaz",
-                "is_super_admin": False,
-                "effective_role": "tenant_admin",
+                "is_super_admin": self.role == "super_admin",
+                "effective_role": self.role,
                 "authorized": True,
                 "denial_code": None,
                 "lock_owner_display_name": None,
@@ -222,12 +224,74 @@ class CreateModelTransaction:
 
 
 class CreateModelDatabase:
-    def __init__(self) -> None:
-        self.transaction = CreateModelTransaction()
+    def __init__(self, role: str = "tenant_admin") -> None:
+        self.transaction = CreateModelTransaction(role)
 
     @asynccontextmanager
     async def write_transaction(self) -> AsyncGenerator[CreateModelTransaction]:
         yield self.transaction
+
+
+@pytest.mark.parametrize(
+    "role", ["viewer", "developer", "architect", "tenant_admin", "super_admin"]
+)
+def test_model_creation_is_admin_only_even_when_model_write_policy_allows_it(role: str) -> None:
+    database = CreateModelDatabase(role)
+    app = create_app(
+        identity_provider=_identity_provider(),
+        model_command_service=DatabaseModelCommandService(
+            database=database,
+            authorizer=AuthorizationService(),
+            agent_capability_registry=load_default_agent_capabilities(),
+        ),
+    )
+    with TestClient(app) as client:
+        response = client.post("/api/v1/tenants/7/models", json={"model_name": "New Model"})
+    allowed = role in {"tenant_admin", "super_admin"}
+    assert response.status_code == (201 if allowed else 403)
+    assert (database.transaction.create_parameters is not None) is allowed
+
+
+@pytest.mark.parametrize("constraint", ["ux_model_tenant_name_ci", "other_private_constraint"])
+def test_model_creation_duplicate_name_is_safe_and_distinct_from_other_database_errors(
+    constraint: str,
+) -> None:
+    class UniqueFailureError(Exception):
+        sqlstate = "23505"
+        diag = SimpleNamespace(constraint_name=constraint)
+
+    class DuplicateTransaction(CreateModelTransaction):
+        async def fetch_one(
+            self, query: LiteralString, parameters: tuple[Any, ...] = ()
+        ) -> dict[str, Any] | None:
+            if "application.create_model" in query:
+                try:
+                    raise UniqueFailureError("private database details")
+                except UniqueFailureError as error:
+                    from gds_etl_workbench.domain.errors import DependencyUnavailableError
+
+                    raise DependencyUnavailableError() from error
+            return await super().fetch_one(query, parameters)
+
+    database = CreateModelDatabase()
+    database.transaction = DuplicateTransaction()
+    app = create_app(
+        identity_provider=_identity_provider(),
+        model_command_service=DatabaseModelCommandService(
+            database=database,
+            authorizer=AuthorizationService(),
+            agent_capability_registry=load_default_agent_capabilities(),
+        ),
+    )
+    with TestClient(app) as client:
+        response = client.post("/api/v1/tenants/7/models", json={"model_name": "New Model"})
+    assert response.status_code == (409 if constraint == "ux_model_tenant_name_ci" else 503)
+    assert response.json()["error"]["code"] == (
+        "model_name_conflict"
+        if constraint == "ux_model_tenant_name_ci"
+        else "dependency_unavailable"
+    )
+    assert "private" not in response.text
 
 
 @pytest.mark.asyncio
@@ -629,7 +693,8 @@ async def test_cross_tenant_model_id_is_not_found_before_canonical_mutation() ->
     assert database.transaction.function_called is False
 
 
-def test_owned_tenant_lock_is_required_before_model_lookup_or_mutation() -> None:
+@pytest.mark.parametrize("action", ["create", "archive"])
+def test_owned_tenant_lock_is_required_before_model_lookup_or_mutation(action: str) -> None:
     database = RejectedPrecheckDatabase(authorized=False)
     service = DatabaseModelCommandService(
         database=database,
@@ -643,8 +708,12 @@ def test_owned_tenant_lock_is_required_before_model_lookup_or_mutation() -> None
 
     with TestClient(app) as client:
         response = client.post(
-            "/api/v1/tenants/7/models/18/archive",
-            json={"expected_model_revision": 5},
+            "/api/v1/tenants/7/models"
+            if action == "create"
+            else "/api/v1/tenants/7/models/18/archive",
+            json={"model_name": "New Model"}
+            if action == "create"
+            else {"expected_model_revision": 5},
         )
 
     assert response.status_code == 409

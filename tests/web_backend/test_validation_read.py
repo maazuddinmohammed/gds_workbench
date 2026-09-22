@@ -26,9 +26,6 @@ from gds_workbench_api.features.validation import (
     ValidationValidationCheck,
     ValidationValidationGroup,
 )
-from gds_workbench_api.features.validation.context import (
-    _CONTEXT_BOUNDS_SQL,  # pyright: ignore[reportPrivateUsage]
-)
 from gds_workbench_api.features.validation.read_service import (
     _CURRENT_CONTEXT_SQL,  # pyright: ignore[reportPrivateUsage]
     _LEDGER_GROUPS_SQL,  # pyright: ignore[reportPrivateUsage]
@@ -183,12 +180,10 @@ def test_ledger_currentness_normalizes_mixed_case_target_natural_keys() -> None:
     assert groups[0].validation_group_is_current is True
 
 
-def test_ledger_currentness_queries_are_lightweight_and_preflight_bytes() -> None:
+def test_ledger_currentness_queries_are_lightweight() -> None:
     assert "generated.generated_code_content" not in _CURRENT_CONTEXT_SQL
     assert "context.source_context," not in _CURRENT_CONTEXT_SQL
     assert "source_system.source_system_codes" in _CURRENT_CONTEXT_SQL
-    assert "octet_length(applied_check.validation_query_sql)" in _CONTEXT_BOUNDS_SQL
-    assert "relevant_context.generated_code_bytes" in _CONTEXT_BOUNDS_SQL
     assert "validation_group.is_active" not in _LEDGER_GROUPS_SQL.split(" WHERE ", 1)[1]
 
 
@@ -236,7 +231,7 @@ class EligibleSystemsTransaction:
             return []
         if "core.tenant AS tenant" in query and "effective_role" in query:
             return []
-        assert "LIMIT 1001" in query
+        assert "LIMIT" not in query
         assert "workflow.list_code_generation_target_context" in query
         assert parameters == (7, 18)
         return [
@@ -263,7 +258,7 @@ class EligibleSystemsDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_validation_eligible_systems_are_authorized_and_bounded() -> None:
+async def test_database_validation_eligible_systems_are_authorized_and_complete() -> None:
     service = DatabaseValidationReadService(
         database=EligibleSystemsDatabase(),
         authorizer=AuthorizationService(),

@@ -9,7 +9,7 @@ import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.conceptual.service import DatabaseConceptualExecutor
+from gds_workbench_api.features.conceptual.service import ConceptualWorkflow
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
@@ -22,9 +22,15 @@ from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetHandoff,
     WorkflowChangeSetHandoffResult,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import DatabaseAgentWorkflowLifecycle
-from gds_workbench_api.features.workflows.authoring.no_op import DatabaseAuthoringNoOpService
-from gds_workbench_api.features.workflows.authoring.repair import AgentCandidateValidationError
+from gds_workbench_api.features.workflows.authoring.lifecycle import (
+    DatabaseAgentWorkflowLifecycle,
+)
+from gds_workbench_api.features.workflows.authoring.no_op import (
+    DatabaseAuthoringNoOpService,
+)
+from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentCandidateValidationError,
+)
 from gds_workbench_api.features.workflows.execution.repository import (
     DatabaseWorkflowClaimRepository,
 )
@@ -84,7 +90,12 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
         )
         acquired = connection.execute(
             "SELECT acquired FROM security.acquire_tenant_lock(%s, %s, 'user', %s, 60, %s)",
-            (entra_tenant_id, entra_object_id, tenant_id, "Conceptual graph repair fixture"),
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                "Conceptual graph repair fixture",
+            ),
         ).fetchone()
         assert acquired == {"acquired": True}
     run_id = _create_queued_conceptual_run_with_prompt(
@@ -108,7 +119,9 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
             if len(requests) == 1 or not repair_succeeds:
                 candidate["conceptual_object_status"] = "inactive"
             else:
-                candidate["conceptual_object_definition"] = "Customer identified by a business key."
+                candidate["conceptual_object_definition"] = (
+                    "Customer identified by a business key."
+                )
             return AgentExecutionResult(
                 candidate={"objects": [candidate], "relationships": []},
                 turn_count=1,
@@ -123,7 +136,7 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
     )
     authorizer = AuthorizationService()
     lifecycle = DatabaseAgentWorkflowLifecycle(database=database)
-    executor = DatabaseConceptualExecutor(
+    executor = ConceptualWorkflow(
         database=database,
         authorizer=authorizer,
         agent_executor=Agent(),
@@ -157,7 +170,9 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
             draft = await executor.execute_started(principal, **arguments)
             assert isinstance(draft, WorkflowChangeSetHandoffResult)
             assert len(requests) == 2
-            await DatabaseWorkflowDraftApplyService(database=database, authorizer=authorizer).apply(
+            await DatabaseWorkflowDraftApplyService(
+                database=database, authorizer=authorizer
+            ).apply(
                 principal,
                 tenant_id=tenant_id,
                 model_id=model_id,
@@ -212,7 +227,9 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
         assert state is not None
         assert state["model_revision"] == (2 if repair_succeeds else 1)
         assert state["applied"] is repair_succeeds
-        assert state["model_change_set_status"] == ("applied" if repair_succeeds else "active")
+        assert state["model_change_set_status"] == (
+            "applied" if repair_succeeds else "active"
+        )
         assert state["workflow_run_state"] == (
             "completed_with_repair" if repair_succeeds else "failed"
         )
@@ -220,13 +237,19 @@ async def test_conceptual_graph_failure_repairs_or_retains_complete_rejected_dra
         assert state["conceptual_relationship_status"] == "active"
         assert state["relationship_run_id"] is None
         if repair_succeeds:
-            assert state["conceptual_object_definition"] == "Customer identified by a business key."
+            assert (
+                state["conceptual_object_definition"]
+                == "Customer identified by a business key."
+            )
         else:
             assert (
-                state["conceptual_object_definition"] == _object()["conceptual_object_definition"]
+                state["conceptual_object_definition"]
+                == _object()["conceptual_object_definition"]
             )
             assert (
-                state["conceptual_document"]["conceptual_object"][0]["conceptual_object_status"]
+                state["conceptual_document"]["conceptual_object"][0][
+                    "conceptual_object_status"
+                ]
                 == "inactive"
             )
     finally:

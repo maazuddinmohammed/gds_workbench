@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -223,6 +223,29 @@ describe("governed Prompts experience", () => {
     const call = await waitForCall(fetcher, (input, init) => input.endsWith("/31/draft") && init?.method === "PUT");
     expect(JSON.parse(String(call[1]?.body)).agent_tool_names).toEqual([]);
     await screen.findByText("No tools enabled. Include the context needed through variables in your prompts.");
+  });
+
+  it("saves complete prompt bodies larger than the former byte cap", async () => {
+    const fetcher = promptFetchStub();
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }),
+    })} />);
+    const system = await screen.findByLabelText("System Prompt");
+    const content = "é".repeat(262_145) + "complete suffix";
+    fireEvent.change(system, { target: { value: content } });
+    fireEvent.change(screen.getByLabelText("Instruction Prompt"), { target: { value: content } });
+    fireEvent.change(screen.getByLabelText("Tool instructions (optional)"), { target: { value: content } });
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
+    const call = await waitForCall(fetcher, (input, init) => (
+      input.endsWith("/31/draft") && init?.method === "PUT"
+    ));
+    expect(JSON.parse(String(call[1]?.body))).toMatchObject({
+      system_prompt_template: content,
+      instruction_prompt_template: content,
+      tool_instruction_prompt_template: content,
+    });
   });
 
   it("retains working text and tool choices after a save conflict or preview error", async () => {

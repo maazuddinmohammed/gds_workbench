@@ -13,30 +13,18 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
     WriteTransaction,
 )
-from gds_workbench_runtime.profiling.workflow import ProfilingWorkflowOrchestrator
 
 from gds_workbench_api.capabilities import AgentCapabilityRegistry
 from gds_workbench_api.features.analysis import (
     AnalysisInferenceWorkflow,
     AnalysisValidationWorkflow,
-    DatabaseAnalysisInferenceExecutor,
     DatabaseAnalysisValidationRepository,
 )
-from gds_workbench_api.features.code_generation import (
-    CodeGenerationWorkflow,
-    DatabaseCodeGenerationExecutor,
-)
-from gds_workbench_api.features.conceptual import (
-    ConceptualWorkflow,
-    DatabaseConceptualExecutor,
-)
-from gds_workbench_api.features.dimensional import (
-    DatabaseDimensionalExecutor,
-    DimensionalWorkflow,
-)
-from gds_workbench_api.features.logical import DatabaseLogicalExecutor, LogicalWorkflow
+from gds_workbench_api.features.code_generation import CodeGenerationWorkflow
+from gds_workbench_api.features.conceptual import ConceptualWorkflow
+from gds_workbench_api.features.dimensional import DimensionalWorkflow
+from gds_workbench_api.features.logical import LogicalWorkflow
 from gds_workbench_api.features.mapping import (
-    DatabaseMappingExecutor,
     MappingReadinessService,
     MappingWorkflow,
     PostgresMappingRunContextRepository,
@@ -47,7 +35,8 @@ from gds_workbench_api.features.metadata_enrichment.service import (
     DatabaseMetadataEnrichmentExecutor,
 )
 from gds_workbench_api.features.profiling import DatabaseProfilingWorkflowRepository
-from gds_workbench_api.features.validation import DatabaseValidationExecutor, ValidationWorkflow
+from gds_workbench_api.features.profiling.workflow import ProfilingWorkflowOrchestrator
+from gds_workbench_api.features.validation import ValidationWorkflow
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRouter,
 )
@@ -153,7 +142,7 @@ def create_workflow_runtime_services(
     handoff = WorkflowChangeSetHandoff(database=database, authorizer=authorizer)
     no_op = DatabaseAuthoringNoOpService(database=database)
 
-    analysis_inference_executor = DatabaseAnalysisInferenceExecutor(
+    analysis_inference_workflow = AnalysisInferenceWorkflow(
         database=database,
         authorizer=authorizer,
         agent_executor=agent_executor,
@@ -161,7 +150,7 @@ def create_workflow_runtime_services(
         no_op=no_op,
         lifecycle=lifecycle,
     )
-    conceptual_executor = DatabaseConceptualExecutor(
+    conceptual_workflow = ConceptualWorkflow(
         database=database,
         authorizer=authorizer,
         agent_executor=agent_executor,
@@ -169,7 +158,7 @@ def create_workflow_runtime_services(
         no_op=no_op,
         lifecycle=lifecycle,
     )
-    logical_executor = DatabaseLogicalExecutor(
+    logical_workflow = LogicalWorkflow(
         database=database,
         authorizer=authorizer,
         agent_executor=agent_executor,
@@ -177,7 +166,7 @@ def create_workflow_runtime_services(
         no_op=no_op,
         lifecycle=lifecycle,
     )
-    dimensional_executor = DatabaseDimensionalExecutor(
+    dimensional_workflow = DimensionalWorkflow(
         database=database,
         authorizer=authorizer,
         agent_executor=agent_executor,
@@ -185,7 +174,7 @@ def create_workflow_runtime_services(
         no_op=no_op,
         lifecycle=lifecycle,
     )
-    mapping_executor = DatabaseMappingExecutor(
+    mapping_workflow = MappingWorkflow(
         preparation_service=MappingReadinessService(
             database=database,
             authorizer=authorizer,
@@ -197,7 +186,7 @@ def create_workflow_runtime_services(
         no_op=no_op,
         lifecycle=lifecycle,
     )
-    code_generation_executor = DatabaseCodeGenerationExecutor(
+    code_generation_workflow = CodeGenerationWorkflow(
         database=database,
         authorizer=authorizer,
         agent_executor=agent_executor,
@@ -205,7 +194,7 @@ def create_workflow_runtime_services(
         no_op=no_op,
         lifecycle=lifecycle,
     )
-    validation_executor = DatabaseValidationExecutor(
+    validation_workflow = ValidationWorkflow(
         database=database,
         authorizer=authorizer,
         agent_executor=agent_executor,
@@ -224,10 +213,7 @@ def create_workflow_runtime_services(
             ),
             executor=databricks_execution.profiling,
         ),
-        analysis_inference=AnalysisInferenceWorkflow(
-            lifecycle=lifecycle,
-            executor=analysis_inference_executor,
-        ),
+        analysis_inference=analysis_inference_workflow,
         analysis_validation=AnalysisValidationWorkflow(
             lifecycle=lifecycle,
             repository=DatabaseAnalysisValidationRepository(
@@ -236,15 +222,12 @@ def create_workflow_runtime_services(
             ),
             executor=databricks_execution.analysis_validation,
         ),
-        conceptual=ConceptualWorkflow(lifecycle=lifecycle, executor=conceptual_executor),
-        logical=LogicalWorkflow(lifecycle=lifecycle, executor=logical_executor),
-        dimensional=DimensionalWorkflow(lifecycle=lifecycle, executor=dimensional_executor),
-        mapping=MappingWorkflow(lifecycle=lifecycle, executor=mapping_executor),
-        code_generation=CodeGenerationWorkflow(
-            lifecycle=lifecycle,
-            executor=code_generation_executor,
-        ),
-        validation=ValidationWorkflow(lifecycle=lifecycle, executor=validation_executor),
+        conceptual=conceptual_workflow,
+        logical=logical_workflow,
+        dimensional=dimensional_workflow,
+        mapping=mapping_workflow,
+        code_generation=code_generation_workflow,
+        validation=validation_workflow,
         metadata_enrichment=DatabaseMetadataEnrichmentExecutor(
             repository=MetadataEnrichmentRepository(
                 database, environment_code=databricks_environment_code

@@ -149,7 +149,6 @@ export function generatedSqlArtifactDownloadPath(
 }
 
 export const codeGenerationQueryKeys = {
-  models: (tenantId: number) => ["code-generation-models", tenantId] as const,
   targets: (
     tenantId: number,
     modelId: number,

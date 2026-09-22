@@ -1,6 +1,6 @@
 # ADR 005: Independent Deployments with Shared Source
 
-- Status: accepted
+- Status: superseded by [ADR 007](007-web-owned-workflows-and-notebook-retirement.md)
 - Date: 2026-09-03
 
 ## Context

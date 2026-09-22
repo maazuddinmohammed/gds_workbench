@@ -92,14 +92,25 @@ describe("Model Conceptual", () => {
     expect(heading).toHaveFocus();
     expect(screen.getByText("One recognized customer identity.")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Support evidence" })).toBeVisible();
-    expect(screen.getByText("GRDM · CRM · crm-prod")).toBeVisible();
     expect(screen.getAllByText("bronze.customer_raw")).toHaveLength(1);
-    expect(screen.getByText("Customer identity remains stable across CRM and ERP.")).toBeVisible();
-    const physical = screen.getByRole("article", { name: "Support 61" });
+    const physical = screen.getByRole("row", { name: "Support 61" });
     expect(within(physical).queryByText("Object 501")).not.toBeInTheDocument();
     expect(within(physical).getByText("Locked")).toBeVisible();
-    const assertion = screen.getByRole("article", { name: "Support 62" });
+    expect(screen.getByText("GRDM")).not.toBeVisible();
+    await user.click(within(physical).getByLabelText("Show details for bronze.customer_raw"));
+    const physicalDetails = screen.getByRole("row", { name: "Details for bronze.customer_raw" });
+    for (const value of ["GRDM", "CRM", "crm-prod", "Natural customer grain and stable identifier."]) {
+      expect(within(physicalDetails).getByText(value)).toBeVisible();
+    }
+    const assertion = screen.getByRole("row", { name: "Support 62" });
     expect(within(assertion).queryByText("Assertion 91")).not.toBeInTheDocument();
+    await user.click(within(assertion).getByLabelText("Show details for customer.identity.stable"));
+    expect(physicalDetails).not.toBeVisible();
+    const assertionDetails = screen.getByRole("row", { name: "Details for customer.identity.stable" });
+    expect(within(assertionDetails).getByText("Customer identity remains stable across CRM and ERP.")).toBeVisible();
+    expect(within(assertionDetails).getByText("Customer governance rules")).toBeVisible();
+    await user.click(within(assertion).getByLabelText("Hide details for customer.identity.stable"));
+    expect(assertionDetails).not.toBeVisible();
     expect(screen.queryByRole("heading", { name: "Provenance" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Back to Conceptual" }));
@@ -121,7 +132,7 @@ describe("Model Conceptual", () => {
     expect(screen.getByText("customer_account")).toBeVisible();
     expect(screen.getByText("order_header")).toBeVisible();
     expect(screen.getByText("Customer activity establishes order ownership.")).toBeVisible();
-    expect(screen.getByRole("article", { name: "Support 61" })).toBeVisible();
+    expect(screen.getByRole("row", { name: "Support 61" })).toBeVisible();
   });
 
   it("follows opaque pagination cursors for each supported Conceptual ledger", async () => {

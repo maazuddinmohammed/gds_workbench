@@ -6,6 +6,7 @@ import json
 from collections.abc import Awaitable, Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
+from functools import partial
 from hashlib import sha256
 from typing import Any, Literal, LiteralString, cast
 
@@ -322,30 +323,22 @@ class AgentContextUnavailableError(WorkbenchError):
 class AgentContextLimits(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    max_selected_objects: int = Field(ge=1, le=50_000)
-    max_selected_attributes: int = Field(ge=1, le=50_000)
-    max_total_records: int = Field(ge=1, le=100_000)
-    one_shot_max_context_bytes: int = Field(ge=1, le=10 * 1024 * 1024)
-    stage_max_context_bytes: int = Field(ge=1, le=10 * 1024 * 1024)
-    max_tool_result_bytes: int = Field(ge=1, le=10 * 1024 * 1024)
-    max_tool_catalog_bytes: int = Field(
-        default=10 * 1024 * 1024,
-        ge=1,
-        le=10 * 1024 * 1024,
-    )
+    max_selected_objects: int | None = Field(default=None, ge=1)
+    max_selected_attributes: int | None = Field(default=None, ge=1)
+    max_total_records: int | None = Field(default=None, ge=1)
+    one_shot_max_context_bytes: int | None = Field(default=None, ge=1)
+    stage_max_context_bytes: int | None = Field(default=None, ge=1)
+    max_tool_result_bytes: int | None = Field(default=None, ge=1)
+    max_tool_catalog_bytes: int | None = Field(default=None, ge=1)
     max_tool_page_records: int = Field(default=200, ge=1, le=1_000)
 
 
 def load_default_agent_context_limits() -> AgentContextLimits:
     policy = load_default_agent_context_policy()
     return AgentContextLimits(
-        max_selected_objects=1_000,
-        max_selected_attributes=20_000,
-        max_total_records=50_000,
         one_shot_max_context_bytes=policy.one_shot_max_context_bytes,
         stage_max_context_bytes=policy.stage_max_context_bytes,
         max_tool_result_bytes=policy.stage_max_context_bytes,
-        max_tool_catalog_bytes=10 * 1024 * 1024,
         max_tool_page_records=200,
     )
 
@@ -411,15 +404,18 @@ class InMemoryAgentContextToolCatalog:
         self,
         *,
         context: AgentAuthoringContext,
-        max_result_bytes: int,
-        max_catalog_bytes: int,
+        max_result_bytes: int | None,
+        max_catalog_bytes: int | None,
         max_page_records: int,
         max_cumulative_result_bytes: int | None = None,
     ) -> None:
         cumulative_result_bytes = (
             max_result_bytes if max_cumulative_result_bytes is None else max_cumulative_result_bytes
         )
-        if max_result_bytes < 1 or cumulative_result_bytes < max_result_bytes:
+        if max_result_bytes is not None and (
+            max_result_bytes < 1
+            or (cumulative_result_bytes is not None and cumulative_result_bytes < max_result_bytes)
+        ):
             raise AgentContextTooLargeError()
         self._max_result_bytes = max_result_bytes
         self._max_cumulative_result_bytes = cumulative_result_bytes
@@ -449,9 +445,15 @@ class InMemoryAgentContextToolCatalog:
             dataset_record_counts=dataset_record_counts,
             fragmented_record_counts=fragmented_record_counts,
         )
-        if _json_bytes(cast(JsonValue, self._manifest)) > max_result_bytes:
+        if (
+            max_result_bytes is not None
+            and _json_bytes(cast(JsonValue, self._manifest)) > max_result_bytes
+        ):
             self._manifest = _compact_context_manifest(self._manifest)
-        if _json_bytes(cast(JsonValue, self._manifest)) > max_result_bytes:
+        if (
+            max_result_bytes is not None
+            and _json_bytes(cast(JsonValue, self._manifest)) > max_result_bytes
+        ):
             raise AgentContextTooLargeError()
         self._serialized_size_bytes = _json_bytes(
             cast(
@@ -463,7 +465,7 @@ class InMemoryAgentContextToolCatalog:
                 },
             )
         )
-        if self._serialized_size_bytes > max_catalog_bytes:
+        if max_catalog_bytes is not None and self._serialized_size_bytes > max_catalog_bytes:
             raise AgentContextTooLargeError()
 
     @property
@@ -487,11 +489,11 @@ class InMemoryAgentContextToolCatalog:
         return self._serialized_size_bytes
 
     @property
-    def max_result_bytes(self) -> int:
+    def max_result_bytes(self) -> int | None:
         return self._max_result_bytes
 
     @property
-    def max_cumulative_result_bytes(self) -> int:
+    def max_cumulative_result_bytes(self) -> int | None:
         return self._max_cumulative_result_bytes
 
     def invoke(
@@ -510,7 +512,7 @@ class InMemoryAgentContextToolCatalog:
         else:
             raise AgentContextToolRequestError()
         result_bytes = _json_bytes(result)
-        if result_bytes > self._max_result_bytes:
+        if self._max_result_bytes is not None and result_bytes > self._max_result_bytes:
             raise AgentContextToolResultTooLargeError()
         return result
 
@@ -549,7 +551,10 @@ class InMemoryAgentContextToolCatalog:
                 items=candidate_items,
                 next_offset=candidate_end if candidate_end < total_count else None,
             )
-            if _json_bytes(candidate) > self._max_result_bytes:
+            if (
+                self._max_result_bytes is not None
+                and _json_bytes(candidate) > self._max_result_bytes
+            ):
                 if not items:
                     raise AgentContextToolResultTooLargeError()
                 break
@@ -562,7 +567,7 @@ class InMemoryAgentContextToolCatalog:
             items=items,
             next_offset=end if end < total_count else None,
         )
-        if _json_bytes(result) > self._max_result_bytes:
+        if self._max_result_bytes is not None and _json_bytes(result) > self._max_result_bytes:
             raise AgentContextToolResultTooLargeError()
         return result
 
@@ -592,11 +597,13 @@ class PostgresAgentContextRepository:
     def __init__(
         self,
         *,
-        snapshot_loader: SnapshotLoader = build_model_snapshot,
+        snapshot_loader: SnapshotLoader | None = None,
         physical_scope_loader: PhysicalScopeLoader = load_model_physical_scope,
         limits: AgentContextLimits | None = None,
     ) -> None:
-        self._snapshot_loader = snapshot_loader
+        self._snapshot_loader = snapshot_loader or partial(
+            build_model_snapshot, enforce_row_limits=False
+        )
         self._physical_scope_loader = physical_scope_loader
         self._limits = limits or load_default_agent_context_limits()
 
@@ -607,7 +614,10 @@ class PostgresAgentContextRepository:
         tenant_id: int,
         plan: AgentRunPlan,
     ) -> AgentContextBundle:
-        if len(plan.selected_object_ids) > self._limits.max_selected_objects:
+        if (
+            self._limits.max_selected_objects is not None
+            and len(plan.selected_object_ids) > self._limits.max_selected_objects
+        ):
             raise AgentContextTooLargeError()
 
         try:
@@ -633,10 +643,15 @@ class PostgresAgentContextRepository:
                     list(plan.selected_object_ids),
                     plan.model_id,
                     plan.model_workflow,
-                    self._limits.max_selected_attributes + 1,
+                    None
+                    if self._limits.max_selected_attributes is None
+                    else self._limits.max_selected_attributes + 1,
                 ),
             )
-            if len(attribute_rows) > self._limits.max_selected_attributes:
+            if (
+                self._limits.max_selected_attributes is not None
+                and len(attribute_rows) > self._limits.max_selected_attributes
+            ):
                 raise AgentContextTooLargeError()
             selected = _selected_objects(
                 plan=plan,
@@ -668,15 +683,25 @@ class PostgresAgentContextRepository:
                 source_rows=source_rows,
                 provenance_rows=provenance_rows,
             )
-            if _context_record_count(context) > self._limits.max_total_records:
+            if (
+                self._limits.max_total_records is not None
+                and _context_record_count(context) > self._limits.max_total_records
+            ):
                 raise AgentContextTooLargeError()
 
             _validate_nested_provider_json(
                 context,
                 maximum_bytes=max(
-                    self._limits.one_shot_max_context_bytes,
-                    self._limits.stage_max_context_bytes,
-                    self._limits.max_tool_catalog_bytes,
+                    (
+                        value
+                        for value in (
+                            self._limits.one_shot_max_context_bytes,
+                            self._limits.stage_max_context_bytes,
+                            self._limits.max_tool_catalog_bytes,
+                        )
+                        if value is not None
+                    ),
+                    default=None,
                 ),
             )
             full_context = _provider_context(context)
@@ -697,9 +722,11 @@ class PostgresAgentContextRepository:
                 embedded = full_context
             if (
                 plan.workflow_execution_mode in (None, "one_shot")
+                and self._limits.one_shot_max_context_bytes is not None
                 and _json_bytes(embedded) > self._limits.one_shot_max_context_bytes
             ) or (
                 plan.workflow_execution_mode == "tool_assisted"
+                and self._limits.stage_max_context_bytes is not None
                 and _json_bytes(embedded) > self._limits.stage_max_context_bytes
             ):
                 raise AgentContextTooLargeError()
@@ -725,7 +752,7 @@ class PostgresAgentContextRepository:
                 snapshot=snapshot,
                 physical_scope=physical_scope,
             )
-        except (AgentContextTooLargeError, AgentContextUnavailableError):
+        except AgentContextTooLargeError, AgentContextUnavailableError:
             raise
         except Exception:
             raise AgentContextUnavailableError() from None
@@ -744,9 +771,9 @@ async def load_frozen_model_graph(
     if row is None:
         raise AgentContextUnavailableError()
     model = _model_context(row, tenant_id=tenant_id, plan=plan)
-    return await build_model_snapshot(transaction, model), await load_model_physical_scope(
-        transaction, model
-    )
+    return await build_model_snapshot(
+        transaction, model, enforce_row_limits=False
+    ), await load_model_physical_scope(transaction, model)
 
 
 def _model_context(
@@ -1188,15 +1215,22 @@ def _context_record_count(context: AgentAuthoringContext) -> int:
     return count
 
 
-def _tool_result_budget(*, limits: AgentContextLimits, max_turns: int) -> int:
+def _tool_result_budget(*, limits: AgentContextLimits, max_turns: int) -> int | None:
     transcript_allowance = _tool_transcript_allowance(limits)
-    return min(
-        limits.max_tool_result_bytes,
-        max(1, transcript_allowance // max_turns),
-    )
+    limits_by_source = [
+        value
+        for value in (
+            limits.max_tool_result_bytes,
+            None if transcript_allowance is None else max(1, transcript_allowance // max_turns),
+        )
+        if value is not None
+    ]
+    return min(limits_by_source, default=None)
 
 
-def _tool_transcript_allowance(limits: AgentContextLimits) -> int:
+def _tool_transcript_allowance(limits: AgentContextLimits) -> int | None:
+    if limits.stage_max_context_bytes is None:
+        return None
     return max(
         1,
         limits.stage_max_context_bytes // _TOOL_TRANSCRIPT_CONTEXT_DIVISOR,
@@ -1206,7 +1240,7 @@ def _tool_transcript_allowance(limits: AgentContextLimits) -> int:
 def _validate_nested_provider_json(
     context: AgentAuthoringContext,
     *,
-    maximum_bytes: int,
+    maximum_bytes: int | None,
 ) -> None:
     pending: list[object] = [context]
     while pending:
@@ -1355,7 +1389,7 @@ def _dump_records(records: tuple[BaseModel, ...]) -> tuple[JsonValue, ...]:
 def _bounded_context_datasets(
     datasets: Mapping[str, tuple[JsonValue, ...]],
     *,
-    max_result_bytes: int,
+    max_result_bytes: int | None,
 ) -> tuple[
     dict[str, tuple[JsonValue, ...]],
     dict[str, int],
@@ -1371,7 +1405,7 @@ def _bounded_context_datasets(
         for record_index, row in enumerate(rows):
             if isinstance(row, dict) and _CONTEXT_FRAGMENT_KEY in row:
                 raise AgentContextUnavailableError()
-            if _single_dataset_item_fits(
+            if max_result_bytes is None or _single_dataset_item_fits(
                 dataset=dataset,
                 item=row,
                 max_result_bytes=max_result_bytes,
@@ -1611,5 +1645,5 @@ def _json_text(value: JsonValue) -> str:
             separators=(",", ":"),
             sort_keys=True,
         )
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         raise AgentContextUnavailableError() from None

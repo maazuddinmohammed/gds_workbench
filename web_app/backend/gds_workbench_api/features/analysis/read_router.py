@@ -2,9 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query, Request
+from fastapi import APIRouter, Depends, Path, Query
 from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.analysis.read_contracts import (
     AnalysisFindingDetail,
     AnalysisFindingFilters,
@@ -18,13 +20,13 @@ def create_analysis_review_router(
     identity_provider: IdentityProvider,
     service: AnalysisReviewService,
 ) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}",
         tags=["analysis"],
     )
 
     async def list_analysis_findings(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         object_id: Annotated[int | None, Query(gt=0)] = None,
@@ -36,6 +38,8 @@ def create_analysis_review_router(
         show_inactive: Annotated[bool, Query()] = False,
         page_size: Annotated[int, Query(ge=1, le=200)] = 50,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> AnalysisFindingPage:
         filters = AnalysisFindingFilters.model_validate(
             {
@@ -48,7 +52,6 @@ def create_analysis_review_router(
                 "show_inactive": show_inactive,
             }
         )
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_analysis_findings(
             principal,
             tenant_id=tenant_id,
@@ -66,12 +69,12 @@ def create_analysis_review_router(
     )
 
     async def read_analysis_finding(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         analysis_result_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> AnalysisFindingDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_analysis_finding(
             principal,
             tenant_id=tenant_id,

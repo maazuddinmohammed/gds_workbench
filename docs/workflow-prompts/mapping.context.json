@@ -5,7 +5,7 @@
     "one_shot",
     "tool_assisted"
   ],
-  "status": "authorized_for_implementation",
+  "status": "implemented_contract",
   "variables": {
     "mapping_route": {
       "description": "Frozen logical_to_silver or dimensional_to_gold route; it fixes eligible source and target layers.",
@@ -1086,87 +1086,87 @@
     "object_output_template": {
       "description": "Selected Object transformation template by nominal code with description, typed ordered fields, required flags and examples; null means no selected template. Guidance does not change the fixed outer output schema.",
       "value_schema": {
-        "anyOf": [
-          {
-            "$defs": {
-              "JsonValue": {},
-              "MappingOutputTemplateField": {
-                "additionalProperties": false,
-                "properties": {
-                  "name": {
-                    "pattern": "^[a-z][a-z0-9_]{0,99}$",
-                    "title": "Name",
-                    "type": "string"
-                  },
-                  "description": {
-                    "maxLength": 2000,
-                    "minLength": 1,
-                    "title": "Description",
-                    "type": "string"
-                  },
-                  "data_type": {
+        "$defs": {
+          "JsonValue": {},
+          "MappingOutputTemplateField": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "pattern": "^[a-z][a-z0-9_]{0,99}$",
+                "title": "Name",
+                "type": "string"
+              },
+              "description": {
+                "maxLength": 2000,
+                "minLength": 1,
+                "title": "Description",
+                "type": "string"
+              },
+              "data_type": {
+                "enum": [
+                  "string",
+                  "integer",
+                  "number",
+                  "boolean",
+                  "object",
+                  "array"
+                ],
+                "title": "Data Type",
+                "type": "string"
+              },
+              "array_item_type": {
+                "anyOf": [
+                  {
                     "enum": [
                       "string",
                       "integer",
                       "number",
                       "boolean",
-                      "object",
-                      "array"
+                      "object"
                     ],
-                    "title": "Data Type",
                     "type": "string"
                   },
-                  "array_item_type": {
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "string",
-                          "integer",
-                          "number",
-                          "boolean",
-                          "object"
-                        ],
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ],
-                    "title": "Array Item Type"
-                  },
-                  "example": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/$defs/JsonValue"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ],
-                    "default": null
-                  },
-                  "is_required": {
-                    "title": "Is Required",
-                    "type": "boolean"
-                  },
-                  "order": {
-                    "exclusiveMinimum": 0,
-                    "title": "Order",
-                    "type": "integer"
+                  {
+                    "type": "null"
                   }
-                },
-                "required": [
-                  "name",
-                  "description",
-                  "data_type",
-                  "array_item_type",
-                  "is_required",
-                  "order"
                 ],
-                "title": "MappingOutputTemplateField",
-                "type": "object"
+                "title": "Array Item Type"
+              },
+              "example": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/JsonValue"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "is_required": {
+                "title": "Is Required",
+                "type": "boolean"
+              },
+              "order": {
+                "exclusiveMinimum": 0,
+                "title": "Order",
+                "type": "integer"
               }
             },
+            "required": [
+              "name",
+              "description",
+              "data_type",
+              "array_item_type",
+              "is_required",
+              "order"
+            ],
+            "title": "MappingOutputTemplateField",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
             "additionalProperties": false,
             "properties": {
               "code": {
@@ -1230,92 +1230,130 @@
           }
         ]
       },
-      "example": null
+      "example": {
+        "code": "mapping_object_default",
+        "name": "Default Object Mapping",
+        "description": "Describe source Objects and ordered Object transformation steps; both values may be null.",
+        "target_type": "mapping_object",
+        "is_active": true,
+        "fields": [
+          {
+            "name": "source_objects",
+            "description": "Nullable list of source Objects. Each entry has tenant_code, system_code, connection_code, object_schema, object_name, alias, in that order. The field is present and may be JSON null.",
+            "data_type": "array",
+            "array_item_type": "object",
+            "is_required": true,
+            "order": 1,
+            "example": [
+              {
+                "tenant_code": "NWA",
+                "system_code": "GDS",
+                "connection_code": "lakehouse",
+                "object_schema": "bronze_crm",
+                "object_name": "customer",
+                "alias": "c"
+              }
+            ]
+          },
+          {
+            "name": "steps",
+            "description": "Nullable ordered list of Object transformation instructions: Objects/tables to join, join types and column predicates, filters and any additional processing. The field is present and may be JSON null.",
+            "data_type": "array",
+            "array_item_type": "string",
+            "is_required": true,
+            "order": 2,
+            "example": [
+              "Read customer rows from c.",
+              "Keep rows where c.is_active = true."
+            ]
+          }
+        ]
+      }
     },
     "attribute_output_template": {
       "description": "Selected Attribute transformation template by nominal code with description, typed ordered fields, required flags and examples; null means no selected template.",
       "value_schema": {
-        "anyOf": [
-          {
-            "$defs": {
-              "JsonValue": {},
-              "MappingOutputTemplateField": {
-                "additionalProperties": false,
-                "properties": {
-                  "name": {
-                    "pattern": "^[a-z][a-z0-9_]{0,99}$",
-                    "title": "Name",
-                    "type": "string"
-                  },
-                  "description": {
-                    "maxLength": 2000,
-                    "minLength": 1,
-                    "title": "Description",
-                    "type": "string"
-                  },
-                  "data_type": {
+        "$defs": {
+          "JsonValue": {},
+          "MappingOutputTemplateField": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "pattern": "^[a-z][a-z0-9_]{0,99}$",
+                "title": "Name",
+                "type": "string"
+              },
+              "description": {
+                "maxLength": 2000,
+                "minLength": 1,
+                "title": "Description",
+                "type": "string"
+              },
+              "data_type": {
+                "enum": [
+                  "string",
+                  "integer",
+                  "number",
+                  "boolean",
+                  "object",
+                  "array"
+                ],
+                "title": "Data Type",
+                "type": "string"
+              },
+              "array_item_type": {
+                "anyOf": [
+                  {
                     "enum": [
                       "string",
                       "integer",
                       "number",
                       "boolean",
-                      "object",
-                      "array"
+                      "object"
                     ],
-                    "title": "Data Type",
                     "type": "string"
                   },
-                  "array_item_type": {
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "string",
-                          "integer",
-                          "number",
-                          "boolean",
-                          "object"
-                        ],
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ],
-                    "title": "Array Item Type"
-                  },
-                  "example": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/$defs/JsonValue"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ],
-                    "default": null
-                  },
-                  "is_required": {
-                    "title": "Is Required",
-                    "type": "boolean"
-                  },
-                  "order": {
-                    "exclusiveMinimum": 0,
-                    "title": "Order",
-                    "type": "integer"
+                  {
+                    "type": "null"
                   }
-                },
-                "required": [
-                  "name",
-                  "description",
-                  "data_type",
-                  "array_item_type",
-                  "is_required",
-                  "order"
                 ],
-                "title": "MappingOutputTemplateField",
-                "type": "object"
+                "title": "Array Item Type"
+              },
+              "example": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/JsonValue"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "is_required": {
+                "title": "Is Required",
+                "type": "boolean"
+              },
+              "order": {
+                "exclusiveMinimum": 0,
+                "title": "Order",
+                "type": "integer"
               }
             },
+            "required": [
+              "name",
+              "description",
+              "data_type",
+              "array_item_type",
+              "is_required",
+              "order"
+            ],
+            "title": "MappingOutputTemplateField",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
             "additionalProperties": false,
             "properties": {
               "code": {
@@ -1379,7 +1417,42 @@
           }
         ]
       },
-      "example": null
+      "example": {
+        "code": "mapping_attribute_default",
+        "name": "Default Attribute Mapping",
+        "description": "Describe optional source Attributes and the target Attribute transformation.",
+        "target_type": "mapping_attribute",
+        "is_active": true,
+        "fields": [
+          {
+            "name": "source_attributes",
+            "description": "Optional nullable list of source Attributes. Each entry has tenant_code, system_code, connection_code, object_schema, object_name, attribute_name, in that order. Omission or JSON null is permitted.",
+            "data_type": "array",
+            "array_item_type": "object",
+            "is_required": false,
+            "order": 1,
+            "example": [
+              {
+                "tenant_code": "NWA",
+                "system_code": "GDS",
+                "connection_code": "lakehouse",
+                "object_schema": "bronze_crm",
+                "object_name": "customer",
+                "attribute_name": "customer_name"
+              }
+            ]
+          },
+          {
+            "name": "transformation",
+            "description": "Required SQL expression using available Object aliases, or precise implementable generation rule. Include any necessary cast, null/default, aggregation or self-join source-role behavior.",
+            "data_type": "string",
+            "array_item_type": null,
+            "is_required": true,
+            "order": 2,
+            "example": "TRIM(c.customer_name)"
+          }
+        ]
+      }
     }
   },
   "selection": "Every variable and reader is workflow-local and author-selected. Defaults do not force inclusion. No hidden context append. Use restricted Jinja, render once; values are data.",

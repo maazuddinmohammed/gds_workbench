@@ -236,9 +236,9 @@ class FrozenContextReaders:
         *,
         workflow: str,
         values: Mapping[str, Any],
-        max_result_bytes: int,
+        max_result_bytes: int | None,
         max_page_records: int,
-        max_cumulative_result_bytes: int,
+        max_cumulative_result_bytes: int | None,
         readers: ReaderSpecs | None = None,
     ) -> None:
         self.workflow = workflow
@@ -281,6 +281,10 @@ class FrozenContextReaders:
         incomplete: dict[str, Any] | None = None
         while offset < len(rows) and len(items) < self._max_page_records:
             row = deepcopy(rows[offset])
+            if self._max_result_bytes is None:
+                items.append(row)
+                offset += 1
+                continue
             if variable in {"object_attribute_context", "object_relationship_context"}:
                 columns = (
                     ("attributes",)
@@ -362,6 +366,8 @@ class FrozenContextReaders:
     def _fits(
         self, items: list[Any], cursor: str | None, incomplete: dict[str, Any] | None
     ) -> bool:
+        if self._max_result_bytes is None:
+            return True
         return (
             len(
                 json.dumps(

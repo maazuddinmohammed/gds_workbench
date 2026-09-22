@@ -565,8 +565,10 @@ def test_prompt_headers_derive_actor_enforce_scope_and_keep_identity_stable(
         )
 
 
+@pytest.mark.parametrize("repeat", [1, 30_000])
 def test_prompt_draft_is_server_versioned_digested_and_idempotent(
     postgres_database: DisposablePostgres,
+    repeat: int,
 ) -> None:
     context = _seed_prompt_context(postgres_database)
     prompt = _save_prompt_template(
@@ -579,9 +581,11 @@ def test_prompt_draft_is_server_versioned_digested_and_idempotent(
         code=f"draft_prompt_{uuid4().hex}",
         name="Draft prompt",
     )
-    system_prompt = "Use only the provided metadata context."
-    instruction_prompt = "Propose relationship candidates for {{ object_metadata }}."
-    tool_prompt = "Use {{ analysis_findings }} only when needed."
+    system_prompt = "Use only the provided metadata context." * repeat
+    instruction_prompt = (
+        "Propose relationship candidates for {{ object_metadata }}." * repeat
+    )
+    tool_prompt = "Use {{ analysis_findings }} only when needed." * repeat
 
     created = _save_prompt_template_draft(
         postgres_database,
@@ -604,6 +608,9 @@ def test_prompt_draft_is_server_versioned_digested_and_idempotent(
         expected_updated_time=created["updated_time"],
     )
 
+    assert created["system_prompt_template"] == system_prompt
+    assert created["instruction_prompt_template"] == instruction_prompt
+    assert created["tool_instruction_prompt_template"] == tool_prompt
     assert created["prompt_template_version_number"] == 1
     assert created["prompt_template_version_status"] == "draft"
     assert created["created_by_principal_id"] == context.architect.principal_id

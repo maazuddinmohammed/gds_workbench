@@ -162,7 +162,7 @@ def test_runtime_targets_python_314_but_preserves_python_312_shared_syntax() -> 
     lock = tomllib.loads(LOCK_FILE.read_text())
 
     assert project["project"]["requires-python"] == ">=3.14,<3.15"
-    assert project["tool"]["ruff"]["target-version"] == "py312"
+    assert project["tool"]["ruff"]["target-version"] == "py314"
     assert project["tool"]["pyright"]["pythonVersion"] == "3.14"
     assert lock["requires-python"] == "==3.14.*"
 

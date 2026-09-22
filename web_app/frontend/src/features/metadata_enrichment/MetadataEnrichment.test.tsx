@@ -138,18 +138,15 @@ describe("Metadata enrichment scope and run creation", () => {
     await user.click(submit); expect(api.createWorkflowRun).not.toHaveBeenCalled();
   });
 
-  it("blocks all scope over 200 and permits an exact subset", async () => {
+  it("submits every selected Object above the former 200 cap", async () => {
     const api = creationApi(); const user = userEvent.setup();
     api.listModelInputScope.mockResolvedValue({ model_revision: 18, items: Array.from({ length: 201 }, (_, index) => scope(index + 1)), next_cursor: null });
     setup(<WorkflowRunDialog api={api} tenantId={7} model={model} kind="inference" workflow="metadata_enrichment" onClose={vi.fn()} onCreated={vi.fn(async () => undefined)} />);
     const submit = await screen.findByRole("button", { name: "Run object enrichment" });
-    await screen.findByText(/Select up to 200 Objects. Choose Selected Objects/);
-    expect(submit).toBeDisabled();
-    await user.click(screen.getByRole("radio", { name: /Selected Objects/ }));
-    await user.click(screen.getByRole("checkbox", { name: /customer_1crm/ }));
+    await waitFor(() => expect(submit).toBeEnabled());
     await user.click(submit);
     await waitFor(() => expect(api.createWorkflowRun).toHaveBeenCalledOnce());
-    expect(api.createWorkflowRun.mock.calls[0]?.[2].selected_object_ids).toEqual([1]);
+    expect(api.createWorkflowRun.mock.calls[0]?.[2].selected_object_ids).toEqual(Array.from({ length: 201 }, (_, index) => index + 1));
   });
   it("blocks a Model revision mismatch and traps keyboard focus", async () => {
     const api = creationApi(); const user = userEvent.setup();
@@ -557,7 +554,7 @@ describe("bulk Attribute enrichment selection", () => {
     expect(read.mock.calls.map((call) => call[2])).toEqual([501, 502, 502]);
   });
 
-  it.each(["Object", "Tenant", "revision", "connection", "incomplete", "missing total", "invalid total", "too many Attributes"])(
+  it.each(["Object", "Tenant", "revision", "connection", "incomplete", "missing total", "invalid total"])(
     "blocks mismatched or incomplete detail: %s", async (failure) => {
       const object = detail(501);
       const broken = { ...object };
@@ -568,7 +565,6 @@ describe("bulk Attribute enrichment selection", () => {
       if (failure === "incomplete") broken.attributes = [];
       if (failure === "missing total") delete broken.total_attribute_count;
       if (failure === "invalid total") broken.total_attribute_count = 1;
-      if (failure === "too many Attributes") Object.assign(broken, detail(501, 2001));
       const { api, user } = bulk([object], { read: async () => broken });
       await screen.findByText(/No partial run will be created/);
       const submit = screen.getByRole("button", { name: "Run attribute enrichment" });
@@ -576,31 +572,34 @@ describe("bulk Attribute enrichment selection", () => {
     },
   );
 
-  it("uses total stored sibling count and drops only Objects with no targets from the context cap", async () => {
+  it("keeps complete large Attribute context and omits only Objects with no targets", async () => {
     const { api, user } = bulk([detail(501, 2, { total_attribute_count: 3000 }), detail(502, 2, { total_attribute_count: 2500 })]);
-    await screen.findByText(/more than 5,000 stored Attributes/);
-    const submit = screen.getByRole("button", { name: "Run attribute enrichment" }); expect(submit).toBeDisabled();
+    const submit = await screen.findByRole("button", { name: "Run attribute enrichment" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    expect(screen.getByText("5500 stored Attributes in context")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Choose Attributes for customer_501" }));
-    await user.click(screen.getByRole("checkbox", { name: "Include Attribute field_1" }));
-    expect(submit).toBeDisabled(); expect(screen.getByText("5500 stored Attributes in context · limit 5,000")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Clear Attribute selection" }));
     await waitFor(() => expect(submit).toBeEnabled());
-    expect(screen.getByText("2500 stored Attributes in context · limit 5,000")).toBeVisible();
+    expect(screen.getByText("2500 stored Attributes in context")).toBeVisible();
     await user.click(submit); expect(api.createWorkflowRun.mock.calls[0]?.[2].selected_object_ids).toEqual([502]);
   });
 
-  it("blocks more than 200 chosen Objects before any detail requests", async () => {
-    const { read, user } = bulk(Array.from({ length: 201 }, (_, index) => detail(index + 1, 1)));
-    await screen.findByText(/Select up to 200 Objects before loading Attributes/);
-    expect(read).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("radio", { name: "Selected Objects" }));
-    expect(read).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("checkbox", { name: "Include Object customer_201" }));
-    const submit = screen.getByRole("button", { name: "Run attribute enrichment" });
+  it("loads and submits every Object above the former 200 cap", async () => {
+    const { api, read, user } = bulk(Array.from({ length: 201 }, (_, index) => detail(index + 1, 1)));
+    const submit = await screen.findByRole("button", { name: "Run attribute enrichment" });
     await waitFor(() => expect(submit).toBeEnabled(), { timeout: 10000 });
-    expect(read).toHaveBeenCalledTimes(200);
-    expect(read.mock.calls.some((call) => call[2] === 201)).toBe(false);
+    expect(read).toHaveBeenCalledTimes(201);
+    await user.click(submit);
+    expect(api.createWorkflowRun.mock.calls[0]?.[2].description_targets).toHaveLength(201);
   }, 15000);
+
+  it("preserves all Attributes above the former per-Object and context caps", async () => {
+    const { api, user } = bulk([detail(501, 5001)]);
+    const submit = await screen.findByRole("button", { name: "Run attribute enrichment" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+    expect(api.createWorkflowRun.mock.calls[0]?.[2].description_targets).toHaveLength(5001);
+  });
 
   it("loads at most four details concurrently and waits even if an in-flight Object is deselected", async () => {
     const objects = Array.from({ length: 5 }, (_, index) => detail(index + 1));

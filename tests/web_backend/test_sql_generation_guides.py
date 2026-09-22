@@ -181,12 +181,13 @@ class GuideDetailTransaction:
     ) -> list[dict[str, Any]]:
         self.calls.append("versions")
         assert "sql_generation_guide_content" in query
+        assert "left(" not in query.lower()
         guide_id, limit, offset = parameters
         assert guide_id == 101
         assert limit == 2
         self.offsets.append(offset)
         rows = [
-            _guide_version_row(1102, 2, "RAW_GUIDE_TWO"),
+            _guide_version_row(1102, 2, "RAW_GUIDE_TWO" + "é" * 262_145),
             _guide_version_row(1101, 1, "RAW_GUIDE_ONE"),
         ]
         return rows[offset : offset + limit]
@@ -230,7 +231,7 @@ async def test_guide_detail_authorizes_before_bounded_content_history() -> None:
         history_cursor=first.history_next_cursor,
     )
 
-    assert first.versions[0].sql_generation_guide_content == "RAW_GUIDE_TWO"
+    assert first.versions[0].sql_generation_guide_content == "RAW_GUIDE_TWO" + "é" * 262_145
     assert second.versions[0].sql_generation_guide_content == "RAW_GUIDE_ONE"
     assert second.history_next_cursor is None
     assert "RAW_GUIDE_TWO" not in repr(first)
@@ -565,3 +566,9 @@ def test_authenticated_router_exposes_only_bounded_guide_management_routes() -> 
     assert response.status_code == 200
     assert response.json()["items"][0]["sql_generation_guide_code"] == "default_sql"
     assert rejected.status_code == 422
+
+
+def test_guide_draft_accepts_complete_large_content() -> None:
+    content = "é" * 262_145 + "complete suffix"
+    request = SaveSqlGenerationGuideDraftRequest(sql_generation_guide_content=content)
+    assert request.sql_generation_guide_content == content

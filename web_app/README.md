@@ -17,6 +17,9 @@ be at this release's schema revision, including the approved tenant-wide
 Workflow Run exclusivity contract and the Code Generation and Validation Model
 Sections; see the deployment guide before rollout.
 
+The [backend ownership map](../docs/architecture/overview.md#web-backend-ownership)
+explains application setup, shared dependencies, feature packages, and integrations.
+
 ## Security boundaries
 
 - Databricks Apps OAuth and app `CAN_USE` protect the app URL.
@@ -80,7 +83,6 @@ image or Azure Container App.
 | [`app.yaml`](../app.yaml) | Starts the combined process and binds PostgreSQL, Databricks SQL, and Foundry resources. |
 | [`pyproject.toml`](../pyproject.toml) and [`uv.lock`](../uv.lock) | Root Python application dependencies. |
 | [`package.json`](../package.json) and [`package-lock.json`](../package-lock.json) | Root React build and pinned Node dependencies. |
-| [`databricks_notebooks/README.md`](../databricks_notebooks/README.md) | Independent source upload, PostgreSQL configuration, widgets, workflow order, retries, and manual Apply gates for interactive notebooks. |
 
 Use [`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md) for prerequisites, authentication,
 resource permissions, Foundry authentication, exact operator commands, Model

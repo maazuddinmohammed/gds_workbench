@@ -2,8 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Request
+from fastapi import APIRouter, Depends, Path
 from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
+
+from gds_workbench_api.dependencies import principal_dependency
 
 from .contracts import ValidationEligibleSystemCollection, ValidationLedger
 from .read_service import ValidationReadService
@@ -14,17 +17,18 @@ def create_validation_read_router(
     identity_provider: IdentityProvider,
     service: ValidationReadService,
 ) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/validation",
         tags=["validation"],
     )
 
     async def list_eligible_systems(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ValidationEligibleSystemCollection:
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_eligible_systems(
             principal,
             tenant_id=tenant_id,
@@ -39,11 +43,11 @@ def create_validation_read_router(
     )
 
     async def read_ledger(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ValidationLedger:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_ledger(
             principal,
             tenant_id=tenant_id,

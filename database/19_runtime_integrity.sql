@@ -7,93 +7,15 @@ REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA reference, core, security, model, work
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA mcp
 FROM gds_app_write, gds_web_write;
 
--- The notebook login does not inherit its sole gds_web_write membership and has
--- no direct table, sequence, or general function surface. Control connections
--- use only these SECURITY DEFINER wrappers. In-process execution explicitly
--- activates gds_web_write with SET LOCAL ROLE for one transaction.
-REVOKE ALL ON SCHEMA reference, core, security, model, workflow, application, mcp
-FROM gds_notebook_runtime;
-REVOKE ALL ON ALL TABLES IN SCHEMA reference, core, security, model, workflow, application, mcp
-FROM gds_notebook_runtime;
-REVOKE ALL ON ALL SEQUENCES IN SCHEMA reference, core, security, model, workflow, application, mcp
-FROM gds_notebook_runtime;
-REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA reference, core, security, model, workflow, application, mcp
-FROM gds_notebook_runtime;
-
-GRANT USAGE ON SCHEMA security, application TO gds_notebook_runtime;
-GRANT EXECUTE ON FUNCTION security.current_notebook_principal()
-TO gds_notebook_runtime;
--- Execution transactions retain SESSION_USER = gds_notebook_runtime after
--- activating gds_web_write, so they may resolve the same fixed workload actor.
-GRANT EXECUTE ON FUNCTION security.current_notebook_principal()
-TO gds_web_write;
-GRANT EXECUTE ON FUNCTION security.check_notebook_tenant_lock(BIGINT)
-TO gds_notebook_runtime;
-GRANT EXECUTE ON FUNCTION security.acquire_notebook_tenant_lock(
-    BIGINT,
-    INTEGER,
-    VARCHAR
-) TO gds_notebook_runtime;
-GRANT EXECUTE ON FUNCTION security.renew_notebook_tenant_lock(BIGINT, INTEGER)
-TO gds_notebook_runtime;
-GRANT EXECUTE ON FUNCTION security.release_notebook_tenant_lock(BIGINT)
-TO gds_notebook_runtime;
-GRANT EXECUTE ON FUNCTION application.create_notebook_workflow_run(
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    VARCHAR,
-    VARCHAR,
-    VARCHAR,
-    VARCHAR,
-    VARCHAR,
-    VARCHAR,
-    INTEGER,
-    INTEGER,
-    BIGINT[],
-    VARCHAR[],
-    VARCHAR,
-    VARCHAR,
-    UUID,
-    JSONB,
-    VARCHAR,
-    VARCHAR,
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    VARCHAR,
-    BIGINT
-) TO gds_notebook_runtime;
-GRANT EXECUTE ON FUNCTION application.start_and_claim_notebook_workflow_run(
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    VARCHAR,
-    INTEGER
-) TO gds_notebook_runtime;
-GRANT EXECUTE ON FUNCTION application.renew_notebook_workflow_run_claim(
-    BIGINT,
-    UUID,
-    INTEGER
-) TO gds_notebook_runtime;
-GRANT EXECUTE ON FUNCTION application.release_notebook_workflow_run_claim(
-    BIGINT,
-    UUID
-) TO gds_notebook_runtime;
-
 GRANT USAGE ON SCHEMA reference, core, security, model, workflow, application, mcp
     TO gds_app_write;
 GRANT USAGE ON SCHEMA reference, core, security, model, workflow, application, mcp
     TO gds_web_write;
 
--- Reassert the exact transaction-scoped memberships used by web and notebook
--- workflow execution.
+-- Reassert the exact transaction-scoped memberships used by MCP and web.
 GRANT gds_app_write TO gds_mcp_runtime
     WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;
 GRANT gds_web_write TO gds_web_runtime
-    WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;
-GRANT gds_web_write TO gds_notebook_runtime
     WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;
 
 -- Runtime writes need the pure validator referenced by CHECK constraints.
@@ -457,7 +379,6 @@ BEGIN
                    'core.process',
                    'security.principal',
                    'security.entra_principal_identity',
-                   'security.notebook_runtime_principal',
                    'security.tenant_principal_access',
                    'security.tenant_lock',
                    'security.tenant_lock_event',
@@ -620,19 +541,6 @@ BEGIN
                        'uuid, uuid, character varying, bigint, character varying'
                    ),
                    ('security', 'expire_tenant_locks', 'integer'),
-                   ('security', 'current_notebook_principal', ''),
-                   ('security', 'check_notebook_tenant_lock', 'bigint'),
-                   (
-                       'security',
-                       'acquire_notebook_tenant_lock',
-                       'bigint, integer, character varying'
-                   ),
-                   (
-                       'security',
-                       'renew_notebook_tenant_lock',
-                       'bigint, integer'
-                   ),
-                   ('security', 'release_notebook_tenant_lock', 'bigint'),
                    (
                        'mcp',
                        'create_metadata_change_set',

@@ -228,6 +228,15 @@ class DatabaseMetadataEnrichmentExecutor:
                     or not isinstance(object_rows[0], dict)
                 ):
                     raise InvalidRequestError("The frozen Object prompt context is unavailable.")
+                groups = inputs.get("object_attribute_context")
+                if (
+                    not isinstance(groups, list)
+                    or len(groups) != 1
+                    or not isinstance(groups[0], dict)
+                ):
+                    raise InvalidRequestError("The frozen Attribute prompt context is unavailable.")
+                # Object authoring uses sibling Attributes only as evidence.
+                groups[0]["selected_attribute_names"] = []
                 object_key = [object_rows[0][name] for name in key_fields]
                 object_ref = json.dumps(object_key, ensure_ascii=False, separators=(",", ":"))
                 if regeneration is None or (item.object_id, None) in targets:
@@ -322,15 +331,6 @@ class DatabaseMetadataEnrichmentExecutor:
                         attribute_positions[ref] = position
                         selected_names.append(attribute.attribute_name)
                 if attribute_targets:
-                    groups = inputs.get("object_attribute_context")
-                    if (
-                        not isinstance(groups, list)
-                        or len(groups) != 1
-                        or not isinstance(groups[0], dict)
-                    ):
-                        raise InvalidRequestError(
-                            "The frozen Attribute prompt context is unavailable."
-                        )
                     # Keep every active sibling as evidence; only this selected set is writable.
                     groups[0]["selected_attribute_names"] = selected_names
                     units.append(
@@ -371,22 +371,34 @@ class DatabaseMetadataEnrichmentExecutor:
                                 "evidence_method": "agent_description",
                             }
                         )
-                except WorkbenchError:
+                except WorkbenchError as error:
                     # Retry belongs to the shared runner. Never split an Object unit or
                     # substitute tools; preserve type completion and continue the next unit.
                     for position in positions.values():
                         results[position] = results[position].model_copy(
                             update={"status": "unavailable"}
                         )
-                await progress.append(
-                    attempt=maximum_attempt,
-                    stage="candidate_authoring",
-                    status="running",
-                    message="Completed an Object description unit.",
-                    current=unit_number,
-                    total=len(units),
-                    finding_count=0,
-                )
+                    await progress.append(
+                        attempt=maximum_attempt,
+                        stage="candidate_authoring",
+                        status="warning",
+                        message=(
+                            f"Object description unit unavailable ({error.code}): {error.message}"
+                        ),
+                        current=unit_number,
+                        total=len(units),
+                        finding_count=len(positions),
+                    )
+                else:
+                    await progress.append(
+                        attempt=maximum_attempt,
+                        stage="candidate_authoring",
+                        status="running",
+                        message="Completed an Object description unit.",
+                        current=unit_number,
+                        total=len(units),
+                        finding_count=0,
+                    )
             warning_count = sum(
                 result.status in {"inconclusive", "unavailable"} for result in results
             )

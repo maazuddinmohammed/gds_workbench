@@ -3,12 +3,13 @@
 from typing import Annotated, Protocol
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Path, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response, status
 from gds_etl_workbench.application.change_sets.metadata import ChangeSetDataset
 from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.metadata.workbook import MAX_XLSX_BYTES, XLSX_MEDIA_TYPE
 
 from .contracts import (
@@ -104,20 +105,22 @@ def create_metadata_change_sets_router(
     identity_provider: IdentityProvider,
     service: MetadataChangeSetService,
 ) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/metadata-change-sets",
         tags=["metadata-change-sets"],
     )
 
     async def create_or_resume(
-        request: Request,
         response: Response,
         tenant_id: PositiveTenantId,
         command: CreateMetadataChangeSetRequest,
         idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> CreateMetadataChangeSetResult:
         result = await service.create_or_resume(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             command=command,
             idempotency_key=idempotency_key,
@@ -134,14 +137,15 @@ def create_metadata_change_sets_router(
     )
 
     async def stage(
-        request: Request,
         tenant_id: PositiveTenantId,
         change_set_id: UUID,
         command: StageMetadataChangeSetRequest,
         idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> StageMetadataChangeSetResult:
         return await service.stage(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             change_set_id=change_set_id,
             command=command,
@@ -156,13 +160,14 @@ def create_metadata_change_sets_router(
     )
 
     async def get_change_set(
-        request: Request,
         tenant_id: PositiveTenantId,
         change_set_id: UUID,
         dataset: Annotated[ChangeSetDataset | None, Query()] = None,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> GetMetadataChangeSetResult:
         return await service.get(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             change_set_id=change_set_id,
             dataset=dataset,
@@ -176,13 +181,14 @@ def create_metadata_change_sets_router(
     )
 
     async def validate(
-        request: Request,
         tenant_id: PositiveTenantId,
         change_set_id: UUID,
         command: ExpectedDraftRevisionRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ValidateMetadataChangeSetResult:
         return await service.validate(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             change_set_id=change_set_id,
             command=command,
@@ -196,14 +202,15 @@ def create_metadata_change_sets_router(
     )
 
     async def apply(
-        request: Request,
         tenant_id: PositiveTenantId,
         change_set_id: UUID,
         command: ExpectedDraftRevisionRequest,
         idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ApplyMetadataChangeSetResult:
         return await service.apply(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             change_set_id=change_set_id,
             command=command,
@@ -218,14 +225,15 @@ def create_metadata_change_sets_router(
     )
 
     async def archive(
-        request: Request,
         tenant_id: PositiveTenantId,
         change_set_id: UUID,
         command: ExpectedDraftRevisionRequest,
         idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ArchiveMetadataChangeSetResult:
         return await service.archive(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             change_set_id=change_set_id,
             command=command,
@@ -245,8 +253,9 @@ def create_metadata_change_sets_router(
         change_set_id: UUID,
         expected_draft_revision: ExpectedDraftRevision,
         idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ImportMetadataWorkbookResult:
-        principal = identity_provider.authenticate(request.headers)
         if request.headers.get("content-type", "").strip().lower() != XLSX_MEDIA_TYPE:
             raise InvalidRequestError("XLSX Content-Type is invalid.")
         content = bytearray()

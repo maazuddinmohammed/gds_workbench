@@ -427,8 +427,10 @@ def test_concurrent_sql_generation_guide_default_transfers_serialize(
     assert active_defaults[0]["sql_generation_guide_id"] in candidate_ids
 
 
+@pytest.mark.parametrize("repeat", [1, 10_000])
 def test_sql_generation_guide_draft_is_server_owned_single_and_retry_safe(
     postgres_database: DisposablePostgres,
+    repeat: int,
 ) -> None:
     actor = _seed_guide_actor(postgres_database, is_super_admin=True)
     suffix = uuid4().hex
@@ -438,7 +440,7 @@ def test_sql_generation_guide_draft_is_server_owned_single_and_retry_safe(
         code=f"draft_guide_{suffix}",
         name="Draft Guide",
     )
-    content = "Generate SQL with exact UTF-8 guidance: café, 数据."
+    content = "Generate SQL with exact UTF-8 guidance: café, 数据." * repeat
     expected_digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
     draft_arguments = (
         actor.entra_tenant_id,
@@ -467,6 +469,7 @@ def test_sql_generation_guide_draft_is_server_owned_single_and_retry_safe(
     assert replayed == created
     assert created["sql_generation_guide_version_number"] == 1
     assert created["sql_generation_guide_digest"] == expected_digest
+    assert created["sql_generation_guide_content"] == content
     assert created["created_by_principal_id"] == actor.principal_id
     assert created["updated_by_principal_id"] == actor.principal_id
 
@@ -605,8 +608,7 @@ def test_sql_generation_guide_invalid_content_error_is_sanitized(
         code=f"sanitized_guide_{suffix}",
         name="Sanitized Guide",
     )
-    sensitive_marker = "SENSITIVE_GUIDE_CONTENT_MARKER"
-    oversized_content = sensitive_marker + ("x" * 262_144)
+    blank_content = " " * 262_145
 
     with pytest.raises(RaiseException, match="content is invalid") as exception_info:
         with postgres_database.connect_owner() as connection:
@@ -617,7 +619,7 @@ def test_sql_generation_guide_invalid_content_error_is_sanitized(
                     actor.entra_object_id,
                     guide["sql_generation_guide_id"],
                     None,
-                    oversized_content,
+                    blank_content,
                     None,
                 ),
             ).fetchone()
@@ -634,7 +636,7 @@ def test_sql_generation_guide_invalid_content_error_is_sanitized(
         )
         if value
     )
-    assert sensitive_marker not in exposed_error
+    assert blank_content not in exposed_error
 
     with postgres_database.connect_owner() as connection:
         version_count = require_row(

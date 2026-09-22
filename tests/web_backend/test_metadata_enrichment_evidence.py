@@ -375,3 +375,9 @@ async def test_raw_samples_are_not_retained_in_reader_evidence() -> None:
     assert sample not in repr(reader._samples)
     assert sample not in repr(reader._schemas)
     assert sample not in item.model_dump_json()
+
+
+def test_enrichment_context_preserves_all_attributes_above_former_cap() -> None:
+    physical = _object(columns=5001)
+    assert len(physical.attributes) == 5001
+    assert physical.attributes[-1].attribute_name == "column_5000"

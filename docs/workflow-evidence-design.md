@@ -682,7 +682,7 @@ ingestion-link decisions stand.
 
 Work through each workflow and its nodes in dependency order, beginning with
 Metadata Enrichment. Cover One-shot and Tool-assisted execution in the web app
-and notebooks, and identify differences from the Plugin Authoring Path.
+and identify differences from the Plugin Authoring Path.
 
 For each workflow, resolve one decision at a time:
 
@@ -701,7 +701,7 @@ for consequential architectural trade-offs.
 
 ## Current code findings
 
-- Web/notebook Metadata Enrichment currently accepts One-shot only:
+- Web Metadata Enrichment currently accepts One-shot only:
   `features/workflows/authoring/plan.py`, `AgentRunPlan.validate_plan`.
 - Its description agent receives batches of compact Object/Attribute metadata.
   Backend evidence collection handles type inference and source schema comments:
@@ -1069,7 +1069,7 @@ Connection description. Runtime implementation remains deferred.
 - Use the agreed source business context, physical metadata, ingestion mappings,
   and current Profiles. Keep enrichment independent of later Analysis; do not
   use Model-specific Assertions to rewrite shared physical descriptions.
-- Align web, notebooks, and Plugin Authoring Path guidance during implementation.
+- Align web and Plugin Authoring Path guidance during implementation.
   Inclusion of these inputs in other workflows remains a separate discussion.
 
 ## Accepted: enrichment execution and failure handling
@@ -1274,7 +1274,7 @@ Continue with Profiling because its saved measurements precede and feed the
 accepted enrichment flow. The following are code observations, not new decisions:
 
 - The web runtime plans deterministic aggregate SQL in
-  `web_app/backend/gds_workbench_runtime/profiling/execution.py`; it does not ask
+  `web_app/backend/gds_workbench_api/features/profiling/execution.py`; it does not ask
   an AI model to generate or interpret these measurements.
 - With no Batch ID, the generated SQL aggregates all rows of each selected
   relation. With a supplied Batch ID and registered batch Attribute, it filters
@@ -1287,7 +1287,7 @@ accepted enrichment flow. The following are code observations, not new decisions
   statistics are computed from registered storage types. Unsupported statistics
   are null. Current zero-denominator percentages return zero; the accepted
   decision below changes that outcome to null during later implementation.
-- `web_app/backend/gds_workbench_runtime/profiling/workflow.py` executes generated
+- `web_app/backend/gds_workbench_api/features/profiling/workflow.py` executes generated
   queries with configured bounded parallelism, validates complete coverage, and
   commits the selected Run's results together. A query failure currently prevents
   that Run's new Profile results from being committed.
@@ -1306,7 +1306,7 @@ accepted enrichment flow. The following are code observations, not new decisions
 2. When a Batch ID is supplied but a selected Object has no registered batch
    Attribute, reject the selection before querying and identify the incompatible
    Object. Do not silently measure that entire Object.
-3. An explicit web/notebook Run Profiling action recomputes the selected scope
+3. An explicit web Run Profiling action recomputes the selected scope
    while enrichment continues to consume the saved Profiles without
    automatically rerunning Profiling. Plugin SQL remains governed by its session
    policy and must not claim an old saved Profile was newly measured.
@@ -1335,7 +1335,7 @@ remain to be resolved after statistic meanings.
 ## Accepted: Profiling percentage definitions
 
 Verified in `_projection` and `_percentage` in
-`web_app/backend/gds_workbench_runtime/profiling/execution.py`. For an illustrative
+`web_app/backend/gds_workbench_api/features/profiling/execution.py`. For an illustrative
 string Attribute with 100 rows, 20 SQL nulls, 5 blank values, and 60 distinct
 non-null values, there are 80 non-null values:
 

@@ -47,6 +47,14 @@ class MappingListQuery(BaseModel):
         return normalized
 
 
+class MappingAttributeFilters(MappingDependencyFilters):
+    mapping_object_id: int | None = Field(default=None, gt=0)
+
+
+class MappingAttributeListQuery(MappingListQuery):
+    mapping_object_id: int | None = Field(default=None, gt=0)
+
+
 class SourceSystemReference(ContractModel):
     system_id: int = Field(gt=0)
     system_code: str = Field(min_length=1, max_length=100)

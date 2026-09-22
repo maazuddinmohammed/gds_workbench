@@ -2,8 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query, Request, Response
+from fastapi import APIRouter, Depends, Path, Query, Response
 from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
+
+from gds_workbench_api.dependencies import principal_dependency
 
 from .contracts import (
     MAX_SELECTED_ARTIFACTS,
@@ -22,16 +25,18 @@ def create_code_generation_router(
     service: CodeGenerationService,
 ) -> APIRouter:
     """Create stored SQL routes for application composition."""
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/code-generation",
         tags=["code-generation"],
     )
 
     async def list_targets(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         query: Annotated[CodeGenerationTargetQuery, Query()],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> CodeGenerationTargetPage:
         filters = CodeGenerationTargetFilters.model_validate(
             {
@@ -43,7 +48,6 @@ def create_code_generation_router(
             },
             strict=True,
         )
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_targets(
             principal,
             tenant_id=tenant_id,
@@ -61,12 +65,12 @@ def create_code_generation_router(
     )
 
     async def read_artifact(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         generated_sql_artifact_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> GeneratedSqlArtifactDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_artifact(
             principal,
             tenant_id=tenant_id,
@@ -82,12 +86,12 @@ def create_code_generation_router(
     )
 
     async def download_artifact(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         generated_sql_artifact_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> Response:
-        principal = identity_provider.authenticate(request.headers)
         artifact = await service.read_artifact(
             principal,
             tenant_id=tenant_id,
@@ -113,19 +117,14 @@ def create_code_generation_router(
     )
 
     async def download_selected_artifacts(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         artifact_ids: Annotated[
-            list[int],
-            Query(
-                alias="artifact_id",
-                min_length=1,
-                max_length=MAX_SELECTED_ARTIFACTS,
-            ),
+            list[int], Query(alias="artifact_id", min_length=1, max_length=MAX_SELECTED_ARTIFACTS)
         ],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> Response:
-        principal = identity_provider.authenticate(request.headers)
         artifacts = await service.read_artifacts_for_download(
             principal,
             tenant_id=tenant_id,

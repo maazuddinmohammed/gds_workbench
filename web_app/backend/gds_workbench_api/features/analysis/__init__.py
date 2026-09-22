@@ -25,11 +25,7 @@ from .router import (
     ExecuteAnalysisInferenceRunRequest,
     create_analysis_inference_workflow_router,
 )
-from .service import (
-    AnalysisInferenceExecutionFailedError,
-    AnalysisInferenceWorkflow,
-    DatabaseAnalysisInferenceExecutor,
-)
+from .service import AnalysisInferenceExecutionFailedError, AnalysisInferenceWorkflow
 from .validation_execution import (
     AnalysisValidationEndpoint,
     AnalysisValidationEvidence,
@@ -84,7 +80,6 @@ __all__ = [
     "AnalysisValidationWorkflow",
     "AnalysisValidationWorkflowService",
     "ConnectorAnalysisValidationExecutor",
-    "DatabaseAnalysisInferenceExecutor",
     "DatabaseAnalysisReviewService",
     "DatabaseAnalysisValidationRepository",
     "ExecuteAnalysisInferenceRunRequest",

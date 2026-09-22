@@ -1191,7 +1191,7 @@ async def test_stale_database_failure_maps_to_stable_conflict_without_raw_text()
     assert "RAW_PROMPT_SENTINEL" not in captured.value.message
 
 
-def test_prompt_write_dtos_forbid_identity_fields_and_bound_raw_utf8_content() -> None:
+def test_prompt_write_dtos_forbid_identity_fields_and_preserve_large_utf8_content() -> None:
     with pytest.raises(ValidationError):
         CreatePromptTemplateRequest.model_validate(
             {
@@ -1211,10 +1211,18 @@ def test_prompt_write_dtos_forbid_identity_fields_and_bound_raw_utf8_content() -
             system_prompt_template="System",
             instruction_prompt_template="Instruction",
         )
+    content = "é" * 1_000_001
+    draft = SavePromptDraftRequest(
+        system_prompt_template=content,
+        instruction_prompt_template=content,
+        tool_instruction_prompt_template=content,
+    )
+    assert draft.system_prompt_template == content
+    assert draft.instruction_prompt_template == content
+    assert draft.tool_instruction_prompt_template == content
     with pytest.raises(ValidationError):
         SavePromptDraftRequest(
-            system_prompt_template="é" * 131_073,
-            instruction_prompt_template="Instruction",
+            system_prompt_template="   ", instruction_prompt_template="Instruction"
         )
 
 
@@ -1613,7 +1621,10 @@ async def test_prompt_library_round_trip_uses_disposable_database_web_role(
     assert updated.is_active is False
 
 
-def test_prompt_preview_uses_synthetic_examples_and_never_saves() -> None:
+@pytest.mark.parametrize(
+    "system_content", ["Use supplied evidence", "é" * 1_000_001], ids=["small", "large"]
+)
+def test_prompt_preview_uses_synthetic_examples_and_never_saves(system_content: str) -> None:
     from gds_etl_workbench.domain.errors import WorkbenchError
     from gds_workbench_api.errors import workbench_error_response
 
@@ -1637,12 +1648,13 @@ def test_prompt_preview_uses_synthetic_examples_and_never_saves() -> None:
     )
     with TestClient(app) as client:
         body = {
-            "system_prompt_template": "Use supplied evidence",
+            "system_prompt_template": system_content,
             "instruction_prompt_template": "{{stage_context}}",
         }
         response = client.post("/api/v1/tenants/7/prompts/templates/101/preview", json=body)
         assert response.status_code == 200
         assert response.json()["rendered_instruction_prompt"] == "null"
+        assert response.json()["rendered_system_prompt"] == system_content
         assert "RAW_SYSTEM_SENTINEL" not in response.text
         body["instruction_prompt_template"] = "{{not_registered}}"
         invalid = client.post("/api/v1/tenants/7/prompts/templates/101/preview", json=body)

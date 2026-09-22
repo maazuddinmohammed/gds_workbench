@@ -203,12 +203,12 @@ export function ConceptualScreen({
           model={model}
           kind="inference"
           workflow="conceptual"
-          executeCreated={(workflowRunId, executionMode) => api.executeConceptualRun(
+          executeCreated={(workflowRunId, executionMode, expectedModelRevision) => api.executeConceptualRun(
             tenantId,
             model.model_id,
             workflowRunId,
             executionMode,
-            model.model_revision,
+            expectedModelRevision,
           ).then(() => undefined)}
           onClose={() => setRunDialogOpen(false)}
           onCreated={async (workflowRunId) => {

@@ -1,3 +1,5 @@
+> Historical inventory. Notebook retirement (2026-09-21) supersedes notebook paths and checks below; see [ADR 007](../docs/adr/007-web-owned-workflows-and-notebook-retirement.md).
+
 # Foundry / OpenAI SDK / Run consumption inventory
 
 Read-only inventory, 2026-09-05. No production edits or external calls.

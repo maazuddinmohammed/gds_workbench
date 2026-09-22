@@ -560,10 +560,6 @@ The server-derived `human` or `workload` classification used to project the MCP
 tool and contract-resource inventory. Client-declared metadata never selects it.
 _Avoid_: Client mode, audience hint
 
-**Notebook Definition**:
-The notebook-owned model, reasoning, prompt, tool, and workflow configuration compiled once at notebook startup.
-_Avoid_: Profile registry, release asset
-
 **Model Snapshot**:
 The immutable, bounded Model context archive returned through MCP for one workflow.
 _Avoid_: Dump, export

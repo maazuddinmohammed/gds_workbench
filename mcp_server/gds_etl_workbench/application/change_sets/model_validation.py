@@ -115,7 +115,7 @@ def validate_staged_records(
                 if len(issues) >= MAX_VALIDATION_ISSUES:
                     return tuple(records), tuple(issues)
             continue
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             issues.append(
                 ModelValidationIssue(
                     code="record_schema_invalid",

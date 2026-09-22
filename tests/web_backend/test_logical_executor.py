@@ -29,7 +29,7 @@ from gds_etl_workbench.infrastructure.postgres import (
 )
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.logical.service import (
-    DatabaseLogicalExecutor,
+    LogicalWorkflow,
     LogicalExecutionFailedError,
     LogicalFinalizationFailedError,
 )
@@ -49,6 +49,7 @@ from gds_workbench_api.features.workflows.authoring.context import (
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
+    AgentWorkflowRunStart,
     AgentWorkflowTerminalResult,
 )
 from gds_workbench_api.features.workflows.authoring.no_op import (
@@ -58,6 +59,7 @@ from gds_workbench_api.features.workflows.authoring.no_op import (
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
+    WorkflowExecutionMode,
     FrozenAgentStage,
 )
 from gds_workbench_api.features.workflows.authoring.repair import (
@@ -377,12 +379,15 @@ def _validation_context(
         for item in context.selected_objects
     ]
     ordered_source_keys = tuple(
-        tuple(str(value).casefold() for value in item.model_dump().values()) for item in objects
+        tuple(str(value).casefold() for value in item.model_dump().values())
+        for item in objects
     )
     source_objects = frozenset(ordered_source_keys)
     source_attributes = frozenset(
         (*key, attribute.attribute_name.casefold())
-        for key, selected in zip(ordered_source_keys, context.selected_objects, strict=True)
+        for key, selected in zip(
+            ordered_source_keys, context.selected_objects, strict=True
+        )
         for attribute in selected.attributes
     )
     records: dict[ModelChangeSetDataset, list[dict[str, object]]] = {
@@ -517,7 +522,9 @@ def _bound_context_bundle(mode: str) -> AgentContextBundle:
 
 @dataclass
 class _Database:
-    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
+    isolations: list[ReadIsolation] = field(
+        default_factory=lambda: list[ReadIsolation]()
+    )
 
     @asynccontextmanager
     async def write_transaction(
@@ -577,7 +584,11 @@ class _ContextRepository:
         plan: AgentRunPlan,
     ) -> AgentContextBundle:
         del transaction, tenant_id, plan
-        return self.bundle if self.bundle.snapshot is not None else _validation_context(self.bundle)
+        return (
+            self.bundle
+            if self.bundle.snapshot is not None
+            else _validation_context(self.bundle)
+        )
 
 
 @dataclass
@@ -673,7 +684,9 @@ class _NoOp:
             model_revision=request.expected_model_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
-                "completed_with_repair" if request.final_event.attempt > 1 else "completed"
+                "completed_with_repair"
+                if request.final_event.attempt > 1
+                else "completed"
             ),
             model_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
@@ -687,7 +700,45 @@ class _NoOp:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
+    starts: list[tuple[RequestPrincipal, int, int, int, str, str | None, int]] = field(
+        default_factory=lambda: list[
+            tuple[RequestPrincipal, int, int, int, str, str | None, int]
+        ]()
+    )
+
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: str,
+        expected_execution_mode: str | None,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart:
+        self.starts.append(
+            (
+                principal,
+                tenant_id,
+                model_id,
+                workflow_run_id,
+                expected_workflow,
+                expected_execution_mode,
+                expected_model_revision,
+            )
+        )
+        return AgentWorkflowRunStart(
+            changed=True,
+            workflow_run_id=workflow_run_id,
+            workflow_run_state="running",
+            started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
+            model_revision=expected_model_revision,
+        )
+
+    events: list[AgentWorkflowEvent] = field(
+        default_factory=lambda: list[AgentWorkflowEvent]()
+    )
     failed: tuple[str, str] | None = None
 
     async def append_event(
@@ -729,14 +780,14 @@ def _service(
     plan: AgentRunPlan | None = None,
     no_op: _NoOp | None = None,
     context_bundle: AgentContextBundle | None = None,
-) -> tuple[DatabaseLogicalExecutor, _Database, _Authorizer, _Handoff, _Lifecycle]:
+) -> tuple[LogicalWorkflow, _Database, _Authorizer, _Handoff, _Lifecycle]:
     selected_plan = plan or _plan()
     database = _Database()
     authorizer = _Authorizer()
     handoff = _Handoff()
     lifecycle = _Lifecycle()
     return (
-        DatabaseLogicalExecutor(
+        LogicalWorkflow(
             database=database,
             authorizer=cast(Any, authorizer),
             agent_executor=agent,
@@ -746,7 +797,9 @@ def _service(
             plan_repository=_PlanRepository(selected_plan),
             context_repository=_ContextRepository(
                 context_bundle
-                or _context_bundle(mode=selected_plan.workflow_execution_mode or "one_shot")
+                or _context_bundle(
+                    mode=selected_plan.workflow_execution_mode or "one_shot"
+                )
             ),
             context_policy=AgentContextPolicy(
                 one_shot_max_context_bytes=128 * 1024,
@@ -760,6 +813,35 @@ def _service(
         handoff,
         lifecycle,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+async def test_start_binds_logical_workflow_without_executing(
+    mode: WorkflowExecutionMode,
+) -> None:
+    agent = _AgentExecutor(responses=[])
+    service, database, authorizer, handoff, lifecycle = _service(agent=agent)
+    principal = _principal()
+
+    result = await service.start(
+        principal,
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_execution_mode=mode,
+        expected_model_revision=7,
+    )
+
+    assert lifecycle.starts == [(principal, 7, 18, 1048, "logical", mode, 7)]
+    assert result.workflow_run_id == 1048
+    assert result.model_revision == 7
+    assert database.isolations == []
+    assert authorizer.calls == []
+    assert handoff.calls == []
+    assert agent.requests == []
+    assert lifecycle.events == []
+    assert lifecycle.failed is None
 
 
 @pytest.mark.asyncio
@@ -794,7 +876,9 @@ async def test_one_shot_projects_audit_columns_then_hands_off_once() -> None:
     attribute_change = next(
         change for change in handoff.calls[0] if change.dataset == "logical_attribute"
     )
-    assert [record["logical_attribute_name"] for record in attribute_change.records] == [
+    assert [
+        record["logical_attribute_name"] for record in attribute_change.records
+    ] == [
         "Created At",
         "Customer Id",
         "CustomerID",
@@ -802,7 +886,8 @@ async def test_one_shot_projects_audit_columns_then_hands_off_once() -> None:
     assert handoff.final_events[-1].finding_count == 5
     assert lifecycle.failed is None
     assert [
-        (event.sequence, event.stage) for event in (*lifecycle.events, *handoff.final_events)
+        (event.sequence, event.stage)
+        for event in (*lifecycle.events, *handoff.final_events)
     ] == [
         (2, "logical.candidate_authoring"),
         (3, "logical.backend_validation"),
@@ -848,7 +933,9 @@ async def test_empty_candidate_completes_with_atomic_no_op_receipt() -> None:
 async def test_repaired_empty_candidate_preserves_attempt_and_warning() -> None:
     no_op = _NoOp()
     service, _database, _authorizer, handoff, lifecycle = _service(
-        agent=_AgentExecutor(responses=[cast(JsonValue, {"invalid": True}), _empty_candidate()]),
+        agent=_AgentExecutor(
+            responses=[cast(JsonValue, {"invalid": True}), _empty_candidate()]
+        ),
         no_op=no_op,
     )
 
@@ -933,7 +1020,9 @@ async def test_tool_assisted_uses_local_catalog_and_same_change_contract() -> No
 
 @pytest.mark.asyncio
 async def test_validation_repair_keeps_original_context_then_hands_off_once() -> None:
-    agent = _AgentExecutor(responses=[_candidate(source_name="outside_selection"), _candidate()])
+    agent = _AgentExecutor(
+        responses=[_candidate(source_name="outside_selection"), _candidate()]
+    )
     service, _database, _authorizer, handoff, _lifecycle = _service(agent=agent)
 
     await service.execute_started(
@@ -965,7 +1054,9 @@ async def test_full_graph_binding_failure_is_repaired_before_handoff(mode: str) 
     corrected["entities"][0]["logical_entity_definition"] = (
         "One customer identified by the CRM business key."
     )
-    agent = _AgentExecutor(responses=cast(list[JsonValue | Exception], [invalid, corrected]))
+    agent = _AgentExecutor(
+        responses=cast(list[JsonValue | Exception], [invalid, corrected])
+    )
     service, _, _, handoff, lifecycle = _service(
         agent=agent, plan=_plan(mode=mode), context_bundle=bundle
     )
@@ -1022,7 +1113,9 @@ async def test_full_graph_binding_failure_is_repaired_before_handoff(mode: str) 
     assert bundle.snapshot is not None and bundle.physical_scope is not None
     assert validate_future_graph(
         snapshot=bundle.snapshot,
-        staged_documents={change.dataset: change.records for change in handoff.calls[0]},
+        staged_documents={
+            change.dataset: change.records for change in handoff.calls[0]
+        },
         physical_scope=bundle.physical_scope,
     ).valid
     entity_change = next(
@@ -1069,7 +1162,9 @@ async def test_post_policy_graph_failure_retains_canonical_rejected_draft() -> N
         )
 
     assert len(agent.requests) == 2
-    issues = cast(dict[str, Any], agent.requests[1].context)["repair"]["validation_issues"]
+    issues = cast(dict[str, Any], agent.requests[1].context)["repair"][
+        "validation_issues"
+    ]
     assert any(issue["path"][0] == "model_attribute_binding" for issue in issues)
     assert handoff.calls == []
     assert len(handoff.retained) == 1
@@ -1077,9 +1172,14 @@ async def test_post_policy_graph_failure_retains_canonical_rejected_draft() -> N
     assert retained["failure_code"] == "agent_candidate_validation_failed"
     assert retained["issues"][0].dataset == "model_attribute_binding"
     attributes = next(
-        change for change in retained["changes"] if change.dataset == "logical_attribute"
+        change
+        for change in retained["changes"]
+        if change.dataset == "logical_attribute"
     )
-    assert any(record["logical_attribute_name"] == "Created At" for record in attributes.records)
+    assert any(
+        record["logical_attribute_name"] == "Created At"
+        for record in attributes.records
+    )
     assert lifecycle.failed is None
 
 

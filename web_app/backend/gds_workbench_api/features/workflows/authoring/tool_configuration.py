@@ -68,7 +68,7 @@ class ConfiguredToolCatalog:
         return getattr(self.catalog, "prompt_values", {})
 
     @property
-    def max_cumulative_result_bytes(self) -> int:
+    def max_cumulative_result_bytes(self) -> int | None:
         return self.catalog.max_cumulative_result_bytes
 
     def invoke(self, tool_name: str, arguments: Mapping[str, JsonValue]) -> JsonValue:

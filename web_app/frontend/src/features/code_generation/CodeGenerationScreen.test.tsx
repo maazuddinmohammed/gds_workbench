@@ -83,10 +83,10 @@ describe("Code Generation journey", () => {
     const heading = await screen.findByRole("heading", { name: "customer.sql" });
     expect(heading).toHaveFocus();
     expect(screen.getByLabelText("Stored SQL for silver_nwa.customer")).toBeVisible();
-    expect(screen.getByText("Customer CRM")).not.toBeVisible();
+    expect(within(screen.getByRole("group", { name: "Contributing source Systems" })).getByText("CRM")).not.toBeVisible();
     for (const label of ["Target Object", "Contributing source Systems", "Applied Mapping"]) await userEvent.setup().click(screen.getByRole("heading", { name: label }));
     expect(screen.getByRole("heading", { name: "Contributing source Systems" })).toBeVisible();
-    expect(screen.getByText("Customer CRM")).toBeVisible();
+    expect(within(screen.getByRole("group", { name: "Contributing source Systems" })).getByText("CRM")).toBeVisible();
     expect(screen.getByRole("table", { name: "Applied Mapping supports" })).toBeVisible();
     expect(screen.getByText("Customer source")).toBeVisible();
     expect(screen.queryByText("Standard Databricks SQL (databricks.standard)")).not.toBeInTheDocument();

@@ -4,7 +4,7 @@
   "modes": [
     "tool_assisted"
   ],
-  "status": "authorized_for_implementation",
+  "status": "implemented_contract",
   "variables": {
     "system_ref": {
       "description": "Frozen opaque output-control handle for this selected System. Copy unchanged; it is not a database ID.",

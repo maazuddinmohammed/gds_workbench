@@ -254,7 +254,7 @@ reviewed `app.yaml` update, never as an untracked ambient variable.
 
 ### Agent context modes
 
-For workflows with execution modes, the UI and independent notebooks default
+For workflows with execution modes, the UI defaults
 agentic authoring to `tool_assisted`. Analysis, Conceptual, Logical,
 Dimensional, and Mapping expose both modes allowed by the selected model
 profile:
@@ -268,7 +268,7 @@ A provider profile must explicitly register the chosen mode; the UI hides and
 the backend rejects unsupported combinations.
 
 Code Generation and Validation are mode-independent agent workflows. Their requests
-store a null execution mode; the UI and notebooks do not expose a mode picker.
+store a null execution mode; the UI does not expose a mode picker.
 
 ### Microsoft Foundry models and authentication
 
@@ -280,8 +280,8 @@ method. Missing or partial configuration fails startup.
 The non-secret deployment registry is
 `web_app/backend/gds_workbench_api/config/agent_capabilities.json`. Each entry
 contains a stable model `code`, display `name`, exact Foundry `deployment_name`,
-and verified execution-mode/reasoning combinations. The web application and
-notebooks use this registry, and the backend revalidates each selection.
+and verified execution-mode/reasoning combinations. The web application uses this registry, and the backend revalidates each
+selection.
 Change deployments in this JSON and rebuild; no per-model environment variable
 is used. The checked-in deployment names are `gpt-5.6-sol` and `gpt-5.6-luna`.
 Set them to the actual names in your Foundry resource if those differ.
@@ -381,15 +381,13 @@ Model defaults as described below.
 ### Run tokens and estimated model cost
 
 Every newly executed workflow records model request usage across stages, tool
-turns, retries and repairs. The web Run detail and notebook result show the same
+turns, retries and repairs. The web Run detail shows the
 summary, including failed runs. Missing provider counters or an interrupted
 request remain unknown; earlier runs without tracking remain unavailable.
 Deterministic workflows report zero model requests once tracking starts.
 
 Cost is **Unpriced** until an operator supplies the deployment's token rates in
-`GDS_WEB_FOUNDRY_PRICING_JSON`. Notebooks use the same JSON through
-`GDS_NOTEBOOK_FOUNDRY_PRICING_JSON` in their uploaded root `.env`. Keys are the
-registered model codes. Replace the placeholders below with confirmed USD rates
+`GDS_WEB_FOUNDRY_PRICING_JSON`. Keys are the registered model codes. Replace the placeholders below with confirmed USD rates
 per million tokens; this example deliberately is not a usable price schedule:
 
 ```json
@@ -434,8 +432,8 @@ From the repository root, verify the release source and lock files:
 uv sync --frozen
 uv run --project web_app/backend python -m pytest -c web_app/backend/pyproject.toml tests/web_backend
 uv run --project web_app/backend python -m pytest -c web_app/backend/pyproject.toml tests/web_packaging
-uv run --project web_app/backend ruff format --check web_app/backend/gds_workbench_api web_app/backend/gds_workbench_runtime
-uv run --project web_app/backend ruff check web_app/backend/gds_workbench_api web_app/backend/gds_workbench_runtime
+uv run --project web_app/backend ruff format --check web_app/backend/gds_workbench_api
+uv run --project web_app/backend ruff check web_app/backend/gds_workbench_api
 uv run --project web_app/backend pyright --project web_app/backend
 npm ci
 npm run check
@@ -552,21 +550,6 @@ Current bundle/app commands are documented in
 [Manage Databricks Apps with bundles](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/apps-tutorial)
 and the
 [bundle command reference](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/bundle-commands).
-
-### Upload the optional interactive notebooks separately
-
-The App bundle deliberately excludes `databricks_notebooks/`. Upload the
-notebook artifact separately to an access-controlled Workspace user folder.
-These notebooks are an independent entry point: they load their own `.env`,
-connect directly to PostgreSQL, resolve the database-owned notebook workload
-identity, and run the shared workflow implementation in-process. They do not
-call the App API or require the App or MCP server to be running. The App and
-notebooks share source and authoritative database controls, but have separate
-deployment, configuration, identity, and process lifecycles.
-
-Follow [`databricks_notebooks/README.md`](../databricks_notebooks/README.md) for
-the exact CLI upload commands, compute requirements, widget list, run order,
-retry behavior, and manual Apply gates.
 
 ## 9. Production acceptance
 

@@ -177,7 +177,6 @@ SELECT attribute.attribute_id,
  ORDER BY attribute.attribute_ordinal_position,
           lower(attribute.attribute_name),
           attribute.attribute_id
-LIMIT 2000
 """
 
 _SCOPE_VISIBLE_OBJECTS_CTE = """

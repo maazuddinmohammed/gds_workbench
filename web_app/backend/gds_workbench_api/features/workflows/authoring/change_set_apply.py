@@ -200,7 +200,9 @@ class DatabaseWorkflowDraftApplyService:
                 model_revision=model_row["model_revision"],
                 readable_source_tenant_ids=source_tenants,
             )
-            validation = await validate_locked_model_change_set(transaction, model, row)
+            validation = await validate_locked_model_change_set(
+                transaction, model, row, enforce_row_limits=False
+            )
             if not validation.valid or validation.candidate_digest is None:
                 raise CandidateDigestConflictError()
             if validation.candidate_digest != command.expected_candidate_digest:

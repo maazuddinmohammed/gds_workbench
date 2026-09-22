@@ -59,6 +59,10 @@ export function StatusBadge({ value }: { value: string | null }) {
   return <span className={`status-badge ${tone}`}>{value.replaceAll("_", " ")}</span>;
 }
 
+export function Fact({ label, value, code = false }: { label: string; value: string; code?: boolean }) {
+  return <div><dt>{label}</dt><dd>{code ? <code title={value}>{value}</code> : value}</dd></div>;
+}
+
 export function SelectField({
   label,
   value,

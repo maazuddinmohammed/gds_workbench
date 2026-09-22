@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build deterministic, source-only ZIPs for manual Databricks UI upload."""
+"""Build deterministic, source-only ZIP for manual Databricks UI upload."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT = REPOSITORY_ROOT / "artifacts" / "databricks-ui"
 APP_DIRECTORY_NAME = "gds-workbench-app-source"
-NOTEBOOK_DIRECTORY_NAME = "gds-workbench-notebooks"
 GENERATED_MARKER = ".gds-databricks-ui-artifact"
 GENERATED_MARKER_VALUE = "gds-databricks-ui-artifacts-v1\n"
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
@@ -49,78 +48,6 @@ _IGNORED_SOURCE_PARTS = frozenset(
     }
 )
 _IGNORED_SOURCE_NAMES = frozenset({".DS_Store", "README.md"})
-_NOTEBOOK_API_EXCLUDED_PREFIXES = frozenset(
-    {
-        "features/metadata",
-        "features/metadata_change_sets",
-        "features/model_input_scope",
-        "features/output_templates",
-        "features/prompts",
-        "features/session",
-        "features/sql_generation_guides",
-        "features/tenant_locks",
-        "features/tenants",
-        "features/workflows/commands",
-        "features/workflows/overview",
-    }
-)
-_NOTEBOOK_API_EXCLUDED_FILES = frozenset(
-    {
-        "app_process.py",
-        "authentication.py",
-        "config/workflow_execution.json",
-        "configuration.py",
-        "errors.py",
-        "features/model_change_sets/router.py",
-        "features/model_targets/router.py",
-        "features/model_targets/service.py",
-        "features/workflows/authoring/change_set_apply_router.py",
-        "features/workflows/execution/configuration.py",
-        "frontend.py",
-        "main.py",
-        "runtime.py",
-        "workflow_worker.py",
-    }
-)
-_NOTEBOOK_ETL_EXCLUDED_PREFIXES = frozenset(
-    {
-        "adapters/mcp",
-        "diagnostics",
-        "tools/ingestion",
-        "tools/processing",
-        "tools/tenants",
-    }
-)
-_NOTEBOOK_ETL_EXCLUDED_FILES = frozenset(
-    {
-        "adapters/auth/middleware.py",
-        "application/change_sets/metadata.py",
-        "domain/snapshots/metadata_guidance.py",
-        "runtime.py",
-        "tools/catalog/get_object_lineage.py",
-        "tools/catalog/get_objects.py",
-        "tools/catalog/inspect_metadata.py",
-        "tools/catalog/list_objects.py",
-        "tools/change_sets/metadata.py",
-        "tools/change_sets/model.py",
-        "tools/databricks/execute_sql.py",
-        "tools/modeling/model_details.py",
-        "tools/modeling/model_input_scope.py",
-        "tools/modeling/read_model_section.py",
-        "tools/modeling/read_mapping_context.py",
-        "tools/snapshots/archive.py",
-        "tools/snapshots/metadata/archive.py",
-        "tools/snapshots/metadata/describe_metadata_dataset.py",
-        "tools/snapshots/metadata/get_metadata_snapshot.py",
-        "tools/snapshots/metadata/projection.py",
-        "tools/snapshots/metadata/sql.py",
-        "tools/snapshots/model/archive.py",
-        "tools/snapshots/model/describe_model_dataset.py",
-        "tools/snapshots/model/get_model_snapshot.py",
-        "tools/snapshots/service.py",
-        "tools/snapshots/storage.py",
-    }
-)
 
 
 class ArtifactBuildError(RuntimeError):
@@ -130,9 +57,7 @@ class ArtifactBuildError(RuntimeError):
 class UploadArtifacts(NamedTuple):
     output_directory: Path
     app_source_directory: Path
-    notebook_source_directory: Path
     app_archive: Path
-    notebook_archive: Path
     manifest: Path
     checksums: Path
 
@@ -159,47 +84,17 @@ def _copy_tree(
     destination_root: Path,
     *,
     allowed_suffixes: frozenset[str],
-    excluded_relative_files: frozenset[str] = frozenset(),
-    excluded_relative_prefixes: frozenset[str] = frozenset(),
 ) -> None:
     if not source_root.is_dir() or source_root.is_symlink():
         raise ArtifactBuildError(
             f"required source directory is unavailable: {source_root}"
         )
-    for exclusion in excluded_relative_files | excluded_relative_prefixes:
-        path = PurePosixPath(exclusion)
-        if (
-            not exclusion
-            or "\\" in exclusion
-            or path.is_absolute()
-            or path.as_posix() != exclusion
-            or any(part in {"", ".", ".."} for part in path.parts)
-        ):
-            raise ArtifactBuildError(f"invalid source exclusion: {exclusion}")
-    for relative in excluded_relative_files:
-        excluded_source = source_root / relative
-        if excluded_source.is_symlink() or not excluded_source.is_file():
-            raise ArtifactBuildError(
-                f"excluded source file is unavailable: {excluded_source}"
-            )
-    for relative in excluded_relative_prefixes:
-        excluded_source = source_root / relative
-        if excluded_source.is_symlink() or not excluded_source.is_dir():
-            raise ArtifactBuildError(
-                f"excluded source directory is unavailable: {excluded_source}"
-            )
-
     for source in sorted(source_root.rglob("*")):
         if source.is_symlink():
             raise ArtifactBuildError(f"source symlinks are not allowed: {source}")
         if source.is_dir() or _is_ignored_source(source, source_root):
             continue
         relative = source.relative_to(source_root).as_posix()
-        if relative in excluded_relative_files or any(
-            relative == prefix or relative.startswith(f"{prefix}/")
-            for prefix in excluded_relative_prefixes
-        ):
-            continue
         if not source.is_file():
             raise ArtifactBuildError(f"source is not a regular file: {source}")
         if source.suffix not in allowed_suffixes:
@@ -234,11 +129,6 @@ def _build_app_source(destination: Path) -> None:
         destination / "web_app" / "backend" / "gds_workbench_api",
         allowed_suffixes=frozenset({".json", ".py"}),
     )
-    _copy_tree(
-        REPOSITORY_ROOT / "web_app" / "backend" / "gds_workbench_runtime",
-        destination / "web_app" / "backend" / "gds_workbench_runtime",
-        allowed_suffixes=frozenset({".json", ".py"}),
-    )
     for relative in _FRONTEND_ROOT_FILES:
         _copy_file(
             REPOSITORY_ROOT / "web_app" / "frontend" / relative,
@@ -248,60 +138,6 @@ def _build_app_source(destination: Path) -> None:
         REPOSITORY_ROOT / "web_app" / "frontend" / "src",
         destination / "web_app" / "frontend" / "src",
         allowed_suffixes=frozenset({".css", ".ts", ".tsx"}),
-    )
-
-
-def _build_notebook_source(destination: Path) -> None:
-    source_root = REPOSITORY_ROOT / "databricks_notebooks"
-    _copy_file(source_root / ".env.example", destination / ".env.example")
-    _copy_file(source_root / "requirements.txt", destination / "requirements.txt")
-    for (
-        package_name,
-        package_root,
-        allowed_suffixes,
-        excluded_files,
-        excluded_prefixes,
-    ) in (
-        (
-            "gds_workbench_notebooks",
-            source_root / "src" / "gds_workbench_notebooks",
-            frozenset({".py"}),
-            frozenset[str](),
-            frozenset[str](),
-        ),
-        (
-            "gds_workbench_runtime",
-            REPOSITORY_ROOT / "web_app" / "backend" / "gds_workbench_runtime",
-            frozenset({".json", ".py"}),
-            frozenset[str](),
-            frozenset[str](),
-        ),
-        (
-            "gds_workbench_api",
-            REPOSITORY_ROOT / "web_app" / "backend" / "gds_workbench_api",
-            frozenset({".json", ".py"}),
-            _NOTEBOOK_API_EXCLUDED_FILES,
-            _NOTEBOOK_API_EXCLUDED_PREFIXES,
-        ),
-        (
-            "gds_etl_workbench",
-            REPOSITORY_ROOT / "mcp_server" / "gds_etl_workbench",
-            frozenset({".py"}),
-            _NOTEBOOK_ETL_EXCLUDED_FILES,
-            _NOTEBOOK_ETL_EXCLUDED_PREFIXES,
-        ),
-    ):
-        _copy_tree(
-            package_root,
-            destination / "src" / package_name,
-            allowed_suffixes=allowed_suffixes,
-            excluded_relative_files=excluded_files,
-            excluded_relative_prefixes=excluded_prefixes,
-        )
-    _copy_tree(
-        source_root / "notebooks",
-        destination / "notebooks",
-        allowed_suffixes=frozenset({".py"}),
     )
 
 
@@ -375,16 +211,13 @@ def _write_zip(source_directory: Path, archive: Path) -> None:
             )
 
 
-def _write_operator_files(
-    staging: Path, app: Path, notebooks: Path
-) -> tuple[Path, Path]:
+def _write_operator_files(staging: Path, app: Path) -> tuple[Path, Path]:
     manifest = staging / "artifact-manifest.json"
     manifest.write_text(
         json.dumps(
             {
                 "agent_provider": "microsoft_foundry",
                 "app_source": _tree_manifest(app),
-                "notebook_source": _tree_manifest(notebooks),
             },
             indent=2,
             sort_keys=True,
@@ -397,10 +230,7 @@ def _write_operator_files(
     )
 
     checksums = staging / "SHA256SUMS.txt"
-    archives = (
-        staging / f"{APP_DIRECTORY_NAME}.zip",
-        staging / f"{NOTEBOOK_DIRECTORY_NAME}.zip",
-    )
+    archives = (staging / f"{APP_DIRECTORY_NAME}.zip",)
     checksums.write_text(
         "".join(
             f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
@@ -415,9 +245,7 @@ def _result(output: Path) -> UploadArtifacts:
     return UploadArtifacts(
         output_directory=output,
         app_source_directory=output / APP_DIRECTORY_NAME,
-        notebook_source_directory=output / NOTEBOOK_DIRECTORY_NAME,
         app_archive=output / f"{APP_DIRECTORY_NAME}.zip",
-        notebook_archive=output / f"{NOTEBOOK_DIRECTORY_NAME}.zip",
         manifest=output / "artifact-manifest.json",
         checksums=output / "SHA256SUMS.txt",
     )
@@ -429,7 +257,7 @@ def build_uploads(
     replace: bool = False,
     agent_provider: str = "microsoft_foundry",
 ) -> UploadArtifacts:
-    """Create expanded sources and content-root ZIPs for two UI target folders."""
+    """Create App source and a content-root ZIP for manual UI upload."""
     if agent_provider != "microsoft_foundry":
         raise ArtifactBuildError(f"unsupported agent provider: {agent_provider}")
     output = output_directory.resolve()
@@ -456,12 +284,9 @@ def build_uploads(
     backup = workspace / "previous"
     try:
         app = staging / APP_DIRECTORY_NAME
-        notebooks = staging / NOTEBOOK_DIRECTORY_NAME
         _build_app_source(app)
-        _build_notebook_source(notebooks)
         _write_zip(app, staging / f"{APP_DIRECTORY_NAME}.zip")
-        _write_zip(notebooks, staging / f"{NOTEBOOK_DIRECTORY_NAME}.zip")
-        _write_operator_files(staging, app, notebooks)
+        _write_operator_files(staging, app)
         (staging / GENERATED_MARKER).write_text(
             GENERATED_MARKER_VALUE,
             encoding="utf-8",
@@ -505,7 +330,6 @@ def main() -> int:
     except ArtifactBuildError as error:
         parser.exit(2, f"artifact build refused: {error}\n")
     print(result.app_archive)
-    print(result.notebook_archive)
     return 0
 
 

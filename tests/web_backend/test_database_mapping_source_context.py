@@ -43,7 +43,9 @@ class MappingScope:
     plan: MappingRunPlan
 
 
-def _seed_mapping_scope(database: DisposablePostgres, *, dimensional: bool = True) -> MappingScope:
+def _seed_mapping_scope(
+    database: DisposablePostgres, *, dimensional: bool = True, create_run: bool = True
+) -> MappingScope:
     model_id, tenant_id, attribute_id, entra_tenant_id, entra_object_id, _ = _seed_profile_model(
         database
     )
@@ -73,7 +75,12 @@ def _seed_mapping_scope(database: DisposablePostgres, *, dimensional: bool = Tru
                     project_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog
                 ) VALUES (%s, %s, 'Shared GDS fixture', %s, %s) RETURNING tenant_id
                 """,
-                (seed["project_id"], f"GDS_{model_id}", f"shared_{model_id}", f"admin_{model_id}"),
+                (
+                    seed["project_id"],
+                    f"GDS_{model_id}",
+                    f"shared_{model_id}",
+                    f"admin_{model_id}",
+                ),
             ).fetchone(),
             "tenant_id",
         )
@@ -273,44 +280,46 @@ def _seed_mapping_scope(database: DisposablePostgres, *, dimensional: bool = Tru
         entity_type = "dimensional_entity" if dimensional else "logical_entity"
         route = "dimensional_to_gold" if dimensional else "logical_to_silver"
         operation = "build" if dimensional else "extend"
-        run_id = _required_id(
+        run_id = 1  # Unused placeholder when a caller creates its own governed Run.
+        if create_run:
+            run_id = _required_id(
+                connection.execute(
+                    """
+                    INSERT INTO application.workflow_run (
+                        tenant_id, model_id, model_revision, model_workflow,
+                        workflow_execution_mode, actor_principal_id,
+                        actor_entra_principal_identity_id, agent_sdk_code, agent_provider_code,
+                        agent_model_code, reasoning_effort_code, max_turns,
+                        validation_retry_count, selected_scope_digest, selected_scope_count,
+                        workflow_run_state, correlation_id, started_time,
+                        modeled_entity_type, mapping_operation, mapping_coverage_mode, mapping_route
+                    ) VALUES (%s, %s, 1, 'mapping', 'one_shot', %s, %s,
+                        'openai_agents_sdk', 'databricks', 'test-model', 'medium', 8, 1,
+                        %s, 1, 'running', %s, CURRENT_TIMESTAMP, %s, %s, 'selected_targets', %s)
+                    RETURNING workflow_run_id
+                    """,
+                    (
+                        tenant_id,
+                        model_id,
+                        actor_id,
+                        actor["entra_principal_identity_id"],
+                        "a" * 64,
+                        correlation_id,
+                        entity_type,
+                        operation,
+                        route,
+                    ),
+                ).fetchone(),
+                "workflow_run_id",
+            )
             connection.execute(
                 """
-                INSERT INTO application.workflow_run (
-                    tenant_id, model_id, model_revision, model_workflow,
-                    workflow_execution_mode, actor_principal_id,
-                    actor_entra_principal_identity_id, agent_sdk_code, agent_provider_code,
-                    agent_model_code, reasoning_effort_code, max_turns,
-                    validation_retry_count, selected_scope_digest, selected_scope_count,
-                    workflow_run_state, correlation_id, started_time,
-                    modeled_entity_type, mapping_operation, mapping_coverage_mode, mapping_route
-                ) VALUES (%s, %s, 1, 'mapping', 'one_shot', %s, %s,
-                    'openai_agents_sdk', 'databricks', 'test-model', 'medium', 8, 1,
-                    %s, 1, 'running', %s, CURRENT_TIMESTAMP, %s, %s, 'selected_targets', %s)
-                RETURNING workflow_run_id
+                INSERT INTO application.workflow_run_mapping_target_selection (
+                    workflow_run_id, model_id, object_id, source_system_id, selection_order
+                ) VALUES (%s, %s, %s, %s, 1)
                 """,
-                (
-                    tenant_id,
-                    model_id,
-                    actor_id,
-                    actor["entra_principal_identity_id"],
-                    "a" * 64,
-                    correlation_id,
-                    entity_type,
-                    operation,
-                    route,
-                ),
-            ).fetchone(),
-            "workflow_run_id",
-        )
-        connection.execute(
-            """
-            INSERT INTO application.workflow_run_mapping_target_selection (
-                workflow_run_id, model_id, object_id, source_system_id, selection_order
-            ) VALUES (%s, %s, %s, %s, 1)
-            """,
-            (run_id, model_id, target_object_id, source_system_id),
-        )
+                (run_id, model_id, target_object_id, source_system_id),
+            )
     plan_data = mapping_preparation().plan.model_dump(mode="python")
     plan_data["agent_plan"].update(
         workflow_run_id=run_id,

@@ -1,7 +1,7 @@
 {
   "workflow": "conceptual",
   "stage": "candidate_authoring",
-  "status": "approved_design; implementation_deferred",
+  "status": "implemented_contract",
   "modes": [
     "one_shot",
     "tool_assisted"

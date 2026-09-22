@@ -8,7 +8,7 @@
 Profiling, Analysis, modeling, Mapping, and Code Generation read or change
 shared Tenant state. Concurrent workflows for different Models in the same
 Tenant can invalidate each other's frozen inputs and downstream assumptions.
-API prechecks cannot prevent races across web replicas, workers, and notebooks.
+API prechecks cannot prevent races across web replicas and workers.
 
 ## Decision
 
@@ -34,6 +34,6 @@ execution across all workflow types and callers.
 
 ## Consequences
 
-FastAPI, workers, and Databricks notebooks share one race-safe database rule.
+FastAPI and workers share one race-safe database rule.
 Callers never choose or mutate the Tenant witness. Creation remains available
 while another Run is active, so a blocked start leaves a durable queued Run.

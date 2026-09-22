@@ -123,7 +123,7 @@ class ToolCallAuditMiddleware:
                     transaction,
                     request_principal,
                 )
-        except (AuthenticationError, WorkbenchError):
+        except AuthenticationError, WorkbenchError:
             # No active server-side Principal exists to satisfy the audit row's
             # Principal constraint. The tool returns its normal safe denial.
             return await call_next(ctx)

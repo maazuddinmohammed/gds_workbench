@@ -10,18 +10,23 @@ from uuid import uuid4
 
 import pytest
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_workbench_api.features.mapping.service import DatabaseMappingExecutor
+from gds_workbench_api.features.mapping.service import MappingWorkflow
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetFinalizationResult,
     WorkflowChangeSetHandoffResult,
 )
-from gds_workbench_api.features.workflows.authoring.lifecycle import AgentWorkflowTerminalResult
+from gds_workbench_api.features.workflows.authoring.lifecycle import (
+    AgentWorkflowTerminalResult,
+)
 from gds_workbench_api.features.workflows.authoring.plan import (
     FrozenAgentStage,
     WorkflowExecutionMode,
 )
 from gds_workbench_api.integrations.agents import LocalFakeAgentAdapter
-from gds_workbench_api.prompt_rendering import PromptComponentTemplates, PromptVariableDefinition
+from gds_workbench_api.prompt_rendering import (
+    PromptComponentTemplates,
+    PromptVariableDefinition,
+)
 from mapping_fixtures import mapping_preparation
 
 from tests.mcp.conftest import DisposablePostgres, disposable_postgres
@@ -43,7 +48,7 @@ def mapping_seed_database() -> Iterator[DisposablePostgres]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ('one_shot', 'tool_assisted'))
+@pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))
 async def test_installed_mapping_stages_execute_one_complete_candidate(
     mapping_seed_database: DisposablePostgres,
     mode: WorkflowExecutionMode,
@@ -96,7 +101,8 @@ async def test_installed_mapping_stages_execute_one_complete_candidate(
                         tool_instruction=row["tool_instruction_prompt_template"],
                     ),
                     variables=tuple(
-                        PromptVariableDefinition.model_validate(item) for item in variables
+                        PromptVariableDefinition.model_validate(item)
+                        for item in variables
                     ),
                 )
             )
@@ -115,7 +121,9 @@ async def test_installed_mapping_stages_execute_one_complete_candidate(
     )
     preparation_service = AsyncMock()
     preparation_service.prepare.return_value = preparation
-    adapter = LocalFakeAgentAdapter(sdk_code=preparation.plan.agent_plan.selection.sdk_code)
+    adapter = LocalFakeAgentAdapter(
+        sdk_code=preparation.plan.agent_plan.selection.sdk_code
+    )
     agent = AsyncMock()
     agent.execute.side_effect = adapter.execute
     lifecycle = AsyncMock()
@@ -140,7 +148,7 @@ async def test_installed_mapping_stages_execute_one_complete_candidate(
             completed_at=now,
         ),
     )
-    executor = DatabaseMappingExecutor(
+    executor = MappingWorkflow(
         preparation_service=preparation_service,
         agent_executor=agent,
         handoff=handoff,
@@ -162,10 +170,11 @@ async def test_installed_mapping_stages_execute_one_complete_candidate(
     handoff.finalize.assert_awaited_once()
     lifecycle.fail.assert_not_awaited()
     called_stages = [call.args[0].stage for call in agent.execute.await_args_list]
-    assert called_stages == (
-        ["mapping_authoring"]
-    )
+    assert called_stages == (["mapping_authoring"])
     assert handoff.finalize.await_args is not None
     changes = handoff.finalize.await_args.kwargs["changes"]
-    assert [change.dataset for change in changes] == ["mapping_object", "mapping_attribute"]
+    assert [change.dataset for change in changes] == [
+        "mapping_object",
+        "mapping_attribute",
+    ]
     assert changes[1].records[0]["modeled_attribute_name"] == "CustomerID"

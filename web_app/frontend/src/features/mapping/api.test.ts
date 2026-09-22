@@ -25,6 +25,7 @@ describe("Mapping HTTP adapter", () => {
     await api.listMappingObjects(7, 18);
     await api.readMappingObject(7, 18, 81);
     await api.listMappingAttributes(7, 18, {
+      mappingObjectId: 81,
       sourceSystemId: 4,
       sourceSystemCode: " ERP ",
       locked: true,
@@ -38,7 +39,7 @@ describe("Mapping HTTP adapter", () => {
       "/api/v1/tenants/7/models/18/mapping/dependencies?entity_type=logical_entity&source_system_id=2&source_system_code=crm&status=inactive&locked=false&page_size=50&cursor=opaque%2B%2F%3D",
       "/api/v1/tenants/7/models/18/mapping/objects?page_size=200",
       "/api/v1/tenants/7/models/18/mapping/objects/81",
-      "/api/v1/tenants/7/models/18/mapping/attributes?source_system_id=4&source_system_code=erp&locked=true&page_size=25&cursor=attributes%2B%2F%3D",
+      "/api/v1/tenants/7/models/18/mapping/attributes?source_system_id=4&source_system_code=erp&locked=true&mapping_object_id=81&page_size=25&cursor=attributes%2B%2F%3D",
       "/api/v1/tenants/7/models/18/mapping/attributes/91",
       "/api/v1/tenants/7/output-templates?target_type=mapping_object&active=true&page_size=75&cursor=templates%2B%2F%3D",
       "/api/v1/tenants/7/output-templates?target_type=mapping_attribute&active=true&page_size=200",

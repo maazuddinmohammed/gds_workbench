@@ -77,13 +77,9 @@ def _request(*, sdk_code: str) -> AgentExecutionRequest:
 
 
 @pytest.mark.asyncio
-async def test_agent_router_rejects_a_model_profile_for_the_wrong_execution_mode() -> (
-    None
-):
+async def test_agent_router_rejects_a_model_profile_for_the_wrong_execution_mode() -> None:
     registry = load_default_agent_capabilities()
-    databricks_model = next(
-        model for model in registry.models if model.code == "foundry-primary"
-    )
+    databricks_model = next(model for model in registry.models if model.code == "foundry-primary")
     restricted = databricks_model.model_copy(
         update={
             "execution_profiles": (
@@ -98,8 +94,7 @@ async def test_agent_router_rejects_a_model_profile_for_the_wrong_execution_mode
     registry = registry.model_copy(
         update={
             "models": tuple(
-                restricted if model.code == restricted.code else model
-                for model in registry.models
+                restricted if model.code == restricted.code else model for model in registry.models
             )
         }
     )
@@ -152,7 +147,7 @@ class _RecordingMappingCatalog:
         return self.delegate.definitions
 
     @property
-    def max_cumulative_result_bytes(self) -> int:
+    def max_cumulative_result_bytes(self) -> int | None:
         return self.delegate.max_cumulative_result_bytes
 
     def invoke(
@@ -754,9 +749,7 @@ async def test_local_fake_uses_local_tools_for_one_complete_mapping_candidate(
         parent = cast(list[dict[str, JsonValue]], page["items"])[0]
         assert parent[nested_field]
         assert "object_id" not in parent
-    page = cast(
-        dict[str, JsonValue], catalog.delegate.invoke("get_mapping_sources", {})
-    )
+    page = cast(dict[str, JsonValue], catalog.delegate.invoke("get_mapping_sources", {}))
     source = cast(list[dict[str, JsonValue]], page["items"])[0]
     assert cast(dict[str, JsonValue], source["object"])["attributes"]
 
@@ -1041,9 +1034,7 @@ async def test_local_fake_returns_bounded_analysis_inference_candidate(
                 "to_attribute_name": "customer_id",
                 "relationship_kind": "reference",
                 "relationship_confidence": "medium",
-                "relationship_basis": (
-                    "Selected Attribute metadata supports this candidate."
-                ),
+                "relationship_basis": ("Selected Attribute metadata supports this candidate."),
             }
         ]
     }
@@ -1088,9 +1079,7 @@ async def test_local_fake_pages_tool_assisted_analysis_context(
                 "to_attribute_name": "customer_id",
                 "relationship_kind": "reference",
                 "relationship_confidence": "medium",
-                "relationship_basis": (
-                    "Selected Attribute metadata supports this candidate."
-                ),
+                "relationship_basis": ("Selected Attribute metadata supports this candidate."),
             }
         ]
     }
@@ -1113,9 +1102,7 @@ async def test_local_fake_rejects_unsupported_path_or_malformed_context() -> Non
         ),
         capabilities=load_default_agent_capabilities(),
     )
-    unsupported = _request(sdk_code="openai_agents_sdk").model_copy(
-        update={"workflow": "logical"}
-    )
+    unsupported = _request(sdk_code="openai_agents_sdk").model_copy(update={"workflow": "logical"})
     malformed = _request(sdk_code="openai_agents_sdk").model_copy(
         update={"context": {"original_context": {}, "repair": None}}
     )

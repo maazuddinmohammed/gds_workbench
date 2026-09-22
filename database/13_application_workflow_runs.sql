@@ -65,8 +65,7 @@ CREATE TABLE application.workflow_run (
         metadata_enrichment_description_targets IS NULL OR (
             model_workflow = 'metadata_enrichment'
             AND jsonb_typeof(metadata_enrichment_description_targets) = 'array'
-            AND jsonb_array_length(metadata_enrichment_description_targets) BETWEEN 1 AND 5000
-            AND octet_length(metadata_enrichment_description_targets::TEXT) <= 1048576
+            AND jsonb_array_length(metadata_enrichment_description_targets) >= 1
         )
     ),
     CONSTRAINT fk_workflow_run_model FOREIGN KEY (model_id, tenant_id)
@@ -963,9 +962,8 @@ DECLARE
     v_override_count INTEGER := 0;
 BEGIN
     IF p_run_overrides IS NULL
-       OR jsonb_typeof(p_run_overrides) <> 'object'
-       OR octet_length(p_run_overrides::TEXT) > 32768 THEN
-        RAISE EXCEPTION 'Run prompt overrides must be a bounded JSON object';
+       OR jsonb_typeof(p_run_overrides) <> 'object' THEN
+        RAISE EXCEPTION 'Run prompt overrides must be a JSON object';
     END IF;
 
     SELECT run.workflow_run_id,
@@ -1208,11 +1206,10 @@ BEGIN
     IF p_metadata_enrichment_description_targets IS NOT NULL THEN
         IF p_model_workflow IS DISTINCT FROM 'metadata_enrichment'
            OR p_expected_principal_type IS DISTINCT FROM 'user'
-           OR jsonb_typeof(p_metadata_enrichment_description_targets) IS DISTINCT FROM 'array'
-           OR octet_length(p_metadata_enrichment_description_targets::TEXT) > 1048576 THEN
+           OR jsonb_typeof(p_metadata_enrichment_description_targets) IS DISTINCT FROM 'array' THEN
             RAISE EXCEPTION 'Invalid description regeneration selection';
         END IF;
-        IF jsonb_array_length(p_metadata_enrichment_description_targets) NOT BETWEEN 1 AND 5000
+        IF jsonb_array_length(p_metadata_enrichment_description_targets) < 1
            OR EXISTS (SELECT 1 FROM jsonb_array_elements(p_metadata_enrichment_description_targets) AS target
                WHERE jsonb_typeof(target) IS DISTINCT FROM 'object'
                   OR NOT target ?& ARRAY['object_id', 'attribute_id', 'expected_revision']
@@ -1241,18 +1238,18 @@ BEGIN
             'Metadata Enrichment requires one_shot execution mode';
     END IF;
     IF p_model_workflow = 'metadata_enrichment'
-       AND cardinality(p_selected_object_ids) NOT BETWEEN 1 AND 200 THEN
+       AND cardinality(p_selected_object_ids) < 1 THEN
         RAISE EXCEPTION
-            'Metadata Enrichment requires between 1 and 200 selected Objects';
+            'Metadata Enrichment requires selected Objects';
     END IF;
     IF p_selected_object_ids IS NULL OR p_selected_system_codes IS NULL THEN
         RAISE EXCEPTION 'Selected Scope is required';
     END IF;
     IF p_model_workflow = 'validation' THEN
         IF cardinality(p_selected_object_ids) <> 0
-           OR cardinality(p_selected_system_codes) NOT BETWEEN 1 AND 1000 THEN
+           OR cardinality(p_selected_system_codes) < 1 THEN
             RAISE EXCEPTION
-                'Validation requires between 1 and 1000 Systems and no Object selection';
+                'Validation requires selected Systems and no Object selection';
         END IF;
         IF p_code_generation_coverage_mode IS NOT NULL
            OR p_sql_generation_guide_version_id IS NOT NULL THEN
@@ -1272,9 +1269,9 @@ BEGIN
                 'Code Generation coverage mode is invalid';
         END IF;
         IF p_code_generation_coverage_mode = 'selected_targets'
-           AND cardinality(p_selected_object_ids) NOT BETWEEN 1 AND 50000 THEN
+           AND cardinality(p_selected_object_ids) < 1 THEN
             RAISE EXCEPTION
-                'Selected target coverage must contain between 1 and 50000 Objects';
+                'Selected target coverage requires Objects';
         END IF;
         IF p_code_generation_coverage_mode = 'all_eligible_targets'
            AND cardinality(p_selected_object_ids) <> 0 THEN
@@ -1296,9 +1293,9 @@ BEGIN
             RAISE EXCEPTION
                 'Code Generation inputs are unavailable for this Workflow Run';
         END IF;
-        IF cardinality(p_selected_object_ids) NOT BETWEEN 1 AND 50000 THEN
+        IF cardinality(p_selected_object_ids) < 1 THEN
             RAISE EXCEPTION
-                'Selected Scope must contain between 1 and 50000 Objects';
+                'Selected Scope requires Objects';
         END IF;
     END IF;
     IF EXISTS (
@@ -1443,9 +1440,8 @@ BEGIN
         END IF;
     END IF;
     IF p_prompt_overrides IS NULL
-       OR jsonb_typeof(p_prompt_overrides) <> 'object'
-       OR octet_length(p_prompt_overrides::TEXT) > 32768 THEN
-        RAISE EXCEPTION 'Run prompt overrides must be a bounded JSON object';
+       OR jsonb_typeof(p_prompt_overrides) <> 'object' THEN
+        RAISE EXCEPTION 'Run prompt overrides must be a JSON object';
     END IF;
 
     SELECT target_model.tenant_id,
@@ -1745,9 +1741,9 @@ BEGIN
                        p_model_id,
                        p_modeled_entity_type
                    ) AS context;
-            IF v_selected_scope_count NOT BETWEEN 1 AND 50000 THEN
+            IF v_selected_scope_count < 1 THEN
                 RAISE EXCEPTION
-                    'Code Generation has no bounded eligible target set';
+                    'Code Generation has no eligible target set';
             END IF;
             v_selected_scope_digest := encode(
                 sha256(
@@ -2733,248 +2729,6 @@ $claim_next_workflow_run$;
 REVOKE ALL ON FUNCTION application.claim_next_workflow_run(INTEGER)
 FROM PUBLIC;
 
--- Claim only one notebook-owned Workflow Run. Unlike the web worker claim,
--- this function never scans, skips to, or terminalizes any other Run.
-CREATE FUNCTION application.claim_workflow_run_exact(
-    p_workflow_run_id BIGINT,
-    p_expected_model_workflow VARCHAR(30),
-    p_lease_duration_seconds INTEGER
-)
-RETURNS TABLE (
-    workflow_run_id BIGINT,
-    tenant_id BIGINT,
-    model_id BIGINT,
-    model_revision BIGINT,
-    model_workflow VARCHAR(30),
-    workflow_execution_mode VARCHAR(50),
-    correlation_id UUID,
-    actor_principal_type VARCHAR(30),
-    actor_entra_tenant_id UUID,
-    actor_entra_object_id UUID,
-    workflow_run_claim_token UUID,
-    workflow_run_claimed_time TIMESTAMPTZ,
-    workflow_run_claim_expires_time TIMESTAMPTZ,
-    workflow_run_recovery_count INTEGER
-)
-LANGUAGE plpgsql
-VOLATILE
-SECURITY DEFINER
-SET search_path = pg_catalog
-AS $claim_workflow_run_exact$
-DECLARE
-    v_principal RECORD;
-    v_run RECORD;
-    v_claim_token UUID;
-    v_claimed_time TIMESTAMPTZ;
-    v_event_attempt INTEGER;
-    v_event_sequence BIGINT;
-    v_is_recovery BOOLEAN;
-BEGIN
-    IF p_workflow_run_id IS NULL OR p_workflow_run_id <= 0 THEN
-        RAISE EXCEPTION 'Workflow Run claim is unavailable';
-    END IF;
-    IF p_expected_model_workflow IS NULL
-       OR p_expected_model_workflow NOT IN (
-           'profiling', 'analysis', 'conceptual', 'logical',
-           'dimensional', 'mapping', 'code_generation', 'validation',
-           'metadata_enrichment'
-       ) THEN
-        RAISE EXCEPTION 'Workflow Run claim Workflow is invalid';
-    END IF;
-    IF p_lease_duration_seconds IS NULL
-       OR p_lease_duration_seconds NOT BETWEEN 1 AND 300 THEN
-        RAISE EXCEPTION
-            'Workflow Run lease duration must be between 1 and 300 seconds';
-    END IF;
-
-    SELECT *
-      INTO v_principal
-      FROM security.current_notebook_principal();
-    IF NOT FOUND THEN
-        RETURN;
-    END IF;
-
-    SELECT run.workflow_run_id,
-           run.tenant_id,
-           run.model_id,
-           run.model_revision,
-           run.model_workflow,
-           run.workflow_execution_mode,
-           run.correlation_id,
-           run.workflow_run_state,
-           run.workflow_run_claim_token_digest,
-           run.workflow_run_claim_expires_time,
-           run.workflow_run_recovery_count,
-           (
-               target_model.model_id IS NOT NULL
-               AND target_model.is_active
-               AND actor.principal_id IS NOT NULL
-               AND actor.is_active
-               AND actor.principal_type = v_principal.principal_type
-               AND actor_identity.entra_principal_identity_id IS NOT NULL
-               AND actor_identity.is_active
-           ) AS context_available
-      INTO v_run
-      FROM application.workflow_run AS run
-      LEFT JOIN model.model AS target_model
-        ON target_model.model_id = run.model_id
-       AND target_model.tenant_id = run.tenant_id
-      LEFT JOIN security.principal AS actor
-        ON actor.principal_id = run.actor_principal_id
-      LEFT JOIN security.entra_principal_identity AS actor_identity
-        ON actor_identity.entra_principal_identity_id =
-               run.actor_entra_principal_identity_id
-       AND actor_identity.principal_id = run.actor_principal_id
-       AND actor_identity.principal_type = actor.principal_type
-     WHERE run.workflow_run_id = p_workflow_run_id
-       AND run.model_workflow = p_expected_model_workflow
-       AND run.actor_principal_id = v_principal.principal_id
-       AND run.actor_entra_principal_identity_id =
-           v_principal.entra_principal_identity_id
-     FOR UPDATE OF run;
-    IF NOT FOUND OR v_run.workflow_run_state <> 'running' THEN
-        RETURN;
-    END IF;
-
-    v_claimed_time := clock_timestamp();
-    SELECT coalesce(max(event.model_event_log_attempt), 1),
-           coalesce(max(event.model_event_log_sequence), 0) + 1
-      INTO v_event_attempt, v_event_sequence
-      FROM model.model_event_log AS event
-     WHERE event.workflow_run_id = p_workflow_run_id;
-
-    IF NOT v_run.context_available THEN
-        UPDATE application.workflow_run AS run
-           SET workflow_run_state = 'failed',
-               completed_time = v_claimed_time,
-               failure_code = 'workflow_run_context_unavailable',
-               failure_message =
-                   'Workflow Run execution context is unavailable.',
-               workflow_run_claim_token_digest = NULL,
-               workflow_run_claimed_time = NULL,
-               workflow_run_claim_heartbeat_time = NULL,
-               workflow_run_claim_expires_time = NULL,
-               updated_time = v_claimed_time,
-               updated_by = CURRENT_USER
-         WHERE run.workflow_run_id = p_workflow_run_id;
-
-        INSERT INTO model.model_event_log (
-            model_id,
-            correlation_id,
-            workflow_run_id,
-            model_event_log_sequence,
-            model_event_log_attempt,
-            model_workflow,
-            model_event_log_stage,
-            model_event_log_status,
-            model_event_log_message,
-            finding_count,
-            created_time
-        ) VALUES (
-            v_run.model_id,
-            v_run.correlation_id,
-            v_run.workflow_run_id,
-            v_event_sequence,
-            v_event_attempt,
-            v_run.model_workflow,
-            'workflow_run',
-            'failed',
-            'Workflow Run execution context is unavailable.',
-            0,
-            v_claimed_time
-        );
-        RETURN;
-    END IF;
-
-    IF v_run.workflow_run_claim_token_digest IS NOT NULL
-       AND v_run.workflow_run_claim_expires_time > v_claimed_time THEN
-        RETURN;
-    END IF;
-
-    IF v_run.workflow_run_claim_token_digest IS NOT NULL
-       AND v_run.workflow_run_recovery_count >= 5 THEN
-        UPDATE application.workflow_run AS run
-           SET workflow_run_state = 'failed',
-               completed_time = v_claimed_time,
-               failure_code = 'workflow_run_recovery_exhausted',
-               failure_message = 'Workflow Run recovery limit exhausted.',
-               workflow_run_claim_token_digest = NULL,
-               workflow_run_claimed_time = NULL,
-               workflow_run_claim_heartbeat_time = NULL,
-               workflow_run_claim_expires_time = NULL,
-               updated_time = v_claimed_time,
-               updated_by = CURRENT_USER
-         WHERE run.workflow_run_id = p_workflow_run_id;
-
-        INSERT INTO model.model_event_log (
-            model_id,
-            correlation_id,
-            workflow_run_id,
-            model_event_log_sequence,
-            model_event_log_attempt,
-            model_workflow,
-            model_event_log_stage,
-            model_event_log_status,
-            model_event_log_message,
-            finding_count,
-            created_time
-        ) VALUES (
-            v_run.model_id,
-            v_run.correlation_id,
-            v_run.workflow_run_id,
-            v_event_sequence,
-            v_event_attempt,
-            v_run.model_workflow,
-            'workflow_run',
-            'failed',
-            'Workflow Run recovery limit exhausted.',
-            0,
-            v_claimed_time
-        );
-        RETURN;
-    END IF;
-
-    v_claim_token := gen_random_uuid();
-    v_is_recovery := v_run.workflow_run_claim_token_digest IS NOT NULL;
-    UPDATE application.workflow_run AS run
-       SET workflow_run_claim_token_digest = encode(
-               sha256(convert_to(v_claim_token::TEXT, 'UTF8')),
-               'hex'
-           ),
-           workflow_run_claimed_time = v_claimed_time,
-           workflow_run_claim_heartbeat_time = v_claimed_time,
-           workflow_run_claim_expires_time = v_claimed_time
-               + make_interval(secs => p_lease_duration_seconds),
-           workflow_run_recovery_count = run.workflow_run_recovery_count
-               + v_is_recovery::INTEGER,
-           updated_time = v_claimed_time,
-           updated_by = CURRENT_USER
-     WHERE run.workflow_run_id = p_workflow_run_id;
-
-    RETURN QUERY SELECT
-        v_run.workflow_run_id,
-        v_run.tenant_id,
-        v_run.model_id,
-        v_run.model_revision,
-        v_run.model_workflow,
-        v_run.workflow_execution_mode,
-        v_run.correlation_id,
-        v_principal.principal_type::VARCHAR(30),
-        v_principal.entra_tenant_id,
-        v_principal.entra_object_id,
-        v_claim_token,
-        v_claimed_time,
-        v_claimed_time + make_interval(secs => p_lease_duration_seconds),
-        v_run.workflow_run_recovery_count + v_is_recovery::INTEGER;
-END;
-$claim_workflow_run_exact$;
-
-REVOKE ALL ON FUNCTION application.claim_workflow_run_exact(
-    BIGINT,
-    VARCHAR,
-    INTEGER
-) FROM PUBLIC;
-
 CREATE FUNCTION application.renew_workflow_run_claim(
     p_workflow_run_id BIGINT,
     p_workflow_run_claim_token UUID,
@@ -3123,339 +2877,6 @@ END;
 $assert_workflow_run_claim$;
 
 REVOKE ALL ON FUNCTION application.assert_workflow_run_claim(
-    BIGINT,
-    UUID
-) FROM PUBLIC;
-
--- Notebook Workflow entry points derive the actor from SESSION_USER. The
--- caller supplies workflow intent only; editable notebook values never select
--- a Principal or Entra identity.
-CREATE FUNCTION application.create_notebook_workflow_run(
-    p_tenant_id BIGINT,
-    p_model_id BIGINT,
-    p_expected_model_revision BIGINT,
-    p_model_workflow VARCHAR(30),
-    p_workflow_execution_mode VARCHAR(50),
-    p_agent_sdk_code VARCHAR(100),
-    p_agent_provider_code VARCHAR(100),
-    p_agent_model_code VARCHAR(200),
-    p_reasoning_effort_code VARCHAR(50),
-    p_max_turns INTEGER,
-    p_validation_retry_count INTEGER,
-    p_selected_object_ids BIGINT[],
-    p_selected_system_codes VARCHAR(100)[],
-    p_modeled_entity_type VARCHAR(30),
-    p_requested_batch_id VARCHAR(500),
-    p_correlation_id UUID,
-    p_prompt_overrides JSONB,
-    p_mapping_operation VARCHAR(20) DEFAULT NULL,
-    p_mapping_coverage_mode VARCHAR(30) DEFAULT NULL,
-    p_mapping_source_system_id BIGINT DEFAULT NULL,
-    p_mapping_object_output_template_id BIGINT DEFAULT NULL,
-    p_mapping_attribute_output_template_id BIGINT DEFAULT NULL,
-    p_code_generation_coverage_mode VARCHAR(30) DEFAULT NULL,
-    p_sql_generation_guide_version_id BIGINT DEFAULT NULL
-)
-RETURNS TABLE (
-    created BOOLEAN,
-    denial_code VARCHAR(50),
-    workflow_run_id BIGINT,
-    workflow_run_state VARCHAR(30),
-    correlation_id UUID,
-    prompt_snapshot_count INTEGER,
-    created_time TIMESTAMPTZ,
-    model_revision BIGINT,
-    selected_scope_digest CHAR(64),
-    selected_scope_count INTEGER,
-    code_generation_coverage_mode VARCHAR(30),
-    sql_generation_guide_id BIGINT,
-    sql_generation_guide_version_id BIGINT,
-    sql_generation_guide_digest CHAR(64)
-)
-LANGUAGE plpgsql
-VOLATILE
-SECURITY DEFINER
-SET search_path = pg_catalog
-AS $create_notebook_workflow_run$
-DECLARE
-    v_principal RECORD;
-BEGIN
-    SELECT *
-      INTO v_principal
-      FROM security.current_notebook_principal();
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Notebook runtime Principal is unavailable';
-    END IF;
-    IF p_tenant_id IS NULL OR p_tenant_id <= 0
-       OR NOT EXISTS (
-           SELECT 1
-             FROM model.model AS target_model
-            WHERE target_model.tenant_id = p_tenant_id
-              AND target_model.model_id = p_model_id
-              AND target_model.is_active
-       ) THEN
-        RAISE EXCEPTION 'Workflow Run Tenant/Model binding is unavailable';
-    END IF;
-
-    RETURN QUERY
-    SELECT *
-      FROM application.create_workflow_run(
-          v_principal.entra_tenant_id,
-          v_principal.entra_object_id,
-          v_principal.principal_type,
-          p_model_id,
-          p_expected_model_revision,
-          p_model_workflow,
-          p_workflow_execution_mode,
-          p_agent_sdk_code,
-          p_agent_provider_code,
-          p_agent_model_code,
-          p_reasoning_effort_code,
-          p_max_turns,
-          p_validation_retry_count,
-          p_selected_object_ids,
-          p_selected_system_codes,
-          p_modeled_entity_type,
-          p_requested_batch_id,
-          p_correlation_id,
-          p_prompt_overrides,
-          p_mapping_operation,
-          p_mapping_coverage_mode,
-          p_mapping_source_system_id,
-          p_mapping_object_output_template_id,
-          p_mapping_attribute_output_template_id,
-          p_code_generation_coverage_mode,
-          p_sql_generation_guide_version_id
-      );
-END;
-$create_notebook_workflow_run$;
-
-REVOKE ALL ON FUNCTION application.create_notebook_workflow_run(
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    VARCHAR,
-    VARCHAR,
-    VARCHAR,
-    VARCHAR,
-    VARCHAR,
-    VARCHAR,
-    INTEGER,
-    INTEGER,
-    BIGINT[],
-    VARCHAR[],
-    VARCHAR,
-    VARCHAR,
-    UUID,
-    JSONB,
-    VARCHAR,
-    VARCHAR,
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    VARCHAR,
-    BIGINT
-) FROM PUBLIC;
-
--- Starting and claiming are deliberately one database function call. A web
--- worker cannot observe a newly running Run before its exact claim is stored.
-CREATE FUNCTION application.start_and_claim_notebook_workflow_run(
-    p_tenant_id BIGINT,
-    p_model_id BIGINT,
-    p_workflow_run_id BIGINT,
-    p_expected_model_revision BIGINT,
-    p_expected_model_workflow VARCHAR(30),
-    p_lease_duration_seconds INTEGER
-)
-RETURNS TABLE (
-    workflow_run_id BIGINT,
-    tenant_id BIGINT,
-    model_id BIGINT,
-    model_revision BIGINT,
-    model_workflow VARCHAR(30),
-    workflow_execution_mode VARCHAR(50),
-    correlation_id UUID,
-    actor_principal_type VARCHAR(30),
-    actor_entra_tenant_id UUID,
-    actor_entra_object_id UUID,
-    workflow_run_claim_token UUID,
-    workflow_run_claimed_time TIMESTAMPTZ,
-    workflow_run_claim_expires_time TIMESTAMPTZ,
-    workflow_run_recovery_count INTEGER
-)
-LANGUAGE plpgsql
-VOLATILE
-SECURITY DEFINER
-SET search_path = pg_catalog
-AS $start_and_claim_notebook_workflow_run$
-DECLARE
-    v_principal RECORD;
-    v_run RECORD;
-    v_started RECORD;
-BEGIN
-    SELECT *
-      INTO v_principal
-      FROM security.current_notebook_principal();
-    IF NOT FOUND THEN
-        RETURN;
-    END IF;
-    IF p_expected_model_workflow IS NULL
-       OR p_expected_model_workflow NOT IN (
-           'profiling', 'analysis', 'conceptual', 'logical',
-           'dimensional', 'mapping', 'code_generation', 'validation',
-           'metadata_enrichment'
-       ) THEN
-        RAISE EXCEPTION 'Workflow Run claim Workflow is invalid';
-    END IF;
-
-    SELECT run.workflow_run_state,
-           run.model_revision
-      INTO v_run
-      FROM application.workflow_run AS run
-     WHERE run.workflow_run_id = p_workflow_run_id
-       AND run.tenant_id = p_tenant_id
-       AND run.model_id = p_model_id
-       AND run.model_workflow = p_expected_model_workflow
-       AND run.actor_principal_id = v_principal.principal_id
-       AND run.actor_entra_principal_identity_id =
-           v_principal.entra_principal_identity_id
-     FOR UPDATE OF run;
-    IF NOT FOUND THEN
-        RETURN;
-    END IF;
-    IF p_expected_model_revision IS NULL
-       OR v_run.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
-    END IF;
-
-    IF v_run.workflow_run_state = 'queued' THEN
-        SELECT *
-          INTO v_started
-          FROM application.start_workflow_run(
-              v_principal.entra_tenant_id,
-              v_principal.entra_object_id,
-              v_principal.principal_type,
-              p_workflow_run_id,
-              p_expected_model_revision
-          );
-        IF NOT FOUND OR v_started.workflow_run_state <> 'running' THEN
-            RETURN;
-        END IF;
-    ELSIF v_run.workflow_run_state <> 'running' THEN
-        RETURN;
-    END IF;
-
-    RETURN QUERY
-    SELECT *
-      FROM application.claim_workflow_run_exact(
-          p_workflow_run_id,
-          p_expected_model_workflow,
-          p_lease_duration_seconds
-      );
-END;
-$start_and_claim_notebook_workflow_run$;
-
-REVOKE ALL ON FUNCTION application.start_and_claim_notebook_workflow_run(
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    VARCHAR,
-    INTEGER
-) FROM PUBLIC;
-
-CREATE FUNCTION application.renew_notebook_workflow_run_claim(
-    p_workflow_run_id BIGINT,
-    p_workflow_run_claim_token UUID,
-    p_lease_duration_seconds INTEGER
-)
-RETURNS TABLE (
-    workflow_run_id BIGINT,
-    workflow_run_claim_heartbeat_time TIMESTAMPTZ,
-    workflow_run_claim_expires_time TIMESTAMPTZ
-)
-LANGUAGE plpgsql
-VOLATILE
-SECURITY DEFINER
-SET search_path = pg_catalog
-AS $renew_notebook_workflow_run_claim$
-DECLARE
-    v_principal RECORD;
-BEGIN
-    SELECT *
-      INTO v_principal
-      FROM security.current_notebook_principal();
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Workflow Run claim is unavailable';
-    END IF;
-    PERFORM 1
-      FROM application.workflow_run AS run
-     WHERE run.workflow_run_id = p_workflow_run_id
-       AND run.actor_principal_id = v_principal.principal_id
-       AND run.actor_entra_principal_identity_id =
-           v_principal.entra_principal_identity_id
-     FOR UPDATE OF run;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Workflow Run claim is unavailable';
-    END IF;
-
-    RETURN QUERY
-    SELECT *
-      FROM application.renew_workflow_run_claim(
-          p_workflow_run_id,
-          p_workflow_run_claim_token,
-          p_lease_duration_seconds
-      );
-END;
-$renew_notebook_workflow_run_claim$;
-
-REVOKE ALL ON FUNCTION application.renew_notebook_workflow_run_claim(
-    BIGINT,
-    UUID,
-    INTEGER
-) FROM PUBLIC;
-
-CREATE FUNCTION application.release_notebook_workflow_run_claim(
-    p_workflow_run_id BIGINT,
-    p_workflow_run_claim_token UUID
-)
-RETURNS BOOLEAN
-LANGUAGE plpgsql
-VOLATILE
-SECURITY DEFINER
-SET search_path = pg_catalog
-AS $release_notebook_workflow_run_claim$
-DECLARE
-    v_principal RECORD;
-    v_released BOOLEAN;
-BEGIN
-    SELECT *
-      INTO v_principal
-      FROM security.current_notebook_principal();
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Workflow Run claim is unavailable';
-    END IF;
-    PERFORM 1
-      FROM application.workflow_run AS run
-     WHERE run.workflow_run_id = p_workflow_run_id
-       AND run.actor_principal_id = v_principal.principal_id
-       AND run.actor_entra_principal_identity_id =
-           v_principal.entra_principal_identity_id
-     FOR UPDATE OF run;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Workflow Run claim is unavailable';
-    END IF;
-
-    SELECT application.release_workflow_run_claim(
-               p_workflow_run_id,
-               p_workflow_run_claim_token
-           )
-      INTO v_released;
-    RETURN v_released;
-END;
-$release_notebook_workflow_run_claim$;
-
-REVOKE ALL ON FUNCTION application.release_notebook_workflow_run_claim(
     BIGINT,
     UUID
 ) FROM PUBLIC;

@@ -51,10 +51,7 @@ export function MappingDependenciesLedger({
       id: "source_system",
       header: "Source System",
       cell: ({ row }) => (
-        <span className="endpoint-cell">
-          <strong>{row.original.source_system.system_name}</strong>
-          <span>{row.original.source_system.system_code}</span>
-        </span>
+        <strong>{row.original.source_system.system_code}</strong>
       ),
     },
     { accessorKey: "entity_type", header: "Entity type", cell: ({ getValue }) => humanize(getValue<string>()) },
@@ -159,7 +156,7 @@ export function MappingAttributesLedger({
       header: "Target Attribute",
       cell: ({ row }) => (
         <span className="endpoint-cell">
-          <strong>{row.original.target.object.object_schema}.{row.original.target.object.object_name}.{row.original.target.attribute_name}</strong>
+          <strong>{row.original.target.attribute_name}</strong>
           <span>{row.original.target.attribute_data_type} · ordinal {row.original.target.attribute_ordinal_position}</span>
         </span>
       ),
@@ -169,12 +166,10 @@ export function MappingAttributesLedger({
       header: "Modeled source",
       cell: ({ row }) => (
         <span className="endpoint-cell">
-          <strong>{row.original.source.entity.entity_name}.{row.original.source.attribute_name}</strong>
-          <span>{humanize(row.original.source.entity.entity_type)}</span>
+          <strong>{row.original.source.attribute_name}</strong>
         </span>
       ),
     },
-    { id: "source_system", header: "Source System", cell: ({ row }) => row.original.source_system.system_code },
     { accessorKey: "status", header: "Status", cell: ({ getValue }) => humanize(getValue<string>()) },
     { accessorKey: "is_locked", header: "Lock", cell: ({ getValue }) => getValue<boolean>() ? "Locked" : "Open" },
     { accessorKey: "updated_at", header: "Updated", cell: ({ getValue }) => formatDateTime(getValue<string>()) },
@@ -202,7 +197,7 @@ export function MappingAttributesLedger({
       label="Attribute Mappings"
       items={items}
       columns={columns}
-      filters={<MappingFilterBar filters={filters} onApplyFilters={onApplyFilters} />}
+      filters={<MappingFilterBar filters={filters} onApplyFilters={onApplyFilters} objectScoped />}
       state={state}
       onLoadMore={onLoadMore}
     />
@@ -212,9 +207,11 @@ export function MappingAttributesLedger({
 function MappingFilterBar({
   filters,
   onApplyFilters,
+  objectScoped = false,
 }: {
   filters: MappingFilters;
   onApplyFilters: (filters: MappingFilters) => void;
+  objectScoped?: boolean;
 }) {
   const form = useForm({
     defaultValues: {
@@ -232,7 +229,7 @@ function MappingFilterBar({
   });
   return (
     <form
-      className="workflow-filterbar mapping-filterbar"
+      className={`workflow-filterbar mapping-filterbar${objectScoped ? " is-object-scoped" : ""}`}
       aria-label="Filter Mapping"
       onSubmit={(event) => {
         event.preventDefault();
@@ -240,26 +237,30 @@ function MappingFilterBar({
         void form.handleSubmit();
       }}
     >
-      <form.Field name="entityType">
-        {(field) => (
-          <label>
-            <span>Entity type</span>
-            <select aria-label="Entity type" value={field.state.value} onChange={(event) => field.handleChange(event.target.value)}>
-              <option value="">All Entity types</option>
-              <option value="logical_entity">Logical Entity</option>
-              <option value="dimensional_entity">Dimensional Entity</option>
-            </select>
-          </label>
-        )}
-      </form.Field>
-      <form.Field name="sourceSystemCode">
-        {(field) => (
-          <label>
-            <span>Source System code</span>
-            <input aria-label="Source System code" value={field.state.value} onChange={(event) => field.handleChange(event.target.value)} />
-          </label>
-        )}
-      </form.Field>
+      {!objectScoped ? (
+        <>
+          <form.Field name="entityType">
+            {(field) => (
+              <label>
+                <span>Entity type</span>
+                <select aria-label="Entity type" value={field.state.value} onChange={(event) => field.handleChange(event.target.value)}>
+                  <option value="">All Entity types</option>
+                  <option value="logical_entity">Logical Entity</option>
+                  <option value="dimensional_entity">Dimensional Entity</option>
+                </select>
+              </label>
+            )}
+          </form.Field>
+          <form.Field name="sourceSystemCode">
+            {(field) => (
+              <label>
+                <span>Source System code</span>
+                <input aria-label="Source System code" value={field.state.value} onChange={(event) => field.handleChange(event.target.value)} />
+              </label>
+            )}
+          </form.Field>
+        </>
+      ) : null}
       <form.Field name="status">
         {(field) => (
           <label>

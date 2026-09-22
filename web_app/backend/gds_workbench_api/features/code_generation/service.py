@@ -1,4 +1,4 @@
-"""Execute one already-running SQL-only Code Generation Workflow Run."""
+"""Start governed Code Generation Runs and execute them after worker claim."""
 
 from __future__ import annotations
 
@@ -161,6 +161,18 @@ class CodeGenerationNoOpCompleter(Protocol):
 
 
 class CodeGenerationLifecycle(Protocol):
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: ModelWorkflow,
+        expected_execution_mode: None,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart: ...
+
     async def append_event(
         self,
         principal: RequestPrincipal,
@@ -202,86 +214,8 @@ class CodeGenerationFinalizationFailedError(WorkbenchError):
 type CodeGenerationExecutionResult = WorkflowChangeSetHandoffResult | AuthoringNoOpReceipt
 
 
-class CodeGenerationRunLifecycle(Protocol):
-    async def start(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_execution_mode: None,
-        expected_model_revision: int,
-    ) -> AgentWorkflowRunStart: ...
-
-
-class CodeGenerationExecutor(Protocol):
-    async def execute_started(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-    ) -> CodeGenerationExecutionResult: ...
-
-
 class CodeGenerationWorkflow:
-    """Bind the generic lifecycle to the fixed Code Generation execution path."""
-
-    def __init__(
-        self,
-        *,
-        lifecycle: CodeGenerationRunLifecycle,
-        executor: CodeGenerationExecutor,
-    ) -> None:
-        self._lifecycle = lifecycle
-        self._executor = executor
-
-    async def start(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_model_revision: int,
-    ) -> AgentWorkflowRunStart:
-        return await self._lifecycle.start(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            workflow_run_id=workflow_run_id,
-            expected_workflow="code_generation",
-            expected_execution_mode=None,
-            expected_model_revision=expected_model_revision,
-        )
-
-    async def execute_started(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-    ) -> object:
-        return await self._executor.execute_started(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            workflow_run_id=workflow_run_id,
-            expected_model_revision=expected_model_revision,
-            workflow_run_claim_token=workflow_run_claim_token,
-        )
-
-
-class DatabaseCodeGenerationExecutor:
-    """Load frozen inputs, execute once through the selected adapter, then commit."""
+    """Start governed Runs; generate SQL artifacts only after worker claim."""
 
     def __init__(
         self,
@@ -308,6 +242,25 @@ class DatabaseCodeGenerationExecutor:
         self._handoff = handoff
         self._no_op = no_op
         self._lifecycle = lifecycle
+
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart:
+        return await self._lifecycle.start(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            workflow_run_id=workflow_run_id,
+            expected_workflow="code_generation",
+            expected_execution_mode=None,
+            expected_model_revision=expected_model_revision,
+        )
 
     async def execute_started(
         self,
@@ -399,13 +352,14 @@ class DatabaseCodeGenerationExecutor:
                         "values": prompt_values,
                     },
                 )
-                result_budget = max(1, self._context_policy.stage_max_context_bytes // 2)
+                context_budget = self._context_policy.stage_max_context_bytes
+                result_budget = None if context_budget is None else max(1, context_budget // 2)
                 readers = build_downstream_readers(
                     "code_generation",
                     prompt_values,
-                    max_result_bytes=min(
-                        2 * 1024 * 1024, max(1, result_budget // stage_plan.selection.max_turns)
-                    ),
+                    max_result_bytes=None
+                    if result_budget is None
+                    else max(1, result_budget // stage_plan.selection.max_turns),
                     max_page_records=200,
                     max_cumulative_result_bytes=result_budget,
                 )
@@ -432,7 +386,7 @@ class DatabaseCodeGenerationExecutor:
                             modeled_entity_type=cast(ModeledEntityType, plan.modeled_entity_type),
                         )
                         validate_model_stage_changes(list(candidate_changes))
-                    except (InvalidRequestError, ValidationError):
+                    except InvalidRequestError, ValidationError:
                         return AgentCandidateValidation(
                             issues=(
                                 AgentValidationIssue(

@@ -2,7 +2,7 @@
   "workflow": "mapping",
   "stage": "mapping_authoring",
   "mode": "tool_assisted",
-  "status": "authorized_for_implementation",
+  "status": "implemented_contract",
   "tools": [
     {
       "name": "get_mapping_target",
@@ -24,7 +24,7 @@
       },
       "selector": null,
       "key_fields": [],
-      "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Oversized indivisible records fail explicitly."
+      "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Record paging retains complete records; default application byte ceilings are disabled."
     },
     {
       "name": "get_mapping_sources",
@@ -90,7 +90,7 @@
         "object_schema",
         "object_name"
       ],
-      "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Oversized indivisible records fail explicitly."
+      "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Record paging retains complete records; default application byte ceilings are disabled."
     },
     {
       "name": "get_existing_mapping",
@@ -112,7 +112,7 @@
       },
       "selector": null,
       "key_fields": [],
-      "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Oversized indivisible records fail explicitly."
+      "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Record paging retains complete records; default application byte ceilings are disabled."
     }
   ],
   "default_inline": [
@@ -124,5 +124,5 @@
     "object_output_template",
     "attribute_output_template"
   ],
-  "rules": "Optional enablement and invocation; no-input/empty selects all eligible. Frozen prepared values only; no live DB, arbitrary SQL, code execution, ingestion Mapping reader, or downstream dependency inventory. Same-reader cursor restores selection. Unknown keys, changed selector with cursor, and unavailable/oversized results are errors; never silent truncation."
+  "rules": "Optional enablement and invocation; no-input/empty selects all eligible. Frozen prepared values only; no live DB, arbitrary SQL, code execution, ingestion Mapping reader, or downstream dependency inventory. Same-reader cursor restores selection. Unknown keys, changed selector with cursor, and unavailable results are errors; never silent truncation."
 }

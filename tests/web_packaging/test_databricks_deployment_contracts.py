@@ -116,7 +116,7 @@ def test_root_manifests_are_locked_hybrid_app_inputs() -> None:
     assert python_project["project"]["requires-python"] == ">=3.14,<3.15"
     assert backend_project["project"]["requires-python"] == ">=3.14,<3.15"
     assert backend_project["tool"]["pyright"]["pythonVersion"] == "3.14"
-    assert backend_project["tool"]["ruff"]["target-version"] == "py312"
+    assert backend_project["tool"]["ruff"]["target-version"] == "py314"
     assert set(python_project["tool"]["uv"]["sources"]) == {
         "gds-etl-workbench-mcp",
         "gds-workbench-api",

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { trapPromptDialogFocus, usePromptDialogFocus } from "../prompts/PromptTemplateDialogs";
+import { trapDialogFocus, useDialogFocus } from "../../shared/dialog";
 
 import type { MetadataDatasetDescription, MetadataWorkbookDownload } from "./api";
 
@@ -15,7 +15,7 @@ export function MetadataExportDialog({
   onExport: (sheetCodes: "all" | string[]) => Promise<MetadataWorkbookDownload>;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
-  usePromptDialogFocus(closeRef);
+  useDialogFocus(closeRef);
   const [mode, setMode] = useState<"selected" | "all">(activeDataset ? "selected" : "all");
   const [selected, setSelected] = useState(() => new Set(
     activeDataset ? [activeDataset] : datasets[0] ? [datasets[0].dataset] : [],
@@ -63,7 +63,7 @@ export function MetadataExportDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="metadata-export-title"
-        onKeyDown={trapPromptDialogFocus}
+        onKeyDown={trapDialogFocus}
       >
         <header>
           <div>

@@ -40,6 +40,7 @@ from gds_workbench_api.features.profiling import (
     ProfilingObjectPage,
     create_profiling_router,
 )
+from gds_workbench_api.main import create_app
 from psycopg import Connection
 
 
@@ -817,9 +818,7 @@ async def test_database_profiling_detail_preserves_nullable_run_provenance() -> 
     assert detail.model_revision == 4
     assert detail.object_description == "Customer records."
     assert detail.attribute_profiles[0].attribute_inferred_data_type == "integer"
-    assert detail.attribute_profiles[0].attribute_description == (
-        "Stable customer identifier."
-    )
+    assert detail.attribute_profiles[0].attribute_description == ("Stable customer identifier.")
     assert detail.attribute_profiles[0].provenance == ProfileWorkflowProvenance(
         agent_run_id=None,
         workflow_run_id=None,
@@ -908,7 +907,14 @@ async def test_database_analysis_detail_normalizes_evidence_and_nullable_provena
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("source_count", "source_distinct", "target_count", "target_distinct", "validated", "expected"),
+    (
+        "source_count",
+        "source_distinct",
+        "target_count",
+        "target_distinct",
+        "validated",
+        "expected",
+    ),
     [
         (3, 3, 3, 3, True, "one_to_one"),
         (99, 3, 3, 3, True, "many_to_one"),
@@ -1173,3 +1179,16 @@ async def test_database_review_labels_objects_from_source_tenant(
     assert finding_page.items[0].to_endpoint.source_tenant_code == "DEMO_TENANT"
     assert finding_detail.from_endpoint.source_tenant_code == "DEMO_TENANT"
     assert finding_detail.to_endpoint.source_tenant_code == "DEMO_TENANT"
+
+
+@pytest.mark.parametrize("feature", ["profiling", "analysis"])
+def test_review_features_mount_independently(feature: str) -> None:
+    service = StaticProfilingReviewService()
+    app = create_app(
+        identity_provider=_identity_provider(),
+        profiling_review_service=service if feature == "profiling" else None,
+        analysis_review_service=service if feature == "analysis" else None,
+    )
+    with TestClient(app) as client:
+        response = client.get(f"/api/v1/tenants/7/models/18/{feature}?page_size=25")
+    assert response.status_code == 200

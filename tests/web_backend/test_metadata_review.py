@@ -26,9 +26,7 @@ from tests.web_backend.test_model_change_sets_api import _identity_provider
 
 class RecordingReviewService:
     def __init__(self) -> None:
-        self.calls: list[
-            tuple[RequestPrincipal, int, ReviewMetadataRecordsRequest, UUID]
-        ] = []
+        self.calls: list[tuple[RequestPrincipal, int, ReviewMetadataRecordsRequest, UUID]] = []
 
     async def review_records(
         self,
@@ -54,18 +52,14 @@ class RecordingReviewService:
 
 
 @pytest.mark.parametrize("record_type", ["object", "attribute"])
-@pytest.mark.parametrize(
-    "action", ["lock", "unlock", "deactivate", "reactivate", "describe"]
-)
+@pytest.mark.parametrize("action", ["lock", "unlock", "deactivate", "reactivate", "describe"])
 def test_physical_review_route_preserves_intent_and_server_identity(
     record_type: str, action: str
 ) -> None:
     service = RecordingReviewService()
     key = uuid4()
     with TestClient(
-        create_app(
-            identity_provider=_identity_provider(), metadata_review_service=service
-        )
+        create_app(identity_provider=_identity_provider(), metadata_review_service=service)
     ) as client:
         response = client.post(
             "/api/v1/tenants/7/metadata/review",
@@ -77,11 +71,7 @@ def test_physical_review_route_preserves_intent_and_server_identity(
                     {
                         "record_id": 81,
                         "expected_revision": "a" * 64,
-                        **(
-                            {"description": "Order identifier."}
-                            if action == "describe"
-                            else {}
-                        ),
+                        **({"description": "Order identifier."} if action == "describe" else {}),
                     }
                 ],
             },
@@ -102,11 +92,7 @@ def test_physical_review_route_preserves_intent_and_server_identity(
     assert len(service.calls) == 1
     principal, tenant_id, command, idempotency = service.calls[0]
     assert principal.actor_kind is ActorKind.HUMAN and tenant_id == 7
-    assert (
-        command.record_type == record_type
-        and command.action == action
-        and idempotency == key
-    )
+    assert command.record_type == record_type and command.action == action and idempotency == key
 
 
 @pytest.mark.parametrize(
@@ -118,11 +104,7 @@ def test_physical_review_route_preserves_intent_and_server_identity(
         {"records": [{"record_id": 2**63, "expected_revision": "a" * 64}]},
         {"records": [{"record_id": 81, "expected_revision": "A" * 64}]},
         {"records": [{"record_id": 81, "expected_revision": "a" * 64}] * 2},
-        {
-            "records": [
-                {"record_id": i, "expected_revision": "a" * 64} for i in range(1, 202)
-            ]
-        },
+        {"records": [{"record_id": i, "expected_revision": "a" * 64} for i in range(1, 202)]},
         {
             "records": [
                 {
@@ -134,11 +116,7 @@ def test_physical_review_route_preserves_intent_and_server_identity(
         },
         {"action": "delete"},
         {"action": "describe"},
-        {
-            "records": [
-                {"record_id": 81, "expected_revision": "a" * 64, "description": None}
-            ]
-        },
+        {"records": [{"record_id": 81, "expected_revision": "a" * 64, "description": None}]},
         {"record_type": "core.object"},
         {"actor_principal_id": 1},
         {"model_id": 9},
@@ -155,9 +133,7 @@ def test_physical_review_route_rejects_unbounded_or_caller_authored_fields(
         **override,
     }
     with TestClient(
-        create_app(
-            identity_provider=_identity_provider(), metadata_review_service=service
-        )
+        create_app(identity_provider=_identity_provider(), metadata_review_service=service)
     ) as client:
         response = client.post(
             "/api/v1/tenants/7/metadata/review",
@@ -171,9 +147,7 @@ def test_physical_review_route_rejects_unbounded_or_caller_authored_fields(
 def test_physical_review_requires_idempotency_key(headers: dict[str, str]) -> None:
     service = RecordingReviewService()
     with TestClient(
-        create_app(
-            identity_provider=_identity_provider(), metadata_review_service=service
-        )
+        create_app(identity_provider=_identity_provider(), metadata_review_service=service)
     ) as client:
         response = client.post(
             "/api/v1/tenants/7/metadata/review",
@@ -193,7 +167,7 @@ class ReviewDatabase:
         self.calls: list[tuple[LiteralString, tuple[Any, ...]]] = []
 
     @asynccontextmanager
-    async def write_transaction(self) -> AsyncGenerator[WriteTransaction, None]:
+    async def write_transaction(self) -> AsyncGenerator[WriteTransaction]:
         yield cast(WriteTransaction, self)
 
     async def fetch_one(
@@ -217,9 +191,7 @@ class ReviewDatabase:
 
 
 def _principal(kind: ActorKind = ActorKind.HUMAN) -> RequestPrincipal:
-    return RequestPrincipal(
-        actor_kind=kind, entra_tenant_id=uuid4(), entra_object_id=uuid4()
-    )
+    return RequestPrincipal(actor_kind=kind, entra_tenant_id=uuid4(), entra_object_id=uuid4())
 
 
 def _command() -> ReviewMetadataRecordsRequest:
@@ -233,9 +205,7 @@ def _command() -> ReviewMetadataRecordsRequest:
     )
 
 
-async def test_review_service_uses_only_fixed_governed_sql_and_authenticated_actor() -> (
-    None
-):
+async def test_review_service_uses_only_fixed_governed_sql_and_authenticated_actor() -> None:
     database = ReviewDatabase()
     principal, key = _principal(), uuid4()
     result = await DatabaseMetadataReviewService(database=database).review_records(
@@ -254,8 +224,7 @@ async def test_review_service_uses_only_fixed_governed_sql_and_authenticated_act
     )
     assert isinstance(parameters[6], Jsonb)
     assert parameters[6].obj == [
-        {"record_id": record_id, "expected_revision": "a" * 64}
-        for record_id in (81, 82)
+        {"record_id": record_id, "expected_revision": "a" * 64} for record_id in (81, 82)
     ]
     assert parameters[7] == key
 
@@ -288,9 +257,7 @@ async def test_review_denials_are_actionable_without_raw_database_details(
     denial: str, expected: str
 ) -> None:
     with pytest.raises(WorkbenchError) as caught:
-        await DatabaseMetadataReviewService(
-            database=ReviewDatabase(denial)
-        ).review_records(
+        await DatabaseMetadataReviewService(database=ReviewDatabase(denial)).review_records(
             _principal(), tenant_id=7, command=_command(), idempotency_key=uuid4()
         )
     assert caught.value.code == expected and "Private" not in str(caught.value)

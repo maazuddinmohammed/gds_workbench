@@ -34,20 +34,14 @@ export function ProfilingResults({
       accessorKey: "source_tenant_code",
       header: "Source Tenant",
       cell: ({ row }) => (
-        <span className="scope-secondary">
-          <strong>{row.original.source_tenant_code}</strong>
-          <span>{row.original.source_tenant_name}</span>
-        </span>
+        <strong>{row.original.source_tenant_code}</strong>
       ),
     },
     {
       accessorKey: "system_code",
       header: "System",
       cell: ({ row }) => (
-        <span className="scope-secondary">
-          <strong>{row.original.system_code}</strong>
-          <span>{row.original.system_name}</span>
-        </span>
+        <strong>{row.original.system_code}</strong>
       ),
     },
     { accessorKey: "object_schema", header: "Schema" },

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import LiteralString, cast
 from uuid import UUID
 
+import psycopg
 import pytest
 from gds_etl_workbench.infrastructure.postgres import ReadinessRecord
 from gds_workbench_api.database import WebPostgresDatabase
@@ -61,25 +62,6 @@ async def test_readiness_accepts_a_random_fixture_login_with_exact_web_posture(
     assert readiness_postgres.web_runtime_user != "gds_web_runtime"
 
     readiness = await _readiness(readiness_postgres)
-
-    assert readiness == ReadinessRecord(ready=True, code="ready")
-
-
-@pytest.mark.asyncio
-async def test_readiness_accepts_notebook_login_with_exact_web_posture(
-    readiness_postgres: DisposablePostgres,
-) -> None:
-    database = WebPostgresDatabase(
-        dsn=readiness_postgres.notebook_runtime_dsn(),
-        pool_min=1,
-        pool_max=1,
-        pool_timeout_seconds=5,
-    )
-    await database.open()
-    try:
-        readiness = await database.readiness()
-    finally:
-        await database.close()
 
     assert readiness == ReadinessRecord(ready=True, code="ready")
 
@@ -179,7 +161,7 @@ async def test_readiness_requires_governed_model_review_function(
 
 
 @pytest.mark.asyncio
-async def test_notebook_readiness_rejects_a_missing_profiling_context_grant(
+async def test_readiness_rejects_a_missing_profiling_context_grant(
     readiness_postgres: DisposablePostgres,
 ) -> None:
     signature = "application.get_profiling_execution_context(UUID, UUID, VARCHAR, BIGINT, BIGINT)"
@@ -191,20 +173,10 @@ async def test_notebook_readiness_rejects_a_missing_profiling_context_grant(
         )
 
     try:
-        database = WebPostgresDatabase(
-            dsn=readiness_postgres.notebook_runtime_dsn(),
-            pool_min=1,
-            pool_max=1,
-            pool_timeout_seconds=5,
-        )
-        await database.open()
-        try:
-            readiness = await database.readiness()
-        finally:
-            await database.close()
+        readiness = await _readiness(readiness_postgres)
 
         with (
-            readiness_postgres.connect_notebook_runtime() as connection,
+            psycopg.connect(readiness_postgres.web_runtime_dsn()) as connection,
             pytest.raises(InsufficientPrivilege),
             connection.transaction(),
         ):

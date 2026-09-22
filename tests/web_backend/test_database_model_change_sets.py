@@ -20,22 +20,10 @@ from gds_etl_workbench.domain.errors import (
     TenantLockRequiredError,
 )
 from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.analysis.service import (
-    AnalysisInferenceWorkflow,
-    DatabaseAnalysisInferenceExecutor,
-)
-from gds_workbench_api.features.conceptual.service import (
-    ConceptualWorkflow,
-    DatabaseConceptualExecutor,
-)
-from gds_workbench_api.features.dimensional import (
-    DatabaseDimensionalExecutor,
-    DimensionalWorkflow,
-)
-from gds_workbench_api.features.logical.service import (
-    DatabaseLogicalExecutor,
-    LogicalWorkflow,
-)
+from gds_workbench_api.features.analysis.service import AnalysisInferenceWorkflow
+from gds_workbench_api.features.conceptual.service import ConceptualWorkflow
+from gds_workbench_api.features.dimensional import DimensionalWorkflow
+from gds_workbench_api.features.logical.service import LogicalWorkflow
 from gds_workbench_api.features.model_change_sets.contracts import (
     BeginModelStageBatchRequest,
     CreateModelChangeSetRequest,
@@ -47,6 +35,10 @@ from gds_workbench_api.features.model_change_sets.service import (
     DatabaseModelChangeSetService,
 )
 from gds_workbench_api.features.models import ModelRevisionConflictError
+from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    AgentExecutionRequest,
+    AgentExecutionResult,
+)
 from gds_workbench_api.features.workflows.authoring.change_set_apply import (
     ApplyWorkflowDraftRequest,
     DatabaseWorkflowDraftApplyService,
@@ -70,6 +62,19 @@ from gds_workbench_api.features.workflows.runs import DatabaseWorkflowRunService
 from gds_workbench_api.integrations.agents import LocalFakeAgentAdapter
 from psycopg import Connection
 from psycopg.types.json import Jsonb
+
+
+class RecordingFakeAgentAdapter(LocalFakeAgentAdapter):
+    """Exercise the real run-local readers; retain counters only."""
+
+    def __init__(self) -> None:
+        super().__init__(sdk_code="openai_agents_sdk")
+        self.tool_call_count = 0
+
+    async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
+        result = await super().execute(request)
+        self.tool_call_count += result.tool_call_count
+        return result
 
 
 class DisposablePostgresFixture(Protocol):
@@ -808,6 +813,7 @@ def _create_queued_authoring_run_with_prompt(
     tenant_id: int,
     entra_tenant_id: UUID,
     entra_object_id: UUID,
+    execution_mode: Literal["one_shot", "tool_assisted"] = "one_shot",
     workflow: Literal["conceptual", "logical", "dimensional"],
     selected_object_id: int | None = None,
 ) -> int:
@@ -865,10 +871,10 @@ def _create_queued_authoring_run_with_prompt(
             SELECT workflow_stage_id
               FROM application.workflow_stage
              WHERE model_workflow = %s
-               AND workflow_execution_mode = 'one_shot'
+               AND workflow_execution_mode = %s
                AND workflow_stage_code = 'candidate_authoring'
             """,
-            (workflow,),
+            (workflow, execution_mode),
         ).fetchone()
         if stage is None:
             stage = connection.execute(
@@ -881,12 +887,12 @@ def _create_queued_authoring_run_with_prompt(
                     workflow_stage_order,
                     workflow_stage_is_agentic
                 ) VALUES (
-                    %s, 'one_shot', 'candidate_authoring',
+                    %s, %s, 'candidate_authoring',
                     'Candidate authoring', 10, TRUE
                 )
                 RETURNING workflow_stage_id
                 """,
-                (workflow,),
+                (workflow, execution_mode),
             ).fetchone()
         system_prompt = f"Author one complete {workflow.title()} candidate."
         instruction_prompt = "Use the immutable context: {{stage_context}}."
@@ -916,12 +922,12 @@ def _create_queued_authoring_run_with_prompt(
             SELECT workflow_stage_id, workflow_stage_code
               FROM application.workflow_stage
              WHERE model_workflow = %s
-               AND workflow_execution_mode = 'one_shot'
+               AND workflow_execution_mode = %s
                AND workflow_stage_is_agentic
                AND is_active
              ORDER BY workflow_stage_order, workflow_stage_id
             """,
-            (workflow,),
+            (workflow, execution_mode),
         ).fetchall()
         prompt_overrides: dict[str, int] = {}
         for prompt_number, prompt_stage in enumerate(stages, start=1):
@@ -932,7 +938,7 @@ def _create_queued_authoring_run_with_prompt(
             variables = (
                 (
                     "stage_context",
-                    f"workflow.{workflow}.one_shot.{workflow_stage_code}.context",
+                    f"workflow.{workflow}.{execution_mode}.{workflow_stage_code}.context",
                     "json",
                     True,
                     "Immutable bounded context for this authoring run.",
@@ -1050,7 +1056,7 @@ def _create_queued_authoring_run_with_prompt(
                   %s::BIGINT,
                   1::BIGINT,
                   %s::VARCHAR,
-                  'one_shot'::VARCHAR,
+                  %s::VARCHAR,
                   'openai_agents_sdk'::VARCHAR,
                   'databricks'::VARCHAR,
                   'test-model'::VARCHAR,
@@ -1070,6 +1076,7 @@ def _create_queued_authoring_run_with_prompt(
                 entra_object_id,
                 model_id,
                 workflow,
+                execution_mode,
                 [object_id],
                 uuid4(),
                 Jsonb(prompt_overrides),
@@ -1093,6 +1100,7 @@ def _create_queued_conceptual_run_with_prompt(
     tenant_id: int,
     entra_tenant_id: UUID,
     entra_object_id: UUID,
+    execution_mode: Literal["one_shot", "tool_assisted"] = "one_shot",
 ) -> int:
     return _create_queued_authoring_run_with_prompt(
         database,
@@ -1100,6 +1108,7 @@ def _create_queued_conceptual_run_with_prompt(
         tenant_id=tenant_id,
         entra_tenant_id=entra_tenant_id,
         entra_object_id=entra_object_id,
+        execution_mode=execution_mode,
         workflow="conceptual",
     )
 
@@ -1111,6 +1120,7 @@ def _create_queued_logical_run_with_prompt(
     tenant_id: int,
     entra_tenant_id: UUID,
     entra_object_id: UUID,
+    execution_mode: Literal["one_shot", "tool_assisted"] = "one_shot",
 ) -> int:
     return _create_queued_authoring_run_with_prompt(
         database,
@@ -1118,6 +1128,7 @@ def _create_queued_logical_run_with_prompt(
         tenant_id=tenant_id,
         entra_tenant_id=entra_tenant_id,
         entra_object_id=entra_object_id,
+        execution_mode=execution_mode,
         workflow="logical",
     )
 
@@ -1129,6 +1140,7 @@ def _create_queued_dimensional_run_with_prompt(
     tenant_id: int,
     entra_tenant_id: UUID,
     entra_object_id: UUID,
+    execution_mode: Literal["one_shot", "tool_assisted"] = "one_shot",
     selected_object_id: int,
 ) -> int:
     return _create_queued_authoring_run_with_prompt(
@@ -1137,6 +1149,7 @@ def _create_queued_dimensional_run_with_prompt(
         tenant_id=tenant_id,
         entra_tenant_id=entra_tenant_id,
         entra_object_id=entra_object_id,
+        execution_mode=execution_mode,
         workflow="dimensional",
         selected_object_id=selected_object_id,
     )
@@ -1149,6 +1162,7 @@ def _create_queued_analysis_run_with_prompt(
     tenant_id: int,
     entra_tenant_id: UUID,
     entra_object_id: UUID,
+    execution_mode: Literal["one_shot", "tool_assisted"] = "one_shot",
 ) -> int:
     suffix = uuid4().hex
     with database.connect_owner() as connection:
@@ -1182,9 +1196,10 @@ def _create_queued_analysis_run_with_prompt(
             SELECT workflow_stage_id
               FROM application.workflow_stage
              WHERE model_workflow = 'analysis'
-               AND workflow_execution_mode = 'one_shot'
+               AND workflow_execution_mode = %s
                AND workflow_stage_code = 'relationship_inference'
-            """
+            """,
+            (execution_mode,),
         ).fetchone()
         if stage is None:
             stage = connection.execute(
@@ -1197,17 +1212,18 @@ def _create_queued_analysis_run_with_prompt(
                     workflow_stage_order,
                     workflow_stage_is_agentic
                 ) VALUES (
-                    'analysis', 'one_shot', 'relationship_inference',
+                    'analysis', %s, 'relationship_inference',
                     'Relationship inference', 10, TRUE
                 )
                 RETURNING workflow_stage_id
-                """
+                """,
+                (execution_mode,),
             ).fetchone()
         workflow_stage_id = _required_id(stage, "workflow_stage_id")
         variables = (
             (
                 "stage_context",
-                "workflow.analysis.one_shot.relationship_inference.context",
+                f"workflow.analysis.{execution_mode}.relationship_inference.context",
                 "json",
                 True,
                 "Immutable bounded context for this Analysis run.",
@@ -1340,7 +1356,7 @@ def _create_queued_analysis_run_with_prompt(
                   %s::BIGINT,
                   1::BIGINT,
                   'analysis'::VARCHAR,
-                  'one_shot'::VARCHAR,
+                  %s::VARCHAR,
                   'openai_agents_sdk'::VARCHAR,
                   'databricks'::VARCHAR,
                   'test-model'::VARCHAR,
@@ -1359,6 +1375,7 @@ def _create_queued_analysis_run_with_prompt(
                 entra_tenant_id,
                 entra_object_id,
                 model_id,
+                execution_mode,
                 [object_id],
                 uuid4(),
                 Jsonb({str(workflow_stage_id): prompt_version_id}),
@@ -1451,7 +1468,9 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
                 change_set_id=created.model_change_set_id,
                 command=StageModelChangeSetRequest(
                     expected_draft_revision=1,
-                    changes=[StageModelChange(dataset="profiling_profile", records=[profile])],
+                    changes=[
+                        StageModelChange(dataset="profiling_profile", records=[profile])
+                    ],
                 ),
                 idempotency_key=uuid4(),
             )
@@ -1557,7 +1576,9 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
             tenant_id=tenant_id,
             model_id=model_id,
             change_set_id=created.model_change_set_id,
-            command=ExpectedDraftRevisionRequest(expected_draft_revision=committed.draft_revision),
+            command=ExpectedDraftRevisionRequest(
+                expected_draft_revision=committed.draft_revision
+            ),
             idempotency_key=uuid4(),
         )
         assert validated.valid is True
@@ -1568,7 +1589,9 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
             tenant_id=tenant_id,
             model_id=model_id,
             change_set_id=created.model_change_set_id,
-            command=ExpectedDraftRevisionRequest(expected_draft_revision=committed.draft_revision),
+            command=ExpectedDraftRevisionRequest(
+                expected_draft_revision=committed.draft_revision
+            ),
             idempotency_key=uuid4(),
         )
 
@@ -2201,18 +2224,15 @@ async def test_conceptual_executor_completes_with_one_validated_unapplied_draft(
     authorizer = AuthorizationService()
     lifecycle = DatabaseAgentWorkflowLifecycle(database=database)
     workflow = ConceptualWorkflow(
-        lifecycle=lifecycle,
-        executor=DatabaseConceptualExecutor(
+        database=database,
+        authorizer=authorizer,
+        agent_executor=LocalFakeAgentAdapter(sdk_code="openai_agents_sdk"),
+        handoff=WorkflowChangeSetHandoff(
             database=database,
             authorizer=authorizer,
-            agent_executor=LocalFakeAgentAdapter(sdk_code="openai_agents_sdk"),
-            handoff=WorkflowChangeSetHandoff(
-                database=database,
-                authorizer=authorizer,
-            ),
-            no_op=DatabaseAuthoringNoOpService(database=database),
-            lifecycle=lifecycle,
         ),
+        no_op=DatabaseAuthoringNoOpService(database=database),
+        lifecycle=lifecycle,
     )
     runs = DatabaseWorkflowRunService(
         database=database,
@@ -2345,8 +2365,10 @@ async def test_conceptual_executor_completes_with_one_validated_unapplied_draft(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("execution_mode", ["one_shot", "tool_assisted"])
 async def test_completed_conceptual_draft_applies_once_with_run_provenance(
     web_postgres_database: DisposablePostgresFixture,
+    execution_mode: Literal["one_shot", "tool_assisted"],
 ) -> None:
     (
         model_id,
@@ -2373,6 +2395,7 @@ async def test_completed_conceptual_draft_applies_once_with_run_provenance(
         tenant_id=tenant_id,
         entra_tenant_id=entra_tenant_id,
         entra_object_id=entra_object_id,
+        execution_mode=execution_mode,
     )
 
     principal = RequestPrincipal(
@@ -2388,19 +2411,17 @@ async def test_completed_conceptual_draft_applies_once_with_run_provenance(
     )
     authorizer = AuthorizationService()
     lifecycle = DatabaseAgentWorkflowLifecycle(database=database)
+    agent = RecordingFakeAgentAdapter()
     workflow = ConceptualWorkflow(
-        lifecycle=lifecycle,
-        executor=DatabaseConceptualExecutor(
+        database=database,
+        authorizer=authorizer,
+        agent_executor=agent,
+        handoff=WorkflowChangeSetHandoff(
             database=database,
             authorizer=authorizer,
-            agent_executor=LocalFakeAgentAdapter(sdk_code="openai_agents_sdk"),
-            handoff=WorkflowChangeSetHandoff(
-                database=database,
-                authorizer=authorizer,
-            ),
-            no_op=DatabaseAuthoringNoOpService(database=database),
-            lifecycle=lifecycle,
         ),
+        no_op=DatabaseAuthoringNoOpService(database=database),
+        lifecycle=lifecycle,
     )
     apply_service = DatabaseWorkflowDraftApplyService(
         database=database,
@@ -2415,7 +2436,7 @@ async def test_completed_conceptual_draft_applies_once_with_run_provenance(
             tenant_id=tenant_id,
             model_id=model_id,
             workflow_run_id=workflow_run_id,
-            expected_execution_mode="one_shot",
+            expected_execution_mode=execution_mode,
             expected_model_revision=1,
         )
         claim = await DatabaseWorkflowClaimRepository(database=database).claim_next(
@@ -2429,7 +2450,7 @@ async def test_completed_conceptual_draft_applies_once_with_run_provenance(
             claim.model_revision,
             claim.model_workflow,
             claim.workflow_execution_mode,
-        ) == (workflow_run_id, tenant_id, model_id, 1, "conceptual", "one_shot")
+        ) == (workflow_run_id, tenant_id, model_id, 1, "conceptual", execution_mode)
         draft = await workflow.execute_started(
             principal,
             tenant_id=tenant_id,
@@ -2451,7 +2472,9 @@ async def test_completed_conceptual_draft_applies_once_with_run_provenance(
                 tenant_id=tenant_id,
                 model_id=model_id,
                 workflow_run_id=workflow_run_id,
-                command=command.model_copy(update={"expected_candidate_digest": "e" * 64}),
+                command=command.model_copy(
+                    update={"expected_candidate_digest": "e" * 64}
+                ),
                 idempotency_key=uuid4(),
             )
         with pytest.raises(ModelRevisionConflictError):
@@ -2531,6 +2554,8 @@ async def test_completed_conceptual_draft_applies_once_with_run_provenance(
     finally:
         await database.close()
 
+    assert (agent.tool_call_count > 0) == (execution_mode == "tool_assisted")
+
     with web_postgres_database.connect_owner() as connection:
         model = connection.execute(
             "SELECT model_revision FROM model.model WHERE model_id = %s",
@@ -2595,8 +2620,10 @@ async def test_completed_conceptual_draft_applies_once_with_run_provenance(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("execution_mode", ["one_shot", "tool_assisted"])
 async def test_completed_logical_draft_applies_once_with_run_provenance(
     web_postgres_database: DisposablePostgresFixture,
+    execution_mode: Literal["one_shot", "tool_assisted"],
 ) -> None:
     (
         model_id,
@@ -2623,6 +2650,7 @@ async def test_completed_logical_draft_applies_once_with_run_provenance(
         tenant_id=tenant_id,
         entra_tenant_id=entra_tenant_id,
         entra_object_id=entra_object_id,
+        execution_mode=execution_mode,
     )
 
     principal = RequestPrincipal(
@@ -2638,19 +2666,17 @@ async def test_completed_logical_draft_applies_once_with_run_provenance(
     )
     authorizer = AuthorizationService()
     lifecycle = DatabaseAgentWorkflowLifecycle(database=database)
+    agent = RecordingFakeAgentAdapter()
     workflow = LogicalWorkflow(
-        lifecycle=lifecycle,
-        executor=DatabaseLogicalExecutor(
+        database=database,
+        authorizer=authorizer,
+        agent_executor=agent,
+        handoff=WorkflowChangeSetHandoff(
             database=database,
             authorizer=authorizer,
-            agent_executor=LocalFakeAgentAdapter(sdk_code="openai_agents_sdk"),
-            handoff=WorkflowChangeSetHandoff(
-                database=database,
-                authorizer=authorizer,
-            ),
-            no_op=DatabaseAuthoringNoOpService(database=database),
-            lifecycle=lifecycle,
         ),
+        no_op=DatabaseAuthoringNoOpService(database=database),
+        lifecycle=lifecycle,
     )
     apply_service = DatabaseWorkflowDraftApplyService(
         database=database,
@@ -2665,7 +2691,7 @@ async def test_completed_logical_draft_applies_once_with_run_provenance(
             tenant_id=tenant_id,
             model_id=model_id,
             workflow_run_id=workflow_run_id,
-            expected_execution_mode="one_shot",
+            expected_execution_mode=execution_mode,
             expected_model_revision=1,
         )
         claim = await DatabaseWorkflowClaimRepository(database=database).claim_next(
@@ -2679,7 +2705,7 @@ async def test_completed_logical_draft_applies_once_with_run_provenance(
             claim.model_revision,
             claim.model_workflow,
             claim.workflow_execution_mode,
-        ) == (workflow_run_id, tenant_id, model_id, 1, "logical", "one_shot")
+        ) == (workflow_run_id, tenant_id, model_id, 1, "logical", execution_mode)
         draft = await workflow.execute_started(
             principal,
             tenant_id=tenant_id,
@@ -2712,6 +2738,8 @@ async def test_completed_logical_draft_applies_once_with_run_provenance(
         )
     finally:
         await database.close()
+
+    assert (agent.tool_call_count > 0) == (execution_mode == "tool_assisted")
 
     with web_postgres_database.connect_owner() as connection:
         model = connection.execute(
@@ -2793,8 +2821,10 @@ async def test_completed_logical_draft_applies_once_with_run_provenance(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("execution_mode", ["one_shot", "tool_assisted"])
 async def test_completed_dimensional_draft_applies_once_with_run_provenance(
     web_postgres_database: DisposablePostgresFixture,
+    execution_mode: Literal["one_shot", "tool_assisted"],
 ) -> None:
     (
         model_id,
@@ -2826,6 +2856,7 @@ async def test_completed_dimensional_draft_applies_once_with_run_provenance(
         entra_tenant_id=entra_tenant_id,
         entra_object_id=entra_object_id,
         selected_object_id=silver_object_id,
+        execution_mode=execution_mode,
     )
 
     principal = RequestPrincipal(
@@ -2841,19 +2872,17 @@ async def test_completed_dimensional_draft_applies_once_with_run_provenance(
     )
     authorizer = AuthorizationService()
     lifecycle = DatabaseAgentWorkflowLifecycle(database=database)
+    agent = RecordingFakeAgentAdapter()
     workflow = DimensionalWorkflow(
-        lifecycle=lifecycle,
-        executor=DatabaseDimensionalExecutor(
+        database=database,
+        authorizer=authorizer,
+        agent_executor=agent,
+        handoff=WorkflowChangeSetHandoff(
             database=database,
             authorizer=authorizer,
-            agent_executor=LocalFakeAgentAdapter(sdk_code="openai_agents_sdk"),
-            handoff=WorkflowChangeSetHandoff(
-                database=database,
-                authorizer=authorizer,
-            ),
-            no_op=DatabaseAuthoringNoOpService(database=database),
-            lifecycle=lifecycle,
         ),
+        no_op=DatabaseAuthoringNoOpService(database=database),
+        lifecycle=lifecycle,
     )
     apply_service = DatabaseWorkflowDraftApplyService(
         database=database,
@@ -2868,7 +2897,7 @@ async def test_completed_dimensional_draft_applies_once_with_run_provenance(
             tenant_id=tenant_id,
             model_id=model_id,
             workflow_run_id=workflow_run_id,
-            expected_execution_mode="one_shot",
+            expected_execution_mode=execution_mode,
             expected_model_revision=1,
         )
         claim = await DatabaseWorkflowClaimRepository(database=database).claim_next(
@@ -2882,7 +2911,7 @@ async def test_completed_dimensional_draft_applies_once_with_run_provenance(
             claim.model_revision,
             claim.model_workflow,
             claim.workflow_execution_mode,
-        ) == (workflow_run_id, tenant_id, model_id, 1, "dimensional", "one_shot")
+        ) == (workflow_run_id, tenant_id, model_id, 1, "dimensional", execution_mode)
         draft = await workflow.execute_started(
             principal,
             tenant_id=tenant_id,
@@ -2915,6 +2944,8 @@ async def test_completed_dimensional_draft_applies_once_with_run_provenance(
         )
     finally:
         await database.close()
+
+    assert (agent.tool_call_count > 0) == (execution_mode == "tool_assisted")
 
     with web_postgres_database.connect_owner() as connection:
         model = connection.execute(
@@ -2996,8 +3027,10 @@ async def test_completed_dimensional_draft_applies_once_with_run_provenance(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("execution_mode", ["one_shot", "tool_assisted"])
 async def test_completed_analysis_draft_applies_once_and_preserves_validation(
     web_postgres_database: DisposablePostgresFixture,
+    execution_mode: Literal["one_shot", "tool_assisted"],
 ) -> None:
     (
         model_id,
@@ -3167,6 +3200,7 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
         tenant_id=tenant_id,
         entra_tenant_id=entra_tenant_id,
         entra_object_id=entra_object_id,
+        execution_mode=execution_mode,
     )
     principal = RequestPrincipal(
         actor_kind=ActorKind.HUMAN,
@@ -3181,19 +3215,17 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
     )
     authorizer = AuthorizationService()
     lifecycle = DatabaseAgentWorkflowLifecycle(database=database)
+    agent = RecordingFakeAgentAdapter()
     workflow = AnalysisInferenceWorkflow(
-        lifecycle=lifecycle,
-        executor=DatabaseAnalysisInferenceExecutor(
+        database=database,
+        authorizer=authorizer,
+        agent_executor=agent,
+        handoff=WorkflowChangeSetHandoff(
             database=database,
             authorizer=authorizer,
-            agent_executor=LocalFakeAgentAdapter(sdk_code="openai_agents_sdk"),
-            handoff=WorkflowChangeSetHandoff(
-                database=database,
-                authorizer=authorizer,
-            ),
-            no_op=DatabaseAuthoringNoOpService(database=database),
-            lifecycle=lifecycle,
         ),
+        no_op=DatabaseAuthoringNoOpService(database=database),
+        lifecycle=lifecycle,
     )
     apply_service = DatabaseWorkflowDraftApplyService(
         database=database,
@@ -3208,7 +3240,7 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
             tenant_id=tenant_id,
             model_id=model_id,
             workflow_run_id=workflow_run_id,
-            expected_execution_mode="one_shot",
+            expected_execution_mode=execution_mode,
             expected_model_revision=1,
         )
         claim = await DatabaseWorkflowClaimRepository(database=database).claim_next(
@@ -3222,7 +3254,7 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
             claim.model_revision,
             claim.model_workflow,
             claim.workflow_execution_mode,
-        ) == (workflow_run_id, tenant_id, model_id, 1, "analysis", "one_shot")
+        ) == (workflow_run_id, tenant_id, model_id, 1, "analysis", execution_mode)
         draft = await workflow.execute_started(
             principal,
             tenant_id=tenant_id,
@@ -3282,6 +3314,8 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
         )
     finally:
         await database.close()
+
+    assert (agent.tool_call_count > 0) == (execution_mode == "tool_assisted")
 
     with web_postgres_database.connect_owner() as connection:
         persisted = connection.execute(

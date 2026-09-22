@@ -67,10 +67,10 @@ accessibility, and visual rules.
   auditing, and PostgreSQL. `tools/` and `adapters/mcp/` own transport;
   `application/`, `domain/`, and `infrastructure/` hold shared rules and storage.
 - Backend: `web_app/backend/gds_workbench_api/main.py` mounts feature routers.
+  `runtime.py` wires services; `dependencies.py` provides shared FastAPI authentication.
+  Profiling keeps HTTP, PostgreSQL, and execution in its feature package.
   Workflow assembly lives in `features/workflows/execution/assembly.py`;
   shared candidate parsing and diagnostics live in `features/workflows/authoring/repair.py`.
-- Notebooks: `databricks_notebooks/src/gds_workbench_notebooks/` calls the same
-  in-process workflow assembly. Preserve Python 3.12 compatibility.
 - Plugin: `plugins/v2/gds/skills/gds/` contains local helpers and Workbench.
   `workbench/core.js` owns shared JavaScript normalization and stable serialization.
 - VS Code extension: `plugins/v2/gds-stage-runner/src/extension.ts` exposes the
@@ -83,7 +83,7 @@ accessibility, and visual rules.
 - Packaging: `deployment/databricks_ui/build_uploads.py`,
   `plugins/build_gds_v2_plugin_zip.py`, and `mcp_server/build_zip.py`.
   Shared source is copied into independent artifacts;
-  see `docs/adr/005-independent-deployments-with-shared-source.md`.
+  see `docs/adr/007-web-owned-workflows-and-notebook-retirement.md`.
 - Before deleting code, check imports, registrations, dynamic references, tests,
   and packaged consumers. Similar names do not prove identical behavior.
 - Reuse existing helpers when semantics match. Keep authorization, byte limits,
@@ -102,9 +102,6 @@ substitute an existing database. Keep captured database output hidden.
 # MCP, backend, SQL contracts, plugin helpers, and packaging.
 PYTHONPATH=mcp_server:web_app/backend:. web_app/backend/.venv/bin/python -m pytest -c web_app/backend/pyproject.toml tests/mcp tests/web_backend tests/web_packaging tests/plugin_v2 --tb=no --show-capture=no -q
 
-# Notebook source and shared workflows on Python 3.12.
-PYTHONPATH=databricks_notebooks/src:mcp_server:web_app/backend .venv-notebooks/bin/python -m pytest databricks_notebooks/tests --tb=no --show-capture=no -q
-
 # Frontend tests, types, and production build.
 npm --prefix web_app/frontend run check
 
@@ -118,8 +115,8 @@ npm --prefix plugins/v2/gds-stage-runner run compile
 
 Use each Python project's Ruff and Pyright settings. When calling Pyright from
 the root, pass both `--project` and that project's `--pythonpath`; otherwise it
-may use the wrong interpreter. `.github/workflows/web-app.yml` also lists the
-three extracted-notebook artifact probes to run with Python 3.12.
+may use the wrong interpreter. `.github/workflows/web-app.yml` lists the
+backend, packaging, and frontend checks.
 PowerShell fallback execution requires Windows PowerShell 5.1; preserve the
 checks in `.github/workflows/plugin-windows.yml`.
 After changing plugin or extension source, rebuild its matching local ZIP/VSIX

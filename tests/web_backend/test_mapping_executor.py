@@ -14,9 +14,8 @@ from gds_workbench_api.features.mapping.preparation_contracts import (
     MappingRunContext,
 )
 from gds_workbench_api.features.mapping.service import (
-    DatabaseMappingExecutor,
+    MappingWorkflow,
     MappingChangeSetHandoff,
-    MappingLifecycle,
     MappingNoOpCompleter,
     MappingPreparationService,
 )
@@ -30,13 +29,13 @@ from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
+    AgentWorkflowRunStart,
     AgentWorkflowTerminalResult,
 )
 from gds_workbench_api.features.workflows.authoring.no_op import AuthoringNoOpReceipt
 from gds_workbench_api.features.workflows.authoring.plan import WorkflowExecutionMode
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentContextPolicy,
-    AgentContextTooLargeError,
 )
 from gds_workbench_api.integrations.agents.composition import LocalFakeAgentAdapter
 from gds_workbench_api.prompt_rendering import (
@@ -57,11 +56,50 @@ class _RecordingFake:
         return await self.fake.execute(request)
 
 
+class _Lifecycle:
+    def __init__(self) -> None:
+        self.starts: list[tuple[RequestPrincipal, int, int, int, str, str | None, int]] = []
+        self.append_event = AsyncMock()
+        self.fail = AsyncMock()
+
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: str,
+        expected_execution_mode: str | None,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart:
+        self.starts.append(
+            (
+                principal,
+                tenant_id,
+                model_id,
+                workflow_run_id,
+                expected_workflow,
+                expected_execution_mode,
+                expected_model_revision,
+            )
+        )
+        return AgentWorkflowRunStart(
+            changed=True,
+            workflow_run_id=workflow_run_id,
+            workflow_run_state="running",
+            started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
+            model_revision=expected_model_revision,
+        )
+
+
 def _executor(
     preparation: MappingPreparation,
     agent: _RecordingFake,
     policy: AgentContextPolicy | None = None,
-) -> tuple[DatabaseMappingExecutor, AsyncMock, AsyncMock, AsyncMock]:
+    *,
+    lifecycle: _Lifecycle | None = None,
+) -> tuple[MappingWorkflow, AsyncMock, AsyncMock, AsyncMock]:
     async def finalize(
         _: RequestPrincipal,
         *,
@@ -112,8 +150,9 @@ def _executor(
             ),
         )
     )
-    fail = AsyncMock()
-    service = DatabaseMappingExecutor(
+    selected_lifecycle = lifecycle or _Lifecycle()
+    fail = selected_lifecycle.fail
+    service = MappingWorkflow(
         preparation_service=cast(
             MappingPreparationService,
             SimpleNamespace(
@@ -123,14 +162,14 @@ def _executor(
         agent_executor=agent,
         handoff=cast(MappingChangeSetHandoff, SimpleNamespace(finalize=handoff)),
         no_op=cast(MappingNoOpCompleter, SimpleNamespace(complete=no_op)),
-        lifecycle=cast(MappingLifecycle, SimpleNamespace(append_event=AsyncMock(), fail=fail)),
+        lifecycle=selected_lifecycle,
         context_policy=policy,
     )
     return service, handoff, no_op, fail
 
 
 async def _execute(
-    service: DatabaseMappingExecutor,
+    service: MappingWorkflow,
 ) -> WorkflowChangeSetHandoffResult | AuthoringNoOpReceipt:
     return await service.execute_started(
         RequestPrincipal(
@@ -144,6 +183,42 @@ async def _execute(
         workflow_run_claim_token=UUID("44444444-4444-4444-4444-444444444444"),
         expected_model_revision=7,
     )
+
+
+@pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))
+async def test_start_binds_mapping_without_executing(
+    mode: WorkflowExecutionMode,
+) -> None:
+    lifecycle = _Lifecycle()
+    agent = _RecordingFake()
+    service, handoff, no_op, fail = _executor(
+        mapping_preparation(execution_mode=mode),
+        agent,
+        lifecycle=lifecycle,
+    )
+    principal = RequestPrincipal(
+        actor_kind=ActorKind.HUMAN,
+        entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+        entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+    )
+
+    result = await service.start(
+        principal,
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_execution_mode=mode,
+        expected_model_revision=7,
+    )
+
+    assert lifecycle.starts == [(principal, 7, 18, 1048, "mapping", mode, 7)]
+    assert result.workflow_run_id == 1048
+    assert result.model_revision == 7
+    assert agent.requests == []
+    handoff.assert_not_awaited()
+    no_op.assert_not_awaited()
+    fail.assert_not_awaited()
+    lifecycle.append_event.assert_not_awaited()
 
 
 @pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))
@@ -177,20 +252,19 @@ async def test_mapping_local_fake_completes_each_mode(
     assert [request.stage for request in agent.requests] == ["mapping_authoring"]
 
 
-@pytest.mark.parametrize("oversized", (False, True))
-async def test_mapping_description_limits_follow_the_bounded_request(
-    oversized: bool,
+@pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))
+async def test_mapping_large_descriptions_reach_the_agent_unchanged(
+    mode: WorkflowExecutionMode,
 ) -> None:
-    preparation = mapping_preparation(execution_mode="one_shot")
+    preparation = mapping_preparation(execution_mode=mode)
     raw = preparation.context.model_dump(mode="json")
     long_description = "Synthetic descriptive metadata. " * 100
     raw["source_system"]["system_description"] = long_description
     raw["target"]["object_description"] = long_description
     raw["target"]["attributes"][0]["attribute_description"] = long_description
     raw["sources"][0]["object"]["object_description"] = long_description
-    raw["sources"][0]["object"]["attributes"][0]["attribute_description"] = (
-        "x" * 600_000 if oversized else long_description
-    )
+    attribute_description = "x" * 1_100_000
+    raw["sources"][0]["object"]["attributes"][0]["attribute_description"] = attribute_description
     entity = raw["headers"][0]["modeled_entity"]
     entity["entity_definition"] = long_description
     entity["grain"] = long_description
@@ -224,25 +298,19 @@ async def test_mapping_description_limits_follow_the_bounded_request(
     agent = _RecordingFake()
     service, handoff, _, fail = _executor(preparation, agent)
 
-    if oversized:
-        with pytest.raises(AgentContextTooLargeError):
-            await _execute(service)
-        assert agent.requests == []
-        handoff.assert_not_awaited()
-        fail.assert_awaited_once()
-    else:
-        await _execute(service)
-        original = cast(
-            dict[str, JsonValue],
-            cast(dict[str, JsonValue], agent.requests[0].context)["original_context"],
-        )
-        values = cast(dict[str, JsonValue], original["values"])
-        source = cast(list[dict[str, JsonValue]], values["source_evidence"])[0]
-        source_object = cast(dict[str, JsonValue], source["object"])
-        attribute = cast(list[dict[str, JsonValue]], source_object["attributes"])[0]
-        assert attribute["attribute_description"] == long_description
-        handoff.assert_awaited_once()
-        fail.assert_not_awaited()
+    await _execute(service)
+    original = cast(
+        dict[str, JsonValue],
+        cast(dict[str, JsonValue], agent.requests[0].context)["original_context"],
+    )
+    values = cast(dict[str, JsonValue], original["values"])
+    source = cast(list[dict[str, JsonValue]], values["source_evidence"])[0]
+    source_object = cast(dict[str, JsonValue], source["object"])
+    attribute = cast(list[dict[str, JsonValue]], source_object["attributes"])[0]
+    assert attribute["attribute_description"] == attribute_description
+    assert attribute_description in agent.requests[0].instruction_prompt
+    handoff.assert_awaited_once()
+    fail.assert_not_awaited()
 
 
 async def test_mapping_requires_private_validation_context_before_provider() -> None:
@@ -261,7 +329,9 @@ async def test_mapping_requires_private_validation_context_before_provider() -> 
 
 
 @pytest.mark.parametrize("selected_tools", [(), ("get_existing_mapping",)])
-async def test_mapping_saved_reader_selection_is_enforced(selected_tools: tuple[str, ...]) -> None:
+async def test_mapping_saved_reader_selection_is_enforced(
+    selected_tools: tuple[str, ...],
+) -> None:
     preparation = mapping_preparation(execution_mode="tool_assisted")
     plan = preparation.plan.agent_plan
     plan = plan.model_copy(

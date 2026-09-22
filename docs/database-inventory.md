@@ -7,7 +7,7 @@ objects installed by `database/01_reference.sql` through
 `database/19_runtime_integrity.sql`. It excludes seed data plus preflight and
 verification queries.
 
-Inventory totals: **103 tables, 96 functions, and 18 installed triggers**.
+Inventory totals: **102 tables, 86 functions, and 18 installed triggers**.
 
 Read the schemas in dependency order:
 
@@ -60,11 +60,10 @@ retained rather than cascade-deleted.
 - `core.process_group` — Tenant/System/Zone processing group tied to a Copy Group.
 - `core.process` — Ordered executable/location that processes one registered Object within a Process Group.
 
-### `security` — identity, access, and Tenant Locks (6)
+### `security` — identity, access, and Tenant Locks (5)
 
 - `security.principal` — Internal user or service Principal, active state, Entra application shape, and explicit Super Admin flag.
 - `security.entra_principal_identity` — Unique Entra tenant/object identity mapped to one typed Principal.
-- `security.notebook_runtime_principal` — Database-owned binding from the exact notebook login role OID/name to one governed workload Principal and Databricks environment code.
 - `security.tenant_principal_access` — Tenant role grant (`viewer`, `developer`, `architect`, or `tenant_admin`) with optional expiry.
 - `security.tenant_lock` — Current database-time write lease for a Tenant; at most one active row per Tenant.
 - `security.tenant_lock_event` — Append-style audit history for acquired, renewed, released, overridden, and expired locks.
@@ -152,7 +151,7 @@ Each entry gives purpose, then execution order.
 
 - `reference.is_nonblank` — Shared immutable text validator. Steps: (1) reject `NULL`; (2) trim surrounding whitespace; (3) return whether any character remains.
 
-### `security` (12)
+### `security` (7)
 
 - `security.authorize_tenant_operation` — Central authorization decision for a server-selected policy. Steps: (1) validate Principal type and policy; (2) resolve one active Entra identity and Principal; (3) resolve the active Tenant and effective role, including global read visibility and Super Admin; (4) compare role rank with policy; (5) for metadata/model writes, require the caller-owned unexpired Tenant Lock; (6) return an authorization decision and bounded denial/lock metadata.
 - `security.check_tenant_lock` — Read the active lock visible to an authorized lock manager. Steps: (1) authorize `tenant_lock_manage`; (2) find an unexpired Tenant Lock; (3) return unlocked state or owner, purpose, times, and whether the caller owns it.
@@ -161,11 +160,6 @@ Each entry gives purpose, then execution order.
 - `security.renew_tenant_lock` — Renew only the caller-owned live lock. Steps: (1) validate duration and authorize; (2) lock/read current state; (3) audit/remove stale state; (4) reject missing or other-owned lock; (5) reset acquired/expiry times; (6) append `renewed` and return the lease.
 - `security.release_tenant_lock` — Release only the caller-owned live lock. Steps: (1) authorize; (2) lock/read current state; (3) audit/remove stale state; (4) reject missing or other-owned lock; (5) append `released`; (6) remove and return prior lease times.
 - `security.expire_tenant_locks` — Bounded concurrency-safe expiry worker. Steps: (1) validate batch limit 1–1000; (2) select expired locks in expiry order with `FOR UPDATE SKIP LOCKED`; (3) append one `expired` event per lock; (4) remove each lock; (5) return the count.
-- `security.current_notebook_principal` — Resolve the notebook actor without caller input. Steps: (1) match `SESSION_USER` to both the bound role OID and role name; (2) require the login and binding to remain active; (3) require active Entra identity and Principal rows; (4) require an active Super Admin service Principal; (5) return the bounded identity record.
-- `security.check_notebook_tenant_lock` — Check a Tenant Lock for the bound notebook actor. Steps: (1) resolve the actor from `SESSION_USER`; (2) return bounded authorization denial when unbound; (3) delegate to the governed lock check with the resolved workload identity.
-- `security.acquire_notebook_tenant_lock` — Acquire a Tenant Lock for the bound notebook actor. Steps: (1) resolve the actor from `SESSION_USER`; (2) reject an unbound login; (3) delegate duration, purpose, and Tenant ID to the governed acquire function without caller-supplied actor fields.
-- `security.renew_notebook_tenant_lock` — Renew a Tenant Lock for the bound notebook actor. Steps: (1) resolve the actor from `SESSION_USER`; (2) reject an unbound login; (3) delegate Tenant ID and duration to the governed renew function.
-- `security.release_notebook_tenant_lock` — Release a Tenant Lock for the bound notebook actor. Steps: (1) resolve the actor from `SESSION_USER`; (2) reject an unbound login; (3) delegate only the Tenant ID to the governed release function.
 
 ### `model` (1)
 
@@ -210,7 +204,7 @@ Each entry gives purpose, then execution order.
 - `application.save_sql_generation_guide_draft` — Create or edit the single Guide draft. Steps: (1) validate bounded nonblank content; (2) authenticate Super Admin and lock active Guide; (3) compute digest; (4) replay identical draft; (5) fence and edit existing draft, or assign next version and insert; (6) return.
 - `application.transition_sql_generation_guide_version` — Publish or retire a Guide version. Steps: (1) authenticate Super Admin; (2) lock active Guide and version; (3) allow only draft→published or published→retired, with target-state replay; (4) enforce expected current status; (5) set lifecycle actor/time fields and return.
 
-### `application` — Workflow Run control (22)
+### `application` — Workflow Run control (17)
 
 - `application.guard_workflow_run_mapping_target_selection` — Mapping-selection immutability trigger function. Steps: (1) receive UPDATE/DELETE; (2) raise; (3) preserve the frozen pair.
 - `application.guard_workflow_run_object_selection` — Object-selection immutability trigger function. Steps: (1) receive UPDATE/DELETE; (2) raise; (3) preserve frozen selection.
@@ -222,14 +216,9 @@ Each entry gives purpose, then execution order.
 - `application.lock_authoring_workflow_run` — Internal row-lock helper for agentic authoring. Steps: (1) match Run and Model; (2) require a mode-based authoring workflow with non-null mode, or Code Generation/Validation with null mode; (3) lock the Run `FOR UPDATE`; (4) return its core identity/state.
 - `application.start_workflow_run` — Start a caller-owned queued Run. Steps: (1) lock Run and active Model; (2) authorize and verify actor ownership; (3) require the caller, frozen Run, and current Model revisions to match; (4) replay non-queued state without mutation; (5) reject when another Run is active for the Tenant, with a unique-index race fence; (6) move to `running`; (7) append sequence-1 `started` event and return.
 - `application.claim_next_workflow_run` — Worker lease allocator. Steps: (1) validate 1–300 second lease; (2) atomically fail up to 100 running Runs whose Model, actor, or exact unambiguous actor identity is unavailable, appending one generic safe failure event each; (3) atomically fail up to 100 expired claims already recovered five times and append safe failure events; (4) choose the oldest eligible running Run with active unambiguous actor identity using `SKIP LOCKED`; (5) generate a raw UUID token but store only its SHA-256 digest; (6) set claim/expiry times and increment recovery count when reclaiming; (7) return Run, actor identity, raw token, and lease.
-- `application.claim_workflow_run_exact` — Private exact-Run notebook lease allocator. Steps: (1) resolve the database-bound notebook workload Principal; (2) lock only the requested actor-owned Run and require the expected workflow/running state; (3) terminalize only that Run when its execution context is invalid or recovery is exhausted; (4) refuse a live claim; (5) rotate an expired claim while incrementing recovery once; (6) store only the token digest and return the raw token once.
 - `application.renew_workflow_run_claim` — Heartbeat an exact live worker lease. Steps: (1) validate Run/token/duration; (2) hash token; (3) update only matching running unexpired claim; (4) extend heartbeat/expiry; (5) raise if unavailable and return times otherwise.
 - `application.release_workflow_run_claim` — Release an exact live running claim. Steps: (1) validate Run/token; (2) hash and match stored digest; (3) require unexpired lease; (4) clear all claim fields; (5) raise if unavailable; (6) return success.
 - `application.assert_workflow_run_claim` — Fence final worker writes. Steps: (1) validate Run/token; (2) hash token; (3) lock the exact running, unexpired matching Run row; (4) raise on stale, wrong, expired, or terminal claim; (5) return no data.
-- `application.create_notebook_workflow_run` — Identity-derived notebook Run creation. Steps: (1) resolve the database-bound workload Principal; (2) require the explicit Tenant/Model binding; (3) forward workflow intent to the governed idempotent Run creator without caller-supplied identity; (4) return the queued Run.
-- `application.start_and_claim_notebook_workflow_run` — Atomic notebook start and exact claim. Steps: (1) resolve the bound workload Principal and lock the exact actor-owned Run; (2) verify Tenant, Model, workflow, and revision; (3) start a queued Run; (4) claim that same Run before commit so a global worker cannot take it; (5) support safe expired-lease recovery for an already running Run.
-- `application.renew_notebook_workflow_run_claim` — Actor-bound notebook heartbeat wrapper. Steps: (1) resolve the bound workload Principal; (2) lock and require its exact Run; (3) delegate token/duration validation and renewal to the governed lease function.
-- `application.release_notebook_workflow_run_claim` — Actor-bound notebook release wrapper. Steps: (1) resolve the bound workload Principal; (2) lock and require its exact Run; (3) delegate exact live-token release to the governed lease function.
 - `application.append_workflow_run_event` — Append idempotent safe progress events. Steps: (1) validate sequence, attempt, stage, status, safe message, progress, and findings; (2) lock Run/Model, authorize, and verify owner/current revision; (3) replay an identical existing sequence or reject conflict; (4) require running state and allowed attempt; (5) enforce contiguous sequence; (6) calculate percentage, insert, and return event.
 - `application.complete_workflow_run` — Complete a running Run. Steps: (1) validate findings; (2) lock/authorize Run and verify owner/current revision; (3) reject no-op receipt conflict; (4) replay an exact prior completion; (5) require running state; (6) derive repaired/non-repaired terminal state from attempts; (7) clear claim, append final completed event, and return.
 - `application.complete_authoring_workflow_run_no_op` — Atomically record an unchanged authoring Candidate. Steps: (1) validate exact Run/workflow/mode/correlation/revision/digest/final-event inputs; (2) lock/authorize Run and require no Run-bound Model Change Set; (3) replay only an exact stored receipt/event; (4) require running state, current revision, contiguous event, allowed attempt, and workflow-specific backend-validation event; (5) insert final 100% event; (6) store immutable no-op receipt, clear claim, complete Run, and return.

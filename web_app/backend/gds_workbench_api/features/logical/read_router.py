@@ -2,9 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query, Request
+from fastapi import APIRouter, Depends, Path, Query
 from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.logical.read_contracts import (
     LogicalAttributeDetail,
     LogicalAttributeFilters,
@@ -57,18 +59,19 @@ def create_logical_router(
     service: LogicalService,
 ) -> APIRouter:
     """Create the Logical review router for later runtime composition."""
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/logical",
         tags=["logical"],
     )
 
     async def list_entities(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         query: Annotated[LogicalEntityListQuery, Query()],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> LogicalEntityPage:
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_entities(
             principal,
             tenant_id=tenant_id,
@@ -86,12 +89,12 @@ def create_logical_router(
     )
 
     async def read_entity(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         logical_entity_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> LogicalEntityDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_entity(
             principal,
             tenant_id=tenant_id,
@@ -107,12 +110,12 @@ def create_logical_router(
     )
 
     async def list_attributes(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         query: Annotated[LogicalAttributeListQuery, Query()],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> LogicalAttributePage:
-        principal = identity_provider.authenticate(request.headers)
         filters = LogicalAttributeFilters.model_validate(
             {
                 "status": query.status,
@@ -140,12 +143,12 @@ def create_logical_router(
     )
 
     async def read_attribute(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         logical_attribute_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> LogicalAttributeDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_attribute(
             principal,
             tenant_id=tenant_id,
@@ -161,12 +164,12 @@ def create_logical_router(
     )
 
     async def list_relationships(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         query: Annotated[LogicalRelationshipListQuery, Query()],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> LogicalRelationshipPage:
-        principal = identity_provider.authenticate(request.headers)
         filters = LogicalRelationshipFilters.model_validate(
             {
                 "status": query.status,
@@ -194,12 +197,12 @@ def create_logical_router(
     )
 
     async def read_relationship(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         logical_relationship_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> LogicalRelationshipDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_relationship(
             principal,
             tenant_id=tenant_id,
@@ -215,12 +218,12 @@ def create_logical_router(
     )
 
     async def list_submodels(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         query: Annotated[ModeledListQuery, Query()],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> LogicalSubmodelPage:
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_submodels(
             principal,
             tenant_id=tenant_id,
@@ -238,12 +241,12 @@ def create_logical_router(
     )
 
     async def read_submodel(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         logical_submodel_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> LogicalSubmodelDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_submodel(
             principal,
             tenant_id=tenant_id,

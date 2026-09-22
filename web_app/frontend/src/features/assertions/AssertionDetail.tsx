@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
-import { DetailState } from "../../shared/ui";
+import { DetailState, Fact } from "../../shared/ui";
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 import { assertionsQueryKeys, type AssertionsApi } from "./api";
 import { NormalizedJson } from "./NormalizedJson";
@@ -146,10 +146,6 @@ function DetailHeader({
       </span>
     </header>
   );
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return <div><dt>{label}</dt><dd>{value}</dd></div>;
 }
 
 function humanize(value: string): string {

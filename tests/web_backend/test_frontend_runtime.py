@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from gds_workbench_api.frontend import (
@@ -64,6 +65,31 @@ def test_request_body_limit_rejects_declared_and_streamed_oversize_bodies() -> N
     assert accepted.json() == {"bytes": 4}
     assert rejected.status_code == 413
     assert rejected.json() == {"detail": "Request body is too large."}
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "/api/v1/tenants/7/prompts/templates/1/versions",
+        "/api/v1/tenants/7/prompts/render",
+        "/api/v1/tenants/7/sql-generation-guides/1/versions",
+        "/api/v1/tenants/7/models/18/runs",
+    ),
+)
+def test_agent_authoring_request_bodies_have_no_middleware_size_ceiling(path: str) -> None:
+    app = FastAPI()
+
+    async def inspect_body(request: Request) -> dict[str, int]:
+        return {"bytes": len(await request.body())}
+
+    app.add_api_route(path, inspect_body, methods=["POST"])
+    app.add_middleware(RequestBodyLimitMiddleware, maximum_bytes=4)
+
+    with TestClient(app) as client:
+        response = client.post(path, content=b"complete synthetic input")
+
+    assert response.status_code == 200
+    assert response.json() == {"bytes": 24}
 
 
 def test_frontend_mount_fails_closed_when_build_is_missing(tmp_path: Path) -> None:

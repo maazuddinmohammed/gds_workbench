@@ -41,15 +41,12 @@ done
 If any file fails, preserve the error and stop. Do not drop, truncate, reset, or
 rerun fresh-install files.
 
-`18_runtime_account.sql` creates three separate passwordless logins. MCP uses
+`18_runtime_account.sql` creates two separate passwordless logins. MCP uses
 `gds_mcp_runtime`, whose only direct membership is `gds_app_write`. The web app
 uses `gds_web_runtime`, whose only direct membership is `gds_web_write`.
-Databricks notebooks use `gds_notebook_runtime`, whose only direct membership
-is also `gds_web_write`. All memberships disable inheritance and administration
-and allow explicit transaction-scoped role activation. The notebook base login
-therefore retains only its governed wrapper surface until shared workflow code
-issues `SET LOCAL ROLE gds_web_write`. All three receive database connection
-access, but none can authenticate until its own password is set.
+Both memberships disable inheritance and administration and allow explicit
+transaction-scoped role activation. Both logins receive database connection
+access, but neither can authenticate until its own password is set.
 
 `application.create_workflow_run` accepts the exact selected Object IDs plus
 bounded workflow-specific inputs. Mapping selected coverage accepts one target

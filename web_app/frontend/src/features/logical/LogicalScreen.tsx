@@ -219,12 +219,12 @@ export function LogicalScreen({
           model={model}
           kind="inference"
           workflow="logical"
-          executeCreated={(workflowRunId, executionMode) => api.executeLogicalRun(
+          executeCreated={(workflowRunId, executionMode, expectedModelRevision) => api.executeLogicalRun(
             tenantId,
             model.model_id,
             workflowRunId,
             executionMode,
-            model.model_revision,
+            expectedModelRevision,
           ).then(() => undefined)}
           onClose={() => setRunDialogOpen(false)}
           onCreated={async (workflowRunId) => {

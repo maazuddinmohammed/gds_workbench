@@ -4,7 +4,7 @@
   "modes": [
     "tool_assisted"
   ],
-  "status": "authorized_for_implementation",
+  "status": "implemented_contract",
   "variables": {
     "target_metadata": {
       "description": "Actual physical target natural key and catalog plus ordered registered Attributes, exact data types/nullability, current descriptions and locks.",

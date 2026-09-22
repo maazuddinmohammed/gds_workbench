@@ -1,8 +1,9 @@
-import { useEffect, useRef, type KeyboardEvent, type RefObject } from "react";
+import { useRef } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
+import { trapDialogFocus, useDialogFocus } from "../../shared/dialog";
 import type {
   PromptOwnershipScope,
   PromptStage,
@@ -62,7 +63,7 @@ export function CreatePromptDialog({
     && values.description.trim().length <= 2000
     && (values.ownershipScope === "global" || hasTenantLock);
 
-  usePromptDialogFocus(closeButton);
+  useDialogFocus(closeButton);
 
   return (
     <div className="dialog-scrim prompt-dialog-scrim" role="presentation">
@@ -72,7 +73,7 @@ export function CreatePromptDialog({
         aria-modal="true"
         aria-labelledby="create-prompt-heading"
         onKeyDown={(event) => {
-          trapPromptDialogFocus(event);
+          trapDialogFocus(event);
           if (event.key === "Escape") onClose();
         }}
       >
@@ -248,7 +249,7 @@ export function PromptTransitionDialog({
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
   const title = action === "publish" ? "Publish immutable version" : "Retire published version";
-  usePromptDialogFocus(closeButton);
+  useDialogFocus(closeButton);
 
   return (
     <div className="dialog-scrim prompt-dialog-scrim" role="presentation">
@@ -258,7 +259,7 @@ export function PromptTransitionDialog({
         aria-modal="true"
         aria-labelledby="prompt-transition-heading"
         onKeyDown={(event) => {
-          trapPromptDialogFocus(event);
+          trapDialogFocus(event);
           if (event.key === "Escape" && !isPending) onClose();
         }}
       >
@@ -365,7 +366,7 @@ export function EditPromptHeaderDialog({
     && values.name.trim().length <= 200
     && values.description.trim().length <= 2000;
 
-  usePromptDialogFocus(closeButton);
+  useDialogFocus(closeButton);
 
   return (
     <div className="dialog-scrim prompt-dialog-scrim" role="presentation">
@@ -375,7 +376,7 @@ export function EditPromptHeaderDialog({
         aria-modal="true"
         aria-labelledby="edit-prompt-header-heading"
         onKeyDown={(event) => {
-          trapPromptDialogFocus(event);
+          trapDialogFocus(event);
           if (event.key === "Escape") onClose();
         }}
       >
@@ -477,23 +478,6 @@ export function EditPromptHeaderDialog({
 
 function stageLabel(stage: PromptStage): string {
   return `${humanize(stage.model_workflow)} · ${modeLabel(stage.workflow_execution_mode)} · ${stage.workflow_stage_name}`;
-}
-
-export function usePromptDialogFocus(initialFocus: RefObject<HTMLButtonElement | null>) {
-  useEffect(() => {
-    const previousFocus = document.activeElement;
-    initialFocus.current?.focus();
-    return () => { if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus(); };
-  }, [initialFocus]);
-}
-
-export function trapPromptDialogFocus(event: KeyboardEvent<HTMLElement>) {
-  if (event.key !== "Tab") return;
-  const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("*")).filter((element) => element.tabIndex >= 0 && !element.matches(":disabled") && !element.closest("[hidden]"));
-  const first = controls[0];
-  const last = controls[controls.length - 1];
-  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
 }
 
 function modeLabel(value: PromptStage["workflow_execution_mode"]): string {

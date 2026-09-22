@@ -27,4 +27,24 @@ describe("Models HTTP adapter", () => {
       ["/api/v1/tenants/7/models/18/overview", undefined],
     ]);
   });
+
+  it("sends creation as a same-Tenant JSON command", async () => {
+    const calls: Array<[string, RequestInit | undefined]> = [];
+    const request: HttpRequest = async <T>(path: string, init?: RequestInit) => {
+      calls.push([path, init]);
+      return {} as T;
+    };
+    const command: Parameters<ReturnType<typeof createModelsApi>["createModel"]>[1] = {
+      model_name: "Customer", model_description: null,
+      silver_model_naming_instructions: null, silver_model_audit_columns_template: null,
+      gold_model_naming_instructions: null, gold_model_technical_columns_template: null,
+      gold_model_audit_columns_template: null, default_agent_sdk_code: null,
+      default_agent_provider_code: null, default_agent_model_code: null,
+      default_reasoning_effort_code: null, default_max_turns: null, default_validation_retry_count: null,
+    };
+    await createModelsApi(request).createModel(7, command);
+    expect(calls).toEqual([["/api/v1/tenants/7/models", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(command),
+    }]]);
+  });
 });

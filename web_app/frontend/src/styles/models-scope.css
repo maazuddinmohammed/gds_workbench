@@ -89,6 +89,22 @@
   min-width: 70rem;
 }
 
+.mapping-surface .mapping-table-scroll {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-medium);
+}
+
+.mapping-table-scroll :is(th, td):last-child { text-align: right; }
+.mapping-table-scroll .text-action { white-space: nowrap; }
+.mapping-filterbar.is-object-scoped { grid-template-columns: repeat(2, minmax(9rem, 14rem)) auto; }
+.mapping-object-attributes .mapping-table-scroll table { min-width: 52rem; }
+.mapping-object-attributes .mapping-table-scroll { max-height: none; }
+.mapping-object-attributes .mapping-surface { margin: 0; }
+
+@media (max-width: 42rem) {
+  .mapping-filterbar.is-object-scoped { grid-template-columns: 1fr; }
+}
+
 .mapping-document-section {
   margin-top: 2rem;
 }
@@ -162,23 +178,20 @@
 }
 
 .model-name,
-.scope-object-name,
-.scope-secondary {
+.scope-object-name {
   display: grid;
   min-width: 0;
   gap: 0.22rem;
 }
 
 .model-name strong,
-.scope-object-name strong,
-.scope-secondary strong {
+.scope-object-name strong {
   color: var(--ink);
   font-size: 0.82rem;
 }
 
 .model-name span,
-.scope-object-name span,
-.scope-secondary span {
+.scope-object-name span {
   overflow: hidden;
   color: var(--muted);
   font-size: 0.69rem;
@@ -1091,3 +1104,66 @@ a.model-step:hover {
 .scope-ledger th, .scope-ledger .zone-badge { white-space: nowrap; }
 .scope-ledger .scope-object-name strong { min-width: 5rem; max-width: 18rem; overflow-wrap: anywhere; }
 .scope-add-dialog tbody th { font-weight: 600; font-size: inherit; text-transform: none; letter-spacing: normal; color: var(--ink); background: transparent; }
+
+.models-ledger-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.create-model-fields {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.create-model-fields label {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+}
+
+.create-model-fields label > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.create-model-fields small,
+.create-model-settings summary > span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 400;
+}
+
+.create-model-fields input,
+.create-model-fields select,
+.create-model-fields textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.78rem;
+}
+
+.create-model-fields textarea { resize: vertical; }
+.create-model-fields .field-help { margin: 0; }
+.create-model-dialog [role="alert"] { color: var(--red); font-size: 0.78rem; }
+.create-model-settings { border-top: 1px solid var(--line); }
+.create-model-settings summary { padding: 0.8rem 0; font-size: 0.8rem; font-weight: 650; cursor: pointer; }
+.create-model-settings summary > span { margin-left: 0.75rem; }
+.create-model-agent-limits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+
+@media (max-width: 42rem) {
+  .models-ledger-actions { justify-content: space-between; }
+  .create-model-agent-limits { grid-template-columns: 1fr; }
+}

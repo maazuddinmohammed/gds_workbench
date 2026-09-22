@@ -59,7 +59,7 @@ async def prepare_input_scope_addition(
     )
     if len(rows) != len(object_ids):
         raise InvalidRequestError("Choose active Source or Bronze Objects visible to this Model.")
-    review = await read_model_review_snapshot(transaction, model)
+    review = await read_model_review_snapshot(transaction, model, enforce_row_limits=False)
     validation = validate_future_graph(
         snapshot=review.snapshot,
         staged_documents={"model_input_scope": rows},

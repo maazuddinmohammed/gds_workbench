@@ -2,14 +2,14 @@
 
 from typing import Protocol
 
-from fastapi import FastAPI, Response, status
-from fastapi.requests import Request
+from fastapi import Depends, FastAPI, Response, status
 from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.errors import AuthenticationError, WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import ReadinessRecord as ReadinessResult
 from starlette.types import Lifespan
 
 from gds_workbench_api.capabilities import AgentCapabilityRegistry
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.errors import (
     authentication_error_response,
     workbench_error_response,
@@ -224,7 +224,10 @@ def create_app(
     app.add_api_route("/healthz", health, methods=["GET"], tags=["health"])
     app.add_api_route("/readyz", ready, methods=["GET"], tags=["health"])
 
-    if identity_provider is not None and session_service is not None:
+    if identity_provider is None:
+        return app
+
+    if session_service is not None:
         app.include_router(
             create_session_router(
                 identity_provider=identity_provider,
@@ -232,7 +235,7 @@ def create_app(
             )
         )
 
-    if identity_provider is not None and tenant_service is not None:
+    if tenant_service is not None:
         app.include_router(
             create_tenants_router(
                 identity_provider=identity_provider,
@@ -240,45 +243,44 @@ def create_app(
             )
         )
 
-    if identity_provider is not None and model_service is not None:
+    if model_service is not None:
         app.include_router(
             create_models_router(
                 identity_provider=identity_provider,
                 service=model_service,
             )
         )
-    if identity_provider is not None and model_command_service is not None:
+    if model_command_service is not None:
         app.include_router(
             create_model_commands_router(
                 identity_provider=identity_provider,
                 service=model_command_service,
             )
         )
-    if identity_provider is not None and model_change_set_service is not None:
+    if model_change_set_service is not None:
         app.include_router(
             create_model_change_sets_router(
                 identity_provider=identity_provider,
                 service=model_change_set_service,
             )
         )
-    if identity_provider is not None and workflow_draft_apply_service is not None:
+    if workflow_draft_apply_service is not None:
         app.include_router(
             create_workflow_draft_apply_router(
                 identity_provider=identity_provider,
                 service=workflow_draft_apply_service,
             )
         )
-    if identity_provider is not None and model_input_scope_service is not None:
+    if model_input_scope_service is not None:
         app.include_router(
             create_input_scope_router(
                 identity_provider=identity_provider,
                 service=model_input_scope_service,
             )
         )
-    if identity_provider is not None and agent_capability_registry is not None:
+    if agent_capability_registry is not None:
 
-        async def agent_capabilities(request: Request) -> AgentCapabilityRegistry:
-            identity_provider.authenticate(request.headers)
+        async def agent_capabilities() -> AgentCapabilityRegistry:
             return agent_capability_registry
 
         app.add_api_route(
@@ -286,221 +288,219 @@ def create_app(
             agent_capabilities,
             methods=["GET"],
             response_model=AgentCapabilityRegistry,
+            dependencies=[Depends(principal_dependency(identity_provider))],
             tags=["configuration"],
         )
-    if identity_provider is not None and tenant_lock_service is not None:
+    if tenant_lock_service is not None:
         app.include_router(
             create_tenant_lock_router(
                 identity_provider=identity_provider,
                 service=tenant_lock_service,
             )
         )
-    if identity_provider is not None and metadata_review_service is not None:
+    if metadata_review_service is not None:
         app.include_router(
             create_metadata_review_router(
                 identity_provider=identity_provider,
                 service=metadata_review_service,
             )
         )
-    if identity_provider is not None and metadata_service is not None:
+    if metadata_service is not None:
         app.include_router(
             create_metadata_router(
                 identity_provider=identity_provider,
                 service=metadata_service,
             )
         )
-    if identity_provider is not None and metadata_change_set_service is not None:
+    if metadata_change_set_service is not None:
         app.include_router(
             create_metadata_change_sets_router(
                 identity_provider=identity_provider,
                 service=metadata_change_set_service,
             )
         )
-    if identity_provider is not None and output_template_service is not None:
+    if output_template_service is not None:
         app.include_router(
             create_output_templates_router(
                 identity_provider=identity_provider,
                 service=output_template_service,
             )
         )
-    if identity_provider is not None and prompt_service is not None:
+    if prompt_service is not None:
         app.include_router(
             create_prompts_router(
                 identity_provider=identity_provider,
                 service=prompt_service,
             )
         )
-    if identity_provider is not None and sql_generation_guide_service is not None:
+    if sql_generation_guide_service is not None:
         app.include_router(
             create_sql_generation_guides_router(
                 identity_provider=identity_provider,
                 service=sql_generation_guide_service,
             )
         )
-    if (
-        identity_provider is not None
-        and profiling_review_service is not None
-        and analysis_review_service is not None
-    ):
+    if profiling_review_service is not None:
         app.include_router(
             create_profiling_router(
                 identity_provider=identity_provider,
                 service=profiling_review_service,
             )
         )
+    if analysis_review_service is not None:
         app.include_router(
             create_analysis_review_router(
                 identity_provider=identity_provider,
                 service=analysis_review_service,
             )
         )
-    if identity_provider is not None and profiling_workflow_service is not None:
+    if profiling_workflow_service is not None:
         app.include_router(
             create_profiling_workflow_router(
                 identity_provider=identity_provider,
                 service=profiling_workflow_service,
             )
         )
-    if identity_provider is not None and analysis_inference_workflow_service is not None:
+    if analysis_inference_workflow_service is not None:
         app.include_router(
             create_analysis_inference_workflow_router(
                 identity_provider=identity_provider,
                 service=analysis_inference_workflow_service,
             )
         )
-    if identity_provider is not None and analysis_validation_workflow_service is not None:
+    if analysis_validation_workflow_service is not None:
         app.include_router(
             create_analysis_validation_workflow_router(
                 identity_provider=identity_provider,
                 service=analysis_validation_workflow_service,
             )
         )
-    if identity_provider is not None and assertions_service is not None:
+    if assertions_service is not None:
         app.include_router(
             create_assertions_router(
                 identity_provider=identity_provider,
                 service=assertions_service,
             )
         )
-    if identity_provider is not None and conceptual_service is not None:
+    if conceptual_service is not None:
         app.include_router(
             create_conceptual_router(
                 identity_provider=identity_provider,
                 service=conceptual_service,
             )
         )
-    if identity_provider is not None and conceptual_workflow_service is not None:
+    if conceptual_workflow_service is not None:
         app.include_router(
             create_conceptual_workflow_router(
                 identity_provider=identity_provider,
                 service=conceptual_workflow_service,
             )
         )
-    if identity_provider is not None and model_targets_service is not None:
+    if model_targets_service is not None:
         app.include_router(
             create_model_targets_router(
                 identity_provider=identity_provider, service=model_targets_service
             )
         )
-    if identity_provider is not None and logical_service is not None:
+    if logical_service is not None:
         app.include_router(
             create_logical_router(
                 identity_provider=identity_provider,
                 service=logical_service,
             )
         )
-    if identity_provider is not None and logical_workflow_service is not None:
+    if logical_workflow_service is not None:
         app.include_router(
             create_logical_workflow_router(
                 identity_provider=identity_provider,
                 service=logical_workflow_service,
             )
         )
-    if identity_provider is not None and dimensional_service is not None:
+    if dimensional_service is not None:
         app.include_router(
             create_dimensional_router(
                 identity_provider=identity_provider,
                 service=dimensional_service,
             )
         )
-    if identity_provider is not None and dimensional_workflow_service is not None:
+    if dimensional_workflow_service is not None:
         app.include_router(
             create_dimensional_workflow_router(
                 identity_provider=identity_provider,
                 service=dimensional_workflow_service,
             )
         )
-    if identity_provider is not None and mapping_review_service is not None:
+    if mapping_review_service is not None:
         app.include_router(
             create_mapping_review_router(
                 identity_provider=identity_provider,
                 service=mapping_review_service,
             )
         )
-    if identity_provider is not None and mapping_workflow_service is not None:
+    if mapping_workflow_service is not None:
         app.include_router(
             create_mapping_workflow_router(
                 identity_provider=identity_provider,
                 service=mapping_workflow_service,
             )
         )
-    if identity_provider is not None and code_generation_service is not None:
+    if code_generation_service is not None:
         app.include_router(
             create_code_generation_router(
                 identity_provider=identity_provider,
                 service=code_generation_service,
             )
         )
-    if identity_provider is not None and code_generation_workflow_service is not None:
+    if code_generation_workflow_service is not None:
         app.include_router(
             create_code_generation_workflow_router(
                 identity_provider=identity_provider,
                 service=code_generation_workflow_service,
             )
         )
-    if identity_provider is not None and validation_read_service is not None:
+    if validation_read_service is not None:
         app.include_router(
             create_validation_read_router(
                 identity_provider=identity_provider,
                 service=validation_read_service,
             )
         )
-    if identity_provider is not None and metadata_enrichment_workflow_service is not None:
+    if metadata_enrichment_workflow_service is not None:
         app.include_router(
             create_metadata_enrichment_workflow_router(
                 identity_provider=identity_provider,
                 service=metadata_enrichment_workflow_service,
             )
         )
-    if identity_provider is not None and metadata_enrichment_read_service is not None:
+    if metadata_enrichment_read_service is not None:
         app.include_router(
             create_metadata_enrichment_read_router(
                 identity_provider=identity_provider,
                 service=metadata_enrichment_read_service,
             )
         )
-    if identity_provider is not None and validation_workflow_service is not None:
+    if validation_workflow_service is not None:
         app.include_router(
             create_validation_workflow_router(
                 identity_provider=identity_provider,
                 service=validation_workflow_service,
             )
         )
-    if identity_provider is not None and workflow_overview_service is not None:
+    if workflow_overview_service is not None:
         app.include_router(
             create_workflow_overview_router(
                 identity_provider=identity_provider,
                 service=workflow_overview_service,
             )
         )
-    if identity_provider is not None and workflow_run_service is not None:
+    if workflow_run_service is not None:
         app.include_router(
             create_workflow_runs_router(
                 identity_provider=identity_provider,
                 service=workflow_run_service,
             )
         )
-    if identity_provider is not None and workflow_command_service is not None:
+    if workflow_command_service is not None:
         app.include_router(
             create_workflow_commands_router(
                 identity_provider=identity_provider,

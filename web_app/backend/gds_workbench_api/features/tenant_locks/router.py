@@ -2,9 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query
 from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.tenant_locks.contracts import (
     AcquireLockRequest,
     LockHistoryPage,
@@ -20,14 +22,15 @@ def create_tenant_lock_router(
     identity_provider: IdentityProvider,
     service: TenantLockService,
 ) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(prefix="/api/v1/tenants/{tenant_id}/lock", tags=["tenant-lock"])
 
     async def acquire(
-        request: Request,
         tenant_id: int,
         body: AcquireLockRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> TenantLockMutation:
-        principal = identity_provider.authenticate(request.headers)
         return await service.acquire(
             principal,
             tenant_id=tenant_id,
@@ -36,27 +39,28 @@ def create_tenant_lock_router(
         )
 
     async def renew(
-        request: Request,
         tenant_id: int,
         body: RenewLockRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> TenantLockMutation:
-        principal = identity_provider.authenticate(request.headers)
         return await service.renew(
             principal,
             tenant_id=tenant_id,
             duration_minutes=body.duration_minutes,
         )
 
-    async def release(request: Request, tenant_id: int) -> TenantLockMutation:
-        principal = identity_provider.authenticate(request.headers)
+    async def release(
+        tenant_id: int, *, principal: RequestPrincipal = Depends(authenticate)
+    ) -> TenantLockMutation:
         return await service.release(principal, tenant_id=tenant_id)
 
     async def override(
-        request: Request,
         tenant_id: int,
         body: OverrideLockRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> TenantLockMutation:
-        principal = identity_provider.authenticate(request.headers)
         return await service.override(
             principal,
             tenant_id=tenant_id,
@@ -64,12 +68,12 @@ def create_tenant_lock_router(
         )
 
     async def history(
-        request: Request,
         tenant_id: int,
         page_size: Annotated[int, Query(ge=1, le=200)] = 50,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> LockHistoryPage:
-        principal = identity_provider.authenticate(request.headers)
         return await service.history(
             principal,
             tenant_id=tenant_id,

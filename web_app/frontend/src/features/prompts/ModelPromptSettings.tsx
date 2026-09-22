@@ -18,7 +18,7 @@ import {
   type PromptsApi,
 } from "./api";
 import { humanize, modeLabel, shortDigest } from "./PromptsLedger";
-import { trapPromptDialogFocus, usePromptDialogFocus } from "./PromptTemplateDialogs";
+import { trapDialogFocus, useDialogFocus } from "../../shared/dialog";
 
 export function ModelPromptSettings({
   api,
@@ -281,7 +281,7 @@ function PromptAssignmentDialog({
       version.promptTemplateVersionId === selectedVersionId
     )) === true;
 
-  usePromptDialogFocus(closeButton);
+  useDialogFocus(closeButton);
 
   return (
     <div className="dialog-scrim prompt-dialog-scrim" role="presentation">
@@ -291,7 +291,7 @@ function PromptAssignmentDialog({
         aria-modal="true"
         aria-labelledby="prompt-assignment-heading"
         onKeyDown={(event) => {
-          trapPromptDialogFocus(event);
+          trapDialogFocus(event);
           if (event.key === "Escape") onClose();
         }}
       >

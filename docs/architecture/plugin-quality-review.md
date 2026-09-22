@@ -1,5 +1,8 @@
 # Plugin output-quality review
 
+> Historical verification record. The interactive notebook runtime was retired
+> by [ADR 007](../adr/007-web-owned-workflows-and-notebook-retirement.md); notebook checks below describe the earlier release.
+
 Date: 2026-09-10. Scope: packaged GDS plugin, shared validation and inference,
 local helpers, workflow instructions, and user guide.
 

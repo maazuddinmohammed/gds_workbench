@@ -2,9 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query, Request, Response
+from fastapi import APIRouter, Depends, Path, Query, Response
 from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.prompts.contracts import (
     CreatePromptTemplateRequest,
     ModelPromptAssignments,
@@ -36,6 +38,7 @@ def create_prompts_router(
     identity_provider: IdentityProvider,
     service: PromptService,
 ) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/prompts",
         tags=["prompts"],
@@ -44,30 +47,25 @@ def create_prompts_router(
     id_path = Path(gt=0)
 
     async def list_stages(
-        request: Request,
         tenant_id: Annotated[int, tenant_path],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> PromptStageCatalog:
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_stages(principal, tenant_id=tenant_id)
 
     async def list_templates(
-        request: Request,
         tenant_id: Annotated[int, tenant_path],
         workflow: ModelWorkflow | None = None,
         mode: WorkflowExecutionMode | None = None,
         stage_code: Annotated[
-            str | None,
-            Query(
-                min_length=1,
-                max_length=100,
-                pattern=r"^[a-z][a-z0-9_]{0,99}$",
-            ),
+            str | None, Query(min_length=1, max_length=100, pattern="^[a-z][a-z0-9_]{0,99}$")
         ] = None,
         status: PromptVersionStatus | None = None,
         page_size: Annotated[int, Query(ge=1, le=200)] = 50,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> PromptTemplatePage:
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_templates(
             principal,
             tenant_id=tenant_id,
@@ -82,11 +80,11 @@ def create_prompts_router(
         )
 
     async def read_template(
-        request: Request,
         tenant_id: Annotated[int, tenant_path],
         prompt_template_id: Annotated[int, id_path],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> PromptTemplateDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_template(
             principal,
             tenant_id=tenant_id,
@@ -94,11 +92,11 @@ def create_prompts_router(
         )
 
     async def create_template(
-        request: Request,
         tenant_id: Annotated[int, tenant_path],
         body: CreatePromptTemplateRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> PromptTemplateHeader:
-        principal = identity_provider.authenticate(request.headers)
         return await service.create_template(
             principal,
             tenant_id=tenant_id,
@@ -106,12 +104,12 @@ def create_prompts_router(
         )
 
     async def update_template(
-        request: Request,
         tenant_id: Annotated[int, tenant_path],
         prompt_template_id: Annotated[int, id_path],
         body: UpdatePromptTemplateRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> PromptTemplateHeader:
-        principal = identity_provider.authenticate(request.headers)
         return await service.update_template(
             principal,
             tenant_id=tenant_id,
@@ -120,12 +118,12 @@ def create_prompts_router(
         )
 
     async def save_draft(
-        request: Request,
         tenant_id: Annotated[int, tenant_path],
         prompt_template_id: Annotated[int, id_path],
         body: SavePromptDraftRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> PromptTemplateVersion:
-        principal = identity_provider.authenticate(request.headers)
         return await service.save_draft(
             principal,
             tenant_id=tenant_id,
@@ -134,13 +132,13 @@ def create_prompts_router(
         )
 
     async def preview_prompt(
-        request: Request,
         response: Response,
         tenant_id: Annotated[int, tenant_path],
         prompt_template_id: Annotated[int, id_path],
         body: SavePromptDraftRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> PromptPreview:
-        principal = identity_provider.authenticate(request.headers)
         detail = await service.read_template(
             principal, tenant_id=tenant_id, prompt_template_id=prompt_template_id
         )
@@ -169,12 +167,12 @@ def create_prompts_router(
         )
 
     async def publish_version(
-        request: Request,
         tenant_id: Annotated[int, tenant_path],
         prompt_template_id: Annotated[int, id_path],
         prompt_template_version_id: Annotated[int, id_path],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> PromptTemplateVersion:
-        principal = identity_provider.authenticate(request.headers)
         return await service.publish_version(
             principal,
             tenant_id=tenant_id,
@@ -183,12 +181,12 @@ def create_prompts_router(
         )
 
     async def retire_version(
-        request: Request,
         tenant_id: Annotated[int, tenant_path],
         prompt_template_id: Annotated[int, id_path],
         prompt_template_version_id: Annotated[int, id_path],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> PromptTemplateVersion:
-        principal = identity_provider.authenticate(request.headers)
         return await service.retire_version(
             principal,
             tenant_id=tenant_id,
@@ -197,11 +195,11 @@ def create_prompts_router(
         )
 
     async def list_model_assignments(
-        request: Request,
         tenant_id: Annotated[int, tenant_path],
         model_id: Annotated[int, id_path],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ModelPromptAssignments:
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_model_assignments(
             principal,
             tenant_id=tenant_id,
@@ -209,13 +207,13 @@ def create_prompts_router(
         )
 
     async def set_model_assignment(
-        request: Request,
         tenant_id: Annotated[int, tenant_path],
         model_id: Annotated[int, id_path],
         workflow_stage_id: Annotated[int, id_path],
         body: SetModelPromptAssignmentRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ModelPromptAssignmentState:
-        principal = identity_provider.authenticate(request.headers)
         return await service.set_model_assignment(
             principal,
             tenant_id=tenant_id,

@@ -2,10 +2,11 @@
 
 from typing import Annotated, Protocol
 
-from fastapi import APIRouter, Path, Query, Request, Response
+from fastapi import APIRouter, Depends, Path, Query, Response
 from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.metadata.contracts import MetadataWorkbookDownload
 from gds_workbench_api.features.metadata.workbook import XLSX_MEDIA_TYPE
 
@@ -55,30 +56,31 @@ class ModelTargetsService(Protocol):
 def create_model_targets_router(
     *, identity_provider: IdentityProvider, service: ModelTargetsService
 ) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/model-targets", tags=["model-targets"]
     )
 
     async def options(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ModelTargetOptions:
-        return await service.options(
-            identity_provider.authenticate(request.headers), tenant_id=tenant_id, model_id=model_id
-        )
+        return await service.options(principal, tenant_id=tenant_id, model_id=model_id)
 
     async def targets(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         layer: TargetLayer,
         search: Annotated[str, Query(max_length=200)] = "",
         after: Annotated[int, Query(ge=0)] = 0,
         object_schema: Annotated[str | None, Query(min_length=1, max_length=400)] = None,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> RegisteredTargetPage:
         return await service.targets(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             layer=layer,
@@ -88,13 +90,14 @@ def create_model_targets_router(
         )
 
     async def export(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         command: ExportModelTargetsRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> Response:
         result = await service.export(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             command=command,
@@ -110,14 +113,15 @@ def create_model_targets_router(
         )
 
     async def bindings(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         layer: TargetLayer,
         after: Annotated[int, Query(ge=0)] = 0,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ModelTargetBindingPage:
         return await service.bindings(
-            identity_provider.authenticate(request.headers),
+            principal,
             tenant_id=tenant_id,
             model_id=model_id,
             layer=layer,

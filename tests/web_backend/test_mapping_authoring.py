@@ -14,6 +14,7 @@ from gds_workbench_api.features.mapping.execution_context import (
 )
 from gds_workbench_api.features.mapping.preparation_contracts import (
     MappingPhysicalObject,
+    MappingRunContext,
     ModeledEntityType,
 )
 from gds_workbench_api.features.mapping.read_service import _MAPPING_TARGETS_SQL
@@ -264,3 +265,22 @@ def test_mapping_context_preserves_storage_and_inferred_type_evidence(
         == "Order amount in the transaction currency."
     )
     assert preparation.context.target.attributes[0].attribute_inferred_data_type is None
+
+
+def test_mapping_context_preserves_large_collections_and_policy_text() -> None:
+    raw = mapping_preparation().context.model_dump(mode="python")
+    target = raw["target"]
+    attribute = target["attributes"][0]
+    target["attributes"] = tuple(
+        {**attribute, "attribute_id": attribute["attribute_id"] + index,
+         "attribute_ordinal_position": index + 1}
+        for index in range(5001)
+    )
+    source = raw["sources"][0]
+    raw["sources"] = tuple({**source, "source_mapping_id": index + 1} for index in range(129))
+    policy = "synthetic naming guidance " * 2000
+    raw["authoring"]["naming_instructions"] = policy
+    context = MappingRunContext.model_validate(raw)
+    assert len(context.target.attributes) == 5001
+    assert len(context.sources) == 129
+    assert context.authoring.naming_instructions == policy

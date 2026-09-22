@@ -175,3 +175,13 @@ class ModelRevisionConflictError(WorkbenchError):
             code="model_revision_conflict",
             message="The Model changed; refresh it before retrying this command.",
         )
+
+
+class ModelNameConflictError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="model_name_conflict",
+            message=(
+                "A Model with this name already exists in this Tenant, including archived Models."
+            ),
+        )

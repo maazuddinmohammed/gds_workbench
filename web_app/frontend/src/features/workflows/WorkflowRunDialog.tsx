@@ -2,9 +2,10 @@ import type { ModelInputScopeApi, ModelInputScopeDetail } from "../model_input_s
 import { EnrichmentAttributeSelection, type EnrichmentAttributeSelectionValue } from "../metadata_enrichment/EnrichmentAttributeSelection";
 import { useEffect, useRef, useState } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
+import { useWorkflowRunSubmission } from "./useWorkflowRunSubmission";
 import type { ModelDetail } from "../models/api";
 import type { CreateWorkflowRunCommand } from "./api";
 import {
@@ -28,20 +29,6 @@ import {
 type AnalysisRunKind = "inference" | "validation";
 type AgenticWorkflow = "analysis" | "conceptual" | "logical" | "dimensional" | "metadata_enrichment";
 type WorkflowExecutionMode = NonNullable<CreateWorkflowRunCommand["workflow_execution_mode"]>;
-type PendingWorkflowStart =
-  | {
-    workflowRunId: number;
-    runKind: "inference";
-    executionMode: WorkflowExecutionMode;
-  }
-  | {
-    workflowRunId: number;
-    runKind: "validation";
-  };
-type WorkflowRunSubmission =
-  | { kind: "create"; command: CreateWorkflowRunCommand }
-  | ({ kind: "retry" } & PendingWorkflowStart);
-
 export function WorkflowRunDialog({
   api,
   tenantId,
@@ -69,15 +56,14 @@ export function WorkflowRunDialog({
   executeCreated?: (
     workflowRunId: number,
     executionMode: WorkflowExecutionMode,
+    expectedModelRevision: number,
   ) => Promise<void>;
-  executeValidationCreated?: (workflowRunId: number) => Promise<void>;
+  executeValidationCreated?: (workflowRunId: number, expectedModelRevision: number) => Promise<void>;
   onClose: () => void;
   onCreated: (workflowRunId: number) => Promise<void>;
 }) {
   const dialog = useRef<HTMLElement>(null);
-  const createAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
-  const [pendingStart, setPendingStart] = useState<PendingWorkflowStart | null>(null);
   const isEnrichment = workflow === "metadata_enrichment";
   const isAttributeEnrichment = isEnrichment && (enrichmentTarget === "attribute" || enrichmentObject !== undefined);
   const [attributeSelection, setAttributeSelection] = useState<EnrichmentAttributeSelectionValue>({ targets: [], ready: false });
@@ -126,7 +112,7 @@ export function WorkflowRunDialog({
     },
     onSubmit: ({ value }) => {
       if (pendingStart) {
-        runMutation.mutate({ kind: "retry", ...pendingStart });
+        runMutation.mutate(undefined);
         return;
       }
       if (kind === "inference" && !agentSelectionValid) return;
@@ -136,21 +122,18 @@ export function WorkflowRunDialog({
         : selectedRows.map((item) => ({ object_id: item.objectId, attribute_id: item.attributeId, expected_revision: item.revision }));
       const selectedObjectIds = [...new Set(isAttributeEnrichment
         ? descriptionTargets.map((target) => target.object_id) : selectedRows.map((item) => item.objectId))];
-      if (isEnrichment && (selectedObjectIds.length > 200 || selectedObjectIds.length === 0
+      if (isEnrichment && (selectedObjectIds.length === 0
         || value.executionMode !== "one_shot" || selectedObjectIds.some((id) =>
           !scopeQuery.data?.items.some((item) => item.object_id === id)))) return;
       runMutation.mutate({
-        kind: "create",
-        command: {
-          expected_model_revision: model.model_revision,
-          model_workflow: workflow,
-          workflow_execution_mode: kind === "inference" ? value.executionMode : null,
-          selected_object_ids: selectedObjectIds,
-          requested_batch_id: isEnrichment ? null : value.requestedBatchId.trim() || null,
-          agent: kind === "inference" ? agent : null,
-          prompt_overrides: {},
-          ...(isEnrichment ? { description_targets: descriptionTargets } : {}),
-        },
+        expected_model_revision: model.model_revision,
+        model_workflow: workflow,
+        workflow_execution_mode: kind === "inference" ? value.executionMode : null,
+        selected_object_ids: selectedObjectIds,
+        requested_batch_id: isEnrichment ? null : value.requestedBatchId.trim() || null,
+        agent: kind === "inference" ? agent : null,
+        prompt_overrides: {},
+        ...(isEnrichment ? { description_targets: descriptionTargets } : {}),
       });
     },
   });
@@ -166,45 +149,18 @@ export function WorkflowRunDialog({
   const batchIsIncoherent = Boolean(requestedBatchId.trim()) && batchSystems.size > 1;
   const revisionChanged = scopeQuery.data?.modelRevision !== undefined
     && scopeQuery.data.modelRevision !== model.model_revision;
-  const runMutation = useMutation({
-    mutationFn: async (submission: WorkflowRunSubmission) => {
-      if (submission.kind === "retry") {
-        if (submission.runKind === "validation") {
-          if (!executeValidationCreated) throw new Error("Workflow execution is unavailable.");
-          await executeValidationCreated(submission.workflowRunId);
-        } else {
-          if (!executeCreated) throw new Error("Workflow execution is unavailable.");
-          await executeCreated(submission.workflowRunId, submission.executionMode);
-        }
-        return submission.workflowRunId;
-      }
-      const { command } = submission;
-      const fingerprint = JSON.stringify(command);
-      if (createAttempt.current?.fingerprint !== fingerprint) {
-        createAttempt.current = { fingerprint, key: globalThis.crypto.randomUUID() };
-      }
-      const result = await api.createWorkflowRun(
-        tenantId,
-        model.model_id,
-        command,
-        createAttempt.current.key,
-      );
-      if (executeCreated && command.workflow_execution_mode) {
-        setPendingStart({
-          workflowRunId: result.workflow_run_id,
-          runKind: "inference",
-          executionMode: command.workflow_execution_mode,
-        });
-        await executeCreated(result.workflow_run_id, command.workflow_execution_mode);
-      } else if (executeValidationCreated && command.workflow_execution_mode === null) {
-        setPendingStart({
-          workflowRunId: result.workflow_run_id,
-          runKind: "validation",
-        });
-        await executeValidationCreated(result.workflow_run_id);
-      }
-      return result.workflow_run_id;
-    },
+  const { mutation: runMutation, pendingRunId: pendingStart } = useWorkflowRunSubmission({
+    api,
+    tenantId,
+    modelId: model.model_id,
+    execute: kind === "validation"
+      ? executeValidationCreated && ((workflowRunId, command) => executeValidationCreated(
+        workflowRunId, command.expected_model_revision,
+      ))
+      : executeCreated && ((workflowRunId, command) => {
+        if (!command.workflow_execution_mode) throw new Error("Workflow execution mode is required.");
+        return executeCreated(workflowRunId, command.workflow_execution_mode, command.expected_model_revision);
+      }),
     onSuccess: async (workflowRunId) => {
       await onCreated(workflowRunId);
       onClose();
@@ -432,7 +388,7 @@ export function WorkflowRunDialog({
                         <input
                           type="checkbox"
                           checked={scopeMode === "all" || field.state.value.includes(item.id)}
-                          disabled={runMutation.isPending || pendingStart !== null || scopeMode === "all" || (isEnrichment && !enrichmentObject && field.state.value.length >= 200 && !field.state.value.includes(item.id))}
+                          disabled={runMutation.isPending || pendingStart !== null || scopeMode === "all"}
                           onChange={(event) => field.handleChange(event.target.checked
                             ? [...field.state.value, item.id]
                             : field.state.value.filter((id) => id !== item.id))}
@@ -465,9 +421,6 @@ export function WorkflowRunDialog({
               </label>
             )}
           </form.Field> : null}
-          {isEnrichment && !isAttributeEnrichment && effectiveObjects.length > 200 ? (
-            <p className="inline-error" role="alert">Select up to 200 Objects. Choose Selected Objects to narrow this run.</p>
-          ) : null}
 
           {kind === "inference" && capabilitiesQuery.isError ? (
             <p className="inline-error" role="alert">Agent options could not be loaded.</p>
@@ -518,7 +471,6 @@ export function WorkflowRunDialog({
                     scopeQuery.isPending
                     || scopeQuery.isError
                     || (isAttributeEnrichment ? !attributeSelection.ready || scopeQuery.isFetching : effectiveRows.length === 0)
-                    || (isEnrichment && !isAttributeEnrichment && effectiveObjects.length > 200)
                     || batchIsIncoherent
                     || revisionChanged
                     || (kind === "inference" && (capabilitiesQuery.isPending || !agentSelectionValid))

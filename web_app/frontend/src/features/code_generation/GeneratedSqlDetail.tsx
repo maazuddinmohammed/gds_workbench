@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
-import { DetailState } from "../../shared/ui";
+import { DetailState, Fact } from "../../shared/ui";
 import { ApiError } from "../../core/http";
 import type { ModelDetail } from "../models/api";
 import {
@@ -162,8 +162,8 @@ function GeneratedSqlDetailView({
         <summary><h2 id="generated-sql-target-heading">Target Object</h2></summary>
         <dl className="detail-fact-grid">
           <Fact label="Object" value={title} />
-          <Fact label="Target Tenant" value={`${detail.target.tenant_name} (${detail.target.tenant_code})`} />
-          <Fact label="Target System" value={`${detail.target.system_name} (${detail.target.system_code})`} />
+          <Fact label="Target Tenant" value={detail.target.tenant_code} />
+          <Fact label="Target System" value={detail.target.system_code} />
           <Fact label="Zone" value={detail.target.zone_code} />
           <Fact label="Artifact status" value={humanize(detail.generated_code_status)} />
         </dl>
@@ -176,7 +176,6 @@ function GeneratedSqlDetailView({
       </details>
 
 
-
       <details className="detail-section detail-disclosure" aria-labelledby="generated-sql-systems-heading">
         <summary>
           <h2 id="generated-sql-systems-heading">Contributing source Systems</h2>
@@ -186,8 +185,7 @@ function GeneratedSqlDetailView({
           <ul className="code-generation-system-ledger">
             {detail.source_systems.map((system) => (
               <li key={system.system_id}>
-                <strong>{system.system_name}</strong>
-                <span>{system.system_code} · System {system.system_id}</span>
+                <strong>{system.system_code}</strong>
               </li>
             ))}
           </ul>
@@ -230,7 +228,7 @@ function GeneratedSqlDetailView({
                         <span>{layerLabel(support.source.entity_type)} Entity {support.source.entity_id}</span>
                       </span>
                     </td>
-                    <td>{support.source_system.system_name} ({support.source_system.system_code})</td>
+                    <td>{support.source_system.system_code}</td>
                     <td>{support.dependency_order}</td>
                   </tr>
                 ))}
@@ -247,13 +245,8 @@ function GeneratedSqlDetailView({
         ) : null}
       </details>
 
-
     </article>
   );
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return <div><dt>{label}</dt><dd>{value}</dd></div>;
 }
 
 function detailError(error: Error): string {

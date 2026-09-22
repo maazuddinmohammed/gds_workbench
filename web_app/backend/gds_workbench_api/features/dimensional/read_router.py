@@ -2,9 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query, Request
+from fastapi import APIRouter, Depends, Path, Query
 from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.dimensional.read_contracts import (
     DimensionalAttributeDetail,
     DimensionalAttributeFilters,
@@ -39,18 +41,19 @@ def create_dimensional_router(
     service: DimensionalService,
 ) -> APIRouter:
     """Create the Dimensional review router for later runtime composition."""
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/dimensional",
         tags=["dimensional"],
     )
 
     async def list_objects(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         query: Annotated[ModeledListQuery, Query()],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> DimensionalObjectPage:
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_objects(
             principal,
             tenant_id=tenant_id,
@@ -68,12 +71,12 @@ def create_dimensional_router(
     )
 
     async def read_object(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         dimensional_entity_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> DimensionalObjectDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_object(
             principal,
             tenant_id=tenant_id,
@@ -89,12 +92,12 @@ def create_dimensional_router(
     )
 
     async def list_attributes(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         query: Annotated[DimensionalAttributeListQuery, Query()],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> DimensionalAttributePage:
-        principal = identity_provider.authenticate(request.headers)
         filters = DimensionalAttributeFilters.model_validate(
             {
                 "status": query.status,
@@ -122,12 +125,12 @@ def create_dimensional_router(
     )
 
     async def read_attribute(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         dimensional_attribute_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> DimensionalAttributeDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_attribute(
             principal,
             tenant_id=tenant_id,
@@ -143,12 +146,12 @@ def create_dimensional_router(
     )
 
     async def list_relationships(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         query: Annotated[DimensionalRelationshipListQuery, Query()],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> DimensionalRelationshipPage:
-        principal = identity_provider.authenticate(request.headers)
         filters = DimensionalRelationshipFilters.model_validate(
             {
                 "status": query.status,
@@ -176,12 +179,12 @@ def create_dimensional_router(
     )
 
     async def read_relationship(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         dimensional_relationship_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> DimensionalRelationshipDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_relationship(
             principal,
             tenant_id=tenant_id,

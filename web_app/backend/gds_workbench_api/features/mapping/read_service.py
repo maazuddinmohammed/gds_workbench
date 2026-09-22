@@ -13,6 +13,7 @@ from gds_workbench_api.features.models import ModelNotFoundError
 
 from .read_contracts import (
     MappingAttributeDetail,
+    MappingAttributeFilters,
     MappingAttributeNotFoundError,
     MappingAttributePage,
     MappingAttributeSummary,
@@ -311,6 +312,7 @@ MAPPING_ATTRIBUTES_SQL: LiteralString = (
    AND (%s::VARCHAR IS NULL OR lower(btrim(source_system.system_code)) = %s)
    AND (%s::VARCHAR IS NULL OR attribute_mapping.attribute_mapping_status = %s)
    AND (%s::BOOLEAN IS NULL OR attribute_mapping.attribute_mapping_is_locked = %s)
+   AND (%s::BIGINT IS NULL OR object_mapping.mapping_object_id = %s)
  ORDER BY object_mapping.object_dependency_order,
           target_attribute.attribute_ordinal_position,
           attribute_mapping.mapping_attribute_id
@@ -392,7 +394,7 @@ class MappingReviewService(Protocol):
         *,
         tenant_id: int,
         model_id: int,
-        filters: MappingDependencyFilters,
+        filters: MappingAttributeFilters,
         page_size: int,
         cursor: str | None,
     ) -> MappingAttributePage: ...
@@ -541,7 +543,7 @@ class DatabaseMappingReviewService:
         *,
         tenant_id: int,
         model_id: int,
-        filters: MappingDependencyFilters,
+        filters: MappingAttributeFilters,
         page_size: int,
         cursor: str | None,
     ) -> MappingAttributePage:
@@ -624,6 +626,11 @@ class DatabaseMappingReviewService:
                     filters.status,
                     filters.locked,
                     filters.locked,
+                    *(
+                        (filters.mapping_object_id, filters.mapping_object_id)
+                        if isinstance(filters, MappingAttributeFilters)
+                        else ()
+                    ),
                     page_size + 1,
                     offset,
                 ),

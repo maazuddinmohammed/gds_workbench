@@ -94,7 +94,6 @@ export function createValidationApi(request: HttpRequest): ValidationTransport {
 }
 
 export const validationQueryKeys = {
-  models: (tenantId: number) => ["validation-models", tenantId] as const,
   systems: (tenantId: number, modelId: number) => ["validation-systems", tenantId, modelId] as const,
   ledger: (tenantId: number, modelId: number) => ["validation-ledger", tenantId, modelId] as const,
 };

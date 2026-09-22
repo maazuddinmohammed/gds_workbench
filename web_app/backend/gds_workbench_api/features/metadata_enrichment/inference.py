@@ -106,7 +106,7 @@ def normalize_data_type(value: str | None) -> str | None:
                 ):
                     return None
             normalized = parsed.sql(dialect="databricks")
-        except (ParseError, ValueError):
+        except ParseError, ValueError:
             return None
         if len(normalized) <= 100:
             return normalized

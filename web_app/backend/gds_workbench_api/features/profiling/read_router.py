@@ -2,9 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query, Request
+from fastapi import APIRouter, Depends, Path, Query
 from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.profiling.read_contracts import (
     ProfilingObjectDetail,
     ProfilingObjectFilters,
@@ -18,13 +20,13 @@ def create_profiling_router(
     identity_provider: IdentityProvider,
     service: ProfilingReviewService,
 ) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}",
         tags=["profiling"],
     )
 
     async def list_profiling_objects(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         object_id: Annotated[int | None, Query(gt=0)] = None,
@@ -34,6 +36,8 @@ def create_profiling_router(
         object_name: Annotated[str | None, Query(max_length=400)] = None,
         page_size: Annotated[int, Query(ge=1, le=200)] = 50,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ProfilingObjectPage:
         filters = ProfilingObjectFilters(
             object_id=object_id,
@@ -42,7 +46,6 @@ def create_profiling_router(
             object_schema=object_schema,
             object_name=object_name,
         )
-        principal = identity_provider.authenticate(request.headers)
         return await service.list_profiling_objects(
             principal,
             tenant_id=tenant_id,
@@ -60,12 +63,12 @@ def create_profiling_router(
     )
 
     async def read_profiling_object(
-        request: Request,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         object_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> ProfilingObjectDetail:
-        principal = identity_provider.authenticate(request.headers)
         return await service.read_profiling_object(
             principal,
             tenant_id=tenant_id,

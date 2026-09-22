@@ -7,7 +7,7 @@ import {
   type MetadataDatasetDescription,
   type MetadataValidationReview,
 } from "./api";
-import { trapPromptDialogFocus, usePromptDialogFocus } from "../prompts/PromptTemplateDialogs";
+import { trapDialogFocus, useDialogFocus } from "../../shared/dialog";
 
 const MAX_WORKBOOK_BYTES = 32 * 1024 * 1024;
 
@@ -224,13 +224,13 @@ function MetadataChangeSetConfirmation({
   onConfirm: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
-  usePromptDialogFocus(closeRef);
+  useDialogFocus(closeRef);
   const apply = action === "apply";
   return (
     <div className="dialog-scrim prompt-dialog-scrim" role="presentation">
       <section className="run-configuration-dialog prompt-dialog metadata-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="metadata-confirm-title" onKeyDown={(event) => {
         if (event.key === "Escape" && !isBusy) { event.stopPropagation(); onClose(); }
-        trapPromptDialogFocus(event);
+        trapDialogFocus(event);
       }}>
         <header>
           <div><p className="eyebrow">Governed transition</p><h2 id="metadata-confirm-title">{apply ? "Apply validated Metadata" : "Archive Change Set"}</h2></div>

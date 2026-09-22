@@ -89,7 +89,7 @@ class EnrichmentObject(EnrichmentContract):
     system_code: str
     connection_id: int = Field(gt=0)
     relation: PhysicalRelation | None
-    attributes: tuple[EnrichmentAttribute, ...] = Field(max_length=5_000, repr=False)
+    attributes: tuple[EnrichmentAttribute, ...] = Field(repr=False)
     prompt_inputs: dict[str, JsonValue] = Field(default_factory=dict, repr=False)
 
 
@@ -99,10 +99,10 @@ class MetadataEnrichmentContext(EnrichmentContract):
     model_revision: int = Field(gt=0)
     baseline_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     description_targets: tuple[EnrichmentDescriptionTarget, ...] | None = Field(
-        default=None, min_length=1, max_length=5_000
+        default=None, min_length=1
     )
     description_revision_matches: bool = True
-    objects: tuple[EnrichmentObject, ...] = Field(min_length=1, max_length=200, repr=False)
+    objects: tuple[EnrichmentObject, ...] = Field(min_length=1, repr=False)
 
 
 class EnrichmentFieldResult(EnrichmentContract):

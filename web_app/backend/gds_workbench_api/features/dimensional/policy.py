@@ -450,7 +450,7 @@ def project_dimensional_foreign_key_policy(
                     nullable=relationship.dimensional_relationship_is_optional,
                     definition=definition,
                 )
-            except (KeyError, ValidationError):
+            except KeyError, ValidationError:
                 raise DimensionalProjectionConflictError(
                     "The Gold foreign-key template produced an invalid column. Shorten the "
                     "Entity or role name so the configured column name fits 255 characters "
@@ -598,7 +598,7 @@ def _parse_technical_policy(raw_template: dict[str, object]) -> GoldTechnicalPol
             json.dumps(raw_template, ensure_ascii=False, allow_nan=False, separators=(",", ":")),
             strict=True,
         )
-    except (TypeError, ValueError, ValidationError):
+    except TypeError, ValueError, ValidationError:
         raise InvalidRequestError("The Gold technical-column template is invalid.") from None
 
 
@@ -608,7 +608,7 @@ def _parse_audit_policy(raw_template: dict[str, object]) -> GoldAuditPolicy:
             json.dumps(raw_template, ensure_ascii=False, allow_nan=False, separators=(",", ":")),
             strict=True,
         )
-    except (TypeError, ValueError, ValidationError):
+    except TypeError, ValueError, ValidationError:
         raise InvalidRequestError("The Gold audit-column template is invalid.") from None
 
 

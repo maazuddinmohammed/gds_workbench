@@ -18,7 +18,6 @@ sync:
     - artifacts/**
     - database/**
     - deployment/**
-    - databricks_notebooks/**
     - databricks.yml
     - docs/**
     - plugins/**

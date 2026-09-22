@@ -47,7 +47,7 @@ but missing upstream loaded data is not itself a generation failure.
 
 Model Snapshots and Model Change Sets share `generated_code`,
 `generated_code_source_system`, `validation_group`, and
-`validation_check` datasets. Web, notebooks, MCP, and the Agent Plugin use
+`validation_check` datasets. Web, MCP, and the Agent Plugin use
 the same records and Apply boundary.
 
 Process registration and orchestration triggers are later, separate workflow

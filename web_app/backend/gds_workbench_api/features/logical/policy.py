@@ -215,7 +215,7 @@ def _parse_policy(raw_template: dict[str, object]) -> LogicalAuditPolicy:
             ),
             strict=True,
         )
-    except (TypeError, ValueError, ValidationError):
+    except TypeError, ValueError, ValidationError:
         raise InvalidRequestError("The Silver audit-column template is invalid.") from None
 
 

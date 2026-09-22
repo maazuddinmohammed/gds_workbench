@@ -3,9 +3,11 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Path, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Path, Response, status
 from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.authorization import RequestPrincipal
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.workflows.commands.contracts import (
     CreateWorkflowRunRequest,
     WorkflowRunCommandResult,
@@ -18,20 +20,21 @@ def create_workflow_commands_router(
     identity_provider: IdentityProvider,
     service: WorkflowCommandService,
 ) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/runs",
         tags=["workflow-runs"],
     )
 
     async def create_run(
-        request: Request,
         response: Response,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         command: CreateWorkflowRunRequest,
         idempotency_key: Annotated[UUID, Header(alias="Idempotency-Key")],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> WorkflowRunCommandResult:
-        principal = identity_provider.authenticate(request.headers)
         result = await service.create_run(
             principal,
             tenant_id=tenant_id,

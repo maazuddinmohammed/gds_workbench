@@ -2,11 +2,12 @@
 
 from typing import Annotated, Protocol
 
-from fastapi import APIRouter, Path, Request, Response, status
+from fastapi import APIRouter, Depends, Path, Response, status
 from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 from pydantic import BaseModel, ConfigDict, Field
 
+from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowRunStart,
 )
@@ -35,20 +36,21 @@ def create_analysis_validation_workflow_router(
     identity_provider: IdentityProvider,
     service: AnalysisValidationWorkflowService,
 ) -> APIRouter:
+    authenticate = principal_dependency(identity_provider)
     router = APIRouter(
         prefix=("/api/v1/tenants/{tenant_id}/models/{model_id}/analysis/validation-runs"),
         tags=["analysis"],
     )
 
     async def execute_run(
-        request: Request,
         response: Response,
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         workflow_run_id: Annotated[int, Path(gt=0)],
         command: ExecuteAnalysisValidationRunRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
     ) -> AgentWorkflowRunStart:
-        principal = identity_provider.authenticate(request.headers)
         result = await service.start(
             principal,
             tenant_id=tenant_id,

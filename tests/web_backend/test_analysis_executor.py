@@ -27,7 +27,7 @@ from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.analysis.service import (
     AnalysisInferenceExecutionFailedError,
     AnalysisInferenceFinalizationFailedError,
-    DatabaseAnalysisInferenceExecutor,
+    AnalysisInferenceWorkflow,
 )
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
@@ -44,6 +44,7 @@ from gds_workbench_api.features.workflows.authoring.context import (
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
+    AgentWorkflowRunStart,
     AgentWorkflowTerminalResult,
 )
 from gds_workbench_api.features.workflows.authoring.no_op import (
@@ -115,7 +116,9 @@ def _plan(
                     prompt_template_digest="b" * 64,
                     templates=PromptComponentTemplates(
                         system="Infer Analysis relationships.",
-                        instruction=("Use {{stage_context}}. Repair {{validation_failures}}."),
+                        instruction=(
+                            "Use {{stage_context}}. Repair {{validation_failures}}."
+                        ),
                     ),
                     variables=(
                         PromptVariableDefinition(
@@ -273,7 +276,9 @@ def _candidate(*, to_name: str = "customer_raw") -> JsonValue:
 
 @dataclass
 class _Database:
-    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
+    isolations: list[ReadIsolation] = field(
+        default_factory=lambda: list[ReadIsolation]()
+    )
 
     @asynccontextmanager
     async def write_transaction(
@@ -335,7 +340,9 @@ class _ContextRepository:
         del transaction, tenant_id
         if self.bundle is not None:
             return self.bundle
-        return _context_bundle(mode=cast(WorkflowExecutionMode, plan.workflow_execution_mode))
+        return _context_bundle(
+            mode=cast(WorkflowExecutionMode, plan.workflow_execution_mode)
+        )
 
 
 @dataclass
@@ -427,7 +434,9 @@ class _NoOp:
             model_revision=request.expected_model_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
-                "completed_with_repair" if request.final_event.attempt > 1 else "completed"
+                "completed_with_repair"
+                if request.final_event.attempt > 1
+                else "completed"
             ),
             model_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
@@ -441,7 +450,45 @@ class _NoOp:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
+    starts: list[tuple[RequestPrincipal, int, int, int, str, str | None, int]] = field(
+        default_factory=lambda: list[
+            tuple[RequestPrincipal, int, int, int, str, str | None, int]
+        ]()
+    )
+
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: str,
+        expected_execution_mode: str | None,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart:
+        self.starts.append(
+            (
+                principal,
+                tenant_id,
+                model_id,
+                workflow_run_id,
+                expected_workflow,
+                expected_execution_mode,
+                expected_model_revision,
+            )
+        )
+        return AgentWorkflowRunStart(
+            changed=True,
+            workflow_run_id=workflow_run_id,
+            workflow_run_state="running",
+            started_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
+            model_revision=expected_model_revision,
+        )
+
+    events: list[AgentWorkflowEvent] = field(
+        default_factory=lambda: list[AgentWorkflowEvent]()
+    )
     finding_count: int | None = None
     failed: tuple[str, str] | None = None
 
@@ -502,13 +549,13 @@ def _service(
     no_op: _NoOp | None = None,
     context_bundle: AgentContextBundle | None = None,
     context_policy: AgentContextPolicy | None = None,
-) -> tuple[DatabaseAnalysisInferenceExecutor, _Database, _Authorizer, _Handoff, _Lifecycle]:
+) -> tuple[AnalysisInferenceWorkflow, _Database, _Authorizer, _Handoff, _Lifecycle]:
     database = _Database()
     authorizer = _Authorizer()
     handoff = _Handoff()
     lifecycle = _Lifecycle()
     selected_plan = plan or _plan()
-    service = DatabaseAnalysisInferenceExecutor(
+    service = AnalysisInferenceWorkflow(
         database=database,
         authorizer=cast(Any, authorizer),
         agent_executor=agent,
@@ -526,6 +573,35 @@ def _service(
         ),
     )
     return service, database, authorizer, handoff, lifecycle
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+async def test_start_binds_analysis_workflow_without_executing(
+    mode: WorkflowExecutionMode,
+) -> None:
+    agent = _AgentExecutor(responses=[])
+    service, database, authorizer, handoff, lifecycle = _service(agent=agent)
+    principal = _principal()
+
+    result = await service.start(
+        principal,
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_execution_mode=mode,
+        expected_model_revision=7,
+    )
+
+    assert lifecycle.starts == [(principal, 7, 18, 1048, "analysis", mode, 7)]
+    assert result.workflow_run_id == 1048
+    assert result.model_revision == 7
+    assert database.isolations == []
+    assert authorizer.calls == []
+    assert handoff.calls == []
+    assert agent.requests == []
+    assert lifecycle.events == []
+    assert lifecycle.failed is None
 
 
 @pytest.mark.asyncio
@@ -580,7 +656,8 @@ async def test_analysis_inference_hands_off_one_validated_draft(
     assert handoff.final_events[-1].finding_count == 1
     assert lifecycle.failed is None
     assert [
-        (event.sequence, event.stage) for event in (*lifecycle.events, *handoff.final_events)
+        (event.sequence, event.stage)
+        for event in (*lifecycle.events, *handoff.final_events)
     ] == [
         (2, "analysis.relationship_inference"),
         (3, "analysis.backend_validation"),
@@ -615,7 +692,9 @@ async def test_empty_analysis_inference_completes_without_a_change_set(
     assert len(no_op.requests) == 1
     request = no_op.requests[0]
     assert request.expected_execution_mode == execution_mode
-    assert request.candidate_digest == authoring_no_op_candidate_digest(_plan(mode=execution_mode))
+    assert request.candidate_digest == authoring_no_op_candidate_digest(
+        _plan(mode=execution_mode)
+    )
     assert request.final_event == AgentWorkflowEvent(
         sequence=3,
         attempt=1,

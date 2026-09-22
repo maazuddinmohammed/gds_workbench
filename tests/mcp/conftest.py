@@ -41,7 +41,6 @@ FORBIDDEN_CONNECTION_ENVIRONMENT = frozenset(
         "DATABASE_URL",
         "GDS_DATABASE_DSN",
         "GDS_LOADER_DSN",
-        "GDS_NOTEBOOK_DATABASE_DSN",
         "GDS_WEB_DATABASE_DSN",
         "PGDATABASE",
         "PGHOST",
@@ -63,12 +62,10 @@ class DisposablePostgres:
     owner_user: str
     runtime_user: str
     web_runtime_user: str
-    notebook_runtime_user: str
     marker: UUID
     _owner_password: str = field(repr=False)
     _runtime_password: str = field(repr=False)
     _web_runtime_password: str = field(repr=False)
-    _notebook_runtime_password: str = field(repr=False)
 
     def connect_owner(self) -> psycopg.Connection[TestRow]:
         connection = psycopg.Connection[TestRow].connect(
@@ -115,28 +112,6 @@ class DisposablePostgres:
             password=self._web_runtime_password,
         )
 
-    def connect_notebook_runtime(self) -> psycopg.Connection[TestRow]:
-        connection = psycopg.Connection[TestRow].connect(
-            host=self.host,
-            port=self.port,
-            dbname=self.database,
-            user=self.notebook_runtime_user,
-            password=self._notebook_runtime_password,
-            connect_timeout=5,
-            row_factory=dict_row,
-        )
-        _assert_fixture_identity(connection, self)
-        return connection
-
-    def notebook_runtime_dsn(self) -> str:
-        return make_conninfo(
-            host=self.host,
-            port=self.port,
-            dbname=self.database,
-            user=self.notebook_runtime_user,
-            password=self._notebook_runtime_password,
-        )
-
     def create_runtime_adapter(self) -> PostgresDatabase:
         return PostgresDatabase(
             dsn=self.runtime_dsn(),
@@ -176,11 +151,9 @@ def disposable_postgres() -> Iterator[DisposablePostgres]:
     owner_user = f"owner_{suffix}"
     runtime_user = f"runtime_{suffix}"
     web_runtime_user = f"web_runtime_{suffix}"
-    notebook_runtime_user = "gds_notebook_runtime"
     owner_password = secrets.token_urlsafe(32)
     runtime_password = secrets.token_urlsafe(32)
     web_runtime_password = secrets.token_urlsafe(32)
-    notebook_runtime_password = secrets.token_urlsafe(32)
 
     started = subprocess.run(
         [
@@ -218,12 +191,10 @@ def disposable_postgres() -> Iterator[DisposablePostgres]:
             owner_user=owner_user,
             runtime_user=runtime_user,
             web_runtime_user=web_runtime_user,
-            notebook_runtime_user=notebook_runtime_user,
             marker=marker,
             _owner_password=owner_password,
             _runtime_password=runtime_password,
             _web_runtime_password=web_runtime_password,
-            _notebook_runtime_password=notebook_runtime_password,
         )
         fixture.wait_until_ready()
         with fixture.connect_owner() as connection, connection.transaction():
@@ -258,10 +229,6 @@ def disposable_postgres() -> Iterator[DisposablePostgres]:
             connection.execute(
                 "SELECT set_config('gds.test_web_runtime_password', %s, true)",
                 (web_runtime_password,),
-            )
-            connection.execute(
-                "SELECT set_config('gds.test_notebook_runtime_password', %s, true)",
-                (notebook_runtime_password,),
             )
             connection.execute(
                 sql.SQL(
@@ -307,18 +274,6 @@ def disposable_postgres() -> Iterator[DisposablePostgres]:
                 sql.SQL("GRANT SELECT ON public.gds_test_sentinel TO {}").format(
                     sql.Identifier(runtime_user)
                 )
-            )
-            connection.execute(
-                """
-                DO $set_test_notebook_runtime_password$
-                BEGIN
-                    EXECUTE format(
-                        'ALTER ROLE gds_notebook_runtime PASSWORD %L',
-                        current_setting('gds.test_notebook_runtime_password')
-                    );
-                END;
-                $set_test_notebook_runtime_password$
-                """
             )
         yield fixture
     finally:
@@ -399,7 +354,6 @@ def _assert_fixture_identity(
         fixture.owner_user,
         fixture.runtime_user,
         fixture.web_runtime_user,
-        fixture.notebook_runtime_user,
     }:
         raise AssertionError("database fixture user mismatch")
     sentinel_table = connection.execute(

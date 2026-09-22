@@ -64,7 +64,6 @@ class SqlGenerationGuideVersionDetail(SqlGenerationGuideContract):
     sql_generation_guide_version_number: int = Field(gt=0)
     sql_generation_guide_content: str = Field(
         min_length=1,
-        max_length=262144,
         repr=False,
     )
     sql_generation_guide_digest: str = Field(
@@ -95,7 +94,6 @@ class SaveSqlGenerationGuideDraftRequest(SqlGenerationGuideRequest):
     expected_updated_at: datetime | None = None
     sql_generation_guide_content: str = Field(
         min_length=1,
-        max_length=262144,
         repr=False,
     )
 
@@ -104,8 +102,6 @@ class SaveSqlGenerationGuideDraftRequest(SqlGenerationGuideRequest):
     def validate_content(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("SQL Generation Guide content must be nonblank")
-        if len(value.encode("utf-8")) > 262144:
-            raise ValueError("SQL Generation Guide content exceeds 262144 UTF-8 bytes")
         return value
 
     @model_validator(mode="after")
