@@ -7,7 +7,7 @@ objects installed by `database/01_reference.sql` through
 `database/19_runtime_integrity.sql`. It excludes seed data plus preflight and
 verification queries.
 
-Inventory totals: **102 tables, 87 functions, and 19 installed triggers**.
+Inventory totals: **102 tables, 88 functions, and 19 installed triggers**.
 
 Read the schemas in dependency order:
 
@@ -165,11 +165,11 @@ Each entry gives purpose, then execution order.
 
 - `model.reject_model_event_log_mutation` — Trigger function enforcing append-only Model events. Steps: (1) receive an UPDATE, DELETE, or TRUNCATE attempt; (2) raise an exception; (3) allow no mutation.
 
-### `workflow` (5)
+### `workflow` (7)
 
 - `workflow.list_tenant_visible_objects` — Canonical Tenant-visible Object closure. Steps: (1) resolve every Object through mandatory `source_tenant_id`; (2) seed direct ownership, GDS-placement, Copy, Process, and current Model Input Scope references; (3) recursively traverse active ingestion mappings; (4) return each reachable Object with reason flags.
 - `workflow.list_model_object_eligibility` — Canonical Object-level workflow eligibility for one active Model. Steps: (1) read active Model Input Scope and physical metadata; (2) resolve the source Tenant; (3) mark selected Source/Bronze input eligibility; (4) mark bound Silver dimensional-source eligibility; (5) mark bound Silver/Gold Mapping targets; (6) return ordered rows.
-- `workflow.list_code_generation_target_context` — Canonical complete Mapping context per bound target. Steps: (1) start from eligible Silver/Gold targets for the requested modeled layer; (2) retain active, complete mappings, dependencies, entities, and child mappings; (3) reject incomplete targets; (4) aggregate ordered Mapping/source context; (5) derive one `code_input_digest`; (6) return entity name/type, target, digest, and bounded source context.
+- `workflow.list_code_generation_target_context` — Canonical complete Mapping context per bound target. Steps: (1) start from eligible Silver/Gold targets; (2) retain active, complete mappings, entities, and child mappings; (3) reject incomplete targets; (4) aggregate Mapping/source context independently of orchestration dependency order; (5) derive `code_input_digest`; (6) return entity, target, digest, and source context.
 - `workflow.list_model_attribute_eligibility` — Attribute-level extension of Object eligibility. Steps: (1) call Object eligibility; (2) join active Attributes; (3) inherit input and target flags; (4) mark bound Silver dimensional-source eligibility; (5) return deterministically ordered rows.
 
 ### `application` — preference and Model authoring (5)
@@ -267,7 +267,8 @@ Each entry gives purpose, then execution order.
 - `application.metadata_attribute_review_revision` — Compute the opaque revision fence for one physical Attribute review.
 - `application.metadata_object_review_revision` — Compute the opaque revision fence for one physical Object review.
 - `application.review_metadata_records` — Apply exact authorized lock, status, or description changes with parent locks, physical revisions, idempotency and audit. Description audit receipts retain a digest rather than the text.
-- `workflow.list_mapping_source_objects` — Resolve eligible Mapping source Objects with source-Tenant provenance.
+- `workflow.list_model_input_sources` — Resolve active Model Input Scope Objects to business Systems; Source uses its Connection, Bronze uses active ingestion lineage. Independent of orchestration dependency order.
+- `workflow.list_mapping_source_objects` — Discover all route-eligible Mapping source candidates for a target/System pair. Saved Entity links supplement discovery; dependency-order records are optional.
 
 - `workflow.tr_validation_group_layer` — Derive a new Validation Group’s modeled layer from its authoring Run, preserve it through manual review, and reject cross-layer reassignment.
 

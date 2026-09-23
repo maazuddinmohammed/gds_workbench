@@ -306,7 +306,9 @@ def _mapping_provider_context(preparation: MappingPreparation) -> JsonValue:
             },
             "source_system": context.source_system.model_dump(mode="json"),
             "mapping_support": _mapping_support(preparation),
-            "source_system_dependency": context.dependency.model_dump(mode="json"),
+            "source_system_dependency": context.dependency.model_dump(mode="json")
+            if context.dependency
+            else None,
             "source_system_dependency_graph": (context.dependency_graph.model_dump(mode="json")),
             "target_dependency_graph": (context.target_dependency_graph.model_dump(mode="json")),
             "target": context.target.model_dump(mode="json"),
@@ -479,7 +481,9 @@ def _mapping_context_datasets(
     return {
         "run": (cast(dict[str, JsonValue], _mapping_provider_context(preparation))["run"],),
         "source_system": (cast(JsonValue, context.source_system.model_dump(mode="json")),),
-        "source_system_dependency": (cast(JsonValue, context.dependency.model_dump(mode="json")),),
+        "source_system_dependency": (cast(JsonValue, context.dependency.model_dump(mode="json")),)
+        if context.dependency
+        else (),
         "source_dependency_node": tuple(
             cast(JsonValue, item.model_dump(mode="json")) for item in context.dependency_graph.nodes
         ),

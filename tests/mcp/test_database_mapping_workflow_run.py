@@ -215,6 +215,19 @@ def _seed_mapping_context(
                 (workflow.selected_object_ids[0],),
             ).fetchone()
         )
+        # This fixture's generic scoped Object has no ingestion lineage. Make
+        # it a direct Source input so its business System is represented.
+        connection.execute(
+            """INSERT INTO reference.zone (zone_code, zone_name)
+               SELECT 'source', 'Source' WHERE NOT EXISTS (
+                   SELECT 1 FROM reference.zone WHERE zone_code = 'source')"""
+        )
+        connection.execute(
+            """UPDATE core.object
+               SET zone_id = (SELECT zone_id FROM reference.zone WHERE zone_code = 'source')
+               WHERE object_id = %s""",
+            (workflow.selected_object_ids[0],),
+        )
         zone_code = "gold" if dimensional else "silver"
         entity_type = "dimensional_entity" if dimensional else "logical_entity"
         zone = connection.execute(
@@ -358,6 +371,12 @@ def test_mapping_run_freezes_binding_route_and_target_pair(
 ) -> None:
     context = _seed_mapping_context(postgres_database)
     with postgres_database.connect_owner() as connection:
+        connection.execute(
+            """UPDATE workflow.mapping_source_system_dependency
+               SET mapping_source_system_dependency_status = 'inactive'
+               WHERE model_id = %s""",
+            (context.workflow.model_id,),
+        )
         created = require_row(
             connection.execute(
                 CREATE_MAPPING_RUN_SQL,

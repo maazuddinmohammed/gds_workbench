@@ -201,10 +201,12 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             },
         },
         "source_evidence": {
-            "description": "Eligible source contributions, each with role, "
+            "description": "All candidate inputs for this System and route, each with role, "
             "rationale, mapping_order, lock and nested "
             "actual physical Object/Attributes. Scoped to "
-            "this frozen target/Source System pair.",
+            "this frozen target/Source System pair. A candidate role means "
+            "relevance is unproven; support links provide prior evidence. "
+            "Assess all candidates before reporting no applicable source.",
             "value_schema": {
                 "$defs": {
                     "MappingPhysicalAttribute": {

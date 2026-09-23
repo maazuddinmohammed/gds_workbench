@@ -298,6 +298,8 @@ GRANT EXECUTE ON FUNCTION workflow.list_model_object_eligibility(BIGINT)
 TO gds_app_write, gds_web_write;
 GRANT EXECUTE ON FUNCTION workflow.list_model_attribute_eligibility(BIGINT)
 TO gds_app_write, gds_web_write;
+GRANT EXECUTE ON FUNCTION workflow.list_model_input_sources(BIGINT)
+TO gds_app_write, gds_web_write;
 GRANT EXECUTE ON FUNCTION workflow.list_mapping_source_objects(
     BIGINT, BIGINT, VARCHAR, BIGINT
 ) TO gds_app_write, gds_web_write;
@@ -611,6 +613,7 @@ BEGIN
                        'list_mapping_source_objects',
                        'bigint, bigint, character varying, bigint'
                    ),
+                   ('workflow', 'list_model_input_sources', 'bigint'),
                    ('mcp', 'get_databricks_sql_connection_values', 'bigint, text')
                ) AS required_function(
                    schema_name,
@@ -833,6 +836,7 @@ BEGIN
                    'workflow.list_tenant_visible_objects(bigint)',
                    'workflow.list_model_object_eligibility(bigint)',
                    'workflow.list_model_attribute_eligibility(bigint)',
+                   'workflow.list_model_input_sources(bigint)',
                    'workflow.list_mapping_source_objects(bigint,bigint,character varying,bigint)',
                    'workflow.list_code_generation_target_context(bigint,character varying,character varying)',
                    'mcp.get_databricks_sql_connection_values(bigint,text)'

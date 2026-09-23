@@ -355,6 +355,18 @@ BEGIN
           JOIN pg_catalog.pg_namespace AS namespace_record
             ON namespace_record.oid = function_record.pronamespace
          WHERE namespace_record.nspname = 'workflow'
+           AND function_record.proname = 'list_model_input_sources'
+           AND oidvectortypes(function_record.proargtypes) = 'bigint'
+           AND function_record.provolatile = 's'
+           AND NOT function_record.prosecdef
+           AND function_record.proconfig =
+               ARRAY['search_path=pg_catalog']::TEXT[]
+    ) OR NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc AS function_record
+          JOIN pg_catalog.pg_namespace AS namespace_record
+            ON namespace_record.oid = function_record.pronamespace
+         WHERE namespace_record.nspname = 'workflow'
            AND function_record.proname = 'list_mapping_source_objects'
            AND oidvectortypes(function_record.proargtypes) =
                'bigint, bigint, character varying, bigint'
@@ -1471,6 +1483,7 @@ BEGIN
                    'workflow.list_tenant_visible_objects(bigint)',
                    'workflow.list_model_object_eligibility(bigint)',
                    'workflow.list_model_attribute_eligibility(bigint)',
+                   'workflow.list_model_input_sources(bigint)',
                    'workflow.list_mapping_source_objects(bigint,bigint,character varying,bigint)',
                    'workflow.list_code_generation_target_context(bigint,character varying,character varying)'
                ]) AS web_workflow_function(signature)

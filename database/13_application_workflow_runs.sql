@@ -1909,16 +1909,8 @@ BEGIN
                count(*) FILTER (
                    WHERE binding.model_object_binding_status <> 'active'
                       OR NOT EXISTS (
-                          SELECT 1
-                            FROM workflow.mapping_source_system_dependency
-                                 AS dependency
-                           WHERE dependency.model_id = binding.model_id
-                             AND dependency.modeled_entity_type =
-                                 binding.modeled_entity_type
-                             AND dependency.source_system_id =
-                                 v_mapping_system_id
-                             AND dependency.mapping_source_system_dependency_status =
-                                 'active'
+                          SELECT 1 FROM workflow.list_model_input_sources(binding.model_id) AS input
+                           WHERE input.source_system_id = v_mapping_system_id
                       )
                       OR NOT EXISTS (
                           SELECT 1

@@ -79,4 +79,4 @@ Store these in corresponding `attribute_mapping_transformation_document` fields.
 
 For the Object template, `source_objects` and `steps` are required keys whose values may be JSON null. For the Attribute template, `source_attributes` may be omitted or null; `transformation` remains required. A generated Attribute may describe its confirmed identity/generation rule instead of an invented SQL expression.
 
-Read/preserve or author `mapping_dependency` separately per layer/System; Object text cannot replace it. Resolve conflicting preconditions instead of copying examples. `multi-system-target.sql` adds an equivalent CRM branch.
+`mapping_dependency` is optional orchestration metadata, authored separately when requested; it never gates Mapping. Resolve conflicting preconditions instead of copying examples. `multi-system-target.sql` adds an equivalent CRM branch.

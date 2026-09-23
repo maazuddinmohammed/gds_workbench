@@ -266,7 +266,7 @@
       }
     },
     "source_evidence": {
-      "description": "Eligible source contributions, each with role, rationale, mapping_order, lock and nested actual physical Object/Attributes. Scoped to this frozen target/Source System pair.",
+      "description": "All candidate inputs for this System and route, each with role, rationale, mapping_order, lock and nested actual physical Object/Attributes. Scoped to this frozen target/Source System pair. A candidate role means relevance is unproven; support links provide prior evidence. Assess all candidates before reporting no applicable source.",
       "value_schema": {
         "$defs": {
           "MappingPhysicalAttribute": {
@@ -1605,11 +1605,20 @@
       }
     },
     "additionalProperties": false,
-    "description": "Agent output: transformation content only; identity comes from the frozen run.",
+    "description": "Return only the Mapping transformation content. Identity, lifecycle status, bindings, templates, and provenance are derived by the backend.",
     "properties": {
       "schema_version": {
         "const": "1.0",
         "title": "Schema Version",
+        "type": "string"
+      },
+      "outcome": {
+        "default": "mapped",
+        "enum": [
+          "mapped",
+          "no_applicable_source"
+        ],
+        "title": "Outcome",
         "type": "string"
       },
       "issues": {

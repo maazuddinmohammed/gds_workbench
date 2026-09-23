@@ -329,7 +329,11 @@ Attributes. Object selection includes unlocked Attributes by default. Existing
 Mapping locks and deselections preserve records; a locked Object protects all its
 Attributes. The run freezes this selection, authors each pair independently, and
 combines successful results into one draft for explicit Apply. System dependency
-order is maintained manually in the web UI. See ADR 008.
+order is maintained manually in the web UI for orchestration only. Target choices
+cross bound Objects with all active business Systems represented in Model Input
+Scope; Bronze provenance comes from ingestion lineage. Saved Entity source links
+are evidence, not eligibility gates. Each pair produces complete actionable
+Attribute coverage or an explicit no-applicable-source run outcome. See ADR 008.
 _Avoid_: Attribute-only top-level workflow, agent-created System ordering
 
 **Mapping Transformation Document**:

@@ -291,7 +291,7 @@ class ExistingMappingHeader(_FrozenModel):
 
 
 class MappingSource(_FrozenModel):
-    source_mapping_id: int = Field(gt=0)
+    source_mapping_id: int | None = Field(gt=0)
     modeled_entity_id: int = Field(gt=0)
     role: str = Field(min_length=1, max_length=2_000)
     rationale: str = Field(min_length=1, max_length=2_000)
@@ -317,7 +317,7 @@ class MappingRunContext(_FrozenModel):
     route: MappingRoute
     output_template_selections: MappingOutputTemplateSelections
     source_system: MappingSourceSystem
-    dependency: MappingDependency
+    dependency: MappingDependency | None
     dependency_graph: MappingDependencyGraph = Field(repr=False)
     target_dependency_graph: MappingTargetDependencyGraph = Field(repr=False)
     output_templates: MappingOutputTemplateInventory = Field(repr=False)

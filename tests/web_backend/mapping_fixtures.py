@@ -477,7 +477,9 @@ def mapping_validation_preparation(
                 "mapping_source_system_dependency_status": context.dependency.status,
                 "mapping_source_system_dependency_is_locked": context.dependency.is_locked,
             }
-        ],
+        ]
+        if context.dependency is not None
+        else [],
     }
     identity = {
         "modeled_entity_type": plan.modeled_entity_type,

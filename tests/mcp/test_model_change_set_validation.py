@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from typing import Literal
 
 import pytest
-
 from gds_etl_workbench.application.change_sets.model import (
     StageModelChange,
     model_validation_outcome,
@@ -30,6 +29,7 @@ from gds_etl_workbench.domain.snapshots.model import (
     ModelChangeSetDataset,
     build_model_dataset_schema,
 )
+
 from tests.mcp.model_test_fixtures import (
     GOLD_SALES_FACT,
     SILVER_ORDER,
@@ -1153,3 +1153,21 @@ def test_parent_retarget_cannot_change_locked_child_physical_identity() -> None:
         issue.code == "binding_reassignment_unsupported" for issue in result.issues
     )
     assert any(issue.code == "record_locked" for issue in result.issues)
+
+
+@pytest.mark.parametrize("dependency_state", ["missing", "inactive", "deprecated"])
+def test_mapping_and_code_do_not_require_orchestration_dependency_order(
+    dependency_state: str,
+) -> None:
+    graph = complete_model_graph()
+    if dependency_state == "missing":
+        graph["mapping_dependency"] = []
+    else:
+        for row in graph["mapping_dependency"]:
+            row["mapping_source_system_dependency_status"] = dependency_state
+    result = validate_future_graph(
+        snapshot=empty_model_snapshot(),
+        staged_documents=graph,
+        physical_scope=complete_physical_scope(),
+    )
+    assert result.valid, [(issue.dataset, issue.code) for issue in result.issues]

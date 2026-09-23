@@ -200,7 +200,6 @@ def plan_model_record_review(
                     )
                 elif name == "mapping_object":
                     link(identity, "model_object_binding", *entity)
-                    link(identity, "mapping_dependency", entity[0], v["source_system_code"])
                 elif name == "mapping_attribute":
                     link(identity, "mapping_object", *entity, v["source_system_code"])
                     link(identity, "model_attribute_binding", *entity, v["modeled_attribute_name"])

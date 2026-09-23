@@ -284,3 +284,81 @@ def test_mapping_context_preserves_large_collections_and_policy_text() -> None:
     assert len(context.target.attributes) == 5001
     assert len(context.sources) == 129
     assert context.authoring.naming_instructions == policy
+
+
+async def test_unrelated_system_can_return_an_explicit_no_mapping_outcome() -> None:
+    preparation = mapping_preparation()
+    context = preparation.context.model_copy(
+        update={
+            "sources": tuple(
+                source.model_copy(update={"source_mapping_id": None})
+                for source in preparation.context.sources
+            ),
+            "dependency": None,
+        }
+    )
+    preparation = preparation.model_copy(
+        update={
+            "context": context,
+            "snapshot": None,
+            "readiness": assess_mapping_readiness(
+                plan=preparation.plan, context=context
+            ),
+        }
+    )
+    candidate: dict[str, JsonValue] = {
+        "schema_version": "1.0",
+        "outcome": "no_applicable_source",
+        "object_mapping": None,
+        "attribute_mappings": [],
+    }
+    validator = CompleteMappingCandidateValidator(preparation=preparation)
+    assert not (await validator.validate(candidate)).issues
+    assert validator.parse_validated(candidate).changes == ()
+
+
+@pytest.mark.parametrize("existing", [False, True])
+async def test_no_mapping_cannot_skip_known_entity_sources_or_existing_mapping(
+    existing: bool,
+) -> None:
+    preparation = mapping_preparation(existing=existing)
+    candidate: dict[str, JsonValue] = {
+        "schema_version": "1.0",
+        "outcome": "no_applicable_source",
+        "object_mapping": None,
+        "attribute_mappings": [],
+    }
+    assert (
+        await CompleteMappingCandidateValidator(preparation=preparation).validate(
+            candidate
+        )
+    ).issues
+
+
+async def test_no_mapping_cannot_skip_attribute_lineage_without_object_support_links() -> (
+    None
+):
+    preparation = mapping_preparation()
+    preparation = preparation.model_copy(
+        update={
+            "context": preparation.context.model_copy(
+                update={
+                    "sources": tuple(
+                        source.model_copy(update={"source_mapping_id": None})
+                        for source in preparation.context.sources
+                    ),
+                }
+            )
+        }
+    )
+    candidate: dict[str, JsonValue] = {
+        "schema_version": "1.0",
+        "outcome": "no_applicable_source",
+        "object_mapping": None,
+        "attribute_mappings": [],
+    }
+    assert (
+        await CompleteMappingCandidateValidator(preparation=preparation).validate(
+            candidate
+        )
+    ).issues

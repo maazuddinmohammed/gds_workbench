@@ -13,6 +13,8 @@ from gds_etl_workbench.domain.modeling_records import (
 )
 from pydantic import ValidationError
 
+from gds_workbench_api.features.workflows.authoring.context_inputs import natural_key
+
 from .contracts import CompleteMappingCandidateV1
 from .preparation_contracts import (
     ExistingMappingAttribute,
@@ -36,6 +38,50 @@ class MappingCandidateReconciler:
         candidate: CompleteMappingCandidateV1,
     ) -> tuple[StageModelChange, ...]:
         header = self._preparation.context.headers[0]
+        if candidate.outcome == "no_applicable_source":
+            if (
+                candidate.object_mapping is not None
+                or candidate.attribute_mappings
+                or candidate.issues
+            ):
+                raise InvalidRequestError(
+                    "A no-source outcome cannot contain transformations or issues."
+                )
+            known_source = any(
+                source.source_mapping_id is not None for source in self._preparation.context.sources
+            )
+            snapshot = self._preparation.snapshot
+            if snapshot is not None:
+                layer = (
+                    "logical"
+                    if self._preparation.plan.route == "logical_to_silver"
+                    else "dimensional"
+                )
+                section = snapshot.logical if layer == "logical" else snapshot.dimensional
+                source_keys = {
+                    natural_key(source.object.model_dump())
+                    for source in self._preparation.context.sources
+                }
+                known_source |= any(
+                    source.status == "active"
+                    and source.support_source_type == "attribute"
+                    and natural_key(source.source_attribute.model_dump()) in source_keys
+                    for attribute in section.attributes
+                    if getattr(attribute, f"{layer}_entity_name").casefold()
+                    == header.modeled_entity.entity_name.casefold()
+                    and getattr(attribute, f"{layer}_attribute_status") == "active"
+                    for source in attribute.sources
+                )
+            if header.is_authored or known_source:
+                raise InvalidRequestError(
+                    "Known source evidence or an existing Mapping requires complete authoring. "
+                    "Report missing transformation evidence instead of skipping the target."
+                )
+            return ()
+        if not self._preparation.context.sources:
+            raise InvalidRequestError(
+                "No physical source is available; return no_applicable_source."
+            )
         readiness = self._preparation.readiness.headers[0]
         object_actionable = readiness.action in {"author", "extend"}
         if object_actionable != (candidate.object_mapping is not None):

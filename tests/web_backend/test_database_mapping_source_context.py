@@ -3,7 +3,7 @@
 # Existing disposable fixture builders deliberately share their private seed helpers.
 # pyright: reportPrivateUsage=false
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import LiteralString
 from uuid import uuid4
 
@@ -44,7 +44,11 @@ class MappingScope:
 
 
 def _seed_mapping_scope(
-    database: DisposablePostgres, *, dimensional: bool = True, create_run: bool = True
+    database: DisposablePostgres,
+    *,
+    dimensional: bool = True,
+    create_run: bool = True,
+    generate: bool = False,
 ) -> MappingScope:
     model_id, tenant_id, attribute_id, entra_tenant_id, entra_object_id, _ = _seed_profile_model(
         database
@@ -279,7 +283,7 @@ def _seed_mapping_scope(
         correlation_id = uuid4()
         entity_type = "dimensional_entity" if dimensional else "logical_entity"
         route = "dimensional_to_gold" if dimensional else "logical_to_silver"
-        operation = "build" if dimensional else "extend"
+        operation = "generate" if generate else "build" if dimensional else "extend"
         run_id = 1  # Unused placeholder when a caller creates its own governed Run.
         if create_run:
             run_id = _required_id(
@@ -414,7 +418,7 @@ async def test_logical_mapping_keeps_ordered_source_and_ingested_bronze_inputs(
         "foreign_owner",
     ],
 )
-async def test_dimensional_mapping_rejects_unavailable_or_unrelated_silver(
+async def test_dimensional_mapping_excludes_unavailable_or_unrelated_silver(
     web_postgres_database: DisposablePostgres,
     change: str,
 ) -> None:
@@ -469,9 +473,7 @@ async def test_dimensional_mapping_rejects_unavailable_or_unrelated_silver(
             ).fetchone() == {"is_dimensional_source_eligible": True}
     context = await _load(web_postgres_database, scope)
     assert not context.sources
-    assert "source.objects_missing" in {
-        item.code for item in assess_mapping_readiness(plan=scope.plan, context=context).issues
-    }
+    assert assess_mapping_readiness(plan=scope.plan, context=context).ready
 
 
 async def test_mapping_target_rejects_foreign_source_tenant_despite_shared_placement(
@@ -485,3 +487,175 @@ async def test_mapping_target_rejects_foreign_source_tenant_despite_shared_place
         )
     with pytest.raises(MappingRunContextUnavailableError):
         await _load(web_postgres_database, scope)
+
+
+@pytest.mark.parametrize("dimensional", [False, True])
+async def test_mapping_candidates_and_code_survive_inactive_orchestration_and_missing_support_links(
+    web_postgres_database: DisposablePostgres,
+    dimensional: bool,
+) -> None:
+    from gds_workbench_api.features.mapping.read_service import (
+        _MAPPING_GENERATION_TARGETS_SQL,
+    )
+
+    scope = _seed_mapping_scope(web_postgres_database, dimensional=dimensional)
+    with web_postgres_database.connect_owner() as connection:
+        code_query = """SELECT object_id, code_input_digest
+                        FROM workflow.list_code_generation_target_context(%s, 'logical_entity')"""
+        before = connection.execute(code_query, (scope.plan.model_id,)).fetchall()
+        assert [row["object_id"] for row in before] == [scope.silver_object_id]
+        connection.execute(
+            """UPDATE workflow.mapping_source_system_dependency
+               SET mapping_source_system_dependency_status = 'inactive' WHERE model_id = %s""",
+            (scope.plan.model_id,),
+        )
+        assert connection.execute(code_query, (scope.plan.model_id,)).fetchall() == before
+        connection.execute(
+            """UPDATE workflow.logical_entity_source_mapping
+               SET logical_entity_source_mapping_status = 'inactive' WHERE model_id = %s""",
+            (scope.plan.model_id,),
+        )
+        connection.execute(
+            """UPDATE workflow.dimensional_entity_source_mapping
+               SET dimensional_entity_source_mapping_status = 'inactive' WHERE model_id = %s""",
+            (scope.plan.model_id,),
+        )
+        pairs = connection.execute(
+            _MAPPING_GENERATION_TARGETS_SQL,
+            (
+                scope.tenant_id,
+                scope.plan.model_id,
+                scope.plan.modeled_entity_type,
+                scope.tenant_id,
+                scope.plan.model_id,
+                200,
+                0,
+            ),
+        ).fetchall()
+        assert {
+            (row["object_id"], row["source_system"]["system_id"]) for row in pairs
+        } == {(scope.plan.pair.target_object_id, scope.source_system_id)}
+        assert all(row["has_sources"] for row in pairs)
+        assert connection.execute(
+            """SELECT is_dimensional_source_eligible
+               FROM workflow.list_model_object_eligibility(%s) WHERE object_id = %s""",
+            (scope.plan.model_id, scope.silver_object_id),
+        ).fetchone() == {"is_dimensional_source_eligible": True}
+    context = await _load(web_postgres_database, scope)
+    assert assess_mapping_readiness(plan=scope.plan, context=context).ready
+    assert {item.object.object_id for item in context.sources} == (
+        {scope.silver_object_id}
+        if dimensional
+        else {scope.source_object_id, scope.bronze_object_id}
+    )
+    assert all(item.source_mapping_id is None for item in context.sources)
+
+
+@pytest.mark.parametrize("dimensional", [False, True])
+async def test_mapping_pairs_cover_all_input_systems_without_dependency_entries(
+    web_postgres_database: DisposablePostgres,
+    dimensional: bool,
+) -> None:
+    from gds_workbench_api.features.mapping.read_service import (
+        _MAPPING_GENERATION_TARGETS_SQL,
+    )
+
+    scope = _seed_mapping_scope(
+        web_postgres_database, dimensional=dimensional, generate=True
+    )
+    added: list[tuple[int, int]] = []
+    with web_postgres_database.connect_owner() as connection:
+        for index in range(3):
+            code = f"INPUT_{scope.plan.model_id}_{index}"
+            system_id = _required_id(
+                connection.execute(
+                    """INSERT INTO core.system (system_code, system_name, system_type_id)
+                   SELECT %s, 'Independent input', system_type_id FROM core.system
+                   WHERE system_id = %s RETURNING system_id""",
+                    (code, scope.source_system_id),
+                ).fetchone(),
+                "system_id",
+            )
+            connection_id = _required_id(
+                connection.execute(
+                    """INSERT INTO core.connection (tenant_id, system_id, connection_code,
+                       connection_name, connection_type_id)
+                   SELECT source_tenant_id, %s, %s, 'Independent input', connection_type_id
+                   FROM core.object JOIN core.connection USING (connection_id)
+                   WHERE object_id = %s RETURNING connection_id""",
+                    (system_id, code, scope.source_object_id),
+                ).fetchone(),
+                "connection_id",
+            )
+            object_id = _required_id(
+                connection.execute(
+                    """INSERT INTO core.object (connection_id, source_tenant_id, object_schema,
+                       object_name, object_type_id, zone_id)
+                   SELECT %s, source_tenant_id, object_schema, object_name, object_type_id, zone_id
+                   FROM core.object WHERE object_id = %s RETURNING object_id""",
+                    (connection_id, scope.source_object_id),
+                ).fetchone(),
+                "object_id",
+            )
+            connection.execute(
+                """INSERT INTO core.attribute (object_id, attribute_name, attribute_data_type,
+                       attribute_ordinal_position, attribute_nullability)
+                   VALUES (%s, 'customer_id', 'bigint', 1, FALSE)""",
+                (object_id,),
+            )
+            # A registered System without Model Input Scope must not become a pair.
+            if index == 2:
+                continue
+            added.append((system_id, object_id))
+            connection.execute(
+                "INSERT INTO model.model_input_scope (model_id, object_id) VALUES (%s, %s)",
+                (scope.plan.model_id, object_id),
+            )
+            connection.execute(
+                """INSERT INTO application.workflow_run_mapping_target_selection
+                       (workflow_run_id, model_id, object_id, source_system_id, selection_order)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (
+                    scope.plan.workflow_run_id,
+                    scope.plan.model_id,
+                    scope.plan.pair.target_object_id,
+                    system_id,
+                    index + 2,
+                ),
+            )
+        pairs = connection.execute(
+            _MAPPING_GENERATION_TARGETS_SQL,
+            (
+                scope.tenant_id,
+                scope.plan.model_id,
+                scope.plan.modeled_entity_type,
+                scope.tenant_id,
+                scope.plan.model_id,
+                200,
+                0,
+            ),
+        ).fetchall()
+        assert {
+            (row["object_id"], row["source_system"]["system_id"]) for row in pairs
+        } == {
+            (scope.plan.pair.target_object_id, system_id)
+            for system_id in (scope.source_system_id, *(item[0] for item in added))
+        }
+    for system_id, object_id in added:
+        plan = scope.plan.model_copy(
+            update={
+                "operation": "generate",
+                "pair": scope.plan.pair.model_copy(
+                    update={
+                        "source_system_id": system_id,
+                    }
+                ),
+            }
+        )
+        context = await _load(web_postgres_database, replace(scope, plan=plan))
+        assert context.dependency is None
+        assert assess_mapping_readiness(plan=plan, context=context).ready
+        assert {item.object.object_id for item in context.sources} == (
+            set() if dimensional else {object_id}
+        )
+        assert all(item.source_mapping_id is None for item in context.sources)

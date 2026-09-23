@@ -98,7 +98,6 @@ class MappingReadinessService:
             sorted(
                 preparations,
                 key=lambda item: (
-                    item.context.dependency.dependency_order,
                     item.context.headers[0].object_dependency_order,
                     item.context.source_system.system_code.casefold(),
                     item.context.target.object_schema.casefold(),
@@ -134,9 +133,6 @@ def assess_mapping_readiness(
 
     if not context.source_system.is_active:
         issue("source_system.inactive", "The selected source System is inactive.")
-    if context.dependency.status != "active":
-        issue("dependency.inactive", "The selected source-System dependency is inactive.")
-    _validate_source_dependency_graph(context, issues)
 
     expected_zone = "silver" if plan.route == "logical_to_silver" else "gold"
     target = context.target
@@ -155,9 +151,7 @@ def assess_mapping_readiness(
     if not target.attributes or any(not item.is_active for item in target.attributes):
         issue("target.attributes_unavailable", "Every bound target Attribute must be active.")
 
-    if not context.sources:
-        issue("source.objects_missing", "No executable source Object is available.")
-    elif any(
+    if any(
         not source.object.is_active
         or not source.object.scope_is_active
         or not source.object.tenant_is_active
@@ -279,63 +273,3 @@ def assess_mapping_readiness(
         headers=(readiness_header,),
         issues=tuple(issues),
     )
-
-
-def _validate_source_dependency_graph(
-    context: MappingRunContext,
-    issues: list[MappingReadinessIssue],
-) -> None:
-    graph = context.dependency_graph
-    if graph.malformed_reference_count:
-        issues.append(
-            MappingReadinessIssue(
-                code="dependency.graph_malformed",
-                message="The source-System dependency graph is malformed.",
-            )
-        )
-        return
-    nodes = {item.source_system_id: item for item in graph.nodes}
-    selected = nodes.get(context.source_system.system_id)
-    if selected is None or selected.dependency_order != context.dependency.dependency_order:
-        issues.append(
-            MappingReadinessIssue(
-                code="dependency.graph_selected_drift",
-                message="The selected source System differs from the dependency graph.",
-            )
-        )
-    successors: dict[int, set[int]] = {key: set() for key in nodes}
-    indegree = {key: 0 for key in nodes}
-    for edge in graph.edges:
-        predecessor = nodes.get(edge.predecessor_source_system_id)
-        successor = nodes.get(edge.successor_source_system_id)
-        if (
-            predecessor is None
-            or successor is None
-            or predecessor.dependency_order >= successor.dependency_order
-        ):
-            issues.append(
-                MappingReadinessIssue(
-                    code="dependency.graph_order_invalid",
-                    message="A dependency edge does not resolve to an earlier wave.",
-                )
-            )
-            return
-        successors[predecessor.source_system_id].add(successor.source_system_id)
-        indegree[successor.source_system_id] += 1
-    ready = sorted(key for key, value in indegree.items() if value == 0)
-    visited = 0
-    while ready:
-        current = ready.pop(0)
-        visited += 1
-        for successor_id in sorted(successors[current]):
-            indegree[successor_id] -= 1
-            if indegree[successor_id] == 0:
-                ready.append(successor_id)
-                ready.sort()
-    if visited != len(nodes):
-        issues.append(
-            MappingReadinessIssue(
-                code="dependency.graph_cycle",
-                message="The source-System dependency graph contains a cycle.",
-            )
-        )

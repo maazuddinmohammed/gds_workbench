@@ -6,7 +6,7 @@ Before authoring, present the applicable Output Template code, object-level and 
 
 Work unit: target `model_object_binding` plus source System. Do not register Metadata or establish Binding here. Follow `../session.md` for bounded reads and revision checks.
 
-Cover every active bound target Attribute through `model_attribute_binding`, including technical/constants. Preserve or author active `mapping_dependency` per modeled layer/source System with supported execution order. Keep Object order consistent. Multiple Systems may contribute to one target; Code Generation decides files.
+Assess targets × business Systems in Model Input Scope; derive Bronze Systems through ingestion lineage. Optional `mapping_dependency` orders orchestration only. Inspect all eligible System inputs; Entity links supplement discovery. Cover every active bound Attribute, including technical/constants. Report unrelated Systems without fabricating mappings. Code Generation decides files.
 
 After confirmation, follow the selected Output Template. Global advisory defaults `mapping_object_default` and `mapping_attribute_default` serve both routes. Set outer `output_template_code` only when configuration or evidence establishes it is installed; otherwise use JSON null. Snapshots list existing Mapping template codes, not installed schemas. Never invent IDs, seed populated databases or create Workflow Runs for manual plugin authoring. Preserve custom selections, locked and unaffected documents.
 

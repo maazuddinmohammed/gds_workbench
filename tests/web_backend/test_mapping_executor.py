@@ -12,7 +12,9 @@ from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_workbench_api.features.mapping.preparation_contracts import (
     MappingPreparation,
     MappingRunContext,
+    ModeledEntityType,
 )
+from gds_workbench_api.features.mapping.readiness import assess_mapping_readiness
 from gds_workbench_api.features.mapping.service import (
     MappingChangeSetHandoff,
     MappingNoOpCompleter,
@@ -222,11 +224,29 @@ async def test_start_binds_mapping_without_executing(
 
 
 @pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))
+@pytest.mark.parametrize("layer", ("logical_entity", "dimensional_entity"))
 async def test_mapping_local_fake_completes_each_mode(
     mode: WorkflowExecutionMode,
+    layer: ModeledEntityType = "logical_entity",
 ) -> None:
     agent = _RecordingFake()
-    service, handoff, no_op, fail = _executor(mapping_preparation(execution_mode=mode), agent)
+    preparation = mapping_preparation(
+        execution_mode=mode, attribute_count=4, modeled_entity_type=layer,
+    )
+    assert preparation.snapshot is not None
+    preparation = preparation.model_copy(
+        update={
+            "context": preparation.context.model_copy(update={"dependency": None}),
+            "snapshot": preparation.snapshot.model_copy(
+                update={
+                    "mapping": preparation.snapshot.mapping.model_copy(
+                        update={"dependencies": ()}
+                    ),
+                }
+            ),
+        }
+    )
+    service, handoff, no_op, fail = _executor(preparation, agent)
 
     from gds_etl_workbench.application.change_sets.model_validation import (
         validate_future_graph,
@@ -245,11 +265,55 @@ async def test_mapping_local_fake_completes_each_mode(
     }
 
     assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert result.staged_record_count == 2
+    assert result.staged_record_count == 5
     handoff.assert_awaited_once()
     no_op.assert_not_awaited()
     fail.assert_not_awaited()
     assert [request.stage for request in agent.requests] == ["mapping_authoring"]
+
+
+@pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))
+@pytest.mark.parametrize("layer", ("logical_entity", "dimensional_entity"))
+async def test_mapping_records_no_applicable_source_without_fabricating_a_mapping(
+    mode: WorkflowExecutionMode,
+    layer: ModeledEntityType,
+) -> None:
+    class NoSourceAgent(_RecordingFake):
+        async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
+            self.requests.append(request)
+            return AgentExecutionResult(
+                candidate={
+                    "schema_version": "1.0",
+                    "outcome": "no_applicable_source",
+                    "object_mapping": None,
+                    "attribute_mappings": [],
+                },
+                turn_count=1,
+                tool_call_count=0,
+            )
+
+    preparation = mapping_preparation(execution_mode=mode, modeled_entity_type=layer)
+    context = preparation.context.model_copy(update={"dependency": None, "sources": ()})
+    preparation = preparation.model_copy(
+        update={
+            "context": context,
+            "readiness": assess_mapping_readiness(
+                plan=preparation.plan, context=context
+            ),
+        }
+    )
+    agent, lifecycle = NoSourceAgent(), _Lifecycle()
+    service, handoff, no_op, fail = _executor(preparation, agent, lifecycle=lifecycle)
+    result = await _execute(service)
+    assert isinstance(result, AuthoringNoOpReceipt)
+    assert len(agent.requests) == 1
+    handoff.assert_not_awaited()
+    fail.assert_not_awaited()
+    no_op.assert_awaited_once()
+    assert any(
+        "No applicable source found" in call.kwargs["event"].message
+        for call in lifecycle.append_event.call_args_list
+    )
 
 
 @pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))

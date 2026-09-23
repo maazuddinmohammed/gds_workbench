@@ -1085,13 +1085,14 @@ test("new Mapping systems leave prior Code stale; Code authoring still needs exa
     ["logical_attribute", modelDataset("logical_attribute", [{logical_entity_name: "Customer", logical_attribute_name: "ID", logical_attribute_status: "active"}])],
     ["model_object_binding", modelDataset("model_object_binding", [{...entity, model_object_binding_status: "active"}])],
     ["model_attribute_binding", modelDataset("model_attribute_binding", [{...entity, modeled_attribute_name: "ID", model_attribute_binding_status: "active"}])],
-    ["mapping_dependency", modelDataset("mapping_dependency", ["ERP", "CRM"].map((source_system_code) => ({...entity, source_system_code, mapping_source_system_dependency_status: "active"})))],
+    ["mapping_dependency", modelDataset("mapping_dependency", [])],
     ["mapping_object", modelDataset("mapping_object", ["ERP", "CRM"].map((source_system_code) => ({...entity, source_system_code, object_mapping_status: "active", mapping_transformation_document: {kind: "direct"}})))],
     ["mapping_attribute", modelDataset("mapping_attribute", ["ERP", "CRM"].map((source_system_code) => ({...entity, source_system_code, modeled_attribute_name: "ID", attribute_mapping_status: "active", attribute_mapping_transformation_document: {kind: "direct"}})))],
     ["generated_code", modelDataset("generated_code", [artifact])],
     ["generated_code_source_system", modelDataset("generated_code_source_system", [{...artifact, source_system_code: "ERP", generated_code_source_system_status: "active"}])],
   ]);
   assert.deepEqual(modelValidation.validateActiveDependencies(graph), []);
+  assert.deepEqual(modelValidation.validateBackendReferences(graph), []);
   graph.get("generated_code").pending = [artifact];
   assert.deepEqual(modelValidation.validateActiveDependencies(graph).map((issue) => issue.dataset), ["generated_code_source_system"]);
   graph.get("generated_code").pending = [];

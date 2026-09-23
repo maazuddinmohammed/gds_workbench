@@ -80,13 +80,13 @@ SELECT run.workflow_run_id,
            'system_description', source_system.system_description,
            'is_active', source_system.is_active
        ) AS source_system,
-       jsonb_build_object(
+       CASE WHEN dependency.mapping_source_system_dependency_id IS NOT NULL THEN jsonb_build_object(
            'mapping_source_system_dependency_id',
                dependency.mapping_source_system_dependency_id,
            'dependency_order', dependency.source_system_dependency_order,
            'status', dependency.mapping_source_system_dependency_status,
            'is_locked', dependency.mapping_source_system_dependency_is_locked
-       ) AS dependency,
+       ) END AS dependency,
        jsonb_build_object(
            'model_name', target_model.model_name,
            'naming_instructions', CASE run.modeled_entity_type
@@ -113,7 +113,7 @@ SELECT run.workflow_run_id,
    AND selection.model_id = run.model_id
   JOIN core.system AS source_system
     ON source_system.system_id = selection.source_system_id
-  JOIN workflow.mapping_source_system_dependency AS dependency
+  LEFT JOIN workflow.mapping_source_system_dependency AS dependency
     ON dependency.model_id = run.model_id
    AND dependency.modeled_entity_type = run.modeled_entity_type
    AND dependency.source_system_id = selection.source_system_id

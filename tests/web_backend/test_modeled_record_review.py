@@ -65,6 +65,20 @@ def test_all_result_lifecycle_transitions_preserve_graph_and_content(
         assert status == ("inactive" if action == "deactivate" else "active")
 
 
+def test_dependency_retirement_does_not_cascade_into_mapping_or_code() -> None:
+    prepared = prepare_model_record_review(
+        review_graph(complete_model_graph()),
+        physical_scope=complete_physical_scope(),
+        dataset="mapping_dependency",
+        record_ids=[1],
+        action="deactivate",
+    )
+    assert prepared.validation.valid
+    assert [(item.dataset, item.record_id) for item in prepared.decisions] == [
+        ("mapping_dependency", 1)
+    ]
+
+
 def test_bound_attribute_retirement_includes_binding_mapping_code_and_validation() -> None:
     review = review_graph(complete_model_graph())
     prepared = prepare_model_record_review(

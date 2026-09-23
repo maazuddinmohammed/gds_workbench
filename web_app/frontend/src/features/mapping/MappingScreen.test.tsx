@@ -848,6 +848,33 @@ it("selects Objects with their unlocked Attributes and preserves explicit exclus
   ]);
 });
 
+it("assesses every input System even without saved Entity source links", async () => {
+  const target = { ...mappingTarget, entity_name: "Customer", dependency_order: 0,
+    object_order: 0, has_sources: false, is_locked: false,
+    attributes: [{ attribute_id: 702, attribute_name: "customer_name", modeled_attribute_name: "Name",
+      ordinal_position: 1, is_locked: false, is_authored: false }],
+  };
+  const fetcher = mappingFetchStub({ generationTargets: ["CRM", "ERP", "BILLING"].map((system_code, index) => ({
+    ...target, source_system: { system_id: index + 2, system_code, system_name: system_code },
+  })) });
+  const user = userEvent.setup();
+  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18?layer=logical&view=objects"] }),
+  })} />);
+  await user.click(await screen.findByRole("button", { name: "Generate mappings" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  for (const system of ["CRM", "ERP", "BILLING"]) {
+    expect(await dialog.findByRole("checkbox", { name: `Generate silver_nwa.customer from ${system}` })).toBeChecked();
+  }
+  expect(dialog.queryByText("No eligible sources")).not.toBeInTheDocument();
+  await user.click(dialog.getByRole("button", { name: "Generate mappings" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  const call = fetcher.mock.calls.find(([input, init]) => String(input).endsWith("/models/18/runs") && init?.method === "POST");
+  expect(JSON.parse(String(call?.[1]?.body)).mapping_targets).toEqual([2, 3, 4].map((source_system_id) => ({
+    object_id: 701, source_system_id, selected_attribute_ids: [702],
+  })));
+});
+
 it.each([false, true])("saves a manual System dependency, editing=%s", async (edit) => {
   const base = mappingFetchStub({ generationTargets: [] });
   const fetcher = vi.fn<typeof fetch>(async (input, init) => String(input).endsWith("/change-sets/mapping/dependencies")

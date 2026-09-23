@@ -894,19 +894,10 @@ def _validate_references(
         if _attribute_key(record) not in attributes:
             _missing(issues, "model_attribute_binding", "modeled_attribute_name")
 
-    dependencies = {
-        (record.modeled_entity_type, normalize_model_key_value(record.source_system_code))
-        for record in future["mapping_dependency"]
-    }
     mapping_objects = {_mapping_object_reference(record) for record in future["mapping_object"]}
     for record in future["mapping_object"]:
         if _entity_key(record) not in object_bindings:
             _missing(issues, "mapping_object", "model_object_binding")
-        if (
-            record.modeled_entity_type,
-            normalize_model_key_value(record.source_system_code),
-        ) not in dependencies:
-            _missing(issues, "mapping_object", "mapping_dependency")
     for record in future["mapping_attribute"]:
         if _mapping_object_reference(record) not in mapping_objects:
             _missing(issues, "mapping_attribute", "mapping_object")
@@ -1026,11 +1017,6 @@ def _validate_active_dependencies(
                 "Active Attribute Binding requires active modeled and Object bindings.",
             )
 
-    active_dependencies = {
-        (record.modeled_entity_type, normalize_model_key_value(record.source_system_code))
-        for record in future["mapping_dependency"]
-        if record.mapping_source_system_dependency_status == "active"
-    }
     active_mapping_objects: set[tuple[str, str, str]] = set()
     active_mapping_attributes: set[tuple[str, str, str, str]] = set()
     mapping_systems_by_entity: dict[ModeledEntityKey, set[str]] = {}
@@ -1041,18 +1027,13 @@ def _validate_active_dependencies(
         system = normalize_model_key_value(record.source_system_code)
         if (
             entity not in active_object_bindings
-            or (
-                record.modeled_entity_type,
-                system,
-            )
-            not in active_dependencies
             or record.mapping_transformation_document is None
         ):
             _active_invalid(
                 issues,
                 "mapping_object",
                 "mapping_transformation_document",
-                "Active Mapping Object requires active Binding, dependency, and transformation.",
+                "Active Mapping Object requires active Binding and transformation.",
             )
             continue
         reference = _mapping_object_reference(record)

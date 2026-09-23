@@ -121,7 +121,7 @@ SELECT targets.*,
                           'system_name', system.system_name) AS source_system,
        coalesce(logical.logical_entity_name, dimensional.dimensional_entity_name) AS entity_name,
        mapping.mapping_object_id,
-       dependency.source_system_dependency_order AS dependency_order,
+       0 AS dependency_order,
        coalesce(mapping.object_dependency_order, logical.logical_entity_dependency_order,
                 dimensional.dimensional_entity_dependency_order, 0) AS object_order,
        coalesce(mapping.object_mapping_is_locked, FALSE) AS is_locked,
@@ -132,12 +132,9 @@ SELECT targets.*,
   FROM targets
   JOIN workflow.model_object_binding AS binding ON binding.object_id = targets.object_id
   JOIN model.model AS model ON model.model_id = binding.model_id
-  JOIN workflow.mapping_source_system_dependency AS dependency
-
-        ON dependency.model_id = binding.model_id
-       AND dependency.modeled_entity_type = binding.modeled_entity_type
-   AND dependency.mapping_source_system_dependency_status = 'active'
-  JOIN core.system AS system ON system.system_id = dependency.source_system_id AND system.is_active
+ CROSS JOIN LATERAL (SELECT DISTINCT source_system_id
+     FROM workflow.list_model_input_sources(binding.model_id)) AS input
+  JOIN core.system AS system ON system.system_id = input.source_system_id AND system.is_active
   LEFT JOIN workflow.logical_entity AS logical
         ON logical.logical_entity_id = binding.logical_entity_id
   LEFT JOIN workflow.dimensional_entity AS dimensional
@@ -176,7 +173,7 @@ SELECT targets.*,
  WHERE model.tenant_id = %s AND model.model_id = %s AND model.is_active
    AND binding.model_object_binding_status = 'active'
    AND coalesce(logical.logical_entity_status, dimensional.dimensional_entity_status) = 'active'
- ORDER BY dependency.source_system_dependency_order, system.system_code, object_order,
+ ORDER BY system.system_code, object_order,
           targets.object_schema, targets.object_name, targets.object_id
  LIMIT %s OFFSET %s
 """

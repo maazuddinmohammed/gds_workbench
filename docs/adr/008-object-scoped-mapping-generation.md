@@ -7,8 +7,9 @@ Status: Accepted, 2026-09-22
 System dependency order is edited manually in Mapping through the governed Model
 Change Set service. It is not an agent stage. Each entry identifies a Model,
 modeled layer and Source System; existing dependency locks still apply. The
-current execution contract requires an active dependency entry for each selected
-System. VS Code's existing governed authoring path remains available.
+dependency entry is optional orchestration metadata. It does not control Mapping
+eligibility, source discovery, validation or retirement. VS Code's existing governed
+authoring path remains available.
 
 Generate mappings selects one layer and any number of target Object–Source System
 pairs. Selecting an Object includes its unlocked Attributes by default. Users
@@ -36,8 +37,8 @@ No application prompt/context byte ceilings are introduced. The configurable
 agent timeout remains 480 seconds by default.
 
 Each pair uses the same applied Model revision, scoped source metadata, saved
-lineage, relevant relationships, linked assertions and profile aggregates. System
-and Object orders determine execution order. A preceding pair's draft is not an
+lineage, relevant relationships, linked assertions and profile aggregates. Object
+order and stable System/name sorting determine execution order. A preceding pair's draft is not an
 applied upstream Mapping. One-shot and tool-assisted defaults expose equivalent
 evidence; readers return complete paged records.
 
@@ -50,6 +51,24 @@ Declared new physical source references are checked against eligible Objects and
 Attributes. Prompts distinguish evidence from assumptions and can return fixed
 missing-evidence issue codes instead of inventing transformations. These checks
 do not execute generated SQL or prove business correctness.
+
+## Source coverage amendment — 2026-09-23
+
+Selection crosses every bound target Object with the distinct active business
+Systems represented in Model Input Scope. Source Objects use their Connection's
+System; Bronze Objects use active ingestion lineage to their originating Systems,
+never their shared GDS placement. Logical Mapping considers all eligible scoped
+Source/Bronze inputs for the selected System. Dimensional Mapping considers bound
+Silver inputs with an applied active Logical Mapping for that System. Saved Entity
+source links supplement this candidate set instead of restricting it.
+
+Every pair is assessed in both execution modes. A mapped result must cover every
+actionable bound Attribute, preserving locks and exclusions. A System with no
+applicable source returns an explicit `no_applicable_source` result recorded in
+run events without an empty Mapping record. Existing Mapping or known Entity or
+Attribute source lineage cannot be skipped this way; uncertain transformation
+rules produce actionable evidence issues. Optional System dependency entries do
+not affect generated-code input digests or lifecycle cascades.
 
 ## Installation
 

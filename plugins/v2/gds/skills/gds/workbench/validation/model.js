@@ -245,10 +245,6 @@
     const baseline = (name) => records(model, name, "baseline");
     const activeLogicalEntities = new Set(baseline("logical_entity")
       .filter((record) => active(record, "logical_entity_status")).map(entityKey));
-    const activeDependencies = new Set(baseline("mapping_dependency")
-      .filter((record) => active(record, "mapping_source_system_dependency_status") &&
-        systems.some((system) => normalized(system.system_code) === normalized(record.source_system_code)))
-      .map((record) => tuple([record.modeled_entity_type, record.source_system_code])));
     const activeObjectBindings = new Map(baseline("model_object_binding")
       .filter((record) => record.modeled_entity_type === "logical_entity" &&
         active(record, "model_object_binding_status") && logicalTargets.has(physicalKey(record)))
@@ -257,7 +253,7 @@
       record.modeled_entity_type === "logical_entity" && active(record, "object_mapping_status") &&
       record.mapping_transformation_document !== null &&
       activeLogicalEntities.has(entityKey(record)) &&
-      activeDependencies.has(tuple([record.modeled_entity_type, record.source_system_code])) &&
+      systems.some((system) => normalized(system.system_code) === normalized(record.source_system_code)) &&
       activeObjectBindings.has(entityKey(record)));
     const dimensionalSourceObjects = new Set(activeMappingObjects.map((record) =>
       activeObjectBindings.get(entityKey(record))));
@@ -786,16 +782,11 @@
         "model_attribute_binding", "modeled_attribute_name",
         "Referenced record is not present in the future Model graph.");
     }
-    const dependencies = new Set(records(model, "mapping_dependency")
-      .map((record) => tuple([record.modeled_entity_type, record.source_system_code])));
     const mappings = new Set(records(model, "mapping_object").map(mappingObjectKey));
     for (const record of records(model, "mapping_object")) {
       if (!objectBindings.has(entityKey(record))) issue(issues, "reference_not_found",
         "mapping_object", "model_object_binding",
         "Referenced record is not present in the future Model graph.");
-      if (!dependencies.has(tuple([record.modeled_entity_type, record.source_system_code])))
-        issue(issues, "reference_not_found", "mapping_object", "mapping_dependency",
-          "Referenced record is not present in the future Model graph.");
     }
     for (const record of records(model, "mapping_attribute")) {
       if (!mappings.has(mappingObjectKey(record))) issue(issues, "reference_not_found",
@@ -881,9 +872,6 @@
         "model_attribute_binding", "modeled_attribute_name",
         "Active Attribute Binding requires active modeled and Object bindings.");
     }
-    const dependencies = new Set(records(model, "mapping_dependency")
-      .filter((record) => active(record, "mapping_source_system_dependency_status"))
-      .map((record) => tuple([record.modeled_entity_type, record.source_system_code])));
     const activeMappings = new Set();
     const mappingSystems = new Map();
     for (const record of records(model, "mapping_object")) {
@@ -891,10 +879,9 @@
       const entity = entityKey(record);
       const system = normalized(record.source_system_code);
       if (!objectBindings.has(entity) ||
-          !dependencies.has(tuple([record.modeled_entity_type, record.source_system_code])) ||
           record.mapping_transformation_document === null) {
         invalid("mapping_object", "mapping_transformation_document",
-          "Active Mapping Object requires active Binding, dependency, and transformation.");
+          "Active Mapping Object requires active Binding and transformation.");
         continue;
       }
       activeMappings.add(mappingObjectKey(record));

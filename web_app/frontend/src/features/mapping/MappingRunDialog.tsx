@@ -72,7 +72,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
   // Search only narrows the list; it never silently removes a selected target from the run.
   const visible = scoped.filter((row) => `${row.object_schema}.${row.object_name} ${row.entity_name}`
     .toLowerCase().includes(search.trim().toLowerCase()));
-  const eligible = scoped.filter((row) => !row.is_locked && row.has_sources && row.attributes.length > 0);
+  const eligible = scoped.filter((row) => !row.is_locked && row.attributes.length > 0);
   const eligibleKeys = new Set(eligible.map(targetKey));
   const selected = eligible.filter((row) => scopeMode === "all" || !excluded.has(targetKey(row)));
   const selectedKeys = new Set(selected.map(targetKey));
@@ -180,7 +180,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
           <legend className="sr-only">Mapping selection</legend>
           {!viewed ? <div className="agent-run-grid mapping-scope-controls">
             <SelectField label="Source System" value={system}
-              options={[["", "All eligible Systems"], ...systems.map((item) => [String(item.system_id), item.system_code] as [string, string])]}
+              options={[["", "All input Systems"], ...systems.map((item) => [String(item.system_id), item.system_code] as [string, string])]}
               onChange={setSystem} />
           </div> : null}
           <fieldset className="scope-mode-options">
@@ -194,6 +194,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
             <strong>{selected.length} Object–System mappings · {attributeCount} Attributes to generate</strong>
             <span>{preservedCount} Attributes preserved. Locked and unselected mappings stay unchanged.</span>
           </div>
+          <p className="field-help">Each selected Object is assessed for every selected input System. Relevant sources produce complete mappings; unrelated Systems are reported without creating a mapping. Dependency order does not affect this selection.</p>
           {targets.isPending ? <div className="surface-state" aria-busy="true">Loading all Mapping targets and Attributes…</div>
             : targets.isError ? <p className="inline-error" role="alert">Targets could not be fully loaded.</p>
             : revisionChanged ? <p className="inline-error" role="alert">The Model changed. Close this dialog and refresh.</p>
@@ -282,11 +283,11 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
                       </button><small>{row.entity_name}</small></td>
                       <td>{row.source_system.system_code}</td>
                       <td>{chosenCount} selected · {row.attributes.length - chosenCount} unselected</td>
-                      <td>{row.is_locked ? "Object locked" : !row.has_sources ? "No eligible sources" : `${row.attributes.filter((item) => item.is_locked).length} locked`}</td>
+                      <td>{row.is_locked ? "Object locked" : `${row.attributes.filter((item) => item.is_locked).length} locked`}</td>
                     </tr>;
                   })}</tbody>
                 </table>
-                {!visible.length ? <p className="empty-state compact">No targets match. Check target bindings and Source System dependencies for this layer.</p> : null}
+                {!visible.length ? <p className="empty-state compact">No targets match. Check target bindings and Systems represented in Model Input Scope.</p> : null}
               </div>
             </>}
         </fieldset>

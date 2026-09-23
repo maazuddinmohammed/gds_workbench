@@ -250,6 +250,7 @@ class MappingWorkflow:
             sequence = 2
             failures: list[WorkbenchError] = []
             completed = 0
+            unmatched = 0
             for index, preparation in enumerate(preparations):
                 plan = preparation.plan.agent_plan
                 _validate_plan(
@@ -338,7 +339,35 @@ class MappingWorkflow:
                         validator=validator,
                         final_validation=validate_complete_candidate,
                     )
-                    changes += validator.parse_validated(outcome.candidate).changes
+                    result = validator.parse_validated(outcome.candidate)
+                    changes += result.changes
+                    no_source = result.normalized.outcome == "no_applicable_source"
+                    unmatched += int(no_source)
+                    await self._lifecycle.append_event(
+                        principal,
+                        workflow_run_id=workflow_run_id,
+                        workflow_run_claim_token=workflow_run_claim_token,
+                        expected_model_revision=expected_model_revision,
+                        event=AgentWorkflowEvent(
+                            sequence=sequence,
+                            attempt=outcome.attempt_count,
+                            stage="mapping.mapping_authoring",
+                            status="running",
+                            message=(
+                                f"Target Object {preparation.plan.pair.target_object_id}, "
+                                f"Source System {preparation.plan.pair.source_system_id}: "
+                                + (
+                                    "No applicable source found; no Mapping created."
+                                    if no_source
+                                    else "Complete Object and Attribute Mapping validated."
+                                )
+                            ),
+                            current=index + 1,
+                            total=len(preparations),
+                            finding_count=0,
+                        ),
+                    )
+                    sequence += 1
                     warning |= outcome.was_repaired or bool(outcome.warning_codes)
                     final_attempt = max(final_attempt, outcome.attempt_count)
                     completed += 1
@@ -393,7 +422,10 @@ class MappingWorkflow:
                     sequence=final_sequence,
                     attempt=final_attempt,
                     warning=warning,
-                    message="Mapping completed with no effective change.",
+                    message=(
+                        f"Mapping completed with no effective change; {unmatched} pairs "
+                        f"had no applicable source, {len(failures)} failed."
+                    ),
                 )
 
             staged_record_count = sum(len(change.records) for change in changes)
@@ -414,7 +446,8 @@ class MappingWorkflow:
                     status="warning" if warning else "running",
                     message=(
                         f"{completed} of {len(preparations)} Mapping targets completed; "
-                        f"{len(failures)} failed. Review the draft and run events."
+                        f"{unmatched} had no applicable source; {len(failures)} failed. "
+                        "Review the draft and run events."
                     ),
                     current=len(preparations),
                     total=len(preparations),

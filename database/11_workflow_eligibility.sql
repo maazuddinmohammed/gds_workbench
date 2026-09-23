@@ -136,13 +136,6 @@ AS $list_model_object_eligibility$
                   AND mapping.model_id = binding.model_id
                   AND mapping.object_mapping_status = 'active'
                   AND mapping.mapping_transformation_document IS NOT NULL
-                 JOIN workflow.mapping_source_system_dependency AS dependency
-                   ON dependency.model_id = mapping.model_id
-                  AND dependency.modeled_entity_type =
-                      binding.modeled_entity_type
-                  AND dependency.source_system_id = mapping.source_system_id
-                  AND dependency.mapping_source_system_dependency_status =
-                      'active'
                  JOIN core.system AS source_system
                    ON source_system.system_id = mapping.source_system_id
                   AND source_system.is_active
@@ -179,8 +172,38 @@ $list_model_object_eligibility$;
 REVOKE ALL ON FUNCTION workflow.list_model_object_eligibility(BIGINT)
 FROM PUBLIC;
 
--- Mapping and Code share the same executable physical-source selection. Scope
--- flags remain visible for readiness checks; callers own JSON assembly and bounds.
+-- Business Systems represented by active Input Scope. Bronze placement does not
+-- identify its originating System; registered ingestion lineage does.
+CREATE FUNCTION workflow.list_model_input_sources(p_model_id BIGINT)
+RETURNS TABLE (object_id BIGINT, source_system_id BIGINT)
+LANGUAGE SQL STABLE SECURITY INVOKER SET search_path = pg_catalog
+AS $list_model_input_sources$
+    SELECT DISTINCT scope.object_id, origin.system_id
+      FROM model.model_input_scope AS scope
+      JOIN workflow.list_model_object_eligibility(p_model_id) AS eligible
+        ON eligible.object_id = scope.object_id AND eligible.is_model_input_eligible
+      JOIN core.object AS object ON object.object_id = scope.object_id
+      JOIN core.tenant AS owner ON owner.tenant_id = object.source_tenant_id AND owner.is_active
+      JOIN core.connection AS placement ON placement.connection_id = object.connection_id
+      CROSS JOIN LATERAL (
+          SELECT placement.system_id WHERE eligible.zone_code = 'source'
+          UNION
+          SELECT connection.system_id
+            FROM core.ingestion_object_mapping AS ingestion
+            JOIN core.object AS original ON original.object_id = ingestion.source_object_id
+               AND original.is_active
+            JOIN core.connection AS connection ON connection.connection_id = original.connection_id
+               AND connection.is_active
+            JOIN core.system AS system ON system.system_id = connection.system_id AND system.is_active
+           WHERE eligible.zone_code = 'bronze' AND ingestion.target_object_id = scope.object_id
+             AND ingestion.is_active
+      ) AS origin
+     WHERE scope.model_id = p_model_id AND scope.is_active;
+$list_model_input_sources$;
+REVOKE ALL ON FUNCTION workflow.list_model_input_sources(BIGINT) FROM PUBLIC;
+
+-- Complete candidate physical sources for a target/System pair. Saved Entity
+-- support links add evidence, but are not prerequisites for discovery.
 CREATE FUNCTION workflow.list_mapping_source_objects(
     p_model_id BIGINT,
     p_target_object_id BIGINT,
@@ -245,83 +268,47 @@ AS $list_mapping_source_objects$
            AND source.support_source_type = 'object'
            AND source.dimensional_entity_source_mapping_status = 'active'
     )
-    SELECT source.source_mapping_id,
-           source.modeled_entity_id,
-           source.role,
-           source.rationale,
-           source.mapping_order,
-           source.is_locked,
-           source.source_object_id,
-           CASE source.modeled_entity_type
-               WHEN 'dimensional_entity' THEN
-                   source_binding.model_object_binding_is_locked
+    SELECT support.source_mapping_id,
+           coalesce(binding.logical_entity_id, binding.dimensional_entity_id),
+           coalesce(support.role, 'candidate'),
+           coalesce(support.rationale, 'Available source candidate; relevance must be established from evidence.'),
+           support.mapping_order,
+           coalesce(support.is_locked, FALSE),
+           eligible.object_id,
+           CASE binding.modeled_entity_type
+               WHEN 'dimensional_entity' THEN source_binding.model_object_binding_is_locked
                ELSE source_scope.model_input_scope_is_locked
-           END AS scope_is_locked,
-           CASE source.modeled_entity_type
-               WHEN 'dimensional_entity' THEN
-                   source_binding.model_object_binding_status = 'active'
-               ELSE source_scope.is_active
-           END AS scope_is_active
-      FROM source_reference AS source
-      JOIN core.object AS source_object
-        ON source_object.object_id = source.source_object_id
-      JOIN model.model AS source_model
-        ON source_model.model_id = source.model_id
-      JOIN workflow.list_model_object_eligibility(p_model_id) AS eligibility
-        ON eligibility.object_id = source_object.object_id
+           END,
+           TRUE
+      FROM selected_binding AS binding
+      JOIN workflow.list_model_object_eligibility(p_model_id) AS eligible ON TRUE
       LEFT JOIN model.model_input_scope AS source_scope
-        ON source_scope.model_id = source.model_id
-       AND source_scope.object_id = source_object.object_id
+        ON source_scope.model_id = binding.model_id AND source_scope.object_id = eligible.object_id
       LEFT JOIN workflow.model_object_binding AS source_binding
-        ON source_binding.model_id = source.model_id
-       AND source_binding.object_id = source_object.object_id
+        ON source_binding.model_id = binding.model_id AND source_binding.object_id = eligible.object_id
        AND source_binding.modeled_entity_type = 'logical_entity'
        AND source_binding.model_object_binding_status = 'active'
-      JOIN core.connection AS source_connection
-        ON source_connection.connection_id = source_object.connection_id
-     WHERE (
-               source.modeled_entity_type = 'logical_entity'
-               AND source_scope.object_id IS NOT NULL
-               AND eligibility.is_model_input_eligible
-               AND (
-                   (eligibility.zone_code = 'source'
-                    AND source_connection.system_id = p_source_system_id)
-                   OR (eligibility.zone_code = 'bronze' AND EXISTS (
-                       SELECT 1
-                         FROM core.ingestion_object_mapping AS ingestion
-                         JOIN core.object AS original
-                           ON original.object_id = ingestion.source_object_id
-                         JOIN core.connection AS original_connection
-                           ON original_connection.connection_id = original.connection_id
-                        WHERE ingestion.target_object_id = source.source_object_id
-                          AND ingestion.is_active
-                          AND original_connection.system_id = p_source_system_id
-                   ))
-               )
-           ) OR (
-               source.modeled_entity_type = 'dimensional_entity'
-               AND eligibility.is_dimensional_source_eligible
-               AND source_binding.model_object_binding_id IS NOT NULL
-               AND EXISTS (
-                   SELECT 1
-                     FROM workflow.mapping_object AS upstream
-                     JOIN workflow.mapping_source_system_dependency AS dependency
-                       ON dependency.model_id = upstream.model_id
-                      AND dependency.modeled_entity_type = 'logical_entity'
-                      AND dependency.source_system_id = upstream.source_system_id
-                      AND dependency.mapping_source_system_dependency_status = 'active'
-                     JOIN core.system AS upstream_system
-                       ON upstream_system.system_id = upstream.source_system_id
-                      AND upstream_system.is_active
-                    WHERE upstream.model_id = source.model_id
-                      AND upstream.model_object_binding_id =
-                          source_binding.model_object_binding_id
-                      AND upstream.source_system_id = p_source_system_id
-                      AND upstream.object_mapping_status = 'active'
-                      AND upstream.mapping_transformation_document IS NOT NULL
-               )
-           )
-     ORDER BY source.mapping_order NULLS LAST, source.source_mapping_id;
+      LEFT JOIN LATERAL (
+          SELECT * FROM source_reference AS evidence
+           WHERE evidence.source_object_id = eligible.object_id
+           ORDER BY evidence.mapping_order NULLS LAST, evidence.source_mapping_id LIMIT 1
+      ) AS support ON TRUE
+     WHERE (binding.modeled_entity_type = 'logical_entity'
+            AND EXISTS (SELECT 1 FROM workflow.list_model_input_sources(p_model_id) AS input
+                        WHERE input.object_id = eligible.object_id
+                          AND input.source_system_id = p_source_system_id))
+        OR (binding.modeled_entity_type = 'dimensional_entity'
+            AND eligible.is_dimensional_source_eligible
+            AND source_binding.model_object_binding_id IS NOT NULL
+            AND EXISTS (
+                SELECT 1 FROM workflow.mapping_object AS upstream
+                JOIN core.system AS system ON system.system_id = upstream.source_system_id AND system.is_active
+                WHERE upstream.model_id = binding.model_id
+                  AND upstream.model_object_binding_id = source_binding.model_object_binding_id
+                  AND upstream.source_system_id = p_source_system_id
+                  AND upstream.object_mapping_status = 'active'
+                  AND upstream.mapping_transformation_document IS NOT NULL))
+     ORDER BY support.mapping_order NULLS LAST, support.source_mapping_id, eligible.object_id;
 $list_mapping_source_objects$;
 
 REVOKE ALL ON FUNCTION workflow.list_mapping_source_objects(
@@ -386,7 +373,7 @@ AS $list_code_generation_target_context$
         SELECT target.*,
                mapping.mapping_object_id,
                mapping.source_system_id,
-               dependency.source_system_dependency_order,
+               0 AS source_system_dependency_order,
                mapping.object_dependency_order,
                mapping.mapping_transformation_document,
                source_system.system_code AS source_system_code,
@@ -413,7 +400,6 @@ AS $list_code_generation_target_context$
                    ELSE dimensional_entity.dimensional_entity_grain_definition
                END AS modeled_entity_grain,
                mapping.mapping_transformation_document IS NOT NULL
-               AND dependency.mapping_source_system_dependency_status = 'active'
                AND source_system.is_active
                AND (
                    (
@@ -449,10 +435,6 @@ AS $list_code_generation_target_context$
            AND mapping.model_object_binding_id =
                target.model_object_binding_id
            AND mapping.object_mapping_status = 'active'
-          JOIN workflow.mapping_source_system_dependency AS dependency
-            ON dependency.model_id = mapping.model_id
-           AND dependency.modeled_entity_type = target.modeled_entity_type
-           AND dependency.source_system_id = mapping.source_system_id
           JOIN core.system AS source_system
             ON source_system.system_id = mapping.source_system_id
           LEFT JOIN workflow.logical_entity AS logical_entity
