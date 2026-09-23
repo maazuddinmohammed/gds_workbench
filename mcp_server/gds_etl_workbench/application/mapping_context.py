@@ -6,6 +6,8 @@ from copy import deepcopy
 from typing import Any, cast
 
 _DOCUMENT_FIELDS = {
+    "modeling_assertion_details",
+    "modeling_assertion_source_location",
     "transformation",
     "transformation_document",
     "mapping_transformation_document",

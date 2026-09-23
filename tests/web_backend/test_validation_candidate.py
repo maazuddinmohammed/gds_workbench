@@ -35,14 +35,14 @@ def _check(*, active: bool = True) -> ValidationCheckRecord:
         tenant_code="acme",
         system_code="erp",
         validation_group_name="reconciliation",
-        validation_check_name="row_count_nonnegative",
-        validation_check_description="Count is valid.",
+        validation_check_name="RequiredCustomerIdentity",
+        validation_check_description="Required customer identities must be present.",
         validation_category_code="technical.count",
         validation_severity="blocking",
-        validation_query_sql="SELECT count(*) FROM catalog.gold.dim_customer",
+        validation_query_sql="SELECT count(*) FROM catalog.gold.dim_customer WHERE customer_id IS NULL",
         validation_comparison_query_sql=None,
         validation_result_data_type="integer",
-        validation_comparison_operator="greater_than_or_equal",
+        validation_comparison_operator="equal",
         validation_comparison_value_type="literal",
         validation_comparison_value=0,
         is_active=active,
@@ -76,15 +76,15 @@ def _candidate(*, query: str | None = None) -> JsonValue:
                     "validation_group_description": "Counts reconcile.",
                     "validation_checks": [
                         {
-                            "validation_check_name": "row_count_nonnegative",
-                            "validation_check_description": "Count is valid.",
+                            "validation_check_name": "RequiredCustomerIdentity",
+                            "validation_check_description": "Required customer identities must be present.",
                             "validation_category_code": "technical.count",
                             "validation_severity": "blocking",
                             "validation_query_sql": query
-                            or "SELECT count(*) FROM catalog.gold.dim_customer",
+                            or "SELECT count(*) FROM catalog.gold.dim_customer WHERE customer_id IS NULL",
                             "validation_comparison_query_sql": None,
                             "validation_result_data_type": "integer",
-                            "validation_comparison_operator": "greater_than_or_equal",
+                            "validation_comparison_operator": "equal",
                             "validation_comparison_value_type": "literal",
                             "validation_comparison_value": 0,
                         }
@@ -321,4 +321,116 @@ def test_reconciliation_does_not_retire_omitted_locked_definitions() -> None:
         row["validation_group_name"] != "legacy"
         for change in changes
         for row in change.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_layer_names_are_stable_and_cannot_replace_groups_outside_the_layer() -> (
+    None
+):
+    context = _context().model_copy(update={"modeled_entity_type": "logical_entity"})
+    validator = ValidationSystemCandidateValidator(context=context)
+    candidate = validator.parse_validated(_candidate())
+    assert candidate.groups[0].validation_group_name == "Logical · reconciliation"
+    assert candidate.checks[0].validation_group_name == "Logical · reconciliation"
+    protected = ValidationSystemCandidateValidator(
+        context=context.model_copy(
+            update={
+                "reserved_group_names": ("Logical · reconciliation",),
+            }
+        )
+    )
+    assert (await protected.validate(_candidate())).issues[
+        0
+    ].code == "candidate.validation_group_scope"
+
+
+@pytest.mark.parametrize("omit", [False, True])
+def test_locked_group_preserves_all_its_checks_including_unlocked_children(
+    omit: bool,
+) -> None:
+    group = _group().model_copy(update={"is_locked": True})
+    system = _context(groups=(group,), checks=(_check(),))
+    value = cast(dict[str, Any], _candidate())
+    if omit:
+        value["validation_groups"][0]["validation_group_name"] = "AnotherGroup"
+    else:
+        value["validation_groups"][0]["validation_checks"][0][
+            "validation_query_sql"
+        ] = "SELECT count(*) FROM catalog.gold.dim_customer WHERE customer_id IS NULL"
+        value["validation_groups"][0]["validation_checks"].append(
+            {
+                **value["validation_groups"][0]["validation_checks"][0],
+                "validation_check_name": "NewCheck",
+            }
+        )
+    changes = reconcile_validation_candidates(
+        context=ValidationExecutionContext(systems=(system,)),
+        candidates=(
+            ValidationSystemCandidateValidator(context=system).parse_validated(value),
+        ),
+    )
+    assert all(
+        row["validation_group_name"] != group.validation_group_name
+        for change in changes
+        for row in change.records
+    )
+
+
+def test_omitting_group_with_locked_check_preserves_parent_and_retires_only_unlocked_check() -> (
+    None
+):
+    locked = _check().model_copy(update={"is_locked": True})
+    unlocked = _check().model_copy(update={"validation_check_name": "ObsoleteCheck"})
+    system = _context(groups=(_group(),), checks=(locked, unlocked))
+    value = cast(dict[str, Any], _candidate())
+    value["validation_groups"][0]["validation_group_name"] = "ReplacementGroup"
+    changes = reconcile_validation_candidates(
+        context=ValidationExecutionContext(systems=(system,)),
+        candidates=(
+            ValidationSystemCandidateValidator(context=system).parse_validated(value),
+        ),
+    )
+    retired = [
+        row for change in changes for row in change.records if not row["is_active"]
+    ]
+    assert len(retired) == 1 and retired[0]["validation_check_name"] == "ObsoleteCheck"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query,operator,comparison",
+    [
+        ("SELECT 1", "equal", None),
+        ("SELECT TRUE", "equal", None),
+        (
+            "SELECT count(*) FROM catalog.gold.dim_customer",
+            "greater_than_or_equal",
+            None,
+        ),
+        (
+            "SELECT count(*) FROM catalog.gold.dim_customer",
+            "equal",
+            "select COUNT(*) from catalog.gold.dim_customer -- same evidence",
+        ),
+    ],
+)
+async def test_rejects_obvious_tautological_checks(
+    query: str, operator: str, comparison: str | None
+) -> None:
+    value = cast(dict[str, Any], _candidate(query=query))
+    check = value["validation_groups"][0]["validation_checks"][0]
+    check["validation_comparison_operator"] = operator
+    if comparison:
+        check.update(
+            validation_comparison_query_sql=comparison,
+            validation_comparison_value_type="query",
+            validation_comparison_value=None,
+        )
+    result = await ValidationSystemCandidateValidator(context=_context()).validate(
+        value
+    )
+    assert (
+        result.issues
+        and result.issues[0].code == "candidate.validation_check_tautological"
     )

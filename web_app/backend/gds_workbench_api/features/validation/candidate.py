@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Annotated, Literal, cast
 
+import sqlglot
 from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.domain.databricks_sql import validate_databricks_sql
 from gds_etl_workbench.domain.errors import InvalidRequestError
@@ -15,6 +16,7 @@ from gds_etl_workbench.domain.modeling_records import (
     normalize_model_key_value,
 )
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
+from sqlglot import expressions as exp
 
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
@@ -228,18 +230,7 @@ class ValidationSystemCandidateValidator:
                     message="The candidate must use the exact frozen System reference.",
                 )
             )
-        group_names = [
-            normalize_model_key_value(group.validation_group_name)
-            for group in parsed.validation_groups
-        ]
-        if len(group_names) != len(set(group_names)):
-            raise _CandidateIssueError(
-                AgentValidationIssue(
-                    code="candidate.validation_group_duplicate",
-                    path=("validation_groups",),
-                    message="Validation Group names must be unique for the System.",
-                )
-            )
+        group_names: set[str] = set()
         check_count = sum(len(group.validation_checks) for group in parsed.validation_groups)
         if check_count > _MAX_CHECKS_PER_SYSTEM:
             raise _CandidateIssueError(
@@ -253,6 +244,38 @@ class ValidationSystemCandidateValidator:
         groups: list[ValidationGroupRecord] = []
         checks: list[ValidationCheckRecord] = []
         for group_index, group in enumerate(parsed.validation_groups):
+            group_name = group.validation_group_name
+            if self._context.modeled_entity_type is not None:
+                prefix = (
+                    "Logical · "
+                    if self._context.modeled_entity_type == "logical_entity"
+                    else "Dimensional · "
+                )
+                if not group_name.startswith(prefix):
+                    group_name = prefix + group_name
+            normalized_name = normalize_model_key_value(group_name)
+            if normalized_name in group_names:
+                raise _CandidateIssueError(
+                    AgentValidationIssue(
+                        code="candidate.validation_group_duplicate",
+                        path=("validation_groups", group_index),
+                        message="Validation Group names must be unique for the System.",
+                    )
+                )
+            group_names.add(normalized_name)
+            if normalize_model_key_value(group_name) in {
+                normalize_model_key_value(name) for name in self._context.reserved_group_names
+            }:
+                raise _CandidateIssueError(
+                    AgentValidationIssue(
+                        code="candidate.validation_group_scope",
+                        path=("validation_groups", group_index),
+                        message=(
+                            "This Group belongs to a different layer or a shared Validation. "
+                            "Choose a distinct name."
+                        ),
+                    )
+                )
             check_names = [
                 normalize_model_key_value(check.validation_check_name)
                 for check in group.validation_checks
@@ -272,7 +295,7 @@ class ValidationSystemCandidateValidator:
                         is_locked=False,
                         tenant_code=self._context.tenant_code,
                         system_code=self._context.system_code,
-                        validation_group_name=group.validation_group_name,
+                        validation_group_name=group_name,
                         validation_group_description=group.validation_group_description,
                         is_active=True,
                     )
@@ -310,12 +333,13 @@ class ValidationSystemCandidateValidator:
                             ),
                         )
                     comparison_value = check.validation_comparison_value
+                    _validate_check_quality(check, path=contract_path)
                     checks.append(
                         ValidationCheckRecord(
                             is_locked=False,
                             tenant_code=self._context.tenant_code,
                             system_code=self._context.system_code,
-                            validation_group_name=group.validation_group_name,
+                            validation_group_name=group_name,
                             validation_check_name=check.validation_check_name,
                             validation_check_description=(check.validation_check_description),
                             validation_category_code=check.validation_category_code,
@@ -390,6 +414,10 @@ def reconcile_validation_candidates(
         applied_checks = {_check_key(check): check for check in system.applied_checks}
         desired_groups = {_group_key(group): group for group in candidate.groups}
         desired_checks = {_check_key(check): check for check in candidate.checks}
+        locked_groups = {key for key, group in applied_groups.items() if group.is_locked}
+        parents_of_locked_checks = {
+            key[:3] for key, check in applied_checks.items() if check.is_locked and check.is_active
+        }
         if (
             len(applied_groups) != len(system.applied_groups)
             or len(applied_checks) != len(system.applied_checks)
@@ -411,16 +439,28 @@ def reconcile_validation_candidates(
             }:
                 changed_groups.append(desired)
         for key, applied in applied_groups.items():
-            if key not in desired_groups and applied.is_active and not applied.is_locked:
+            if (
+                key not in desired_groups
+                and applied.is_active
+                and not applied.is_locked
+                and key not in parents_of_locked_checks
+            ):
                 changed_groups.append(applied.model_copy(update={"is_active": False}))
 
         for key, desired in desired_checks.items():
-            if key in applied_checks and applied_checks[key].is_locked:
+            if key[:3] in locked_groups or (
+                key in applied_checks and applied_checks[key].is_locked
+            ):
                 continue
             if desired != applied_checks.get(key):
                 changed_checks.append(desired)
         for key, applied in applied_checks.items():
-            if key not in desired_checks and applied.is_active and not applied.is_locked:
+            if (
+                key not in desired_checks
+                and applied.is_active
+                and not applied.is_locked
+                and key[:3] not in locked_groups
+            ):
                 changed_checks.append(applied.model_copy(update={"is_active": False}))
 
     changes: list[StageModelChange] = []
@@ -447,6 +487,52 @@ class _CandidateIssueError(Exception):
     def __init__(self, issue: AgentValidationIssue) -> None:
         super().__init__(issue.code)
         self.issue = issue
+
+
+def _validate_check_quality(check: _AgentValidationCheck, *, path: tuple[str | int, ...]) -> None:
+    """Reject provably uninformative patterns; business coverage still needs review."""
+    statements = [
+        item
+        for item in sqlglot.parse(check.validation_query_sql, read="databricks")
+        if item is not None
+    ]
+    final = statements[-1]
+    projection = (
+        final.expressions[0].unalias()
+        if isinstance(final, exp.Select) and len(final.expressions) == 1
+        else None
+    )
+    constant_result = isinstance(projection, (exp.Literal, exp.Boolean, exp.Null)) and not any(
+        final.find_all(exp.Table)
+    )
+    count_nonnegative = (
+        isinstance(projection, exp.Count)
+        and check.validation_comparison_operator == "greater_than_or_equal"
+        and check.validation_comparison_value_type == "literal"
+        and check.validation_comparison_value == 0
+    )
+    same_query = False
+    if check.validation_comparison_query_sql:
+        comparison = [
+            item
+            for item in sqlglot.parse(check.validation_comparison_query_sql, read="databricks")
+            if item is not None
+        ]
+        same_query = [item.sql(normalize=True, comments=False) for item in statements] == [
+            item.sql(normalize=True, comments=False) for item in comparison
+        ]
+    if constant_result or count_nonnegative or same_query:
+        raise _CandidateIssueError(
+            AgentValidationIssue(
+                code="candidate.validation_check_tautological",
+                path=path,
+                message=(
+                    "This Check cannot detect a meaningful data failure. Replace constant results, "
+                    "COUNT >= 0, or identical Query A/B with an evidence-based assertion and "
+                    "an independent expected result; otherwise omit the redundant Check."
+                ),
+            )
+        )
 
 
 def _validate_query(

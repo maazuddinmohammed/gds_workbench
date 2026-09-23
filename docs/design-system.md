@@ -253,6 +253,16 @@ Before completing a frontend change:
 
 ### Validation navigation
 
+- Code Generation and Validation use prominent Logical/Dimensional links, with
+  Silver/Gold context and the selected layer retained in navigation and runs.
+- Code Generation filters show an Object multi-select followed by Status.
+  Generate SQL offers all unlocked or selected Objects, then all or selected
+  contributing Systems, then combined or separate SQL files. Show the effective
+  Object/System/file count. Preserve selection while searching and explain why
+  an existing combined file requires all its Systems.
+- Validation filters show Systems and currentness. Its run dialog selects
+  Systems with applied Mapping in the current layer. Mark legacy Groups as
+  shared across layers; keep them available for review.
 - The Model's Validation page lists Groups in a table with an explicit Show
   details link. Group details list only that Group's Checks. Check details open
   a separate page showing its SQL and comparison contract.
@@ -319,3 +329,23 @@ Before completing a frontend change:
 - Size tables for their actual columns. Keep selection controls compact and row
   actions visible at desktop widths; contain horizontal scrolling inside tables
   on narrow screens. Preserve keyboard focus after returning or saving.
+
+### Manual Assertions
+
+- Put Assertions before Analysis in the Model journey. Show Documents, then the
+  selected Document's Records, then Record details. Keep records filtered to their
+  parent Document and provide Back to Documents / Back to the named Document links.
+- Add Assertion explicitly offers New document or Existing document. Select an
+  existing Document from a dropdown, then add a new assertion or choose an existing
+  key to edit. Each key identifies one record and is unique within the Model.
+- Document and Assertion types offer named suggestions plus Custom type; storage
+  accepts free text. Reuse an existing Document's scope/type; do not alter other
+  records by changing their shared Document in a record form.
+- Require a stable record key, type and statement. Keep additional context and
+  reference optional. Preserve legacy structured details; users need not write JSON.
+- New document scope is Entire Model or a registered System within the Model Tenant.
+- Remove the layer picker and layer filters. Explain once in the form that active
+  assertions are available to downstream workflows and agents assess relevance.
+- Manual records support editing and existing governed lock/unlock/status review.
+  Require the Tenant Lock, protect locked records, preserve inputs on errors, and
+  retry uncertain saves with the original request identity.

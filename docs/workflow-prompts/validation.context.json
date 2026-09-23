@@ -9,7 +9,7 @@
     "system_ref": {
       "description": "Frozen opaque output-control handle for this selected System. Copy unchanged; it is not a database ID.",
       "value_schema": {
-        "pattern": "^system_[1-9][0-9]{0,3}$",
+        "pattern": "^system_[1-9][0-9]*$",
         "type": "string"
       },
       "example": "system_1"
@@ -151,6 +151,24 @@
                       "minLength": 1,
                       "title": "System Name",
                       "type": "string"
+                    },
+                    "batch_attribute_name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "audit_columns_template": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "technical_columns_template": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -269,6 +287,37 @@
               "is_locked": {
                 "title": "Is Locked",
                 "type": "boolean"
+              },
+              "fc_attribute_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "attribute_custom_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "population": {
+                "enum": [
+                  "database",
+                  "framework",
+                  "mapping"
+                ]
+              },
+              "is_surrogate_key": {
+                "type": "boolean"
+              },
+              "is_natural_key": {
+                "type": "boolean"
+              },
+              "is_meta_data": {
+                "type": "boolean"
+              },
+              "is_masking_required": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -338,6 +387,37 @@
               },
               "is_locked": {
                 "title": "Is Locked",
+                "type": "boolean"
+              },
+              "fc_attribute_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "attribute_custom_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "population": {
+                "enum": [
+                  "database",
+                  "framework",
+                  "mapping"
+                ]
+              },
+              "is_surrogate_key": {
+                "type": "boolean"
+              },
+              "is_natural_key": {
+                "type": "boolean"
+              },
+              "is_meta_data": {
+                "type": "boolean"
+              },
+              "is_masking_required": {
                 "type": "boolean"
               }
             },
@@ -482,6 +562,30 @@
               "scope_is_locked": {
                 "title": "Scope Is Locked",
                 "type": "boolean"
+              },
+              "fc_object_schema": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fc_object_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "foreign_catalog": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "batch_attribute_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -520,6 +624,10 @@
                 "minimum": 0,
                 "title": "Dependency Order",
                 "type": "integer"
+              },
+              "source_system_value": {
+                "type": "integer",
+                "minimum": 1
               }
             },
             "required": [
@@ -547,6 +655,57 @@
                 "minLength": 1,
                 "title": "Entity Name",
                 "type": "string"
+              },
+              "assertions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "modeling_assertion_record_key": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "modeling_assertion_document_name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "modeling_assertion_record_type": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "modeling_assertion_text": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "modeling_assertion_details": {
+                      "type": "object"
+                    },
+                    "modeling_assertion_source_location": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "modeling_assertion_confidence": {
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high",
+                        null
+                      ]
+                    }
+                  },
+                  "required": [
+                    "modeling_assertion_record_key",
+                    "modeling_assertion_document_name",
+                    "modeling_assertion_record_type",
+                    "modeling_assertion_text",
+                    "modeling_assertion_details",
+                    "modeling_assertion_source_location",
+                    "modeling_assertion_confidence"
+                  ],
+                  "additionalProperties": false
+                }
               },
               "definition": {
                 "title": "Definition",
@@ -646,6 +805,12 @@
               "modeled_entity_name": {
                 "type": "string",
                 "minLength": 1
+              },
+              "modeled_attribute_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [

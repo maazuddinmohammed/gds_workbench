@@ -37,7 +37,7 @@ class SnapshotRows:
     async def fetch_all(
         self, query: LiteralString, parameters: tuple[Any, ...] = ()
     ) -> list[dict[str, Any]]:
-        if "FROM model.model\n" in query:
+        if "FROM model.model AS target_model" in query:
             return [model_details()]
         assert "LIMIT %s" in query
         limit = parameters[-2] if "OFFSET %s" in query else parameters[-1]

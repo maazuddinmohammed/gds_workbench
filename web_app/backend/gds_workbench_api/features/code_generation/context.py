@@ -247,26 +247,101 @@ def _assemble_context(
             allow_identity_keys=True,
             reject_sensitive_values=True,
         )
+        target_ref = f"target_{position}"
+        applied_code, applied_systems, current_artifact_names = _applied_generated_code(
+            row,
+            modeled_entity_type=modeled_entity_type,
+            modeled_entity_name=modeled_entity_name,
+        )
+        selected_codes = {code.strip().casefold() for code in plan.selected_system_codes}
+        selected_codes = selected_codes or {code.strip().casefold() for code in source_system_codes}
+        all_source_codes = {code.strip().casefold() for code in source_system_codes}
+        source_system_codes = tuple(
+            code for code in source_system_codes if code.strip().casefold() in selected_codes
+        )
+        if not source_system_codes:
+            raise InvalidRequestError("A selected Object has no Mapping for the selected Systems.")
+        selected_codes = {code.strip().casefold() for code in source_system_codes}
+        preserved_names: set[str] = set()
+        for artifact in applied_code:
+            name = artifact.artifact_name.strip().casefold()
+            assignments = [
+                item
+                for item in applied_systems
+                if item.artifact_name.strip().casefold() == name
+                and item.generated_code_source_system_status == "active"
+            ]
+            assigned_codes = {item.source_system_code.strip().casefold() for item in assignments}
+            if (
+                artifact.generated_code_is_locked
+                or any(item.generated_code_source_system_is_locked for item in assignments)
+                or (assigned_codes and not assigned_codes <= selected_codes)
+                or (not assigned_codes and selected_codes != all_source_codes)
+            ):
+                preserved_names.add(name)
+                if artifact.generated_code_status == "active" and assigned_codes & selected_codes:
+                    raise InvalidRequestError(
+                        "Selected Systems share a locked or partially selected SQL file. "
+                        "Unlock the file or select all of its Systems before regenerating."
+                    )
+        if plan.selected_system_codes:
+            system_ids = {
+                cast(int, item["source_system_id"])
+                for item in source_systems
+                if isinstance(item, dict)
+                and str(item.get("system_code", "")).strip().casefold() in selected_codes
+            }
+            source_context = {
+                **source_context,
+                "source_systems": [
+                    item
+                    for item in source_systems
+                    if isinstance(item, dict) and item.get("source_system_id") in system_ids
+                ],
+                "object_mappings": [
+                    item
+                    for item in object_mappings
+                    if isinstance(item, dict) and item.get("source_system_id") in system_ids
+                ],
+                "attribute_mappings": [
+                    item
+                    for item in attribute_mappings
+                    if isinstance(item, dict) and item.get("source_system_id") in system_ids
+                ],
+                "physical_sources": [
+                    item
+                    for item in cast(
+                        list[dict[str, JsonValue]], source_context.get("physical_sources", [])
+                    )
+                    if item.get("selected_source_system_id") in system_ids
+                ],
+            }
+        applied_code = tuple(
+            item
+            for item in applied_code
+            if item.artifact_name.strip().casefold() not in preserved_names
+        )
+        applied_systems = tuple(
+            item
+            for item in applied_systems
+            if item.artifact_name.strip().casefold() not in preserved_names
+        )
         provider_context = cast(
             JsonValue,
             {
                 **source_context,
                 "artifact_authoring": {
                     "source_system_codes": list(source_system_codes),
+                    "file_layout": plan.code_generation_file_layout,
+                    "preserved_artifact_names": sorted(preserved_names),
                     "assignment_rule": (
-                        "Assign each source System exactly once across target transformation "
-                        "artifacts. Combined files may cover many Systems; separate files may "
-                        "cover one each. Support artifacts use no System assignment."
+                        "Assign each selected source System exactly once across "
+                        "transformation artifacts. Support artifacts assign none. "
+                        "Never reuse preserved artifact names."
                     ),
                 },
                 "guide": guide_document,
             },
-        )
-        target_ref = f"target_{position}"
-        applied_code, applied_systems, current_artifact_names = _applied_generated_code(
-            row,
-            modeled_entity_type=modeled_entity_type,
-            modeled_entity_name=modeled_entity_name,
         )
         context = CodeGenerationArtifactContext(
             target_ref=target_ref,
@@ -279,6 +354,7 @@ def _assemble_context(
             modeled_entity_type=modeled_entity_type,
             modeled_entity_name=modeled_entity_name,
             source_system_codes=source_system_codes,
+            preserved_artifact_names=tuple(sorted(preserved_names)),
             applied_generated_code=applied_code,
             applied_generated_code_source_systems=applied_systems,
             current_artifact_names=current_artifact_names,

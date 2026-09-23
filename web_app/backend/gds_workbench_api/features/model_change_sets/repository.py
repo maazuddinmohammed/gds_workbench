@@ -76,6 +76,13 @@ RETURNING conceptual_relationship_id
 """
 
 _APPLY_OTHER_REVIEWS_SQL: dict[str, LiteralString] = {
+    "modeling_assertion_record": """
+UPDATE model.modeling_assertion_record
+   SET modeling_assertion_record_is_locked = %s, modeling_assertion_record_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE model_id = %s AND modeling_assertion_record_id = %s
+RETURNING modeling_assertion_record_id
+""",
     "logical_submodel": """
 UPDATE workflow.logical_submodel AS target
    SET logical_submodel_is_locked = %s, logical_submodel_status = %s,
@@ -233,7 +240,9 @@ SELECT change_set.model_change_set_id, event.action_count, event.event_metadata
   JOIN mcp.model_change_set_event AS event
     ON event.model_change_set_id = change_set.model_change_set_id
    AND event.event_type = 'applied'
-   AND event.outcome IN ('review_applied', 'bindings_applied', 'scope_added', 'dependency_saved')
+   AND event.outcome IN (
+       'review_applied', 'bindings_applied', 'scope_added', 'dependency_saved', 'assertion_saved'
+   )
  WHERE change_set.model_id = %s
    AND change_set.created_by_principal_id = %s
    AND change_set.correlation_id = %s

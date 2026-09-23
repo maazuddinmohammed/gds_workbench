@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 import pytest
-from psycopg.errors import CheckViolation, RaiseException
+from psycopg.errors import CheckViolation, ObjectNotInPrerequisiteState, RaiseException
 
 from tests.mcp.database_test_support import require_row
 
@@ -1437,7 +1437,9 @@ def test_create_workflow_run_freezes_server_derived_selected_scope(
     ).hexdigest()
     assert stored_run == {
         "actor_principal_id": context.principal_id,
-        "actor_entra_principal_identity_id": stored_run["actor_entra_principal_identity_id"],
+        "actor_entra_principal_identity_id": stored_run[
+            "actor_entra_principal_identity_id"
+        ],
         "modeled_entity_type": None,
         "requested_batch_id": "10428",
         "selected_scope_digest": expected_digest,
@@ -2225,7 +2227,9 @@ def test_governed_workflow_run_happy_path_is_idempotent_ordered_and_repair_aware
 ) -> None:
     context = seed_workflow_context(postgres_database)
     correlation_id = uuid4()
-    create_parameters = create_workflow_run_parameters(context, correlation_id=correlation_id)
+    create_parameters = create_workflow_run_parameters(
+        context, correlation_id=correlation_id
+    )
 
     with postgres_database.connect_owner() as connection:
         created = require_row(
@@ -2712,7 +2716,9 @@ def test_create_workflow_run_rejects_a_null_expected_model_revision(
 ) -> None:
     context = seed_workflow_context(postgres_database)
     correlation_id = uuid4()
-    parameters = list(create_workflow_run_parameters(context, correlation_id=correlation_id))
+    parameters = list(
+        create_workflow_run_parameters(context, correlation_id=correlation_id)
+    )
     parameters[3] = None
 
     with (
@@ -3205,7 +3211,9 @@ def test_claim_terminalizes_a_running_run_with_an_inactive_model(
     assert events == [
         {
             "model_event_log_status": "failed",
-            "model_event_log_message": ("Workflow Run execution context is unavailable."),
+            "model_event_log_message": (
+                "Workflow Run execution context is unavailable."
+            ),
         }
     ]
     assert replacement_state == "running"
@@ -3568,3 +3576,138 @@ def test_workflow_lifecycle_mutations_use_web_only_security_definer_functions(
         "web_can_mutate_selection": False,
         "web_can_mutate_event": False,
     }
+
+
+def test_code_generation_delivery_options_are_frozen_and_replay_fenced(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    target_id = _seed_code_generation_target(postgres_database, context)
+    _, guide_id, _ = _seed_published_sql_generation_guide(
+        postgres_database, context, is_default=False
+    )
+    sql = CREATE_CODE_GENERATION_WORKFLOW_RUN_SQL.replace(
+        "ARRAY[]::VARCHAR[],", "%s::VARCHAR[],"
+    ).replace(
+        "%s::BIGINT\n      )",
+        "%s::BIGINT, p_code_generation_file_layout => %s::VARCHAR\n      )",
+    )
+    with postgres_database.connect_owner() as connection:
+        code = require_row(
+            connection.execute(
+                """
+            SELECT source.system_code FROM workflow.mapping_object AS mapping
+            JOIN core.system AS source ON source.system_id = mapping.source_system_id
+            WHERE mapping.model_id = %s LIMIT 1
+        """,
+                (context.model_id,),
+            ).fetchone()
+        )["system_code"]
+        values = list(
+            _code_generation_parameters(
+                context,
+                object_ids=[target_id],
+                correlation_id=uuid4(),
+                coverage_mode="selected_targets",
+                guide_version_id=guide_id,
+            )
+        )
+        values.insert(5, [code])
+        values.append("per_system")
+        created = require_row(connection.execute(sql, values).fetchone())
+        stored = require_row(
+            connection.execute(
+                """
+            SELECT code_generation_file_layout, code_generation_system_codes
+            FROM application.workflow_run WHERE workflow_run_id = %s
+        """,
+                (created["workflow_run_id"],),
+            ).fetchone()
+        )
+        assert stored == {
+            "code_generation_file_layout": "per_system",
+            "code_generation_system_codes": [code.strip().lower()],
+        }
+        assert (
+            require_row(connection.execute(sql, values).fetchone())["created"] is False
+        )
+        with (
+            pytest.raises(RaiseException, match="correlation"),
+            connection.transaction(),
+        ):
+            connection.execute(sql, [*values[:-1], "combined"])
+        with pytest.raises(ObjectNotInPrerequisiteState, match="immutable"), connection.transaction():
+            connection.execute(
+                "UPDATE application.workflow_run SET code_generation_file_layout = 'combined' WHERE workflow_run_id = %s",
+                (created["workflow_run_id"],),
+            )
+        values[5] = ["unregistered_system"]
+        values[6] = uuid4()
+        with (
+            pytest.raises(RaiseException, match="System is unavailable"),
+            connection.transaction(),
+        ):
+            connection.execute(sql, values)
+
+
+def test_validation_layer_is_retained_after_manual_review_clears_provenance(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    _seed_code_generation_target(postgres_database, context)
+    _seed_validation_prompt(postgres_database, context)
+    with postgres_database.connect_owner() as connection:
+        system = require_row(
+            connection.execute(
+                """
+            SELECT source.system_id, source.system_code FROM workflow.mapping_object AS mapping
+            JOIN core.system AS source ON source.system_id = mapping.source_system_id
+            WHERE mapping.model_id = %s LIMIT 1
+        """,
+                (context.model_id,),
+            ).fetchone()
+        )
+        sql = CREATE_SYSTEM_SELECTION_WORKFLOW_RUN_SQL.replace(
+            "NULL::VARCHAR,\n          NULL::VARCHAR,\n          %s::UUID",
+            "'logical_entity'::VARCHAR,\n          NULL::VARCHAR,\n          %s::UUID",
+        )
+        created = require_row(
+            connection.execute(
+                sql,
+                _system_selection_parameters(
+                    context,
+                    workflow="validation",
+                    object_ids=[],
+                    system_codes=[system["system_code"]],
+                    correlation_id=uuid4(),
+                ),
+            ).fetchone()
+        )
+        group = require_row(
+            connection.execute(
+                """
+            INSERT INTO workflow.validation_group (model_id, tenant_id, system_id, workflow_run_id,
+                validation_group_name, mapping_context_digest, is_locked, is_active)
+            VALUES (%s, %s, %s, %s, 'Logical · Scope test', %s, false, true)
+            RETURNING validation_group_id, modeled_entity_type
+        """,
+                (
+                    context.model_id,
+                    context.tenant_id,
+                    system["system_id"],
+                    created["workflow_run_id"],
+                    "a" * 64,
+                ),
+            ).fetchone()
+        )
+        assert group["modeled_entity_type"] == "logical_entity"
+        reviewed = require_row(
+            connection.execute(
+                """
+            UPDATE workflow.validation_group SET is_locked = true, workflow_run_id = NULL
+            WHERE validation_group_id = %s RETURNING modeled_entity_type
+        """,
+                (group["validation_group_id"],),
+            ).fetchone()
+        )
+        assert reviewed["modeled_entity_type"] == "logical_entity"

@@ -82,6 +82,7 @@ from gds_etl_workbench.domain.snapshots.model import (
 )
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 
+from gds_workbench_api.features.assertions.authoring import SaveAssertionRequest, prepare_assertion
 from gds_workbench_api.features.mapping.dependencies import (
     SaveMappingDependencyRequest,
     prepare_mapping_dependency,
@@ -154,6 +155,7 @@ class DatabaseModelChangeSetService:
         dataset: ModelReviewDataset,
         expected_model_revision: int,
         page: int = 1,
+        entity_type: str | None = None,
     ) -> ModelRecordHistoryPage:
         # Model SHARE fence keeps numeric identity pages stable. Include inactive
         # owned history even when a Binding/Mapping is no longer eligible to run.
@@ -168,7 +170,16 @@ class DatabaseModelChangeSetService:
             if model.model_revision != expected_model_revision:
                 raise ModelRevisionConflictError()
             review = await read_model_review_snapshot(transaction, model, enforce_row_limits=False)
-            rows = sorted(review.records_by_id.get(dataset, {}).items())
+            if entity_type is not None and (
+                dataset != "generated_code"
+                or entity_type not in {"logical_entity", "dimensional_entity"}
+            ):
+                raise InvalidRequestError("Layer filtering is available only for Generated Code.")
+            rows = sorted(
+                (record_id, row)
+                for record_id, row in review.records_by_id.get(dataset, {}).items()
+                if entity_type is None or getattr(row, "modeled_entity_type", None) == entity_type
+            )
             if page < 1 or (page > 1 and (page - 1) * 200 >= len(rows)):
                 raise InvalidRequestError("The record page is unavailable.")
             items: list[ModelRecordHistoryItem] = []
@@ -417,6 +428,71 @@ class DatabaseModelChangeSetService:
                 request_digest=request_digest,
                 section="mapping",
                 outcome="dependency_saved",
+            )
+
+    async def save_assertion(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        command: SaveAssertionRequest,
+        idempotency_key: UUID,
+    ) -> ReviewModelRecordsResult:
+        request_digest = hashlib.sha256(
+            json.dumps(
+                {"operation": "save_assertion", **command.model_dump()},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        async with self._database.write_transaction() as transaction:
+            repository, model, principal_id = await self._authorize_record_review(
+                transaction, principal, tenant_id=tenant_id, model_id=model_id
+            )
+            replay = await repository.replay_review(
+                model_id=model_id, principal_id=principal_id, correlation_id=idempotency_key
+            )
+            if replay is not None:
+                metadata = replay["event_metadata"]
+                if metadata.get("request_digest") != request_digest:
+                    raise WorkbenchError("review_conflict", "This review key was already used.")
+                return ReviewModelRecordsResult(
+                    model_id=model_id,
+                    model_change_set_id=replay["model_change_set_id"],
+                    model_revision=metadata["model_revision"],
+                    action_count=replay["action_count"],
+                )
+            if model["model_revision"] != command.expected_model_revision:
+                raise ModelRevisionConflictError()
+            if await repository.has_running_tenant_workflow(tenant_id=tenant_id):
+                raise TenantWorkflowConflictError()
+            context = ModelReadContext(
+                model_id=model_id,
+                tenant_id=tenant_id,
+                model_name=model["model_name"],
+                model_revision=model["model_revision"],
+                readable_source_tenant_ids=model["readable_source_tenant_ids"],
+            )
+            validation = await prepare_assertion(transaction, context, command)
+            await self._authorizer.authorize_tenant(
+                transaction,
+                principal,
+                tenant_id=tenant_id,
+                policy=ToolPolicy.TENANT_MODEL_WRITE,
+                model_id=model_id,
+            )
+            return await self._apply_validated_review(
+                transaction,
+                repository,
+                validation,
+                model_id=model_id,
+                principal_id=principal_id,
+                idempotency_key=idempotency_key,
+                expected_model_revision=command.expected_model_revision,
+                request_digest=request_digest,
+                section="assertion",
+                outcome="assertion_saved",
             )
 
     async def _apply_validated_review(

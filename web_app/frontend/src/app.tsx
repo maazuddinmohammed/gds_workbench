@@ -1,3 +1,4 @@
+import { modelLayerSearch } from "./shared/ModelLayerTabs";
 import { ModelTargetsScreen } from "./features/model_targets/ModelTargetsScreen";
 import { TablePrototype } from "./features/table_prototype/TablePrototype";
 import { ObjectCardsPrototype, type CardVariant } from "./features/models/ObjectCardsPrototype";
@@ -14,6 +15,7 @@ import {
   createRouter,
   useNavigate,
   useParams,
+  useSearch,
   type RouterHistory,
 } from "@tanstack/react-router";
 
@@ -191,6 +193,7 @@ const tenantCodeGenerationModelRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/code-generation/models/$modelId",
   component: TenantCodeGenerationModel,
+  validateSearch: modelLayerSearch,
 });
 
 const tenantGeneratedSqlArtifactRoute = createRoute({
@@ -209,18 +212,21 @@ const tenantValidationModelRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/validation/models/$modelId",
   component: TenantValidationModel,
+  validateSearch: modelLayerSearch,
 });
 
 const tenantValidationGroupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/validation/models/$modelId/groups/$groupId",
   component: TenantValidationModel,
+  validateSearch: modelLayerSearch,
 });
 
 const tenantValidationCheckRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/validation/models/$modelId/groups/$groupId/checks/$checkId",
   component: TenantValidationModel,
+  validateSearch: modelLayerSearch,
 });
 
 const tenantPromptsRoute = createRoute({
@@ -688,6 +694,7 @@ function TenantCodeGeneration() {
 function TenantCodeGenerationModel() {
   const { api } = rootRoute.useRouteContext();
   const { tenantId, modelId } = tenantCodeGenerationModelRoute.useParams();
+  const { layer = "logical" } = tenantCodeGenerationModelRoute.useSearch();
   const numericTenantId = Number(tenantId);
   const numericModelId = Number(modelId);
   return (
@@ -700,6 +707,8 @@ function TenantCodeGenerationModel() {
     >
       {({ home, model }) => (
         <CodeGenerationScreen
+          key={`${tenantId}/${modelId}/${layer}`}
+          layer={layer}
           api={api}
           tenantId={numericTenantId}
           model={model}
@@ -767,6 +776,7 @@ function TenantValidation() {
 function TenantValidationModel() {
   const { api } = rootRoute.useRouteContext();
   const { tenantId, modelId, groupId, checkId } = useParams({ strict: false });
+  const { layer = "logical" } = useSearch({ strict: false });
   const numericTenantId = Number(tenantId);
   const numericModelId = Number(modelId);
   return (
@@ -779,7 +789,8 @@ function TenantValidationModel() {
     >
       {({ home, model }) => (
         <ValidationScreen
-          key={`${tenantId}/${modelId}/${groupId ?? ""}/${checkId ?? ""}`}
+          key={`${tenantId}/${modelId}/${layer}/${groupId ?? ""}/${checkId ?? ""}`}
+          layer={layer}
           api={api}
           tenantId={numericTenantId}
           model={model}
@@ -1012,8 +1023,8 @@ function ModelAssertions() {
       activeStage="assertions"
       loadingLabel="Loading Assertions"
     >
-      {({ model }) => (
-        <AssertionsScreen api={api} tenantId={numericTenantId} model={model} />
+      {({ home, model }) => (
+        <AssertionsScreen api={api} tenantId={numericTenantId} model={model} hasTenantLock={home.lock.owned_by_current_principal === true} />
       )}
     </ModelRouteFrame>
   );
@@ -1069,13 +1080,16 @@ function AssertionDetailRoute({
       activeStage="assertions"
       loadingLabel="Loading Assertion"
     >
-      {() => (
+      {({ home, model }) => (
         kind === "document" ? (
           <AssertionDocumentDetailPage
             api={api}
             tenantId={tenantId}
             modelId={modelId}
+            key={detailId}
             documentId={detailId}
+            modelRevision={model.model_revision}
+            hasTenantLock={home.lock.owned_by_current_principal === true}
           />
         ) : (
           <AssertionRecordDetailPage
@@ -1083,6 +1097,8 @@ function AssertionDetailRoute({
             tenantId={tenantId}
             modelId={modelId}
             recordId={detailId}
+            modelRevision={model.model_revision}
+            hasTenantLock={home.lock.owned_by_current_principal === true}
           />
         )
       )}

@@ -28,3 +28,4 @@ class CodeGenerationArtifactContext(BaseModel):
         default=()
     )
     current_artifact_names: tuple[str, ...] = ()
+    preserved_artifact_names: tuple[str, ...] = ()

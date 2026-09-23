@@ -1,3 +1,4 @@
+import type { MappingEntityType } from "../mapping/api";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -25,6 +26,7 @@ export function ValidationRunDialog({
   tenantId,
   model,
   systems,
+  entityType,
   systemsTruncated,
   onClose,
   onStarted,
@@ -32,6 +34,7 @@ export function ValidationRunDialog({
   api: ValidationApi;
   tenantId: number;
   model: ModelDetail;
+  entityType: MappingEntityType;
   systems: ValidationEligibleSystem[];
   systemsTruncated: boolean;
   onClose: () => void;
@@ -157,7 +160,7 @@ export function ValidationRunDialog({
       >
         <header className="drawer-header">
           <div>
-            <small>Validation authoring</small>
+            <small>{entityType === "logical_entity" ? "Logical · Silver" : "Dimensional · Gold"}</small>
             <h2 id="validation-run-heading">Configure Validation run</h2>
           </div>
           <button
@@ -182,16 +185,39 @@ export function ValidationRunDialog({
             runMutation.mutate({
               expected_model_revision: model.model_revision,
               model_workflow: "validation",
+              modeled_entity_type: entityType,
               workflow_execution_mode: null,
               selected_object_ids: [],
               selected_system_codes: selectedCodes,
-              modeled_entity_type: null,
               requested_batch_id: null,
               agent,
               prompt_overrides: {},
             });
           }}
         >
+          <p className="field-help">Create technical integrity and functional business checks from this layer’s Mapping. Locked Groups and their Checks stay unchanged; individually locked Checks are also preserved.</p>
+          <section className="agent-run-configuration validation-agent-profile" aria-labelledby="validation-agent-profile-heading">
+            <header>
+              <strong id="validation-agent-profile-heading">Model and reasoning</strong>
+              <span>The prompt template configures the available context tools.</span>
+            </header>
+            {capabilitiesQuery.isPending ? (
+              <div className="surface-state compact" aria-busy="true">Loading models…</div>
+            ) : capabilitiesQuery.isError || !agent ? (
+              <p className="inline-error" role="alert">A compatible agent profile with tool support is unavailable.</p>
+            ) : (
+              <fieldset className="agent-run-grid agent-run-grid-two" disabled={runMutation.isPending || pendingWorkflowRunId !== null}>
+                <legend className="sr-only">Model and reasoning</legend>
+                <SelectField label="Model" value={modelCode}
+                  options={compatibleModels.map((item) => [item.code, item.name])}
+                  onChange={setModelCode} />
+                <SelectField label="Reasoning effort" value={reasoningEffortCode}
+                  options={compatibleReasoning.map((item) => [item.code, reasoningEffortDisplayName(item)])}
+                  onChange={setReasoningEffortCode} />
+              </fieldset>
+            )}
+          </section>
+
           <section className="validation-run-systems" aria-labelledby="validation-system-selection-heading">
             <header>
               <div>
@@ -262,27 +288,6 @@ export function ValidationRunDialog({
             ) : null}
           </section>
 
-          <section className="agent-run-configuration validation-agent-profile" aria-labelledby="validation-agent-profile-heading">
-            <header>
-              <strong id="validation-agent-profile-heading">Model and reasoning</strong>
-              <span>The prompt template configures the available context tools.</span>
-            </header>
-            {capabilitiesQuery.isPending ? (
-              <div className="surface-state compact" aria-busy="true">Loading models…</div>
-            ) : capabilitiesQuery.isError || !agent ? (
-              <p className="inline-error" role="alert">A compatible agent profile with tool support is unavailable.</p>
-            ) : (
-              <fieldset className="agent-run-grid agent-run-grid-two" disabled={runMutation.isPending || pendingWorkflowRunId !== null}>
-                <legend className="sr-only">Model and reasoning</legend>
-                <SelectField label="Model" value={modelCode}
-                  options={compatibleModels.map((item) => [item.code, item.name])}
-                  onChange={setModelCode} />
-                <SelectField label="Reasoning effort" value={reasoningEffortCode}
-                  options={compatibleReasoning.map((item) => [item.code, reasoningEffortDisplayName(item)])}
-                  onChange={setReasoningEffortCode} />
-              </fieldset>
-            )}
-          </section>
 
           {runMutation.isError ? (
             <p className="inline-error" role="alert">

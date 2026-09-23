@@ -17,6 +17,7 @@ from gds_etl_workbench.domain.modeling_records import ModelingRecord, normalize_
 from gds_etl_workbench.domain.snapshots.model import DATASETS_BY_NAME, ModelChangeSetDataset
 
 type ModelReviewDataset = Literal[
+    "modeling_assertion_record",
     "conceptual_object",
     "conceptual_relationship",
     "logical_submodel",
@@ -43,6 +44,11 @@ type RecordIdentity = tuple[ModelReviewDataset, int]
 # Dataset-specific lifecycle columns and snapshot collections. Table names remain
 # a separate fixed SQL allowlist in the repository.
 REVIEW_FIELDS: dict[ModelReviewDataset, tuple[str, str, str]] = {
+    "modeling_assertion_record": (
+        "modeling_assertion_record_is_locked",
+        "modeling_assertion_record_status",
+        "records",
+    ),
     "conceptual_object": ("conceptual_object_is_locked", "conceptual_object_status", "objects"),
     "conceptual_relationship": (
         "conceptual_relationship_is_locked",

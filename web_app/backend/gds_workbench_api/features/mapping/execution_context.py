@@ -11,6 +11,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from gds_workbench_api.features.assertions.context import project_assertions
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentContextToolResultTooLargeError,
     LocalAgentToolDefinition,
@@ -20,7 +21,6 @@ from gds_workbench_api.features.workflows.authoring.context import (
     reject_forbidden_provider_json,
 )
 from gds_workbench_api.features.workflows.authoring.context_inputs import (
-    ASSERTION_FIELDS,
     OBJECT_FIELDS,
     natural_key,
 )
@@ -341,13 +341,6 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
     section = snapshot.logical if layer == "logical" else snapshot.dimensional
     entity_name = preparation.context.headers[0].modeled_entity.entity_name.casefold()
     source_keys = {natural_key(item.object.model_dump()) for item in preparation.context.sources}
-    assertion_keys: set[str] = set()
-    for entity in section.entities:
-        if getattr(entity, f"{layer}_entity_name").casefold() != entity_name:
-            continue
-        for source in entity.sources:
-            if source.status == "active" and source.support_source_type == "assertion":
-                assertion_keys.add(source.assertion_record.modeling_assertion_record_key.casefold())
     for attribute in section.attributes:
         if (
             getattr(attribute, f"{layer}_entity_name").casefold() != entity_name
@@ -358,10 +351,10 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
         for source in attribute.sources:
             if source.status != "active":
                 continue
-            if source.support_source_type == "assertion":
-                assertion_keys.add(source.assertion_record.modeling_assertion_record_key.casefold())
-                sources.append(source.model_dump(mode="json", exclude={"status", "is_locked"}))
-            elif natural_key(source.source_attribute.model_dump()) in source_keys:
+            if (
+                source.support_source_type == "assertion"
+                or natural_key(source.source_attribute.model_dump()) in source_keys
+            ):
                 sources.append(source.model_dump(mode="json", exclude={"status", "is_locked"}))
         result["attribute_lineage"].append(
             {
@@ -409,13 +402,16 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
         row = profile.model_dump(mode="json")
         if natural_key(row) in source_keys:
             result["profiles"].append(row)
-    for assertion in snapshot.assertion.records:
-        if (
-            assertion.modeling_assertion_record_status == "active"
-            and assertion.modeling_assertion_record_key.casefold() in assertion_keys
-        ):
-            row = assertion.model_dump(mode="json")
-            result["assertions"].append({key: row[key] for key in ASSERTION_FIELDS})
+    result["assertions"] = project_assertions(
+        snapshot.assertion.model_dump(mode="json"),
+        source_scope=[
+            {
+                "tenant_code": snapshot.model_tenant_code or preparation.context.target.tenant_code,
+                "system_code": preparation.context.source_system.system_code,
+            },
+            *(source.object.model_dump(mode="json") for source in preparation.context.sources),
+        ],
+    )
     return result
 
 

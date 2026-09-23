@@ -1,8 +1,8 @@
 """Validation eligibility and applied-ledger HTTP routes."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Query
 from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 
@@ -27,12 +27,16 @@ def create_validation_read_router(
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         *,
+        entity_type: Annotated[
+            Literal["logical_entity", "dimensional_entity"] | None, Query()
+        ] = None,
         principal: RequestPrincipal = Depends(authenticate),
     ) -> ValidationEligibleSystemCollection:
         return await service.list_eligible_systems(
             principal,
             tenant_id=tenant_id,
             model_id=model_id,
+            entity_type=entity_type,
         )
 
     router.add_api_route(
@@ -46,12 +50,16 @@ def create_validation_read_router(
         tenant_id: Annotated[int, Path(gt=0)],
         model_id: Annotated[int, Path(gt=0)],
         *,
+        entity_type: Annotated[
+            Literal["logical_entity", "dimensional_entity"] | None, Query()
+        ] = None,
         principal: RequestPrincipal = Depends(authenticate),
     ) -> ValidationLedger:
         return await service.read_ledger(
             principal,
             tenant_id=tenant_id,
             model_id=model_id,
+            entity_type=entity_type,
         )
 
     router.add_api_route(

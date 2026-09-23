@@ -1,6 +1,7 @@
 import type { ModelRecordReviewApi } from "../model_record_review/api";
 import type { HttpRequest } from "../../core/http";
 import type { JsonObject, ReviewStatus } from "../../shared/contracts";
+import type { MetadataApi } from "../metadata/api";
 import type { ModelsApi } from "../models/api";
 import type { WorkflowsApi } from "../workflows/api";
 
@@ -255,6 +256,7 @@ export interface MappingTransport {
 }
 
 export type MappingApi = MappingTransport & ModelRecordReviewApi
+  & Pick<MetadataApi, "listMetadataRows">
   & Pick<ModelsApi, "listModels">
   & Pick<
     WorkflowsApi,

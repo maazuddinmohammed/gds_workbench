@@ -139,8 +139,9 @@ provenance for Metadata Enrichment.
 _Avoid_: Model Binding, Logical Mapping, name-based source guess
 
 **Modeling Assertion**:
-One Model-owned structured factual statement derived from a document, email,
-meeting note, or direct user input. An applicable Assertion provides governed
+One Model-owned structured business statement or reporting requirement derived
+from a document, email, meeting note, or direct user input. Reporting requirements
+and KPI definitions express required capability, not proof that source data exists. An applicable Assertion provides governed
 context for Analysis, Conceptual, Logical, Dimensional, or Mapping but is not executable lineage.
 _Avoid_: Modeling Evidence, fact, transient context
 

@@ -410,9 +410,15 @@ INPUT_SHAPES: dict[str, Any] = {
         },
     },
     "modeling_assertions": {
-        "description": "Active governed assertion records applicable to this workflow "
-        "from active documents within authorized Model/source "
-        "scope; includes applicable Model-wide assertions.",
+        "description": "Active assertions from active documents in authorized Model/System scope, "
+        "available automatically to all downstream workflows. Determine relevance from the "
+        "statement and task, not legacy layer flags. record_type is a free-text classification "
+        "of facts, definitions, relationships, conventions, constraints or requirements. "
+        "text is the statement; details.notes adds context, examples and exceptions. Other "
+        "details may contain formula, grain, dimensions, date_basis, exclusions, history or "
+        "acceptance_criteria; missing details are unspecified. document_name and source_location "
+        "identify provenance. confidence is evidence confidence, not priority. Keys link "
+        "model support to assertions; they are not physical lineage or proof of source data.",
         "schema": {
             "type": "array",
             "items": {"$ref": "#/$defs/modeling_assertions_entry"},

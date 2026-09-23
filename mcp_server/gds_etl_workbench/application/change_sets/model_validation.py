@@ -861,7 +861,6 @@ def _validate_references(
     for record in future["conceptual_object"]:
         _validate_supports(
             record.supports,
-            layer="conceptual",
             dataset="conceptual_object",
             assertion_records=assertion_records,
             issues=issues,
@@ -874,7 +873,6 @@ def _validate_references(
             _missing(issues, "conceptual_relationship", "conceptual_object_name")
         _validate_supports(
             record.supports,
-            layer="conceptual",
             dataset="conceptual_relationship",
             assertion_records=assertion_records,
             issues=issues,
@@ -1316,9 +1314,8 @@ def _validate_modeled_layer(
             for membership in record.submodels
         ):
             _missing(issues, f"{layer}_entity", "submodel_name")
-        _validate_sources(
+        _validate_supports(
             record.sources,
-            layer=layer,
             dataset=f"{layer}_entity",
             assertion_records=assertion_records,
             issues=issues,
@@ -1326,9 +1323,8 @@ def _validate_modeled_layer(
     for record in future[f"{layer}_attribute"]:
         if normalize_model_key_value(getattr(record, f"{layer}_entity_name")) not in entities:
             _missing(issues, f"{layer}_attribute", f"{layer}_entity_name")
-        _validate_sources(
+        _validate_supports(
             record.sources,
-            layer=layer,
             dataset=f"{layer}_attribute",
             assertion_records=assertion_records,
             issues=issues,
@@ -1351,59 +1347,17 @@ def _validate_modeled_layer(
 def _validate_supports(
     supports: tuple[Any, ...],
     *,
-    layer: str,
     dataset: str,
     assertion_records: dict[object, Any],
     issues: list[ModelValidationIssue],
 ) -> None:
     for support in supports:
-        if support.support_source_type == "assertion":
-            _validate_assertion_reference(
-                support.assertion_record.modeling_assertion_record_key,
-                layer,
-                dataset,
-                assertion_records,
-                issues,
-            )
-
-
-def _validate_sources(
-    sources: tuple[Any, ...],
-    *,
-    layer: str,
-    dataset: str,
-    assertion_records: dict[object, Any],
-    issues: list[ModelValidationIssue],
-) -> None:
-    for source in sources:
-        if source.support_source_type == "assertion":
-            _validate_assertion_reference(
-                source.assertion_record.modeling_assertion_record_key,
-                layer,
-                dataset,
-                assertion_records,
-                issues,
-            )
-
-
-def _validate_assertion_reference(
-    key: str,
-    layer: str,
-    dataset: str,
-    assertion_records: dict[object, Any],
-    issues: list[ModelValidationIssue],
-) -> None:
-    assertion = assertion_records.get(normalize_model_key_value(key))
-    if assertion is None:
-        _missing(issues, dataset, "modeling_assertion_record_key")
-    elif layer not in assertion.modeling_assertion_applicable_layers:
-        _issue(
-            issues,
-            "assertion_layer_invalid",
-            dataset,
-            ("modeling_assertion_record_key",),
-            "Referenced Assertion does not apply to this modeling layer.",
-        )
+        if (
+            support.support_source_type == "assertion"
+            and normalize_model_key_value(support.assertion_record.modeling_assertion_record_key)
+            not in assertion_records
+        ):
+            _missing(issues, dataset, "modeling_assertion_record_key")
 
 
 def _modeled_entities(future: Mapping[str, tuple[Any, ...]]) -> set[ModeledEntityKey]:

@@ -122,12 +122,12 @@ describe("Validation journey", () => {
     expect(within(detail).queryByText("Query B")).not.toBeInTheDocument();
   });
 
-  it("selects exact Systems and starts fixed-profile Validation through a governed draft run", async () => {
+  it.each(["logical", "dimensional"] as const)("starts %s Validation with exact Systems", async (layer) => {
     const fetcher = validationFetchStub();
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/validation/models/18"] }),
+      history: createMemoryHistory({ initialEntries: [`/tenants/7/validation/models/18?layer=${layer}`] }),
     })} />);
 
     const runButton = await screen.findByRole("button", { name: "Run Validation" });
@@ -154,7 +154,7 @@ describe("Validation journey", () => {
       workflow_execution_mode: null,
       selected_object_ids: [],
       selected_system_codes: ["CRM"],
-      modeled_entity_type: null,
+      modeled_entity_type: `${layer}_entity`,
       requested_batch_id: null,
       agent: {
         sdk_code: "openai_agents_sdk",
@@ -194,7 +194,7 @@ describe("Validation journey", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Run Validation" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "Run Validation" }));
     await screen.findByRole("dialog", { name: "Configure Validation run" });
-    await user.click(screen.getByRole("checkbox", { name: /CRM/ }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("checkbox", { name: /CRM/ }));
     const submit = await screen.findByRole("button", { name: "Create and start Validation" });
     await waitFor(() => expect(submit).toBeEnabled());
     for (const label of ["Agent SDK", "Provider", "Maximum turns", "Validation retries"]) {
@@ -334,7 +334,7 @@ function validationFetchStub(options: {
       return jsonResponse({ items: [modelLedger], next_cursor: null });
     }
     if (url === "/api/v1/tenants/7/models/18") return jsonResponse(modelDetail);
-    if (url === "/api/v1/tenants/7/models/18/validation/systems") {
+    if (url.startsWith("/api/v1/tenants/7/models/18/validation/systems")) {
       if (options.denied) return jsonResponse({ error: { code: "authorization_denied" } }, 403);
       if (options.error) return new Response("secret physical row", { status: 503 });
       return jsonResponse({
@@ -344,7 +344,7 @@ function validationFetchStub(options: {
         is_truncated: false,
       });
     }
-    if (url === "/api/v1/tenants/7/models/18/validation/ledger") {
+    if (url.startsWith("/api/v1/tenants/7/models/18/validation/ledger")) {
       if (options.denied) return jsonResponse({ error: { code: "authorization_denied" } }, 403);
       if (options.error) return new Response("secret physical row", { status: 503 });
       return jsonResponse({
@@ -463,6 +463,7 @@ const eligibleSystems = [
 const validationGroups: ValidationValidationGroup[] = [{
   is_locked: false,
   validation_group_id: 91,
+  modeled_entity_type: null,
   system_id: 2,
   system_code: "CRM",
   validation_group_name: "Order reconciliation",

@@ -7,7 +7,7 @@
     {
       "name": "get_mapping_target",
       "variable": "target_metadata",
-      "description": "Actual target Object natural key, physical catalog, description, layer, lifecycle/locks and ordered registered Attributes with type, inferred type, nullability and descriptions. No internal IDs. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "description": "Read frozen target_metadata. Omitted or empty selection returns all eligible records, paged. Continue with cursor alone; copy complete natural keys from prior results. Unknown keys fail; no database queries or new measurements.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -19,7 +19,6 @@
             "minLength": 1
           }
         },
-        "required": [],
         "additionalProperties": false
       },
       "selector": null,
@@ -29,7 +28,7 @@
     {
       "name": "get_mapping_sources",
       "variable": "source_evidence",
-      "description": "Eligible source contributions, each with role, rationale, mapping_order, lock and nested actual physical Object/Attributes. Scoped to this frozen target/Source System pair. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "description": "Read frozen source_evidence. Omitted or empty selection returns all eligible records, paged. Continue with cursor alone; copy complete natural keys from prior results. Unknown keys fail; no database queries or new measurements.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -47,23 +46,28 @@
               "properties": {
                 "tenant_code": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 },
                 "system_code": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 },
                 "connection_code": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 },
                 "object_schema": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 },
                 "object_name": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 }
               },
               "required": [
@@ -74,12 +78,9 @@
                 "object_name"
               ],
               "additionalProperties": false
-            },
-            "default": [],
-            "maxItems": 200
+            }
           }
         },
-        "required": [],
         "additionalProperties": false
       },
       "selector": "source_object_keys",
@@ -95,7 +96,7 @@
     {
       "name": "get_existing_mapping",
       "variable": "existing_mapping",
-      "description": "Single existing target binding/header with modeled Entity/Attributes, natural Attribute-name bindings, Object/Attribute transformation documents, dependency order, statuses and locks. Null document means unauthored. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "description": "Read frozen existing_mapping. Omitted or empty selection returns all eligible records, paged. Continue with cursor alone; copy complete natural keys from prior results. Unknown keys fail; no database queries or new measurements.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -107,7 +108,6 @@
             "minLength": 1
           }
         },
-        "required": [],
         "additionalProperties": false
       },
       "selector": null,
@@ -117,7 +117,7 @@
     {
       "name": "get_mapping_support",
       "variable": "mapping_support",
-      "description": "Saved evidence scoped to this target and eligible sources: attribute_lineage links modeled names to physical source Attributes or assertion keys, with rationale and key roles; modeled_relationships describe conceptual join intent, not physical join proof; source_relationships carry Analysis confidence and measured validation when available; profiles are saved aggregate counts, percentages and lengths, not live rows or guaranteed current observations; assertions contain the linked active business rules. Empty lists mean no saved evidence, never permission to invent rules.",
+      "description": "Read frozen mapping_support. Omitted or empty selection returns all eligible records, paged. Continue with cursor alone; copy complete natural keys from prior results. Unknown keys fail; no database queries or new measurements.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -129,7 +129,6 @@
             "minLength": 1
           }
         },
-        "required": [],
         "additionalProperties": false
       },
       "selector": null,

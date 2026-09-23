@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { useForm } from "@tanstack/react-form";
+import { useMemo, useState } from "react";
+import { MultiSelectField } from "../../shared/MultiSelectField";
 import { Link } from "@tanstack/react-router";
 import {
   flexRender,
@@ -9,8 +9,7 @@ import {
 } from "@tanstack/react-table";
 
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
-import type { MappingEntityType } from "../mapping/api";
-import type { CodeGenerationTarget, CodeGenerationTargetFilters } from "./api";
+import type { CodeGenerationTarget } from "./api";
 
 export type ArtifactStatusFilter = "" | "current" | "stale" | "not_generated";
 
@@ -19,7 +18,6 @@ export interface CodeGenerationLedgerState {
   isError: boolean;
   isDenied: boolean;
   revisionMismatch: boolean;
-  hasNextPage: boolean;
   hasPreviousPage: boolean;
   isPaging: boolean;
   pageNumber: number;
@@ -29,13 +27,12 @@ export function CodeGenerationLedger({
   tenantId,
   modelId,
   items,
-  filters,
+  objectIds, onObjectIdsChange, page,
   artifactStatus,
   selectedTargetIds,
   canGenerate,
   permissionLabel,
   state,
-  onApplyFilters,
   onArtifactStatusChange,
   onToggleTarget,
   onToggleVisible,
@@ -46,13 +43,12 @@ export function CodeGenerationLedger({
   tenantId: number;
   modelId: number;
   items: CodeGenerationTarget[];
-  filters: CodeGenerationTargetFilters & { entityType: MappingEntityType };
+  objectIds: string[]; onObjectIdsChange: (ids: string[]) => void; page: number;
   artifactStatus: ArtifactStatusFilter;
   selectedTargetIds: ReadonlySet<number>;
   canGenerate: boolean;
   permissionLabel: string;
   state: CodeGenerationLedgerState;
-  onApplyFilters: (filters: CodeGenerationTargetFilters & { entityType: MappingEntityType }) => void;
   onArtifactStatusChange: (status: ArtifactStatusFilter) => void;
   onToggleTarget: (target: CodeGenerationTarget, selected: boolean) => void;
   onToggleVisible: (targets: CodeGenerationTarget[], selected: boolean) => void;
@@ -60,12 +56,20 @@ export function CodeGenerationLedger({
   onNextPage: () => void;
   onPreviousPage: () => void;
 }) {
-  const visibleItems = useMemo(
-    () => items.filter((item) => artifactStatusMatches(item, artifactStatus)),
-    [artifactStatus, items],
+  const filteredItems = useMemo(
+    () => items.filter((item) => artifactStatusMatches(item, artifactStatus) && (!objectIds.length || objectIds.includes(String(item.target.object_id)))),
+    [artifactStatus, items, objectIds],
   );
-  const allVisibleSelected = visibleItems.length > 0
-    && visibleItems.every((item) => selectedTargetIds.has(item.target.object_id));
+  const visibleItems = useMemo(
+    () => filteredItems.slice(page * 50, (page + 1) * 50),
+    [filteredItems, page],
+  );
+  const selectableItems = useMemo(
+    () => visibleItems.filter((item) => !item.is_locked),
+    [visibleItems],
+  );
+  const allVisibleSelected = selectableItems.length > 0
+    && selectableItems.every((item) => selectedTargetIds.has(item.target.object_id));
   const columns = useMemo<ColumnDef<CodeGenerationTarget>[]>(() => [
     {
       id: "select",
@@ -74,14 +78,15 @@ export function CodeGenerationLedger({
           type="checkbox"
           aria-label="Select all visible target Objects"
           checked={allVisibleSelected}
-          disabled={!visibleItems.length}
-          onChange={(event) => onToggleVisible(visibleItems, event.target.checked)}
+          disabled={!selectableItems.length}
+          onChange={(event) => onToggleVisible(visibleItems.filter((item) => !item.is_locked), event.target.checked)}
         />
       ),
       cell: ({ row }) => (
         <input
           type="checkbox"
           aria-label={`Select ${targetName(row.original)}`}
+          disabled={row.original.is_locked}
           checked={selectedTargetIds.has(row.original.target.object_id)}
           onChange={(event) => onToggleTarget(row.original, event.target.checked)}
         />
@@ -98,11 +103,6 @@ export function CodeGenerationLedger({
           </span>
         </span>
       ),
-    },
-    {
-      accessorKey: "entity_type",
-      header: "Modeled layer",
-      cell: ({ getValue }) => layerLabel(getValue<MappingEntityType>()),
     },
     {
       id: "source_systems",
@@ -186,8 +186,8 @@ export function CodeGenerationLedger({
         <button
           className="generation-text-action"
           type="button"
-          disabled={!canGenerate}
-          title={permissionLabel}
+          disabled={!canGenerate || row.original.is_locked}
+          title={row.original.is_locked ? "Unlock the Object’s SQL files before regenerating" : permissionLabel}
           onClick={() => onGenerateTarget(row.original)}
         >
           {row.original.artifacts.some(
@@ -218,9 +218,8 @@ export function CodeGenerationLedger({
   return (
     <section className="workflow-surface code-generation-surface" aria-labelledby="code-generation-targets-heading">
       <CodeGenerationFilters
-        filters={filters}
+        items={items} objectIds={objectIds} onObjectIdsChange={onObjectIdsChange}
         artifactStatus={artifactStatus}
-        onApplyFilters={onApplyFilters}
         onArtifactStatusChange={onArtifactStatusChange}
       />
       <header className="code-generation-ledger-heading">
@@ -228,7 +227,7 @@ export function CodeGenerationLedger({
           <p className="eyebrow">Eligible delivery targets</p>
           <h2 id="code-generation-targets-heading">Target Objects</h2>
         </div>
-        <span>{visibleItems.length} shown · {items.length} on server page {state.pageNumber}</span>
+        <span>{filteredItems.length} Objects · Page {state.pageNumber}</span>
       </header>
       {state.isLoading ? (
         <div className="surface-state" aria-busy="true">Loading eligible target Objects…</div>
@@ -245,10 +244,10 @@ export function CodeGenerationLedger({
           The Model changed while Code Generation targets were loading. Refresh before generating SQL.
         </div>
       ) : items.length === 0 ? (
-        <div className="empty-state compact">No eligible target Objects match these server filters.</div>
+        <div className="empty-state compact">No eligible target Objects in this layer.</div>
       ) : visibleItems.length === 0 ? (
         <div className="empty-state compact">
-          No target Objects on this server page match the artifact status view.
+          No Objects match these filters.
         </div>
       ) : (
         <div className="workflow-table-scroll code-generation-table-scroll">
@@ -291,11 +290,11 @@ export function CodeGenerationLedger({
           >
             Previous
           </button>
-          <span>Server page {state.pageNumber}</span>
+          <span>Page {state.pageNumber}</span>
           <button
             className="button button-secondary button-small"
             type="button"
-            disabled={!state.hasNextPage || state.isPaging}
+            disabled={(page + 1) * 50 >= filteredItems.length || state.isPaging}
             onClick={onNextPage}
           >
             Next
@@ -306,110 +305,29 @@ export function CodeGenerationLedger({
   );
 }
 
-function CodeGenerationFilters({
-  filters,
-  artifactStatus,
-  onApplyFilters,
-  onArtifactStatusChange,
-}: {
-  filters: CodeGenerationTargetFilters & { entityType: MappingEntityType };
+function CodeGenerationFilters({ items, objectIds, onObjectIdsChange, artifactStatus, onArtifactStatusChange }: {
+  items: CodeGenerationTarget[]; objectIds: string[]; onObjectIdsChange: (ids: string[]) => void;
   artifactStatus: ArtifactStatusFilter;
-  onApplyFilters: (filters: CodeGenerationTargetFilters & { entityType: MappingEntityType }) => void;
   onArtifactStatusChange: (status: ArtifactStatusFilter) => void;
 }) {
-  const form = useForm({
-    defaultValues: {
-      entityType: filters.entityType,
-      systemCode: filters.systemCode ?? "",
-      sourceSystemCode: filters.sourceSystemCode ?? "",
-    },
-    onSubmit: ({ value }) => onApplyFilters({
-      entityType: value.entityType,
-      ...(value.systemCode ? { systemCode: value.systemCode } : {}),
-      ...(value.sourceSystemCode ? { sourceSystemCode: value.sourceSystemCode } : {}),
-    }),
-  });
-  return (
-    <form
-      className="workflow-filterbar code-generation-filterbar"
-      aria-label="Filter Code Generation targets"
-      onSubmit={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void form.handleSubmit();
-      }}
-    >
-      <form.Field name="entityType">
-        {(field) => (
-          <label>
-            <span>Modeled layer</span>
-            <select
-              aria-label="Modeled layer"
-              value={field.state.value}
-              onChange={(event) => field.handleChange(event.target.value as MappingEntityType)}
-            >
-              <option value="logical_entity">Logical</option>
-              <option value="dimensional_entity">Dimensional</option>
-            </select>
-          </label>
-        )}
-      </form.Field>
-      <form.Field name="systemCode">
-        {(field) => (
-          <label>
-            <span>Target System code</span>
-            <input
-              aria-label="Target System code"
-              value={field.state.value}
-              onChange={(event) => field.handleChange(event.target.value)}
-            />
-          </label>
-        )}
-      </form.Field>
-      <form.Field name="sourceSystemCode">
-        {(field) => (
-          <label>
-            <span>Contributing System code</span>
-            <input
-              aria-label="Contributing System code"
-              value={field.state.value}
-              onChange={(event) => field.handleChange(event.target.value)}
-            />
-          </label>
-        )}
-      </form.Field>
-      <label className="local-status-filter">
-        <span>Artifact status · this page</span>
-        <select
-          aria-label="Artifact status on this page"
-          value={artifactStatus}
-          onChange={(event) => onArtifactStatusChange(event.target.value as ArtifactStatusFilter)}
-        >
-          <option value="">All artifact states</option>
-          <option value="current">Current</option>
-          <option value="stale">Stale</option>
-          <option value="not_generated">Not generated</option>
-        </select>
-        <small>Local view</small>
-      </label>
-      <div className="workflow-filter-actions">
-        <button
-          className="button button-secondary button-small"
-          type="button"
-          onClick={() => {
-            form.reset();
-            onArtifactStatusChange("");
-            onApplyFilters({ entityType: "logical_entity" });
-          }}
-        >
-          Clear
-        </button>
-        <button className="button button-secondary button-small" type="submit">
-          Apply server filters
-        </button>
-      </div>
-    </form>
-  );
+  const [draftObjectIds, setDraftObjectIds] = useState(objectIds);
+  const [draftStatus, setDraftStatus] = useState(artifactStatus);
+  return <form className="workflow-filterbar code-generation-filterbar" aria-label="Filter Code Generation targets" onSubmit={(event) => {
+    event.preventDefault(); onObjectIdsChange(draftObjectIds); onArtifactStatusChange(draftStatus);
+  }}>
+    <MultiSelectField label="Objects" value={draftObjectIds} onChange={setDraftObjectIds}
+      options={items.map((item) => [String(item.target.object_id), `${item.target.system_code} · ${targetName(item)}`])} />
+    <label><span>Status</span><select aria-label="Status" value={draftStatus}
+      onChange={(event) => setDraftStatus(event.target.value as ArtifactStatusFilter)}>
+      <option value="">All statuses</option><option value="current">Current</option>
+      <option value="stale">Stale</option><option value="not_generated">Not generated</option>
+    </select></label>
+    <div className="workflow-filter-actions"><button className="button button-secondary button-small" type="button" onClick={() => {
+      setDraftObjectIds([]); setDraftStatus("");
+      onObjectIdsChange([]); onArtifactStatusChange("");
+    }}>Clear</button>
+    <button className="button button-primary button-small" type="submit">Apply filters</button></div>
+  </form>;
 }
 
 function ArtifactBadge({ target }: { target: CodeGenerationTarget }) {
@@ -436,8 +354,4 @@ function artifactState(target: CodeGenerationTarget): Exclude<ArtifactStatusFilt
 
 function targetName(target: CodeGenerationTarget): string {
   return `${target.target.object_schema}.${target.target.object_name}`;
-}
-
-function layerLabel(entityType: MappingEntityType): string {
-  return entityType === "logical_entity" ? "Logical" : "Dimensional";
 }

@@ -388,6 +388,7 @@ class AgentAuthoringContext(BaseModel):
     profiles: tuple[ProfilingProfileRecord, ...] = Field(repr=False)
     analysis_relationships: tuple[AnalysisResultRecord, ...] = Field(repr=False)
     assertion: AssertionSection = Field(repr=False)
+    assertion_source_scope: tuple[dict[str, str], ...] = Field(default=(), repr=False, exclude=True)
     applied: ApplicableAppliedRecords = Field(repr=False)
     read_only_dependencies: tuple[AgentModelDependency, ...] = Field(default=(), repr=False)
     source_context: tuple[dict[str, JsonValue], ...] = Field(default=(), repr=False)
@@ -431,7 +432,10 @@ class InMemoryAgentContextToolCatalog:
         )
         self._readers = FrozenContextReaders(
             workflow=context.model_workflow,
-            values=project_context_inputs(context.model_dump(mode="json")),
+            values=project_context_inputs(
+                context.model_dump(mode="json"),
+                assertion_source_scope=context.assertion_source_scope,
+            ),
             max_result_bytes=max_result_bytes,
             max_page_records=max_page_records,
             max_cumulative_result_bytes=cumulative_result_bytes,
@@ -943,12 +947,7 @@ def _assemble_context(
         or _analysis_endpoint_key(relationship, "to") in selected_keys
     )
 
-    assertion_layer = "mapping" if plan.model_workflow == "code_generation" else plan.model_workflow
-    assertion_records = tuple(
-        record
-        for record in snapshot.assertion.records
-        if assertion_layer in record.modeling_assertion_applicable_layers
-    )
+    assertion_records = snapshot.assertion.records
     assertion_document_names = {
         normalize_model_key_value(record.modeling_assertion_document_name)
         for record in assertion_records
@@ -1093,8 +1092,34 @@ def _with_prompt_evidence(
                     "attributes": attrs,
                 }
             )
+    # Silver Objects retain the contributing business Systems of their applied Logical Mapping.
+    # Their physical placement System alone cannot scope dimensional requirements correctly.
+    assertion_scope = [
+        {"tenant_code": snapshot.model_tenant_code, "system_code": system}
+        for system in sorted(
+            {item.object.system_code for item in context.selected_objects}
+            | {str(source["system_code"]) for source in sources.values()}
+        )
+        if snapshot.model_tenant_code
+    ]
+    if plan.model_workflow == "dimensional":
+        entity_names = {normalize_model_key_value(b["logical_entity_name"]) for b in bindings}
+        for mapping in snapshot.mapping.objects:
+            if (
+                mapping.modeled_entity_type == "logical_entity"
+                and mapping.object_mapping_status == "active"
+                and normalize_model_key_value(mapping.modeled_entity_name) in entity_names
+                and snapshot.model_tenant_code
+            ):
+                assertion_scope.append(
+                    {
+                        "tenant_code": snapshot.model_tenant_code,
+                        "system_code": mapping.source_system_code,
+                    }
+                )
     return context.model_copy(
         update={
+            "assertion_source_scope": tuple(assertion_scope),
             "source_context": tuple(sources.values()),
             "gds_context": tuple(placements.values()),
             "ingestion_mapping": tuple(mappings.values()),
@@ -1621,12 +1646,18 @@ def _compact_context_manifest(manifest: dict[str, JsonValue]) -> dict[str, JsonV
 
 
 def _provider_context(context: AgentAuthoringContext) -> JsonValue:
+    from .context_inputs import project_context_inputs
+
     provider_context = cast(
-        JsonValue,
+        dict[str, JsonValue],
         context.model_dump(
             mode="json",
-            exclude={"workflow_run_id", "model_id"},
+            exclude={"workflow_run_id", "model_id", "assertion_source_scope"},
         ),
+    )
+    # Freeze projected inputs before removing internal Tenant/System scope metadata.
+    provider_context["prompt_inputs"] = project_context_inputs(
+        context.model_dump(mode="json"), assertion_source_scope=context.assertion_source_scope
     )
     reject_forbidden_provider_json(provider_context)
     return provider_context

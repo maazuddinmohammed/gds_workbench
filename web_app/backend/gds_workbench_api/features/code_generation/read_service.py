@@ -81,7 +81,16 @@ SELECT jsonb_build_object(
        source_system.source_systems,
        context.source_system_count,
        artifact.artifacts,
-       artifact.artifact_count
+       artifact.artifact_count,
+       EXISTS (SELECT 1 FROM workflow.generated_code AS locked_code
+          LEFT JOIN workflow.generated_code_source_system AS locked_source
+            ON locked_source.generated_code_id = locked_code.generated_code_id
+           AND locked_source.generated_code_source_system_status = 'active'
+         WHERE locked_code.model_object_binding_id = (
+             context.source_context->'object_mappings'->0->>'model_object_binding_id')::BIGINT
+           AND locked_code.generated_code_status = 'active'
+           AND (locked_code.generated_code_is_locked
+                OR locked_source.generated_code_source_system_is_locked)) AS is_locked
   FROM target_model
   JOIN current_context AS context
     ON context.model_id = target_model.model_id

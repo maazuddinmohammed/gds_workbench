@@ -7,7 +7,7 @@
     {
       "name": "get_mapping_evidence",
       "variable": "mapping_evidence",
-      "description": "Relevant applied modeled target identities with natural-key Code-style target/source metadata and exact applied Object/Attribute transformations. Context is design evidence, not measured outcomes. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "description": "Read frozen mapping_evidence. Omitted or empty selection returns all eligible records, paged. Continue with cursor alone; copy complete natural keys from prior results. Unknown keys fail; no database queries or new measurements.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -25,23 +25,28 @@
               "properties": {
                 "tenant_code": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 },
                 "system_code": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 },
                 "connection_code": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 },
                 "object_schema": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 },
                 "object_name": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 }
               },
               "required": [
@@ -52,12 +57,9 @@
                 "object_name"
               ],
               "additionalProperties": false
-            },
-            "default": [],
-            "maxItems": 200
+            }
           }
         },
-        "required": [],
         "additionalProperties": false
       },
       "selector": "target_object_keys",
@@ -73,7 +75,7 @@
     {
       "name": "get_current_code",
       "variable": "current_code",
-      "description": "Current saved Code artifacts and contributing Source System codes, with lifecycle/locks and generated content. Empty means unavailable; no execution success is implied. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "description": "Read frozen current_code. Omitted or empty selection returns all eligible records, paged. Continue with cursor alone; copy complete natural keys from prior results. Unknown keys fail; no database queries or new measurements.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -91,15 +93,18 @@
               "properties": {
                 "modeled_entity_type": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 },
                 "modeled_entity_name": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 },
                 "artifact_name": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 }
               },
               "required": [
@@ -108,12 +113,9 @@
                 "artifact_name"
               ],
               "additionalProperties": false
-            },
-            "default": [],
-            "maxItems": 200
+            }
           }
         },
-        "required": [],
         "additionalProperties": false
       },
       "selector": "artifact_keys",
@@ -127,7 +129,7 @@
     {
       "name": "get_applied_groups",
       "variable": "applied_groups",
-      "description": "Existing Validation Group records, including lifecycle, locks and exact Tenant/System/Group natural identities. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "description": "Read frozen applied_groups. Omitted or empty selection returns all eligible records, paged. Continue with cursor alone; copy complete natural keys from prior results. Unknown keys fail; no database queries or new measurements.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -142,13 +144,11 @@
             "type": "array",
             "items": {
               "type": "string",
-              "minLength": 1
-            },
-            "default": [],
-            "maxItems": 200
+              "minLength": 1,
+              "pattern": "\\S"
+            }
           }
         },
-        "required": [],
         "additionalProperties": false
       },
       "selector": "group_names",
@@ -160,7 +160,7 @@
     {
       "name": "get_applied_checks",
       "variable": "applied_checks",
-      "description": "Existing Validation Check records, exact typed operator/operand definitions and SQL, lifecycle/locks and Tenant/System/Group/Check natural identities. These are definitions, not execution results. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "description": "Read frozen applied_checks. Omitted or empty selection returns all eligible records, paged. Continue with cursor alone; copy complete natural keys from prior results. Unknown keys fail; no database queries or new measurements.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -175,13 +175,11 @@
             "type": "array",
             "items": {
               "type": "string",
-              "minLength": 1
-            },
-            "default": [],
-            "maxItems": 200
+              "minLength": 1,
+              "pattern": "\\S"
+            }
           }
         },
-        "required": [],
         "additionalProperties": false
       },
       "selector": "group_names",

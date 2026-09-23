@@ -234,7 +234,7 @@ describe("Workflow Run monitor", () => {
     const validationRun: WorkflowRunDetail = {
       ...workflowRun(false),
       model_workflow: "validation",
-      workflow_execution_mode: "one_shot",
+      workflow_execution_mode: null,
     };
     const validationReview: WorkflowDraftReview = {
       ...workflowDraftReview(false),
@@ -294,6 +294,17 @@ describe("Workflow Run monitor", () => {
       expect.any(String),
     ));
     await waitFor(() => expect(onApplied).toHaveBeenCalledOnce());
+  });
+
+  it("loads the authoritative draft for Code Generation with its fixed execution profile", async () => {
+    const api = monitorApi();
+    const run: WorkflowRunDetail = { ...workflowRun(false), model_workflow: "code_generation", workflow_execution_mode: null };
+    api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
+    api.readWorkflowRun.mockResolvedValue(run);
+    renderMonitor(api, vi.fn(async () => undefined), "code_generation");
+    expect(await screen.findByRole("button", { name: "Apply validated draft" })).toBeEnabled();
+    expect(api.readWorkflowDraftReview).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Configured generator")).toBeVisible();
   });
 
   it("never offers Apply for deterministic Analysis validation or a stale review", async () => {
@@ -613,7 +624,7 @@ describe("Workflow Run monitor", () => {
 function renderMonitor(
   api: WorkflowRunMonitorApi,
   onApplied: () => Promise<void>,
-  workflow: "analysis" | "conceptual" | "validation" = "conceptual",
+  workflow: "analysis" | "conceptual" | "validation" | "code_generation" = "conceptual",
   focusRunId: number | null = 1048,
 ) {
   const queryClient = new QueryClient({

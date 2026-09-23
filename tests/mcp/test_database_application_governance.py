@@ -102,7 +102,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "character varying, character varying, character varying, character varying, "
         "character varying, integer, integer, bigint[], character varying[], character varying, "
         "character varying, uuid, jsonb, character varying, character varying, "
-        "bigint, bigint, bigint, character varying, bigint, jsonb, jsonb",
+        "bigint, bigint, bigint, character varying, bigint, jsonb, jsonb, character varying",
     ),
     (
         "fail_workflow_run",

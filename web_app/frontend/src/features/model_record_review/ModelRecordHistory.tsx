@@ -5,15 +5,16 @@ import { Link } from "@tanstack/react-router";
 import type { ModelRecordHistoryApi, ModelReviewDataset } from "./api";
 import { ModelRecordReview } from "./ModelRecordReview";
 
-export function ModelRecordHistory({ api, tenantId, modelId, modelRevision, dataset, label, hasTenantLock }: {
+export function ModelRecordHistory({ api, tenantId, modelId, modelRevision, dataset, label, hasTenantLock, entityType }: {
   api: ModelRecordHistoryApi; tenantId: number; modelId: number; modelRevision: number;
+  entityType?: "logical_entity" | "dimensional_entity";
   dataset: ModelReviewDataset; label: string; hasTenantLock: boolean;
 }) {
   const client = useQueryClient();
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const query = useInfiniteQuery({
-    queryKey: ["model-record-history", tenantId, modelId, dataset, modelRevision],
-    queryFn: ({ pageParam }) => api.listModelReviewRecords(tenantId, modelId, dataset, modelRevision, pageParam),
+    queryKey: ["model-record-history", tenantId, modelId, dataset, modelRevision, entityType],
+    queryFn: ({ pageParam }) => api.listModelReviewRecords(tenantId, modelId, dataset, modelRevision, pageParam, entityType),
     initialPageParam: 1,
     getNextPageParam: (page) => page.next_page ?? undefined,
   });

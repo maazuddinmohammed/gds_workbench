@@ -48,8 +48,10 @@ SELECT model_name,
        silver_model_audit_columns_template,
        gold_model_naming_instructions,
        gold_model_technical_columns_template,
-       gold_model_audit_columns_template
-  FROM model.model
+       gold_model_audit_columns_template,
+       (SELECT tenant_code FROM core.tenant WHERE tenant_id = target_model.tenant_id)
+           AS model_tenant_code
+  FROM model.model AS target_model
  WHERE model_id = %s
    AND is_active
 """
@@ -426,6 +428,7 @@ _INTERNAL_READ_FIELDS = frozenset(
         "mapping_attribute_id",
         "mapping_object_id",
         "mapping_source_system_dependency_id",
+        "model_tenant_code",
         "model_attribute_binding_id",
         "model_object_binding_id",
         "modeled_attribute_id",
@@ -573,7 +576,9 @@ async def read_model_review_snapshot(
             "model_id": model.model_id,
             "model_name": model.model_name,
             "model_revision": model.model_revision,
-            "model_tenant_code": model.tenant_code,
+            "model_tenant_code": rows["model_details"][0].get(
+                "model_tenant_code", model.tenant_code
+            ),
             "other_active_model_names": model.other_active_model_names,
             "model_input_scope": {
                 "details": records["model_details"][0],
@@ -625,6 +630,7 @@ async def read_model_review_snapshot(
     # Numeric IDs stay outside canonical snapshots, agent inputs and MCP exports.
     records_by_id: dict[str, dict[int, ModelingRecord]] = {}
     for dataset in (
+        "modeling_assertion_record",
         "analysis_result",
         "conceptual_object",
         "conceptual_relationship",

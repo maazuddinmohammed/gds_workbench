@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, LiteralString
+from typing import Any, LiteralString, cast
 from uuid import UUID
 
 import pytest
@@ -73,7 +73,9 @@ def _plan() -> AgentRunPlan:
     )
 
 
-def _target_row(*, generated: bool = True, source_system: str = "erp") -> dict[str, Any]:
+def _target_row(
+    *, generated: bool = True, source_system: str = "erp"
+) -> dict[str, Any]:
     content = "SELECT * FROM catalog.silver.customer"
     row: dict[str, Any] = {
         "object_id": 501,
@@ -184,7 +186,9 @@ class ContextTransaction:
 
 
 @pytest.mark.asyncio
-async def test_repository_builds_exact_system_mapping_code_and_applied_validation_context() -> None:
+async def test_repository_builds_exact_system_mapping_code_and_applied_validation_context() -> (
+    None
+):
     context = await PostgresValidationContextRepository().load(
         ContextTransaction(),
         tenant_id=7,
@@ -196,7 +200,9 @@ async def test_repository_builds_exact_system_mapping_code_and_applied_validatio
     assert system.system_ref == "system_1"
     assert system.system_code == "erp"
     assert system.current_group_names == ()
-    assert [group.validation_group_name for group in system.applied_groups] == ["reconciliation"]
+    assert [group.validation_group_name for group in system.applied_groups] == [
+        "reconciliation"
+    ]
     assert [check.validation_check_name for check in system.applied_checks] == [
         "row_count_nonnegative"
     ]
@@ -217,7 +223,9 @@ async def test_repository_requires_complete_mapping_for_every_frozen_system() ->
 
 
 @pytest.mark.asyncio
-async def test_repository_fails_closed_when_live_system_code_drifted_from_snapshot() -> None:
+async def test_repository_fails_closed_when_live_system_code_drifted_from_snapshot() -> (
+    None
+):
     with pytest.raises(InvalidRequestError, match="complete active applied Mapping"):
         await PostgresValidationContextRepository().load(
             ContextTransaction(target_rows=[_target_row(source_system="erp_renamed")]),
@@ -256,5 +264,31 @@ async def test_repository_preserves_large_mapping_evidence() -> None:
     targets = context.systems[0].agent_context["mapping_targets"]
     assert isinstance(targets, list) and isinstance(targets[0], dict)
     source_context = targets[0]["context"]
-    assert isinstance(source_context, dict) and isinstance(source_context["target"], dict)
+    assert isinstance(source_context, dict) and isinstance(
+        source_context["target"], dict
+    )
     assert source_context["target"]["object_description"] == description
+
+
+@pytest.mark.asyncio
+async def test_layer_selection_limits_evidence_and_preserves_shared_groups() -> None:
+    logical = _target_row(generated=False)
+    logical.update(
+        object_id=502,
+        modeled_entity_type="logical_entity",
+        modeled_entity_name="Customer",
+    )
+    context = await PostgresValidationContextRepository().load(
+        ContextTransaction(target_rows=[_target_row(), logical]),
+        tenant_id=7,
+        plan=_plan().model_copy(update={"modeled_entity_type": "logical_entity"}),
+    )
+    system = context.systems[0]
+    assert system.modeled_entity_type == "logical_entity"
+    assert system.applied_groups == ()
+    assert system.applied_checks == ()
+    assert system.reserved_group_names == ("reconciliation",)
+    assert isinstance(system.agent_context, dict)
+    evidence = cast(dict[str, Any], system.agent_context)["mapping_targets"]
+    assert [target["modeled_entity_type"] for target in evidence] == ["logical_entity"]
+    assert system.agent_context["generated_code"] == []

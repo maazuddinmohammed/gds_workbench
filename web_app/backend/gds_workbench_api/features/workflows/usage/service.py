@@ -11,12 +11,13 @@ from typing import LiteralString, Protocol
 from uuid import UUID, uuid4
 
 from gds_etl_workbench.domain.errors import DependencyUnavailableError, InvalidRequestError
+from psycopg.types.json import Jsonb
+
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     LifecycleTransaction,
     workflow_identity_triple,
 )
 from gds_workbench_api.features.workflows.execution.contracts import WorkflowExecutionClaim
-from psycopg.types.json import Jsonb
 
 from .contracts import FoundryModelPricing, ModelRequestRecorder, ModelTokenUsage
 

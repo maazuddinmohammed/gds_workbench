@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from typing import Any
 
 from gds_etl_workbench.domain.modeling_records import normalize_model_key_value
+
+from gds_workbench_api.features.assertions.context import project_assertions
 
 from .context_contracts import WORKFLOW_INPUTS
 from .naming import effective_naming_instructions
@@ -22,15 +24,6 @@ ATTRIBUTE_FIELDS = (
     "is_surrogate_key",
     "is_masking_required",
     "is_meta_data",
-)
-ASSERTION_FIELDS = (
-    "modeling_assertion_record_key",
-    "modeling_assertion_document_name",
-    "modeling_assertion_record_type",
-    "modeling_assertion_text",
-    "modeling_assertion_details",
-    "modeling_assertion_source_location",
-    "modeling_assertion_confidence",
 )
 
 
@@ -69,7 +62,9 @@ def model_key_fields(family: str, kind: str) -> tuple[str, ...]:
     )
 
 
-def project_context_inputs(context: Mapping[str, Any]) -> dict[str, Any]:
+def project_context_inputs(
+    context: Mapping[str, Any], *, assertion_source_scope: Sequence[Mapping[str, Any]] = ()
+) -> dict[str, Any]:
     """Selection and applicable sections are already authorized by the context repository."""
     workflow = context["model_workflow"]
     values: dict[str, Any] = {
@@ -150,18 +145,14 @@ def project_context_inputs(context: Mapping[str, Any]) -> dict[str, Any]:
                 if natural_key(endpoints[side]) == natural_key(obj):
                     group[f"{direction}_relationships"].append(evidence)
         values["object_relationship_context"].append(group)
-    docs = {
-        normalize_model_key_value(d["modeling_assertion_document_name"])
-        for d in context["assertion"]["documents"]
-        if d["is_active"]
-    }
-    values["modeling_assertions"] = [
-        {name: r[name] for name in ASSERTION_FIELDS}
-        for r in context["assertion"]["records"]
-        if r["modeling_assertion_record_status"] == "active"
-        and normalize_model_key_value(r["modeling_assertion_document_name"]) in docs
-        and workflow in r["modeling_assertion_applicable_layers"]
-    ]
+    values["modeling_assertions"] = project_assertions(
+        context["assertion"],
+        source_scope=[
+            *assertion_source_scope,
+            *context.get("source_context", []),
+            *(item["object"] for item in context["selected_objects"]),
+        ],
+    )
     for family in ("conceptual", "logical", "dimensional"):
         section = context["applied"].get(family)
         kinds = (

@@ -1,3 +1,5 @@
+import type { MetadataApi } from "../metadata/api";
+import type { ModelRecordReviewApi } from "../model_record_review/api";
 import type { HttpRequest } from "../../core/http";
 import type { JsonObject, ReviewStatus } from "../../shared/contracts";
 
@@ -106,7 +108,23 @@ export interface AssertionRecordDetail extends AssertionRecord {
   created_at: string;
 }
 
-export interface AssertionsApi {
+export interface SaveAssertionCommand {
+  expected_model_revision: number;
+  record_id?: number;
+  record_key: string;
+  document_name: string;
+  document_type: string | null;
+  record_type: string;
+  text: string;
+  details: { notes?: string };
+  source_system_code: string | null;
+  source_reference: string | null;
+}
+
+export interface AssertionsApi extends ModelRecordReviewApi, Pick<MetadataApi, "listMetadataRows"> {
+  saveAssertion: (tenantId: number, modelId: number, command: SaveAssertionCommand, idempotencyKey: string) => Promise<{
+    model_id: number; model_revision: number; model_change_set_id: string; action_count: number;
+  }>;
   listAssertionDocuments: (
     tenantId: number,
     modelId: number,
@@ -133,8 +151,12 @@ export interface AssertionsApi {
   ) => Promise<AssertionRecordDetail>;
 }
 
-export function createAssertionsApi(request: HttpRequest): AssertionsApi {
+export function createAssertionsApi(request: HttpRequest): Omit<AssertionsApi, keyof ModelRecordReviewApi | "listMetadataRows"> {
   return {
+    saveAssertion: (tenantId, modelId, command, idempotencyKey) => request(
+      `/api/v1/tenants/${tenantId}/models/${modelId}/change-sets/assertions`,
+      { method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify(command) },
+    ),
     listAssertionDocuments: (
       tenantId,
       modelId,

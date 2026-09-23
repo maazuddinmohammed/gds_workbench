@@ -7,7 +7,7 @@
     {
       "name": "get_code_target",
       "variable": "target_metadata",
-      "description": "Actual physical target natural key and catalog plus ordered registered Attributes, exact data types/nullability, current descriptions and locks. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "description": "Read frozen target_metadata. Omitted or empty selection returns all eligible records, paged. Continue with cursor alone; copy complete natural keys from prior results. Unknown keys fail; no database queries or new measurements.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -19,7 +19,6 @@
             "minLength": 1
           }
         },
-        "required": [],
         "additionalProperties": false
       },
       "selector": null,
@@ -29,7 +28,7 @@
     {
       "name": "get_code_sources",
       "variable": "source_metadata",
-      "description": "Eligible physical source contributions with source_system_code, role, rationale, order, lock and nested actual physical Object/Attributes. No database IDs. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "description": "Read frozen source_metadata. Omitted or empty selection returns all eligible records, paged. Continue with cursor alone; copy complete natural keys from prior results. Unknown keys fail; no database queries or new measurements.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -47,23 +46,28 @@
               "properties": {
                 "tenant_code": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 },
                 "system_code": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 },
                 "connection_code": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 },
                 "object_schema": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 },
                 "object_name": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "pattern": "\\S"
                 }
               },
               "required": [
@@ -74,12 +78,9 @@
                 "object_name"
               ],
               "additionalProperties": false
-            },
-            "default": [],
-            "maxItems": 200
+            }
           }
         },
-        "required": [],
         "additionalProperties": false
       },
       "selector": "source_object_keys",
@@ -95,7 +96,7 @@
     {
       "name": "get_code_source_systems",
       "variable": "source_systems",
-      "description": "Frozen contributing Source System codes/names in dependency_order. Codes belong to the one Source Tenant of this target; assign each exactly once across transformation artifacts. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "description": "Read frozen source_systems. Omitted or empty selection returns all eligible records, paged. Continue with cursor alone; copy complete natural keys from prior results. Unknown keys fail; no database queries or new measurements.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -110,13 +111,11 @@
             "type": "array",
             "items": {
               "type": "string",
-              "minLength": 1
-            },
-            "default": [],
-            "maxItems": 200
+              "minLength": 1,
+              "pattern": "\\S"
+            }
           }
         },
-        "required": [],
         "additionalProperties": false
       },
       "selector": "source_system_names",
@@ -128,7 +127,7 @@
     {
       "name": "get_object_transformations",
       "variable": "object_transformations",
-      "description": "Applied Object transformation documents with source_system_code, dependency order and exact modeled Entity identity, definition, classification and grain. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "description": "Read frozen object_transformations. Omitted or empty selection returns all eligible records, paged. Continue with cursor alone; copy complete natural keys from prior results. Unknown keys fail; no database queries or new measurements.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -143,13 +142,11 @@
             "type": "array",
             "items": {
               "type": "string",
-              "minLength": 1
-            },
-            "default": [],
-            "maxItems": 200
+              "minLength": 1,
+              "pattern": "\\S"
+            }
           }
         },
-        "required": [],
         "additionalProperties": false
       },
       "selector": "source_system_names",
@@ -161,7 +158,7 @@
     {
       "name": "get_attribute_transformations",
       "variable": "attribute_transformations",
-      "description": "Applied Attribute transformation documents with source_system_code, modeled Entity type/name, physical target_attribute_name and target ordinal. Identity links are resolved from real bindings; no guessed name matching. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "description": "Read frozen attribute_transformations. Omitted or empty selection returns all eligible records, paged. Continue with cursor alone; copy complete natural keys from prior results. Unknown keys fail; no database queries or new measurements.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -176,13 +173,11 @@
             "type": "array",
             "items": {
               "type": "string",
-              "minLength": 1
-            },
-            "default": [],
-            "maxItems": 200
+              "minLength": 1,
+              "pattern": "\\S"
+            }
           }
         },
-        "required": [],
         "additionalProperties": false
       },
       "selector": "target_attribute_names",

@@ -740,7 +740,8 @@ AS $list_code_generation_target_context$
                                  'definition', mapping.modeled_entity_definition,
                                  'classification',
                                      mapping.modeled_entity_classification,
-                                 'grain', mapping.modeled_entity_grain
+                                 'grain', mapping.modeled_entity_grain,
+                                 'assertions', assertion_support.documents
                              ),
                              'transformation',
                                  mapping.mapping_transformation_document
@@ -750,6 +751,29 @@ AS $list_code_generation_target_context$
                              mapping.mapping_object_id
                      ) AS documents
                 FROM active_mapping AS mapping
+                CROSS JOIN LATERAL (
+                    SELECT coalesce(jsonb_agg(jsonb_build_object(
+                                  'modeling_assertion_record_key', assertion.modeling_assertion_record_key,
+                                  'modeling_assertion_record_type', assertion.modeling_assertion_record_type,
+                                  'modeling_assertion_text', assertion.modeling_assertion_text,
+                                  'modeling_assertion_details', assertion.modeling_assertion_details,
+                                  'modeling_assertion_source_location', assertion.modeling_assertion_source_location,
+                                  'modeling_assertion_confidence', assertion.modeling_assertion_confidence,
+                                  'modeling_assertion_document_name', document.modeling_assertion_document_name
+                              ) ORDER BY lower(btrim(assertion.modeling_assertion_record_key))),
+                              '[]'::JSONB) AS documents
+                      FROM model.modeling_assertion_record AS assertion
+                      JOIN model.modeling_assertion_document AS document
+                        ON document.modeling_assertion_document_id = assertion.modeling_assertion_document_id
+                       AND document.model_id = assertion.model_id AND document.is_active
+                     WHERE assertion.model_id = mapping.model_id
+                       AND assertion.modeling_assertion_record_status = 'active'
+                       AND (document.system_id IS NULL OR document.system_id = mapping.source_system_id)
+                       AND (document.tenant_id IS NULL OR document.tenant_id = mapping_model.tenant_id
+                           OR EXISTS (SELECT 1 FROM jsonb_array_elements(physical_sources.documents) AS source
+                                      WHERE (source -> 'object' ->> 'tenant_id')::BIGINT = document.tenant_id
+                                        AND (document.system_id IS NULL OR (source -> 'object' ->> 'system_id')::BIGINT = document.system_id)))
+                ) AS assertion_support
                WHERE mapping.model_id = complete.model_id
                  AND mapping.object_id = complete.object_id
           ) AS object_mappings ON TRUE

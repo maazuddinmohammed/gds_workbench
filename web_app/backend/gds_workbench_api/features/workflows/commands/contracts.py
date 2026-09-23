@@ -54,6 +54,7 @@ class CreateWorkflowRunRequest(BaseModel):
         ]
         | None
     ) = None
+    code_generation_file_layout: Literal["combined", "per_system"] | None = None
     sql_generation_guide_version_id: int | None = Field(default=None, gt=0)
     agent: AgentRunSelection | None = None
     description_targets: list[EnrichmentDescriptionTarget] | None = Field(
@@ -118,8 +119,6 @@ class CreateWorkflowRunRequest(BaseModel):
                 or self.sql_generation_guide_version_id is not None
             ):
                 raise ValueError("Code Generation inputs are unavailable for this workflow")
-        elif self.selected_system_codes:
-            raise ValueError("System selection is available only for Validation")
         elif self.model_workflow == "code_generation":
             if (
                 (
@@ -134,6 +133,10 @@ class CreateWorkflowRunRequest(BaseModel):
             ):
                 raise ValueError("Code Generation coverage is invalid")
         else:
+            if self.selected_system_codes:
+                raise ValueError(
+                    "System selection is available only for Validation or Code Generation"
+                )
             if not self.selected_object_ids:
                 raise ValueError("Selected Object IDs are required")
             if (
@@ -142,6 +145,11 @@ class CreateWorkflowRunRequest(BaseModel):
             ):
                 raise ValueError("Code Generation inputs are unavailable for this workflow")
 
+        if (
+            self.code_generation_file_layout is not None
+            and self.model_workflow != "code_generation"
+        ):
+            raise ValueError("File layout is available only for Code Generation")
         if self.model_workflow == "metadata_enrichment" and (
             self.workflow_execution_mode != "one_shot"
         ):
@@ -166,7 +174,9 @@ class CreateWorkflowRunRequest(BaseModel):
 
         if self.model_workflow == "code_generation" and (self.modeled_entity_type is None):
             raise ValueError("Code Generation requires a modeled Entity type")
-        if self.model_workflow != "code_generation" and (self.modeled_entity_type is not None):
+        if self.model_workflow not in {"code_generation", "validation"} and (
+            self.modeled_entity_type is not None
+        ):
             raise ValueError("Modeled Entity type is unavailable for this workflow")
 
         required_mapping_inputs = (

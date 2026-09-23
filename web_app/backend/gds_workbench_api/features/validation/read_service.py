@@ -2,7 +2,7 @@
 
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import Any, LiteralString, Protocol, cast
+from typing import Any, Literal, LiteralString, Protocol, cast
 
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.change_sets.model_validation import (
@@ -99,11 +99,14 @@ SELECT source_system.system_id,
               AND validation_group.tenant_id = target_model.tenant_id
               AND validation_group.system_id = source_system.system_id
               AND validation_group.is_active
+              AND (%s::VARCHAR IS NULL OR validation_group.modeled_entity_type IS NULL
+                   OR validation_group.modeled_entity_type = %s)
        ) AS has_applied_validation
   FROM expanded AS context
   JOIN core.system AS source_system
     ON source_system.system_id = context.source_system_id
    AND source_system.is_active
+ WHERE (%s::VARCHAR IS NULL OR context.modeled_entity_type = %s)
  GROUP BY source_system.system_id,
           source_system.system_code,
           source_system.system_name
@@ -176,6 +179,7 @@ SELECT group_summary.group_count,
 
 _LEDGER_GROUPS_SQL: LiteralString = """
 SELECT validation_group.validation_group_id,
+       validation_group.modeled_entity_type,
        validation_group.system_id,
        source_system.system_code,
        validation_group.validation_group_name,
@@ -353,6 +357,7 @@ class ValidationReadService(Protocol):
         *,
         tenant_id: int,
         model_id: int,
+        entity_type: Literal["logical_entity", "dimensional_entity"] | None = None,
     ) -> ValidationEligibleSystemCollection: ...
 
     async def read_ledger(
@@ -361,6 +366,7 @@ class ValidationReadService(Protocol):
         *,
         tenant_id: int,
         model_id: int,
+        entity_type: Literal["logical_entity", "dimensional_entity"] | None = None,
     ) -> ValidationLedger: ...
 
 
@@ -380,6 +386,7 @@ class DatabaseValidationReadService:
         *,
         tenant_id: int,
         model_id: int,
+        entity_type: Literal["logical_entity", "dimensional_entity"] | None = None,
     ) -> ValidationEligibleSystemCollection:
         async with self._database.read_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
@@ -396,7 +403,7 @@ class DatabaseValidationReadService:
                 raise ModelNotFoundError()
             rows = await transaction.fetch_all(
                 _ELIGIBLE_SYSTEMS_SQL,
-                (tenant_id, model_id),
+                (tenant_id, model_id, entity_type, entity_type, entity_type, entity_type),
             )
         return ValidationEligibleSystemCollection(
             model_id=model_id,
@@ -411,6 +418,7 @@ class DatabaseValidationReadService:
         *,
         tenant_id: int,
         model_id: int,
+        entity_type: Literal["logical_entity", "dimensional_entity"] | None = None,
     ) -> ValidationLedger:
         async with self._database.read_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
@@ -455,7 +463,11 @@ class DatabaseValidationReadService:
         return ValidationLedger(
             model_id=model_id,
             model_revision=header["model_revision"],
-            groups=groups,
+            groups=tuple(
+                group
+                for group in groups
+                if entity_type is None or group.modeled_entity_type in (None, entity_type)
+            ),
         )
 
 
@@ -539,6 +551,7 @@ def _assemble_ledger_groups(
             ValidationValidationGroup.model_validate(
                 {
                     "validation_group_id": group_id,
+                    "modeled_entity_type": row.get("modeled_entity_type"),
                     "system_id": row.get("system_id"),
                     "system_code": system_code,
                     "validation_group_name": row.get("validation_group_name"),
@@ -612,7 +625,13 @@ def _ledger_digest_context(
             raise InvalidRequestError("The current Validation context is ambiguous.")
         contexts.append(
             CodeGenerationTargetContext(
-                object_key=object_key,
+                object_key=(
+                    normalize_model_key_value(object_key[0]),
+                    normalize_model_key_value(object_key[1]),
+                    normalize_model_key_value(object_key[2]),
+                    normalize_model_key_value(object_key[3]),
+                    normalize_model_key_value(object_key[4]),
+                ),
                 modeled_entity_type=modeled_entity_type,
                 modeled_entity_name=modeled_entity_name,
                 source_system_codes=source_codes,

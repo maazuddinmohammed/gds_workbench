@@ -148,7 +148,8 @@ fieldset.agent-run-grid {
   gap: 0.34rem;
 }
 
-.agent-run-grid label > span {
+.agent-run-grid label > span,
+.assertion-editor-fields > label > span {
   color: var(--muted);
   font-size: 0.61rem;
   font-weight: 820;
@@ -163,7 +164,11 @@ fieldset.agent-run-grid {
 }
 
 .agent-run-grid input,
-.agent-run-grid select {
+.agent-run-grid select,
+.agent-run-grid textarea,
+.assertion-editor-fields input,
+.assertion-editor-fields select,
+.assertion-editor-fields textarea {
   width: 100%;
   min-width: 0;
   min-height: 2.55rem;
@@ -197,7 +202,7 @@ fieldset.agent-run-grid {
 }
 
 .assertion-document-filterbar {
-  grid-template-columns: minmax(12rem, 1.4fr) minmax(7rem, 0.55fr) minmax(9rem, 0.8fr) minmax(9rem, 0.75fr) auto;
+  grid-template-columns: minmax(12rem, 1.4fr) minmax(9rem, 1fr) minmax(9rem, 1fr) auto;
 }
 
 .assertion-record-filterbar {
@@ -799,3 +804,46 @@ fieldset.agent-run-grid {
   .mapping-layer-header > span { width: 100%; }
   .mapping-workspace .mapping-filterbar:not(.is-object-scoped) { grid-template-columns: 1fr; }
 }
+
+.code-generation-filterbar { grid-template-columns: minmax(14rem, 2fr) minmax(10rem, 1fr) auto; }
+.code-delivery-options { align-items: start; margin-bottom: 1rem; }
+.multi-select-field { min-width: 0; position: relative; }
+.multi-select-field > span { display: block; font-size: 0.64rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.35rem; color: var(--muted); }
+.multi-select-field summary { border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--surface); padding: 0.7rem 0.85rem; cursor: pointer; font-size: 0.8rem; }
+.multi-select-options { position: relative; margin-top: 0.35rem; min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--surface); box-shadow: var(--shadow-float); padding: 0.75rem; }
+.multi-select-options > [role="group"] { max-height: 16rem; overflow-y: auto; }
+.multi-select-options label { display: flex; align-items: center; gap: 0.65rem; padding: 0.4rem 0; }
+.multi-select-options input[type="checkbox"] { width: auto; flex: 0 0 auto; }
+.multi-select-field .multi-select-options label span { font-size: 0.8rem; font-weight: 400; letter-spacing: normal; text-transform: none; overflow-wrap: anywhere; }
+.multi-select-actions { display: flex; justify-content: space-between; gap: 0.75rem; margin: 0.4rem 0; }
+@media (max-width: 42rem) { .code-generation-filterbar { grid-template-columns: 1fr; } }
+
+.multi-select-field summary { display: flex; align-items: center; gap: 0.65rem; list-style: none; }
+.multi-select-field summary::-webkit-details-marker { display: none; }
+.multi-select-field summary::after { content: ""; width: 0.4rem; height: 0.4rem; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(45deg); margin: 0 0.2rem 0 auto; flex: 0 0 auto; }
+.multi-select-field details[open] summary::after { transform: rotate(225deg); }
+.multi-select-field summary span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.multi-select-footer { display: flex; justify-content: space-between; gap: 0.75rem; border-top: 1px solid var(--line); margin-top: 0.5rem; padding-top: 0.5rem; color: var(--muted); font-size: 0.75rem; }
+.code-generation-filterbar { align-items: start; }
+.code-generation-filterbar .workflow-filter-actions { padding-top: 1.35rem; }
+.mapping-run-dialog .dialog-actions { z-index: 1; }
+.validation-filterbar { grid-template-columns: minmax(14rem, 2fr) minmax(9rem, 1fr) minmax(9rem, 1fr) auto; align-items: start; }
+.validation-filterbar > button { margin-top: 1.35rem; }
+@media (max-width: 42rem) {
+  .validation-filterbar { grid-template-columns: 1fr; }
+  .validation-filterbar > button, .code-generation-filterbar .workflow-filter-actions { margin-top: 0; padding-top: 0; }
+}
+
+.code-system-options { display: grid; gap: 0.75rem; min-width: 0; }
+
+.assertion-editor-fields { border: 0; padding: 0; display: grid; gap: 1rem; }
+.assertion-editor-fields > label { display: grid; gap: 0.4rem; }
+.assertion-editor-fields textarea { width: 100%; resize: vertical; }
+.assertion-editor-fields small { color: var(--muted); font-size: 0.75rem; font-weight: 400; text-transform: none; letter-spacing: normal; }
+
+.assertion-editor-fields .agent-run-grid { padding: 0; }
+.assertion-editor-fields .agent-run-grid label { align-content: start; }
+.assertion-content-fields { margin-top: 1.25rem; padding-top: 0.5rem; border-top: 1px solid var(--line); }
+.assertion-type-field { display: grid; align-content: start; gap: 0.65rem; }
+.assertion-editor .field-help { margin-top: 0.75rem; color: var(--muted); font-size: 0.75rem; line-height: 1.5; }
+.assertion-editor .dialog-actions { position: sticky; bottom: -1.25rem; padding: 1rem 0; background: var(--surface); z-index: 1; }

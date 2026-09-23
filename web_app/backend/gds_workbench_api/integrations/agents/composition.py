@@ -154,26 +154,72 @@ class LocalFakeAgentAdapter:
                 raise InvalidRequestError(
                     "The local fake does not support this agent execution path."
                 )
-            evidence_counts: dict[str, int] = {}
+            mapping_evidence = validation_context.get("mapping_evidence", [])
             for reader in ("get_mapping_evidence", "get_current_code"):
                 if reader in request.allowed_tool_names:
                     rows, calls = named_tool_items(request, reader)
                     tool_call_count += calls
-                    evidence_counts[reader] = len(rows)
-            description = "Confirms the governed validation query executes."
-            if evidence_counts:
-                description += (
-                    " Frozen evidence: "
-                    + "; ".join(
-                        f"{count} "
-                        + (
-                            "mapped targets"
-                            if reader == "get_mapping_evidence"
-                            else "SQL artifacts"
-                        )
-                        for reader, count in evidence_counts.items()
-                    )
-                    + "."
+                    if reader == "get_mapping_evidence":
+                        mapping_evidence = rows
+            checks: list[dict[str, JsonValue]] = []
+            for evidence in mapping_evidence if isinstance(mapping_evidence, list) else []:
+                if not isinstance(evidence, dict) or not isinstance(evidence.get("context"), dict):
+                    continue
+                context = cast(dict[str, JsonValue], evidence["context"])
+                target = context.get("target_metadata")
+                if not isinstance(target, dict):
+                    continue
+                coordinates = [
+                    target.get(key) for key in ("tenant_catalog", "object_schema", "object_name")
+                ]
+                attributes = target.get("attributes")
+                required = (
+                    [
+                        attribute["attribute_name"]
+                        for attribute in attributes
+                        if isinstance(attribute, dict)
+                        and attribute.get("attribute_nullability") is False
+                        and attribute.get("is_active", True)
+                        and isinstance(attribute.get("attribute_name"), str)
+                    ]
+                    if isinstance(attributes, list)
+                    else []
+                )
+                if not required or not all(
+                    isinstance(value, str) and value for value in coordinates
+                ):
+                    continue
+                relation = ".".join(
+                    "`" + str(value).replace("`", "``") + "`" for value in coordinates
+                )
+                predicate = " OR ".join(
+                    "`" + str(name).replace("`", "``") + "` IS NULL" for name in required
+                )
+                checks.append(
+                    {
+                        "validation_check_name": (
+                            f"{target['object_schema']}.{target['object_name']}RequiredValues"
+                        ),
+                        "validation_check_description": (
+                            "Detects missing required values on loaded rows. "
+                            "Synthetic local authoring; SQL has not been executed."
+                        ),
+                        "validation_category_code": "technical.required_values",
+                        "validation_severity": "blocking",
+                        "validation_query_sql": (
+                            f"SELECT COUNT(*) FROM {relation} WHERE {predicate}"
+                        ),
+                        "validation_comparison_query_sql": None,
+                        "validation_result_data_type": "integer",
+                        "validation_comparison_operator": "equal",
+                        "validation_comparison_value_type": "literal",
+                        "validation_comparison_value": 0,
+                    }
+                )
+            if not checks:
+                raise InvalidRequestError(
+                    "The local fake requires mapped target metadata with required "
+                    "Attributes to demonstrate Validation."
                 )
             candidate = cast(
                 JsonValue,
@@ -181,24 +227,12 @@ class LocalFakeAgentAdapter:
                     "system_ref": system_ref,
                     "validation_groups": [
                         {
-                            "validation_group_name": "technical_execution",
+                            "validation_group_name": "TechnicalRequiredValues",
                             "validation_group_description": (
-                                "Basic executable validation for the selected System."
+                                "Required-value integrity for mapped targets. "
+                                "Synthetic local example."
                             ),
-                            "validation_checks": [
-                                {
-                                    "validation_check_name": "validation_session_executes",
-                                    "validation_check_description": description,
-                                    "validation_category_code": "technical.execution",
-                                    "validation_severity": "blocking",
-                                    "validation_query_sql": "SELECT 1",
-                                    "validation_comparison_query_sql": None,
-                                    "validation_result_data_type": None,
-                                    "validation_comparison_operator": ("executes_successfully"),
-                                    "validation_comparison_value_type": "none",
-                                    "validation_comparison_value": None,
-                                }
-                            ],
+                            "validation_checks": checks,
                         }
                     ],
                 },

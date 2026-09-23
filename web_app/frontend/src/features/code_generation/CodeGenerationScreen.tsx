@@ -1,3 +1,4 @@
+import { ModelLayerTabs, type ModelLayer } from "../../shared/ModelLayerTabs";
 import { ModelRecordHistory } from "../model_record_review/ModelRecordHistory";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -9,9 +10,9 @@ import type { ModelDetail } from "../models/api";
 import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 import {
   codeGenerationQueryKeys,
+  loadCodeGenerationTargets,
   type CodeGenerationApi,
   type CodeGenerationTarget,
-  type CodeGenerationTargetFilters,
 } from "./api";
 import {
   CodeGenerationLedger,
@@ -21,8 +22,6 @@ import {
   CodeGenerationRunDialog,
   type CodeGenerationCoverage,
 } from "./CodeGenerationRunDialog";
-
-type RequiredLayerFilters = CodeGenerationTargetFilters & { entityType: MappingEntityType };
 
 interface OpenRunDialog {
   coverage: CodeGenerationCoverage;
@@ -35,7 +34,9 @@ export function CodeGenerationScreen({
   model,
   hasTenantLock,
   hasAppPermission,
+  layer,
 }: {
+  layer: ModelLayer;
   api: CodeGenerationApi;
   tenantId: number;
   model: ModelDetail;
@@ -44,26 +45,19 @@ export function CodeGenerationScreen({
 }) {
   const queryClient = useQueryClient();
   const [view, setView] = useState<"targets" | "artifacts">("targets");
-  const [filters, setFilters] = useState<RequiredLayerFilters>({
-    entityType: "logical_entity",
-  });
+  const entityType: MappingEntityType = layer === "logical" ? "logical_entity" : "dimensional_entity";
   const [artifactStatus, setArtifactStatus] = useState<ArtifactStatusFilter>("");
-  const [cursor, setCursor] = useState<string | undefined>();
-  const [cursorHistory, setCursorHistory] = useState<(string | undefined)[]>([]);
+  const [objectIds, setObjectIds] = useState<string[]>([]);
+  const [page, setPage] = useState(0);
+
   const [selectedTargets, setSelectedTargets] = useState<Map<number, CodeGenerationTarget>>(
     () => new Map(),
   );
   const [runDialog, setRunDialog] = useState<OpenRunDialog | null>(null);
   const [startedRunId, setStartedRunId] = useState<number | null>(null);
   const targetsQuery = useQuery({
-    queryKey: codeGenerationQueryKeys.targets(tenantId, model.model_id, filters, cursor),
-    queryFn: () => api.listCodeGenerationTargets(
-      tenantId,
-      model.model_id,
-      filters,
-      50,
-      cursor,
-    ),
+    queryKey: codeGenerationQueryKeys.targets(tenantId, model.model_id, { entityType }, undefined),
+    queryFn: () => loadCodeGenerationTargets(api, tenantId, model.model_id, entityType),
   });
   const canGenerate = hasTenantLock && hasAppPermission;
   const permissionLabel = !hasAppPermission
@@ -84,20 +78,16 @@ export function CodeGenerationScreen({
 
   const refresh = async () => {
     await Promise.all([
-      targetsQuery.refetch(),
+      queryClient.invalidateQueries({ queryKey: ["code-generation-targets", tenantId, model.model_id] }),
+      queryClient.invalidateQueries({ queryKey: ["validation-systems", tenantId, model.model_id] }),
+      queryClient.invalidateQueries({ queryKey: ["validation-ledger", tenantId, model.model_id] }),
       queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
       queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
     ]);
   };
-  const applyFilters = (nextFilters: RequiredLayerFilters) => {
-    setFilters(normalizeFilters(nextFilters));
-    setCursor(undefined);
-    setCursorHistory([]);
-    setSelectedTargets(new Map());
-    setStartedRunId(null);
-  };
   const changeArtifactStatus = (status: ArtifactStatusFilter) => {
     setArtifactStatus(status);
+    setPage(0);
     setSelectedTargets(new Map());
   };
   const toggleTarget = (target: CodeGenerationTarget, isSelected: boolean) => {
@@ -118,14 +108,10 @@ export function CodeGenerationScreen({
       return next;
     });
   };
-  const openSelectedRun = () => {
-    if (selected.length) {
-      setRunDialog({ coverage: "selected_targets", selectedTargets: selected });
-    }
-  };
 
   return (
     <main className="workspace mapping-workspace code-generation-workspace page-enter">
+      <ModelLayerTabs tenantId={tenantId} modelId={model.model_id} layer={layer} workflow="code-generation" title="Code generation" />
       <header className="workflow-commandbar code-generation-commandbar">
         <div className="workflow-command-context code-generation-command-context">
           <Link
@@ -153,23 +139,14 @@ export function CodeGenerationScreen({
           <button
             className="button button-primary button-small"
             type="button"
-            disabled={!canStartRun || selected.length === 0}
-            title={selected.length ? generationTitle : "Select at least one target Object"}
-            onClick={openSelectedRun}
-          >
-            Generate selected
-          </button>
-          <button
-            className="button button-primary button-small"
-            type="button"
-            disabled={!canStartRun}
+            disabled={!canStartRun || !targetsQuery.data?.items.some((item) => !item.is_locked)}
             title={generationTitle}
             onClick={() => setRunDialog({
-              coverage: "all_eligible_targets",
-              selectedTargets: [],
+              coverage: selected.length ? "selected_targets" : "all_eligible_targets",
+              selectedTargets: selected,
             })}
           >
-            Generate all eligible
+            Generate SQL
           </button>
         </div>
       </header>
@@ -199,11 +176,14 @@ export function CodeGenerationScreen({
       {view === "artifacts" ? <ModelRecordHistory
         api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
         dataset="generated_code" label="Applied Code" hasTenantLock={canGenerate}
+        entityType={entityType}
       /> : <CodeGenerationLedger
         tenantId={tenantId}
         modelId={model.model_id}
         items={targetsQuery.data?.items ?? []}
-        filters={filters}
+        objectIds={objectIds}
+        onObjectIdsChange={(ids) => { setObjectIds(ids); setPage(0); }}
+        page={page}
         artifactStatus={artifactStatus}
         selectedTargetIds={new Set(selectedTargets.keys())}
         canGenerate={canStartRun}
@@ -213,13 +193,10 @@ export function CodeGenerationScreen({
           isError: targetsQuery.isError,
           isDenied: targetsQuery.error instanceof ApiError && targetsQuery.error.status === 403,
           revisionMismatch,
-          hasNextPage: targetsQuery.data?.next_cursor !== null
-            && targetsQuery.data?.next_cursor !== undefined,
-          hasPreviousPage: cursorHistory.length > 0,
+          hasPreviousPage: page > 0,
           isPaging: targetsQuery.isFetching && !targetsQuery.isPending,
-          pageNumber: cursorHistory.length + 1,
+          pageNumber: page + 1,
         }}
-        onApplyFilters={applyFilters}
         onArtifactStatusChange={changeArtifactStatus}
         onToggleTarget={toggleTarget}
         onToggleVisible={toggleVisible}
@@ -227,24 +204,15 @@ export function CodeGenerationScreen({
           coverage: "selected_targets",
           selectedTargets: [target],
         })}
-        onNextPage={() => {
-          const nextCursor = targetsQuery.data?.next_cursor;
-          if (!nextCursor) return;
-          setCursorHistory((history) => [...history, cursor]);
-          setCursor(nextCursor);
-        }}
-        onPreviousPage={() => {
-          if (!cursorHistory.length) return;
-          setCursor(cursorHistory.at(-1));
-          setCursorHistory(cursorHistory.slice(0, -1));
-        }}
+        onNextPage={() => setPage((value) => value + 1)}
+        onPreviousPage={() => setPage((value) => Math.max(0, value - 1))}
       />}
       {runDialog ? (
         <CodeGenerationRunDialog
           api={api}
           tenantId={tenantId}
           model={model}
-          entityType={filters.entityType}
+          entityType={entityType}
           coverage={runDialog.coverage}
           selectedTargets={runDialog.selectedTargets}
           onClose={() => setRunDialog(null)}
@@ -259,14 +227,4 @@ export function CodeGenerationScreen({
       ) : null}
     </main>
   );
-}
-
-function normalizeFilters(filters: RequiredLayerFilters): RequiredLayerFilters {
-  const systemCode = filters.systemCode?.trim().toLocaleLowerCase();
-  const sourceSystemCode = filters.sourceSystemCode?.trim().toLocaleLowerCase();
-  return {
-    entityType: filters.entityType,
-    ...(systemCode ? { systemCode } : {}),
-    ...(sourceSystemCode ? { sourceSystemCode } : {}),
-  };
 }

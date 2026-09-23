@@ -36,6 +36,7 @@ export interface CodeMappingSupport {
 }
 
 export interface CodeGenerationTarget {
+  is_locked: boolean;
   target: MappingPhysicalObject;
   entity_type: MappingEntityType;
   mapping_supports: CodeMappingSupport[];
@@ -182,4 +183,21 @@ function codeGenerationTargetsPath(
   query.set("page_size", String(pageSize));
   if (cursor) query.set("cursor", cursor);
   return `/api/v1/tenants/${tenantId}/models/${modelId}/code-generation/targets?${query}`;
+}
+
+export async function loadCodeGenerationTargets(api: CodeGenerationApi, tenantId: number, modelId: number, entityType: MappingEntityType): Promise<CodeGenerationTargetPage> {
+  const items: CodeGenerationTarget[] = [];
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  let revision: number | undefined;
+  do {
+    const page = await api.listCodeGenerationTargets(tenantId, modelId, { entityType }, 200, cursor);
+    if (revision !== undefined && revision !== page.model_revision) throw new Error("The Model changed while loading Objects.");
+    revision = page.model_revision;
+    items.push(...page.items);
+    cursor = page.next_cursor ?? undefined;
+    if (cursor && cursors.has(cursor)) throw new Error("Object pagination did not advance.");
+    if (cursor) cursors.add(cursor);
+  } while (cursor);
+  return { model_id: modelId, model_revision: revision!, items, next_cursor: null };
 }

@@ -10,6 +10,7 @@ from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.snapshots.model import ModelDataset
 
 from gds_workbench_api.dependencies import principal_dependency
+from gds_workbench_api.features.assertions.authoring import SaveAssertionRequest
 from gds_workbench_api.features.mapping.dependencies import SaveMappingDependencyRequest
 from gds_workbench_api.features.model_change_sets.input_scope import AddInputScopeRequest
 from gds_workbench_api.features.model_targets.contracts import (
@@ -69,6 +70,16 @@ class ModelChangeSetService(Protocol):
         idempotency_key: UUID,
     ) -> ReviewModelRecordsResult: ...
 
+    async def save_assertion(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        command: SaveAssertionRequest,
+        idempotency_key: UUID,
+    ) -> ReviewModelRecordsResult: ...
+
     async def bind_registered_target(
         self,
         principal: RequestPrincipal,
@@ -90,6 +101,7 @@ class ModelChangeSetService(Protocol):
         dataset: ModelReviewDataset,
         expected_model_revision: int,
         page: int = 1,
+        entity_type: str | None = None,
     ) -> ModelRecordHistoryPage: ...
 
     async def preview_record_review(
@@ -270,6 +282,29 @@ def create_model_change_sets_router(
         response_model=ReviewModelRecordsResult,
     )
 
+    async def save_assertion(
+        tenant_id: PositivePathId,
+        model_id: PositivePathId,
+        command: SaveAssertionRequest,
+        idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
+    ) -> ReviewModelRecordsResult:
+        return await service.save_assertion(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            command=command,
+            idempotency_key=idempotency_key,
+        )
+
+    router.add_api_route(
+        "/assertions",
+        save_assertion,
+        methods=["POST"],
+        response_model=ReviewModelRecordsResult,
+    )
+
     async def preview_binding(
         tenant_id: PositivePathId,
         model_id: PositivePathId,
@@ -358,6 +393,7 @@ def create_model_change_sets_router(
         expected_model_revision: Annotated[int, Query(gt=0)],
         page: Annotated[int, Query(ge=1, le=250)] = 1,
         *,
+        entity_type: Annotated[str | None, Query()] = None,
         principal: RequestPrincipal = Depends(authenticate),
     ) -> ModelRecordHistoryPage:
         return await service.list_review_records(
@@ -367,6 +403,7 @@ def create_model_change_sets_router(
             dataset=dataset,
             expected_model_revision=expected_model_revision,
             page=page,
+            **({"entity_type": entity_type} if entity_type is not None else {}),
         )
 
     router.add_api_route(

@@ -66,6 +66,37 @@
               "is_locked": {
                 "title": "Is Locked",
                 "type": "boolean"
+              },
+              "fc_attribute_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "attribute_custom_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "population": {
+                "enum": [
+                  "database",
+                  "framework",
+                  "mapping"
+                ]
+              },
+              "is_surrogate_key": {
+                "type": "boolean"
+              },
+              "is_natural_key": {
+                "type": "boolean"
+              },
+              "is_meta_data": {
+                "type": "boolean"
+              },
+              "is_masking_required": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -171,6 +202,24 @@
             "minLength": 1,
             "title": "System Name",
             "type": "string"
+          },
+          "batch_attribute_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "audit_columns_template": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "technical_columns_template": {
+            "type": [
+              "object",
+              "null"
+            ]
           }
         },
         "required": [
@@ -276,6 +325,37 @@
               },
               "is_locked": {
                 "title": "Is Locked",
+                "type": "boolean"
+              },
+              "fc_attribute_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "attribute_custom_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "population": {
+                "enum": [
+                  "database",
+                  "framework",
+                  "mapping"
+                ]
+              },
+              "is_surrogate_key": {
+                "type": "boolean"
+              },
+              "is_natural_key": {
+                "type": "boolean"
+              },
+              "is_meta_data": {
+                "type": "boolean"
+              },
+              "is_masking_required": {
                 "type": "boolean"
               }
             },
@@ -420,6 +500,30 @@
               "scope_is_locked": {
                 "title": "Scope Is Locked",
                 "type": "boolean"
+              },
+              "fc_object_schema": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fc_object_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "foreign_catalog": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "batch_attribute_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -504,6 +608,10 @@
                 "minimum": 0,
                 "title": "Dependency Order",
                 "type": "integer"
+              },
+              "source_system_value": {
+                "type": "integer",
+                "minimum": 1
               }
             },
             "required": [
@@ -529,7 +637,7 @@
       ]
     },
     "object_transformations": {
-      "description": "Applied Object transformation documents with source_system_code, dependency order and exact modeled Entity identity, definition, classification and grain.",
+      "description": "Applied Object transformation documents with source_system_code, dependency order and exact modeled Entity identity, definition, classification and grain. entity.assertions contains active Model/System assertions without requiring Entity links: assess relevance; keys identify provenance, text states context, details may include notes, formula, grain, dimensions, date_basis, exclusions, history and acceptance_criteria. Use these to interpret approved transformations and report conflicts; never silently replace approved Mapping rules.",
       "value_schema": {
         "$defs": {
           "JsonValue": {},
@@ -549,6 +657,57 @@
                 "minLength": 1,
                 "title": "Entity Name",
                 "type": "string"
+              },
+              "assertions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "modeling_assertion_record_key": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "modeling_assertion_document_name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "modeling_assertion_record_type": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "modeling_assertion_text": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "modeling_assertion_details": {
+                      "type": "object"
+                    },
+                    "modeling_assertion_source_location": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "modeling_assertion_confidence": {
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high",
+                        null
+                      ]
+                    }
+                  },
+                  "required": [
+                    "modeling_assertion_record_key",
+                    "modeling_assertion_document_name",
+                    "modeling_assertion_record_type",
+                    "modeling_assertion_text",
+                    "modeling_assertion_details",
+                    "modeling_assertion_source_location",
+                    "modeling_assertion_confidence"
+                  ],
+                  "additionalProperties": false
+                }
               },
               "definition": {
                 "title": "Definition",
@@ -680,6 +839,12 @@
               "modeled_entity_name": {
                 "type": "string",
                 "minLength": 1
+              },
+              "modeled_attribute_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -793,13 +958,26 @@
     },
     "additionalProperties": false,
     "properties": {
+      "issues": {
+        "default": [],
+        "description": "Unresolved business requirements; return no artifacts when reporting issues.",
+        "items": {
+          "enum": [
+            "missing_requirement_evidence",
+            "conflicting_requirement"
+          ],
+          "type": "string"
+        },
+        "title": "Issues",
+        "type": "array"
+      },
       "artifacts": {
         "description": "Complete artifact ledger assigning each frozen source System exactly once per target across transformation artifacts; support artifacts assign none.",
         "items": {
           "$ref": "#/$defs/_AgentSqlArtifact"
         },
         "maxItems": 50000,
-        "minItems": 1,
+        "minItems": 0,
         "title": "Artifacts",
         "type": "array"
       }

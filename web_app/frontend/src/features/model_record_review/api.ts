@@ -2,6 +2,7 @@ import type { HttpRequest } from "../../core/http";
 import type { ReviewStatus } from "../../shared/contracts";
 
 export type ModelReviewDataset =
+  | "modeling_assertion_record"
   | "conceptual_object" | "conceptual_relationship"
   | "logical_submodel" | "logical_entity" | "logical_attribute" | "logical_relationship"
   | "dimensional_submodel" | "dimensional_entity" | "dimensional_attribute" | "dimensional_relationship"
@@ -62,13 +63,13 @@ export interface ModelRecordHistoryPage {
 
 export interface ModelRecordHistoryApi extends ModelRecordReviewApi {
   listModelReviewRecords: (tenantId: number, modelId: number, dataset: ModelReviewDataset,
-    modelRevision: number, page?: number) => Promise<ModelRecordHistoryPage>;
+    modelRevision: number, page?: number, entityType?: "logical_entity" | "dimensional_entity") => Promise<ModelRecordHistoryPage>;
 }
 
 export function createModelRecordReviewApi(request: HttpRequest): ModelRecordHistoryApi {
   return {
-    listModelReviewRecords: (tenantId, modelId, dataset, modelRevision, page = 1) => request(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/change-sets/review/records?dataset=${dataset}&expected_model_revision=${modelRevision}&page=${page}`,
+    listModelReviewRecords: (tenantId, modelId, dataset, modelRevision, page = 1, entityType) => request(
+      `/api/v1/tenants/${tenantId}/models/${modelId}/change-sets/review/records?dataset=${dataset}&expected_model_revision=${modelRevision}&page=${page}${entityType ? `&entity_type=${entityType}` : ""}`,
     ),
     previewModelRecordReview: (tenantId, modelId, command, page = 1) => request(
       `/api/v1/tenants/${tenantId}/models/${modelId}/change-sets/review/preview?page=${page}`,

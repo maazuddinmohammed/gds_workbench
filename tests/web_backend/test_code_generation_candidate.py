@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import cast
+from typing import Literal, cast
 
 import pytest
 from gds_workbench_api.features.code_generation.candidate import (
@@ -232,3 +232,92 @@ def test_output_schema_is_bounded_and_does_not_expose_database_ids() -> None:
     properties = cast(dict[str, dict[str, object]], artifact_schema["properties"])
     assert "exact opaque" in cast(str, properties["target_ref"]["description"])
     assert "semicolon" in cast(str, properties["generated_sql"]["description"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("layout", ("combined", "per_system"))
+async def test_selected_file_layout_is_enforced_and_preserved_names_cannot_be_reused(
+    layout: Literal["combined", "per_system"],
+) -> None:
+    validator = CodeGenerationCandidateValidator(
+        targets=(
+            CodeGenerationTargetReference(
+                target_ref="target_1",
+                object_id=501,
+                source_system_codes=("CRM", "ERP"),
+                file_layout=layout,
+                preserved_artifact_names=("preserved.sql",),
+            ),
+        )
+    )
+    combined = _artifact("target_1", "SELECT 1", systems=["CRM", "ERP"])
+    separate = [
+        dict(
+            _artifact("target_1", "SELECT 1", systems=[code]),
+            artifact_name=f"{code}.sql",
+        )
+        for code in ("CRM", "ERP")
+    ]
+    correct = [combined] if layout == "combined" else separate
+    wrong = separate if layout == "combined" else [combined]
+    assert not (
+        await validator.validate(cast(JsonValue, {"artifacts": correct}))
+    ).issues
+    assert (await validator.validate(cast(JsonValue, {"artifacts": wrong}))).issues[
+        0
+    ].code == "candidate.file_layout"
+    correct[0]["artifact_name"] = "PRESERVED.SQL"
+    assert (await validator.validate(cast(JsonValue, {"artifacts": correct}))).issues[
+        0
+    ].code == "candidate.preserved_artifact"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "MERGE INTO silver.target USING bronze.source ON false WHEN NOT MATCHED THEN INSERT *",
+        "CREATE TABLE silver.target AS SELECT 1",
+        "SELECT * FROM bronze.source",
+        "SELECT 1 -- explanation",
+    ],
+)
+async def test_requested_transformation_layout_rejects_loading_sql_and_implicit_columns(
+    sql: str,
+) -> None:
+    validator = CodeGenerationCandidateValidator(
+        targets=(
+            CodeGenerationTargetReference(
+                target_ref="target_1",
+                object_id=501,
+                source_system_codes=("CRM",),
+                file_layout="per_system",
+            ),
+        )
+    )
+    result = await validator.validate(
+        cast(JsonValue, {"artifacts": [_artifact("target_1", sql, systems=["CRM"])]})
+    )
+    assert result.issues[0].code == "candidate.transformation_sql_contract"
+    valid = "CREATE OR REPLACE TEMPORARY VIEW temp_customer AS SELECT 1 AS id; SELECT id FROM temp_customer"
+    assert not (
+        await validator.validate(
+            cast(
+                JsonValue,
+                {"artifacts": [_artifact("target_1", valid, systems=["CRM"])]},
+            )
+        )
+    ).issues
+
+
+@pytest.mark.parametrize("code", ["missing_requirement_evidence", "conflicting_requirement"])
+async def test_requirement_failure_returns_safe_diagnostic_and_cannot_be_applied(code: str) -> None:
+    from gds_etl_workbench.domain.errors import InvalidRequestError
+
+    candidate = cast(JsonValue, {"artifacts": [], "issues": [code]})
+    validator = _validator()
+    result = await validator.validate(candidate)
+    assert result.issues[0].code == f"code_generation.{code}"
+    assert "Resolve the requirement" in result.issues[0].message
+    with pytest.raises(InvalidRequestError):
+        validator.parse_validated(candidate)

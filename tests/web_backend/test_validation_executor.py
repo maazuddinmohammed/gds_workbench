@@ -128,14 +128,14 @@ def _check() -> ValidationCheckRecord:
         tenant_code="acme",
         system_code="erp",
         validation_group_name="reconciliation",
-        validation_check_name="row_count_nonnegative",
+        validation_check_name="RequiredCustomerIdentity",
         validation_check_description=None,
         validation_category_code="technical.count",
         validation_severity="blocking",
-        validation_query_sql="SELECT count(*) FROM catalog.gold.dim_customer",
+        validation_query_sql="SELECT count(*) FROM catalog.gold.dim_customer WHERE customer_id IS NULL",
         validation_comparison_query_sql=None,
         validation_result_data_type="integer",
-        validation_comparison_operator="greater_than_or_equal",
+        validation_comparison_operator="equal",
         validation_comparison_value_type="literal",
         validation_comparison_value=0,
         is_active=True,
@@ -180,16 +180,16 @@ def _candidate() -> JsonValue:
                     "validation_group_description": "Counts reconcile.",
                     "validation_checks": [
                         {
-                            "validation_check_name": "row_count_nonnegative",
+                            "validation_check_name": "RequiredCustomerIdentity",
                             "validation_check_description": None,
                             "validation_category_code": "technical.count",
                             "validation_severity": "blocking",
                             "validation_query_sql": (
-                                "SELECT count(*) FROM catalog.gold.dim_customer"
+                                "SELECT count(*) FROM catalog.gold.dim_customer WHERE customer_id IS NULL"
                             ),
                             "validation_comparison_query_sql": None,
                             "validation_result_data_type": "integer",
-                            "validation_comparison_operator": "greater_than_or_equal",
+                            "validation_comparison_operator": "equal",
                             "validation_comparison_value_type": "literal",
                             "validation_comparison_value": 0,
                         }

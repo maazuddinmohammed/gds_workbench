@@ -556,7 +556,6 @@ class ValidationWorkflow:
             or plan.model_revision != expected_model_revision
             or plan.model_workflow != "validation"
             or plan.workflow_execution_mode is not None
-            or plan.modeled_entity_type is not None
             or plan.selected_object_ids
             or not plan.selected_system_codes
             or len(plan.stages) != 1

@@ -19,11 +19,12 @@
       "example": "logical_to_silver"
     },
     "operation": {
-      "description": "Frozen build or extend operation. Per-record readiness determines exactly which transformations are actionable.",
+      "description": "Frozen build, extend or generate operation. Per-record readiness determines exactly which transformations are actionable.",
       "value_schema": {
         "enum": [
           "build",
-          "extend"
+          "extend",
+          "generate"
         ],
         "type": "string"
       },
@@ -208,7 +209,6 @@
             "items": {
               "$ref": "#/$defs/MappingPhysicalAttribute"
             },
-            "maxItems": 5000,
             "title": "Attributes",
             "type": "array"
           }
@@ -444,7 +444,6 @@
                 "items": {
                   "$ref": "#/$defs/MappingPhysicalAttribute"
                 },
-                "maxItems": 5000,
                 "title": "Attributes",
                 "type": "array"
               }
@@ -519,7 +518,6 @@
         "items": {
           "$ref": "#/$defs/MappingSource"
         },
-        "maxItems": 128,
         "type": "array"
       },
       "example": [
@@ -639,7 +637,6 @@
                 "items": {
                   "$ref": "#/$defs/ExistingMappingAttribute"
                 },
-                "maxItems": 20000,
                 "title": "Attribute Mappings",
                 "type": "array"
               }
@@ -769,7 +766,6 @@
                 "items": {
                   "$ref": "#/$defs/MappingModeledAttribute"
                 },
-                "maxItems": 5000,
                 "title": "Attributes",
                 "type": "array"
               }
@@ -856,7 +852,6 @@
           "naming_instructions": {
             "anyOf": [
               {
-                "maxLength": 32768,
                 "type": "string"
               },
               {
@@ -948,7 +943,8 @@
           "MappingOperation": {
             "enum": [
               "build",
-              "extend"
+              "extend",
+              "generate"
             ],
             "type": "string"
           },
@@ -1455,7 +1451,7 @@
       }
     },
     "mapping_support": {
-      "description": "Saved evidence scoped to this target and eligible sources: attribute_lineage links modeled names to physical source Attributes or assertion keys, with rationale and key roles; modeled_relationships describe conceptual join intent, not physical join proof; source_relationships carry Analysis confidence and measured validation when available; profiles are saved aggregate counts, percentages and lengths, not live rows or guaranteed current observations; assertions contain the linked active business rules. Empty lists mean no saved evidence, never permission to invent rules.",
+      "description": "Saved evidence scoped to this target and eligible sources: attribute_lineage links modeled names to physical source Attributes or assertion keys, with rationale and key roles; modeled_relationships describe conceptual join intent, not physical join proof; source_relationships carry Analysis confidence and measured validation when available; profiles are saved aggregate counts, percentages and lengths, not live rows or guaranteed current observations; assertions contain active Model/System context automatically without requiring Entity links or matching legacy layer flags. Evaluate relevance to this Entity; assertions are not proof of available sources. Keys identify provenance; free-text type and statement distinguish intent from facts. details may include notes, formula, grain, dimensions, date_basis, exclusions, history and acceptance_criteria when supplied. Missing details are unspecified. Empty lists mean no saved evidence, never permission to invent rules.",
       "value_schema": {
         "type": "object",
         "additionalProperties": false,

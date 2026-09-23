@@ -383,6 +383,23 @@ def test_code_context_returns_one_server_derived_input_digest(
                 attribute_binding["model_attribute_binding_id"],
             ),
         )
+        document = connection.execute(
+            "INSERT INTO model.modeling_assertion_document (model_id, modeling_assertion_document_name) "
+            "VALUES (%s, 'Customer reporting') RETURNING modeling_assertion_document_id",
+            (model["model_id"],),
+        ).fetchone()
+        assert document is not None
+        requirement = connection.execute(
+            "INSERT INTO model.modeling_assertion_record "
+            "(model_id, modeling_assertion_document_id, modeling_assertion_record_key, "
+            "modeling_assertion_record_type, modeling_assertion_text, modeling_assertion_applicable_layers) "
+            "VALUES (%s, %s, 'customer.reporting', 'reporting_requirement', "
+            "'Report customers by current segment.', ARRAY['conceptual']) "
+            "RETURNING modeling_assertion_record_id",
+            (model["model_id"], document["modeling_assertion_document_id"]),
+        ).fetchone()
+        assert requirement is not None
+        # Scoped Assertions reach SQL/Validation without a source-mapping link or layer match.
         first = connection.execute(
             """
             SELECT *
@@ -412,6 +429,25 @@ def test_code_context_returns_one_server_derived_input_digest(
             (model["model_id"],),
         ).fetchone()
 
+        connection.execute(
+            "UPDATE model.modeling_assertion_record SET modeling_assertion_details = "
+            '\'{"history":"Segment at event time"}\'::JSONB WHERE modeling_assertion_record_id=%s',
+            (requirement["modeling_assertion_record_id"],),
+        )
+        third = connection.execute(
+            "SELECT * FROM workflow.list_code_generation_target_context(%s,'logical_entity','sql_file')",
+            (model["model_id"],),
+        ).fetchone()
+        connection.execute(
+            "UPDATE model.modeling_assertion_document SET is_active=FALSE "
+            "WHERE modeling_assertion_document_id=%s",
+            (document["modeling_assertion_document_id"],),
+        )
+        inactive = connection.execute(
+            "SELECT * FROM workflow.list_code_generation_target_context(%s,'logical_entity','sql_file')",
+            (model["model_id"],),
+        ).fetchone()
+
     assert second is not None
     assert first["modeled_entity_name"] == "Customer"
     assert first["source_system_count"] == 1
@@ -421,6 +457,20 @@ def test_code_context_returns_one_server_derived_input_digest(
     assert first["source_context"]["target"]["source_tenant_code"] == "DEMO_TENANT"
     assert first["source_context"]["target"]["tenant_code"] == "DEMO_GDS_TENANT"
     assert first["code_input_digest"] != second["code_input_digest"]
+
+    assert third is not None and inactive is not None
+    assert second["code_input_digest"] != third["code_input_digest"]
+    assertions = third["source_context"]["object_mappings"][0]["entity"]["assertions"]
+    assert len(assertions) == 1
+    assert assertions[0]["modeling_assertion_record_key"] == "customer.reporting"
+    assert (
+        assertions[0]["modeling_assertion_details"]["history"]
+        == "Segment at event time"
+    )
+    assert "modeling_assertion_record_id" not in assertions[0]
+    assert (
+        inactive["source_context"]["object_mappings"][0]["entity"]["assertions"] == []
+    )
 
 
 def test_object_source_tenant_is_required(

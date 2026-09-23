@@ -88,6 +88,9 @@ CREATE TABLE workflow.validation_group (
     system_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
+    modeled_entity_type VARCHAR(30),
+    CONSTRAINT ck_validation_group_layer CHECK (modeled_entity_type IS NULL
+        OR modeled_entity_type IN ('logical_entity', 'dimensional_entity')),
     validation_group_name VARCHAR(200) NOT NULL,
     validation_group_description TEXT,
     mapping_context_digest CHAR(64) NOT NULL,

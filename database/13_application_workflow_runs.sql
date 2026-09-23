@@ -17,6 +17,8 @@ CREATE TABLE application.workflow_run (
     validation_retry_count INTEGER,
     modeled_entity_type VARCHAR(30),
     code_generation_coverage_mode VARCHAR(30),
+    code_generation_file_layout VARCHAR(30),
+    code_generation_system_codes VARCHAR(100)[],
     sql_generation_guide_id BIGINT,
     sql_generation_guide_version_id BIGINT,
     sql_generation_guide_digest CHAR(64),
@@ -190,10 +192,16 @@ CREATE TABLE application.workflow_run (
             AND modeled_entity_type IN (
                 'logical_entity', 'dimensional_entity'
             )
-        ) OR (
-            model_workflow NOT IN ('mapping', 'code_generation')
+        ) OR (model_workflow = 'validation' AND (modeled_entity_type IS NULL
+            OR modeled_entity_type IN ('logical_entity', 'dimensional_entity'))) OR (
+            model_workflow NOT IN ('mapping', 'code_generation', 'validation')
             AND modeled_entity_type IS NULL
         )
+    ),
+    CONSTRAINT ck_workflow_run_code_generation_options CHECK (
+        (code_generation_file_layout IS NULL OR (model_workflow = 'code_generation'
+            AND code_generation_file_layout IN ('combined', 'per_system')))
+        AND (code_generation_system_codes IS NULL OR model_workflow = 'code_generation')
     ),
     CONSTRAINT ck_workflow_run_code_generation_request CHECK (
         (
@@ -566,6 +574,8 @@ BEGIN
         NEW.validation_retry_count,
         NEW.modeled_entity_type,
         NEW.code_generation_coverage_mode,
+        NEW.code_generation_file_layout,
+        NEW.code_generation_system_codes,
         NEW.sql_generation_guide_id,
         NEW.sql_generation_guide_version_id,
         NEW.sql_generation_guide_digest,
@@ -600,6 +610,8 @@ BEGIN
         OLD.validation_retry_count,
         OLD.modeled_entity_type,
         OLD.code_generation_coverage_mode,
+        OLD.code_generation_file_layout,
+        OLD.code_generation_system_codes,
         OLD.sql_generation_guide_id,
         OLD.sql_generation_guide_version_id,
         OLD.sql_generation_guide_digest,
@@ -1109,6 +1121,37 @@ REVOKE ALL ON FUNCTION application.snapshot_workflow_run_prompts(
     JSONB
 ) FROM PUBLIC;
 
+-- Layer is authoring scope, retained when a manual review clears run provenance.
+CREATE FUNCTION workflow.tr_validation_group_layer()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = pg_catalog
+AS $tr_validation_group_layer$
+DECLARE
+    v_layer VARCHAR(30);
+BEGIN
+    IF NEW.workflow_run_id IS NOT NULL THEN
+        SELECT run.modeled_entity_type INTO v_layer
+          FROM application.workflow_run AS run
+         WHERE run.workflow_run_id = NEW.workflow_run_id
+           AND run.model_id = NEW.model_id AND run.model_workflow = 'validation';
+    END IF;
+    IF TG_OP = 'UPDATE' AND OLD.modeled_entity_type IS NOT NULL THEN
+        IF v_layer IS NOT NULL AND v_layer <> OLD.modeled_entity_type THEN
+            RAISE EXCEPTION 'Validation Group belongs to another modeled layer';
+        END IF;
+        NEW.modeled_entity_type := OLD.modeled_entity_type;
+    ELSE
+        NEW.modeled_entity_type := v_layer;
+    END IF;
+    RETURN NEW;
+END;
+$tr_validation_group_layer$;
+REVOKE ALL ON FUNCTION workflow.tr_validation_group_layer() FROM PUBLIC;
+CREATE TRIGGER tr_validation_group_layer
+BEFORE INSERT OR UPDATE ON workflow.validation_group
+FOR EACH ROW EXECUTE FUNCTION workflow.tr_validation_group_layer();
+
 CREATE FUNCTION application.create_workflow_run(
     p_entra_tenant_id UUID,
     p_entra_object_id UUID,
@@ -1137,7 +1180,8 @@ CREATE FUNCTION application.create_workflow_run(
     p_code_generation_coverage_mode VARCHAR(30) DEFAULT NULL,
     p_sql_generation_guide_version_id BIGINT DEFAULT NULL,
     p_metadata_enrichment_description_targets JSONB DEFAULT NULL,
-    p_mapping_targets JSONB DEFAULT NULL
+    p_mapping_targets JSONB DEFAULT NULL,
+    p_code_generation_file_layout VARCHAR(30) DEFAULT NULL
 )
 RETURNS TABLE (
     created BOOLEAN,
@@ -1249,6 +1293,10 @@ BEGIN
         RAISE EXCEPTION
             'Metadata Enrichment requires selected Objects';
     END IF;
+    IF p_code_generation_file_layout IS NOT NULL AND (p_model_workflow <> 'code_generation'
+        OR p_code_generation_file_layout NOT IN ('combined', 'per_system')) THEN
+        RAISE EXCEPTION 'Invalid Code Generation file layout';
+    END IF;
     IF p_selected_object_ids IS NULL OR p_selected_system_codes IS NULL THEN
         RAISE EXCEPTION 'Selected Scope is required';
     END IF;
@@ -1264,10 +1312,6 @@ BEGIN
                 'Code Generation inputs are unavailable for this Workflow Run';
         END IF;
     ELSIF p_model_workflow = 'code_generation' THEN
-        IF cardinality(p_selected_system_codes) <> 0 THEN
-            RAISE EXCEPTION
-                'System selection is available only for Validation';
-        END IF;
         IF p_code_generation_coverage_mode IS NULL
            OR p_code_generation_coverage_mode NOT IN (
                'selected_targets', 'all_eligible_targets'
@@ -1439,6 +1483,9 @@ BEGIN
             RAISE EXCEPTION
                 'Mapping inputs are unavailable for this Workflow Run';
         END IF;
+    ELSIF p_model_workflow = 'validation' AND (p_modeled_entity_type IS NULL
+        OR p_modeled_entity_type IN ('logical_entity', 'dimensional_entity')) THEN
+        NULL;
     ELSIF p_modeled_entity_type IS NOT NULL THEN
         RAISE EXCEPTION
             'Modeled Entity type is unavailable for this Workflow Run';
@@ -1572,6 +1619,7 @@ BEGIN
                     'modeled_entity_type', p_modeled_entity_type,
                     'code_generation_coverage_mode',
                         p_code_generation_coverage_mode,
+                    'code_generation_file_layout', p_code_generation_file_layout,
                     'sql_generation_guide_version_id',
                         p_sql_generation_guide_version_id,
                     'requested_batch_id', v_requested_batch_id,
@@ -1707,6 +1755,8 @@ BEGIN
               CROSS JOIN LATERAL jsonb_array_elements(
                   context.source_context -> 'source_systems'
               ) AS source_system(document)
+             WHERE p_modeled_entity_type IS NULL
+                OR context.modeled_entity_type = p_modeled_entity_type
         )
         SELECT coalesce(
                    array_agg(
@@ -1794,6 +1844,19 @@ BEGIN
                 RAISE EXCEPTION
                     'Selected Code Generation target lacks complete applied SQL Mapping';
             END IF;
+        END IF;
+
+        IF EXISTS (
+            SELECT 1 FROM unnest(v_caller_selected_system_codes) AS requested(code)
+             WHERE NOT EXISTS (
+                SELECT 1 FROM workflow.list_code_generation_target_context(
+                    p_model_id, p_modeled_entity_type) AS context
+                CROSS JOIN LATERAL jsonb_array_elements(context.source_context->'source_systems') AS source(document)
+                WHERE context.object_id = ANY(v_selected_object_ids)
+                  AND lower(btrim(source.document->>'system_code')) = requested.code
+             )
+        ) THEN
+            RAISE EXCEPTION 'Selected Code Generation System is unavailable';
         END IF;
 
         IF p_sql_generation_guide_version_id IS NULL THEN
@@ -2144,7 +2207,9 @@ BEGIN
         selected_scope_count,
         correlation_id,
         workflow_run_request_digest,
-        metadata_enrichment_description_targets
+        metadata_enrichment_description_targets,
+        code_generation_file_layout,
+        code_generation_system_codes
     ) VALUES (
         v_model.tenant_id,
         p_model_id,
@@ -2176,7 +2241,9 @@ BEGIN
         v_selected_scope_count,
         p_correlation_id,
         v_request_digest,
-        p_metadata_enrichment_description_targets
+        p_metadata_enrichment_description_targets,
+        p_code_generation_file_layout,
+        CASE WHEN p_model_workflow = 'code_generation' THEN v_caller_selected_system_codes END
     )
     RETURNING run.* INTO v_created;
 
@@ -2276,7 +2343,8 @@ REVOKE ALL ON FUNCTION application.create_workflow_run(
     VARCHAR,
     BIGINT,
     JSONB,
-    JSONB
+    JSONB,
+    VARCHAR
 ) FROM PUBLIC;
 
 CREATE FUNCTION application.lock_authoring_workflow_run(

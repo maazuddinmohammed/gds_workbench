@@ -1,5 +1,29 @@
 # Workflow configuration implementation — 2026-09-07
 
+## Code Generation and Validation layers — 2026-09-22
+
+See [ADR 009](adr/009-layer-scoped-code-and-validation.md). Both workflows now
+separate Logical/Silver and Dimensional/Gold. Code Generation freezes Object and
+System selections and combined/per-System file layout. Validation keeps Groups
+in their authored layer while preserving shared legacy definitions.
+
+Verification: 3,089 backend/MCP/SQL/packaging/plugin tests passed, with 89
+environment-dependent skips. Frontend: 415 tests, TypeScript and production
+build passed. Backend Ruff and Pyright passed. The final currentness regression
+rerun passed 14 tests. Database tests used disposable fixture containers only.
+
+Browser checks exercised Object selection, System multi-selection, both SQL
+layouts, layer navigation, narrow layouts, generation, validated draft review,
+and governed Apply for Code and Validation. They caught and fixed a table render
+loop, missing preview SQL guide, fixed-profile draft Apply exclusion, and false
+staleness from mixed-case natural keys. The latter regression now compares
+mixed-case reads against the canonical persisted digest, rather than deriving
+both sides through the same reader.
+
+The local preview uses synthetic providers. These checks demonstrate scope,
+review, persistence, and UI behavior; they do not assess live-provider SQL quality
+or execute a production transformation. The source ZIP is rebuilt locally.
+
 > Historical verification record. The interactive notebook runtime was retired
 > by [ADR 007](adr/007-web-owned-workflows-and-notebook-retirement.md); notebook checks below describe the earlier release.
 
@@ -311,3 +335,23 @@ The Mapping layer/selection follow-up also verifies URL-scoped Logical and
 Dimensional views, return navigation, selection retention across scope modes and
 search, bulk Attribute selection across pages, and keyboard focus restoration.
 The revised dialog completed a selected-Object run in the disposable preview.
+
+### Mapping / downstream UI follow-up (2026-09-22)
+
+- Dependency creation reads all registered System pages through the existing
+  authorized Metadata API, including before any Mapping exists. Inactive Systems
+  are excluded; Save still enforces Model revision, authorization and lock rules.
+- SQL filters apply explicitly. The shared Object/System picker expands within
+  the form and has Done/Escape controls, avoiding the generation footer overlap.
+  System and file choices precede Object selection; available Systems remain
+  stable when Object selection is cleared.
+- Validation preserves every Check under a locked Group and retains the active
+  parent of an individually locked Check. Unlocked siblings can still change.
+  Regression tests cover changed, omitted and new children of locked Groups.
+- Default authoring instructions follow the Atlas check-design principles:
+  relevant technical and functional coverage, independent expectations,
+  comparable populations, meaningful failure conditions and no per-field quota.
+  Static checks reject a few provable tautologies, not arbitrary business errors.
+- Local synthetic Validation generates required-value failure counts from actual
+  mapped metadata, replacing the former SELECT 1 example. No external SQL or
+  live-provider quality evaluation occurs in the local verification suite.

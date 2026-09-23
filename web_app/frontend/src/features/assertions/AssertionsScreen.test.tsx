@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -28,9 +28,10 @@ describe("Model Assertions", () => {
 
     await user.click(screen.getByRole("link", { name: "Open Assertion Document 31" }));
     expect(await screen.findByRole("heading", { name: "Customer governance rules" })).toBeVisible();
-    expect(screen.getByText("Quarterly customer-domain review rules.")).toBeVisible();
+    expect(await screen.findByRole("table", { name: "Assertion Records" })).toBeVisible();
+    expect(screen.queryByLabelText("Applicable layer")).not.toBeInTheDocument();
     expect(screen.getByText("data_governance")).not.toBeVisible();
-    await user.click(screen.getByRole("heading", { name: "Normalized metadata" }));
+    await user.click(screen.getByRole("heading", { name: "Document details" }));
     expect(screen.getByText("data_governance")).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Provenance" })).not.toBeInTheDocument();
   });
@@ -41,17 +42,16 @@ describe("Model Assertions", () => {
     render(<WorkbenchApp router={assertionsRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Assertion Documents" });
 
-    await user.click(screen.getByRole("button", { name: "Records" }));
+    await user.click(screen.getByRole("link", { name: "Open Assertion Document 31" }));
     expect(await screen.findByRole("table", { name: "Assertion Records" })).toBeVisible();
     await user.type(screen.getByLabelText("Record key prefix"), " Customer. ");
-    await user.selectOptions(screen.getByLabelText("Applicable layer"), "logical");
     await user.selectOptions(screen.getByLabelText("Record status"), "inactive");
     await user.selectOptions(screen.getByLabelText("Record lock"), "false");
     await user.click(screen.getByRole("button", { name: "Apply Record filters" }));
     await screen.findByRole("table", { name: "Assertion Records" });
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/assertions/records?status=inactive&locked=false&applicable_layer=logical&key_prefix=customer.&page_size=200",
+      "/api/v1/tenants/7/models/18/assertions/records?document_id=31&status=inactive&locked=false&key_prefix=customer.&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
@@ -61,14 +61,21 @@ describe("Model Assertions", () => {
     expect(screen.getByText("customer_raw")).toBeVisible();
     expect(screen.getByText("invoice_raw")).toBeVisible();
     expect(screen.queryByText("Workflow run 1048")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: "← Back to Customer governance rules" }));
+    expect(await screen.findByRole("table", { name: "Assertion Records" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Add Assertion" }));
+    const dialog = screen.getByRole("dialog", { name: "Add Assertion" });
+    expect(within(dialog).getByLabelText("Document name")).toHaveValue("Customer governance rules");
+    expect(within(dialog).getByLabelText("Document scope")).toBeDisabled();
+    expect(within(dialog).queryByText("Applies to")).not.toBeInTheDocument();
   });
 
-  it("keeps refresh, empty, error, and revision states explicit without write controls", async () => {
+  it("keeps refresh, empty, error, and revision states explicit with lock-gated write controls", async () => {
     const user = userEvent.setup();
     const emptyFetcher = assertionsFetchStub({ empty: true });
     const { unmount } = render(<WorkbenchApp router={assertionsRouter(emptyFetcher)} />);
     expect(await screen.findByText("No Assertion Documents match these filters.")).toBeVisible();
-    expect(screen.queryByRole("button", { name: /upload|import|create/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add Assertion" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Refresh" }));
     expect(emptyFetcher.mock.calls.filter(([input]) => String(input).includes("/assertions/documents")))
       .toHaveLength(2);
@@ -87,6 +94,138 @@ describe("Model Assertions", () => {
       "Assertion Documents could not be loaded.",
     );
   });
+  it("saves a scoped reporting requirement and retries uncertain saves without changing the request", async () => {
+    const fetcher = assertionsFetchStub({ retrySave: true });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={assertionsRouter(fetcher)} />);
+    await user.click(await screen.findByRole("button", { name: "Add Assertion" }));
+    const dialog = screen.getByRole("dialog", { name: "Add Assertion" });
+    expect(within(dialog).getByRole("button", { name: "Close Assertion editor" })).toHaveFocus();
+    await waitFor(() => expect(within(dialog).getByLabelText("Document name")).toBeEnabled());
+    await user.type(within(dialog).getByLabelText("Document name"), "Finance notes");
+    await user.selectOptions(within(dialog).getByLabelText("Document type (optional)"), "custom");
+    await user.type(within(dialog).getByLabelText("Custom document type"), "Business context");
+    await user.type(within(dialog).getByLabelText("Assertion key"), "monthly_sales");
+    await user.type(within(dialog).getByLabelText("Assertion"), "Report monthly net sales by segment.");
+    await within(dialog).findByRole("option", { name: "CRM" });
+    await user.selectOptions(within(dialog).getByLabelText("Document scope"), "CRM");
+    await user.type(within(dialog).getByLabelText("Reference (optional)"), "Finance section 2");
+    await user.type(within(dialog).getByLabelText("Additional context (optional)"), "Sales less refunds, grouped by month and segment.");
+    await user.click(within(dialog).getByRole("button", { name: "Save Assertion" }));
+    await within(dialog).findByRole("button", { name: "Retry save" });
+    expect(within(dialog).getByLabelText("Assertion")).toHaveValue("Report monthly net sales by segment.");
+    expect(within(dialog).getByLabelText("Assertion")).toBeDisabled();
+    await user.click(within(dialog).getByRole("button", { name: "Retry save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(await screen.findByRole("table", { name: "Assertion Documents" })).toBeVisible();
+    const saves = fetcher.mock.calls.filter(([input]) => String(input).endsWith("/change-sets/assertions"));
+    expect(saves).toHaveLength(2);
+    expect(saves[0]?.[1]).toEqual(saves[1]?.[1]);
+    expect(JSON.parse(String(saves[0]?.[1]?.body))).toEqual({
+      expected_model_revision: 18, record_key: "monthly_sales", record_type: "business_rule",
+      document_name: "Finance notes", document_type: "Business context",
+      text: "Report monthly net sales by segment.", details: { notes: "Sales less refunds, grouped by month and segment." },
+      source_system_code: "CRM", source_reference: "Finance section 2",
+    });
+  });
+
+  it("requires the Tenant Lock for manual authoring", async () => {
+    render(<WorkbenchApp router={assertionsRouter(assertionsFetchStub({ hasLock: false }))} />);
+    expect(await screen.findByRole("button", { name: "Add Assertion" })).toBeDisabled();
+  });
+
+  it("adds a new key to an existing document with its original type and scope", async () => {
+    const fetcher = assertionsFetchStub();
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={assertionsRouter(fetcher)} />);
+    await user.click(await screen.findByRole("button", { name: "Add Assertion" }));
+    const dialog = screen.getByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Document"), "existing");
+    await within(dialog).findByRole("option", { name: "Customer governance rules" });
+    await user.selectOptions(within(dialog).getByLabelText("Existing document"), "31");
+    expect(within(dialog).getByLabelText("Document type")).toHaveValue("policy");
+    expect(within(dialog).getByLabelText("Document scope")).toHaveValue("CRM");
+    expect(within(dialog).getByLabelText("Document scope")).toBeDisabled();
+    await user.type(within(dialog).getByLabelText("Assertion key"), "customer.retention");
+    await user.selectOptions(within(dialog).getByLabelText("Assertion type"), "kpi_definition");
+    await user.type(within(dialog).getByLabelText("Assertion"), "Retained customers placed orders in both comparison periods.");
+    await user.click(within(dialog).getByRole("button", { name: "Save Assertion" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const save = fetcher.mock.calls.find(([input]) => String(input).endsWith("/change-sets/assertions"));
+    expect(JSON.parse(String(save?.[1]?.body))).toMatchObject({
+      document_name: "Customer governance rules", document_type: "policy", source_system_code: "CRM",
+      record_key: "customer.retention", record_type: "kpi_definition",
+    });
+    expect(JSON.parse(String(save?.[1]?.body))).not.toHaveProperty("record_id");
+  });
+
+  it("loads an existing key for editing and preserves custom types and its record identity", async () => {
+    const fetcher = assertionsFetchStub({ manual: true });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={assertionsRouter(fetcher)} />);
+    await user.click(await screen.findByRole("link", { name: "Open Assertion Document 31" }));
+    await user.click(await screen.findByRole("button", { name: "Add Assertion" }));
+    const dialog = screen.getByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Assertion action"), "edit");
+    await within(dialog).findByRole("option", { name: "customer.identity.stable" });
+    await user.selectOptions(within(dialog).getByLabelText("Existing assertion key"), "91");
+    await waitFor(() => expect(within(dialog).getByLabelText("Assertion")).toHaveValue(assertionRecordDetailPayload.modeling_assertion_text));
+    expect(within(dialog).getByLabelText("Assertion key")).toHaveAttribute("readonly");
+    expect(within(dialog).getByLabelText("Assertion type")).toHaveValue("custom");
+    expect(within(dialog).getByLabelText("Custom assertion type")).toHaveValue("retention_rule");
+    expect(within(dialog).getByLabelText("Additional context (optional)")).toHaveValue("Previous notes");
+    await user.clear(within(dialog).getByLabelText("Assertion"));
+    await user.type(within(dialog).getByLabelText("Assertion"), "Use a durable customer identifier across source systems.");
+    await user.click(within(dialog).getByRole("button", { name: "Save Assertion" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const save = fetcher.mock.calls.find(([input]) => String(input).endsWith("/change-sets/assertions"));
+    expect(JSON.parse(String(save?.[1]?.body))).toMatchObject({
+      record_id: 91, record_key: "customer.identity.stable", record_type: "retention_rule",
+      text: "Use a durable customer identifier across source systems.", details: { notes: "Previous notes" },
+      document_name: "Customer governance rules", document_type: "policy", source_system_code: "CRM",
+    });
+  });
+
+  it("protects imported assertions and clears loaded content when switching back to a new key", async () => {
+    const fetcher = assertionsFetchStub();
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={assertionsRouter(fetcher)} />);
+    await user.click(await screen.findByRole("link", { name: "Open Assertion Document 31" }));
+    await user.click(await screen.findByRole("button", { name: "Add Assertion" }));
+    const dialog = screen.getByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Assertion action"), "edit");
+    await within(dialog).findByRole("option", { name: "customer.identity.stable" });
+    await user.selectOptions(within(dialog).getByLabelText("Existing assertion key"), "91");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("This assertion was imported.");
+    expect(within(dialog).getByRole("button", { name: "Save Assertion" })).toBeDisabled();
+    await user.selectOptions(within(dialog).getByLabelText("Assertion action"), "add");
+    expect(within(dialog).getByLabelText("Assertion key")).toHaveValue("");
+    expect(within(dialog).getByLabelText("Assertion")).toHaveValue("");
+    expect(within(dialog).getByLabelText("Assertion type")).toHaveValue("business_rule");
+    expect(within(dialog).getByRole("button", { name: "Save Assertion" })).toBeEnabled();
+  });
+
+  it("disables locked keys in the existing assertion picker", async () => {
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={assertionsRouter(assertionsFetchStub({ locked: true }))} />);
+    await user.click(await screen.findByRole("link", { name: "Open Assertion Document 31" }));
+    await user.click(await screen.findByRole("button", { name: "Add Assertion" }));
+    const dialog = screen.getByRole("dialog");
+    await user.selectOptions(within(dialog).getByLabelText("Assertion action"), "edit");
+    expect(await within(dialog).findByRole("option", { name: "customer.identity.stable (locked)" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Save Assertion" })).toBeDisabled();
+  });
+
+  it("directs duplicate document names to the existing document picker", async () => {
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={assertionsRouter(assertionsFetchStub())} />);
+    await user.click(await screen.findByRole("button", { name: "Add Assertion" }));
+    const dialog = screen.getByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Document name"), " customer governance rules ");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("This document already exists.");
+    expect(within(dialog).getByRole("button", { name: "Save Assertion" })).toBeDisabled();
+  });
+
 });
 
 function assertionsRouter(fetcher: ReturnType<typeof assertionsFetchStub>) {
@@ -102,10 +241,20 @@ function assertionsFetchStub(options: {
   empty?: boolean;
   error?: boolean;
   modelRevision?: number;
+  retrySave?: boolean;
+  hasLock?: boolean;
+  manual?: boolean;
+  locked?: boolean;
 } = {}) {
+  let saves = 0;
   return vi.fn<typeof fetch>(async (input) => {
     const url = String(input);
-    if (url === "/api/v1/tenants/7/home") return jsonResponse(tenantHomePayload);
+    if (url === "/api/v1/tenants/7/home") return jsonResponse({ ...tenantHomePayload, lock: { ...tenantHomePayload.lock, owned_by_current_principal: options.hasLock ?? true } });
+    if (url.startsWith("/api/v1/tenants/7/metadata/datasets/system/rows?")) return jsonResponse({ items: [{ system_code: "CRM", is_active: true }], next_cursor: null });
+    if (url.endsWith("/change-sets/assertions")) {
+      if (options.retrySave && saves++ === 0) return jsonResponse({ error: { code: "unavailable", message: "Retry the save." } }, 503);
+      return jsonResponse({ model_id: 18, model_revision: 19, model_change_set_id: "saved", action_count: 2 });
+    }
     if (url === "/api/v1/tenants/7/models/18") return jsonResponse(modelPayload);
     if (url.startsWith("/api/v1/tenants/7/models/18/assertions/documents?")) {
       if (options.error) return jsonResponse({ error: { code: "unavailable" } }, 503);
@@ -123,12 +272,19 @@ function assertionsFetchStub(options: {
       return jsonResponse({
         model_id: 18,
         model_revision: options.modelRevision ?? 18,
-        items: options.empty ? [] : [assertionRecordPayload],
+        items: options.empty ? [] : [{ ...assertionRecordPayload, modeling_assertion_record_is_locked: options.locked ?? false }],
         next_cursor: null,
       });
     }
     if (url === "/api/v1/tenants/7/models/18/assertions/records/91") {
-      return jsonResponse(assertionRecordDetailPayload);
+      return jsonResponse({ ...assertionRecordDetailPayload,
+        modeling_assertion_record_is_locked: options.locked ?? false,
+        ...(options.manual ? {
+          modeling_assertion_record_type: "retention_rule",
+          modeling_assertion_source_location: { entry_method: "manual", reference: "Customer notes" },
+          modeling_assertion_details: { notes: "Previous notes" },
+        } : {}),
+      });
     }
     return jsonResponse({ error: { code: "not_found" } }, 404);
   });

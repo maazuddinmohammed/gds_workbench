@@ -111,6 +111,7 @@ class CodeGenerationTargetObjectReference(PhysicalObjectReference):
 
 
 class CodeGenerationTargetSummary(ContractModel):
+    is_locked: bool = False
     target: CodeGenerationTargetObjectReference
     entity_type: MappingEntityType
     mapping_supports: tuple[CodeMappingSupport, ...] = Field(

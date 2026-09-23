@@ -176,6 +176,7 @@ WITH requested_run AS MATERIALIZED (
 SELECT tenant.tenant_code,
        selection.system_code,
        selection.selection_order,
+       validation_group.modeled_entity_type,
        validation_group.validation_group_name,
        validation_group.validation_group_description,
        validation_group.mapping_context_digest,
@@ -265,6 +266,8 @@ class ValidationSystemAuthoringContext(BaseModel):
     system_ref: str = Field(pattern=r"^system_[1-9][0-9]*$")
     tenant_code: str = Field(min_length=1, max_length=100)
     system_code: str = Field(min_length=1, max_length=100)
+    modeled_entity_type: Literal["logical_entity", "dimensional_entity"] | None = None
+    reserved_group_names: tuple[str, ...] = ()
     applied_groups: tuple[ValidationGroupRecord, ...]
     applied_checks: tuple[ValidationCheckRecord, ...]
     current_group_names: tuple[str, ...] = ()
@@ -293,7 +296,6 @@ class PostgresValidationContextRepository:
         if (
             plan.model_workflow != "validation"
             or plan.workflow_execution_mode is not None
-            or plan.modeled_entity_type is not None
             or not plan.selected_system_codes
             or plan.selected_object_ids
         ):
@@ -341,8 +343,14 @@ def _assemble_context(
     if len(target_keys) != len(set(target_keys)):
         raise InvalidRequestError("The Validation Mapping context is ambiguous.")
 
+    scoped_rows = [
+        row
+        for row in applied_rows
+        if plan.modeled_entity_type is None
+        or row.get("modeled_entity_type") == plan.modeled_entity_type
+    ]
     groups, checks, group_witnesses = _applied_validation(
-        applied_rows,
+        scoped_rows,
         tenant_code=tenant_code,
         selected_systems=frozenset(selected_systems),
     )
@@ -354,7 +362,11 @@ def _assemble_context(
         relevant_targets = tuple(
             target
             for target in targets
-            if normalized_system
+            if (
+                plan.modeled_entity_type is None
+                or target.modeled_entity_type == plan.modeled_entity_type
+            )
+            and normalized_system
             in {
                 normalize_model_key_value(source_code) for source_code in target.source_system_codes
             }
@@ -405,6 +417,14 @@ def _assemble_context(
         systems.append(
             ValidationSystemAuthoringContext(
                 system_ref=f"system_{position}",
+                modeled_entity_type=plan.modeled_entity_type,
+                reserved_group_names=tuple(
+                    str(row["validation_group_name"])
+                    for row in applied_rows
+                    if row not in scoped_rows
+                    and normalize_model_key_value(str(row.get("system_code", "")))
+                    == normalized_system
+                ),
                 tenant_code=tenant_code,
                 system_code=system_code,
                 applied_groups=system_groups,

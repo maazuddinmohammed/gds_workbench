@@ -1,3 +1,6 @@
+import { MultiSelectField } from "../../shared/MultiSelectField";
+import { ModelLayerTabs, type ModelLayer } from "../../shared/ModelLayerTabs";
+import type { MappingEntityType } from "../mapping/api";
 import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,9 +19,11 @@ export function ValidationScreen({
   model,
   hasTenantLock,
   hasAppPermission,
+  layer,
   groupId,
   checkId,
 }: {
+  layer: ModelLayer;
   api: ValidationApi;
   tenantId: number;
   model: ModelDetail;
@@ -28,17 +33,21 @@ export function ValidationScreen({
   checkId?: number | undefined;
 }) {
   const queryClient = useQueryClient();
+  const entityType: MappingEntityType = layer === "logical" ? "logical_entity" : "dimensional_entity";
   const reviewDataset = groupId === undefined ? "validation_group" : "validation_check";
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [systemFilter, setSystemFilter] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [lockFilter, setLockFilter] = useState("");
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [startedRunId, setStartedRunId] = useState<number | null>(null);
   const systemsQuery = useQuery({
-    queryKey: validationQueryKeys.systems(tenantId, model.model_id),
-    queryFn: () => api.listValidationEligibleSystems(tenantId, model.model_id),
+    queryKey: validationQueryKeys.systems(tenantId, model.model_id, entityType),
+    queryFn: () => api.listValidationEligibleSystems(tenantId, model.model_id, entityType),
   });
   const ledgerQuery = useQuery({
-    queryKey: validationQueryKeys.ledger(tenantId, model.model_id),
-    queryFn: () => api.readValidationLedger(tenantId, model.model_id),
+    queryKey: validationQueryKeys.ledger(tenantId, model.model_id, entityType),
+    queryFn: () => api.readValidationLedger(tenantId, model.model_id, entityType),
   });
   const canAuthor = hasTenantLock && hasAppPermission;
   const systemsRevisionMismatch = systemsQuery.data !== undefined
@@ -63,8 +72,8 @@ export function ValidationScreen({
               : "Tenant Lock held · ready to run Validation";
   const invalidateValidation = async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: validationQueryKeys.systems(tenantId, model.model_id) }),
-      queryClient.invalidateQueries({ queryKey: validationQueryKeys.ledger(tenantId, model.model_id) }),
+      queryClient.invalidateQueries({ queryKey: ["validation-systems", tenantId, model.model_id] }),
+      queryClient.invalidateQueries({ queryKey: ["validation-ledger", tenantId, model.model_id] }),
       queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
       queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
     ]);
@@ -76,15 +85,18 @@ export function ValidationScreen({
 
   return (
     <main className="workspace mapping-workspace validation-workspace page-enter">
+      <ModelLayerTabs tenantId={tenantId} modelId={model.model_id} layer={layer} workflow="validation" title="Validation" />
       <header className="workflow-commandbar validation-commandbar">
         <div className="workflow-command-context validation-command-context">
           {checkId !== undefined && groupId !== undefined ? <Link
             className="text-action"
+            search={{ layer }}
             aria-label="Back to Checks"
             to="/tenants/$tenantId/validation/models/$modelId/groups/$groupId"
             params={{ tenantId: String(tenantId), modelId: String(model.model_id), groupId: String(groupId) }}
           >← Back to Checks</Link> : groupId !== undefined ? <Link
             className="text-action"
+            search={{ layer }}
             aria-label="Back to Groups"
             to="/tenants/$tenantId/validation/models/$modelId"
             params={{ tenantId: String(tenantId), modelId: String(model.model_id) }}
@@ -122,7 +134,7 @@ export function ValidationScreen({
       </header>
       <div className="workflow-context-line validation-context-line">
         <strong>{model.model_name} · r{model.model_revision}</strong>
-        <span>Validation uses applied Mapping and any current relevant Code when present to author a validated Model Change Set draft.</span>
+        <span>Author checks for this layer using applied Mapping and current SQL when available.</span>
       </div>
       {systemsQuery.error instanceof ApiError && systemsQuery.error.status === 403 ? (
         <p className="inline-error validation-system-error" role="alert">
@@ -162,13 +174,30 @@ export function ValidationScreen({
         disabled={ledgerQuery.isPending || ledgerQuery.isError || ledgerQuery.data?.model_revision !== model.model_revision}
         onApplied={async () => { setSelectedIds(new Set()); await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === tenantId }); }}
       /> : null}
+      {groupId === undefined ? <div className="workflow-filterbar validation-filterbar">
+        <MultiSelectField label="Systems" emptyLabel="All Systems" value={systemFilter} onChange={(value) => { setSystemFilter(value); setSelectedIds(new Set()); }}
+          options={[...new Set((ledgerQuery.data?.groups ?? []).map((group) => group.system_code))].map((code) => [code, code])} />
+        <label><span>Status</span><select aria-label="Status" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setSelectedIds(new Set()); }}>
+          <option value="">All statuses</option><option value="current">Current</option><option value="stale">Stale</option>
+        </select></label>
+        <label><span>Lock</span><select aria-label="Lock" value={lockFilter} onChange={(event) => { setLockFilter(event.target.value); setSelectedIds(new Set()); }}>
+          <option value="">All lock states</option><option value="unlocked">Unlocked</option><option value="locked">Locked</option>
+        </select></label>
+        <button className="button button-secondary button-small" type="button" onClick={() => { setSystemFilter([]); setStatusFilter(""); setLockFilter(""); setSelectedIds(new Set()); }}>Clear</button>
+      </div> : null}
       <ValidationLedger
         tenantId={tenantId}
         modelId={model.model_id}
+        layer={layer}
+        isFiltered={Boolean(systemFilter.length || statusFilter || lockFilter)}
         groupId={groupId}
         checkId={checkId}
         selection={{ dataset: reviewDataset, selectedIds, onSelectionChange: setSelectedIds }}
-        groups={ledgerQuery.data?.groups ?? []}
+        groups={(ledgerQuery.data?.groups ?? []).filter((group) => groupId !== undefined || (
+          (!systemFilter.length || systemFilter.includes(group.system_code))
+          && (!statusFilter || group.validation_group_is_current === (statusFilter === "current"))
+          && (!lockFilter || group.is_locked === (lockFilter === "locked"))
+        ))}
         modelRevision={model.model_revision}
         loadedModelRevision={ledgerQuery.data?.model_revision}
         isLoading={ledgerQuery.isPending}
@@ -179,6 +208,7 @@ export function ValidationScreen({
           api={api}
           tenantId={tenantId}
           model={model}
+          entityType={entityType}
           systems={systemsQuery.data.items}
           systemsTruncated={systemsQuery.data.is_truncated}
           onClose={() => setRunDialogOpen(false)}

@@ -1,3 +1,4 @@
+import type { MappingEntityType } from "../mapping/api";
 import type { ModelRecordReviewApi } from "../model_record_review/api";
 import type { HttpRequest } from "../../core/http";
 import type { ModelsApi } from "../models/api";
@@ -39,6 +40,7 @@ export interface ValidationValidationCheck {
 
 export interface ValidationValidationGroup {
   validation_group_id: number;
+  modeled_entity_type: MappingEntityType | null;
   system_id: number;
   system_code: string;
   validation_group_name: string;
@@ -61,10 +63,12 @@ export interface ValidationTransport {
   listValidationEligibleSystems: (
     tenantId: number,
     modelId: number,
+    entityType?: MappingEntityType,
   ) => Promise<ValidationEligibleSystemCollection>;
   readValidationLedger: (
     tenantId: number,
     modelId: number,
+    entityType?: MappingEntityType,
   ) => Promise<ValidationLedger>;
 }
 
@@ -84,16 +88,16 @@ export type ValidationApi = ValidationTransport & ModelRecordReviewApi
 
 export function createValidationApi(request: HttpRequest): ValidationTransport {
   return {
-    listValidationEligibleSystems: (tenantId, modelId) => request<ValidationEligibleSystemCollection>(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/validation/systems`,
+    listValidationEligibleSystems: (tenantId, modelId, entityType) => request<ValidationEligibleSystemCollection>(
+      `/api/v1/tenants/${tenantId}/models/${modelId}/validation/systems${entityType ? `?entity_type=${entityType}` : ""}`,
     ),
-    readValidationLedger: (tenantId, modelId) => request<ValidationLedger>(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/validation/ledger`,
+    readValidationLedger: (tenantId, modelId, entityType) => request<ValidationLedger>(
+      `/api/v1/tenants/${tenantId}/models/${modelId}/validation/ledger${entityType ? `?entity_type=${entityType}` : ""}`,
     ),
   };
 }
 
 export const validationQueryKeys = {
-  systems: (tenantId: number, modelId: number) => ["validation-systems", tenantId, modelId] as const,
-  ledger: (tenantId: number, modelId: number) => ["validation-ledger", tenantId, modelId] as const,
+  systems: (tenantId: number, modelId: number, entityType?: MappingEntityType) => ["validation-systems", tenantId, modelId, entityType] as const,
+  ledger: (tenantId: number, modelId: number, entityType?: MappingEntityType) => ["validation-ledger", tenantId, modelId, entityType] as const,
 };

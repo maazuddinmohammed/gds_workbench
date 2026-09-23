@@ -499,8 +499,8 @@ function WorkflowRunDetailView({
       <dl className="workflow-run-facts">
         <div><dt>Created</dt><dd>{formatDateTime(run.created_at)}</dd></div>
         <div><dt>Actor</dt><dd>{run.actor_display_name}</dd></div>
-        <div><dt>Objects</dt><dd>{run.selected_scope_count}</dd></div>
-        <div><dt>Mode</dt><dd>{run.workflow_execution_mode?.replaceAll("_", " ") ?? "Deterministic"}</dd></div>
+        <div><dt>{run.model_workflow === "validation" ? "Systems" : "Objects"}</dt><dd>{run.selected_scope_count}</dd></div>
+        <div><dt>Mode</dt><dd>{run.workflow_execution_mode?.replaceAll("_", " ") ?? (["code_generation", "validation"].includes(run.model_workflow) ? "Configured generator" : "Deterministic")}</dd></div>
       </dl>
 
       {run.workflow_run_state === "failed" ? (
@@ -846,7 +846,7 @@ function isValidatedDraft(run: WorkflowRunDetail | undefined): run is WorkflowRu
   return Boolean(
     run
     && (run.workflow_run_state === "completed" || run.workflow_run_state === "completed_with_repair")
-    && run.workflow_execution_mode !== null
+    && (run.workflow_execution_mode !== null || run.model_workflow === "code_generation" || run.model_workflow === "validation")
     && run.model_change_set_id
     && run.model_change_set_status === "validated"
     && run.draft_revision
@@ -882,6 +882,8 @@ function workflowLabel(workflow: DraftWorkflow): string {
 
 function runKind(mode: WorkflowRunDetail["workflow_execution_mode"], workflow: ModelWorkflow): string {
   if (workflow === "metadata_enrichment") return "Physical metadata enrichment";
+  if (workflow === "code_generation") return "SQL generation";
+  if (workflow === "validation") return "Validation authoring";
   if (workflow === "analysis" && mode === null) return "Deterministic validation";
   return mode ? `${mode.replaceAll("_", " ")} authoring` : "Deterministic run";
 }

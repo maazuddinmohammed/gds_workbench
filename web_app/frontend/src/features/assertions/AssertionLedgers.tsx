@@ -43,13 +43,11 @@ export function AssertionDocumentsLedger({
 }) {
   const form = useForm({
     defaultValues: {
-      sourceSystemId: filters.sourceSystemId ? String(filters.sourceSystemId) : "",
       sourceSystemCode: filters.sourceSystemCode ?? "",
       active: filters.active === undefined ? "" : String(filters.active),
       namePrefix: filters.namePrefix ?? "",
     },
     onSubmit: ({ value }) => onApplyFilters({
-      ...(value.sourceSystemId ? { sourceSystemId: Number(value.sourceSystemId) } : {}),
       ...(value.sourceSystemCode ? { sourceSystemCode: value.sourceSystemCode } : {}),
       ...(value.active ? { active: value.active === "true" } : {}),
       ...(value.namePrefix ? { namePrefix: value.namePrefix } : {}),
@@ -135,9 +133,6 @@ export function AssertionDocumentsLedger({
           <form.Field name="namePrefix">
             {(field) => <TextFilter label="Document name prefix" field={field} />}
           </form.Field>
-          <form.Field name="sourceSystemId">
-            {(field) => <NumberFilter label="Source System ID" field={field} />}
-          </form.Field>
           <form.Field name="sourceSystemCode">
             {(field) => <TextFilter label="Source System code" field={field} />}
           </form.Field>
@@ -190,25 +185,13 @@ export function AssertionRecordsLedger({
 }) {
   const form = useForm({
     defaultValues: {
-      documentId: filters.documentId ? String(filters.documentId) : "",
-      documentName: filters.documentName ?? "",
-      sourceSystemId: filters.sourceSystemId ? String(filters.sourceSystemId) : "",
-      sourceSystemCode: filters.sourceSystemCode ?? "",
       status: filters.status ?? "",
       locked: filters.locked === undefined ? "" : String(filters.locked),
-      applicableLayer: filters.applicableLayer ?? "",
       keyPrefix: filters.keyPrefix ?? "",
     },
     onSubmit: ({ value }) => onApplyFilters({
-      ...(value.documentId ? { documentId: Number(value.documentId) } : {}),
-      ...(value.documentName ? { documentName: value.documentName } : {}),
-      ...(value.sourceSystemId ? { sourceSystemId: Number(value.sourceSystemId) } : {}),
-      ...(value.sourceSystemCode ? { sourceSystemCode: value.sourceSystemCode } : {}),
       ...(value.status ? { status: value.status as NonNullable<AssertionRecordFilters["status"]> } : {}),
       ...(value.locked ? { locked: value.locked === "true" } : {}),
-      ...(value.applicableLayer
-        ? { applicableLayer: value.applicableLayer as NonNullable<AssertionRecordFilters["applicableLayer"]> }
-        : {}),
       ...(value.keyPrefix ? { keyPrefix: value.keyPrefix } : {}),
     }),
   });
@@ -220,22 +203,6 @@ export function AssertionRecordsLedger({
         <span className="endpoint-cell">
           <strong>{row.original.modeling_assertion_record_key}</strong>
           <span>{humanize(row.original.modeling_assertion_record_type)}</span>
-        </span>
-      ),
-    },
-    {
-      id: "document",
-      header: "Document",
-      cell: ({ row }) => row.original.document.modeling_assertion_document_name,
-    },
-    {
-      id: "layers",
-      header: "Applicable layers",
-      cell: ({ row }) => (
-        <span className="chip-list">
-          {row.original.modeling_assertion_applicable_layers.map((layer) => (
-            <span key={layer}>{humanize(layer)}</span>
-          ))}
         </span>
       ),
     },
@@ -297,18 +264,6 @@ export function AssertionRecordsLedger({
           <form.Field name="keyPrefix">
             {(field) => <TextFilter label="Record key prefix" field={field} />}
           </form.Field>
-          <form.Field name="documentId">
-            {(field) => <NumberFilter label="Document ID" field={field} />}
-          </form.Field>
-          <form.Field name="documentName">
-            {(field) => <TextFilter label="Document name" field={field} />}
-          </form.Field>
-          <form.Field name="sourceSystemId">
-            {(field) => <NumberFilter label="Source System ID" field={field} />}
-          </form.Field>
-          <form.Field name="sourceSystemCode">
-            {(field) => <TextFilter label="Source System code" field={field} />}
-          </form.Field>
           <form.Field name="status">
             {(field) => (
               <label>
@@ -330,21 +285,6 @@ export function AssertionRecordsLedger({
                   <option value="">All lock states</option>
                   <option value="true">Locked</option>
                   <option value="false">Open</option>
-                </select>
-              </label>
-            )}
-          </form.Field>
-          <form.Field name="applicableLayer">
-            {(field) => (
-              <label>
-                <span>Applicable layer</span>
-                <select aria-label="Applicable layer" value={field.state.value} onChange={(event) => field.handleChange(event.target.value)}>
-                  <option value="">All layers</option>
-                  <option value="analysis">Analysis</option>
-                  <option value="conceptual">Conceptual</option>
-                  <option value="logical">Logical</option>
-                  <option value="dimensional">Dimensional</option>
-                  <option value="mapping">Mapping</option>
                 </select>
               </label>
             )}
@@ -441,6 +381,12 @@ function AssertionLedgerSurface<T>({
   );
 }
 
+interface TextField {
+  state: { value: string };
+  handleBlur: () => void;
+  handleChange: (value: string) => void;
+}
+
 function TextFilter({ label, field }: { label: string; field: TextField }) {
   return (
     <label>
@@ -453,28 +399,6 @@ function TextFilter({ label, field }: { label: string; field: TextField }) {
       />
     </label>
   );
-}
-
-function NumberFilter({ label, field }: { label: string; field: TextField }) {
-  return (
-    <label>
-      <span>{label}</span>
-      <input
-        aria-label={label}
-        inputMode="numeric"
-        pattern="[0-9]*"
-        value={field.state.value}
-        onBlur={field.handleBlur}
-        onChange={(event) => field.handleChange(event.target.value.replace(/[^0-9]/g, ""))}
-      />
-    </label>
-  );
-}
-
-interface TextField {
-  state: { value: string };
-  handleBlur: () => void;
-  handleChange: (value: string) => void;
 }
 
 function FilterActions({ applyLabel, onClear }: { applyLabel: string; onClear: () => void }) {

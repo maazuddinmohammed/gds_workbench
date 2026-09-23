@@ -52,6 +52,8 @@ SELECT run.workflow_run_id,
        run.workflow_execution_mode,
        run.modeled_entity_type,
        run.code_generation_coverage_mode,
+       run.code_generation_file_layout,
+       run.code_generation_system_codes,
        run.sql_generation_guide_id,
        run.sql_generation_guide_version_id,
        run.sql_generation_guide_digest,
@@ -208,6 +210,7 @@ class AgentRunPlan(BaseModel):
         ]
         | None
     ) = None
+    code_generation_file_layout: Literal["combined", "per_system"] | None = None
     sql_generation_guide_id: int | None = Field(default=None, gt=0)
     sql_generation_guide_version_id: int | None = Field(default=None, gt=0)
     sql_generation_guide_digest: str | None = Field(
@@ -247,7 +250,9 @@ class AgentRunPlan(BaseModel):
         if self.model_workflow == "validation":
             if self.selected_object_ids or not self.selected_system_codes:
                 raise ValueError("Validation requires only an explicit System selection")
-        elif self.selected_system_codes or not self.selected_object_ids:
+        elif (
+            self.selected_system_codes and self.model_workflow != "code_generation"
+        ) or not self.selected_object_ids:
             raise ValueError("Only Validation may use a System selection")
         stage_ids = [stage.workflow_stage_id for stage in self.stages]
         stage_orders = [stage.stage_order for stage in self.stages]
@@ -340,6 +345,8 @@ def _assemble_plan(
         "workflow_execution_mode",
         "modeled_entity_type",
         "code_generation_coverage_mode",
+        "code_generation_file_layout",
+        "code_generation_system_codes",
         "sql_generation_guide_id",
         "sql_generation_guide_version_id",
         "sql_generation_guide_digest",
@@ -486,7 +493,10 @@ def _assemble_plan(
         ),
         selected_scope_digest=_required_str(first, "selected_scope_digest"),
         selected_object_ids=tuple(selected_object_ids),
-        selected_system_codes=tuple(selected_system_codes),
+        selected_system_codes=tuple(first.get("code_generation_system_codes") or ())
+        if model_workflow == "code_generation"
+        else tuple(selected_system_codes),
+        code_generation_file_layout=first.get("code_generation_file_layout"),
         selection=AgentRunSelection(
             sdk_code=_required_str(first, "agent_sdk_code"),
             provider_code=_required_str(first, "agent_provider_code"),

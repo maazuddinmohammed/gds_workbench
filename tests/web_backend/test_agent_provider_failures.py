@@ -52,7 +52,9 @@ from tests.web_backend.test_agent_usage import (
 )
 
 
-@pytest.mark.parametrize("tools, reasoning", [(False, "default"), (False, "none"), (True, "none")])
+@pytest.mark.parametrize(
+    "tools, reasoning", [(False, "default"), (False, "none"), (True, "none")]
+)
 @pytest.mark.parametrize("timeout_seconds", [480, 900])
 async def test_real_sdk_uses_the_configured_model_request_timeout(
     monkeypatch: pytest.MonkeyPatch,
@@ -80,15 +82,19 @@ async def test_real_sdk_uses_the_configured_model_request_timeout(
     request = _request(tools=tools)
     request = request.model_copy(
         update={
-            "selection": request.selection.model_copy(update={"reasoning_effort_code": reasoning})
+            "selection": request.selection.model_copy(
+                update={"reasoning_effort_code": reasoning}
+            )
         }
     )
-    result = await _router(monkeypatch, None, handler, timeout_seconds=timeout_seconds).execute(
-        request
-    )
+    result = await _router(
+        monkeypatch, None, handler, timeout_seconds=timeout_seconds
+    ).execute(request)
     assert result.candidate == {"result": "valid"}
     assert sends == (2 if tools else 1)
-    assert settings_seen and all(item.timeout == timeout_seconds for item in settings_seen)
+    assert settings_seen and all(
+        item.timeout == timeout_seconds for item in settings_seen
+    )
 
 
 @pytest.mark.parametrize(
@@ -161,7 +167,9 @@ async def test_real_sdk_rejects_truncation_before_candidate_or_tool_acceptance(
     tool_calls = 0
 
     class Catalog(FixtureCatalog):
-        def invoke(self, tool_name: str, arguments: Mapping[str, JsonValue]) -> JsonValue:
+        def invoke(
+            self, tool_name: str, arguments: Mapping[str, JsonValue]
+        ) -> JsonValue:
             nonlocal tool_calls
             tool_calls += 1
             return super().invoke(tool_name, arguments)
@@ -199,7 +207,9 @@ async def test_real_sdk_preserves_safe_tool_errors_and_redacts_unexpected_tool_e
     sends = 0
 
     class Catalog(FixtureCatalog):
-        def invoke(self, tool_name: str, arguments: Mapping[str, JsonValue]) -> JsonValue:
+        def invoke(
+            self, tool_name: str, arguments: Mapping[str, JsonValue]
+        ) -> JsonValue:
             if safe_failure:
                 raise AgentContextToolRequestError()
             raise RuntimeError("private-marker")
@@ -228,7 +238,9 @@ async def test_real_sdk_turn_exhaustion_is_distinct_from_provider_failure(
         return httpx2.Response(200, json=_response(None, tool=True))
 
     with pytest.raises(WorkbenchError) as captured:
-        await _router(monkeypatch, None, handler).execute(_request(tools=True, max_turns=1))
+        await _router(monkeypatch, None, handler).execute(
+            _request(tools=True, max_turns=1)
+        )
     assert captured.value.code == "agent_turn_limit_exceeded"
 
 
@@ -265,7 +277,9 @@ async def test_real_sdk_rejects_filtered_output_even_when_json_is_valid(
 ) -> None:
     def handler(_: httpx2.Request) -> httpx2.Response:
         payload = _response(None)
-        cast(list[dict[str, object]], payload["choices"])[0]["finish_reason"] = "content_filter"
+        cast(list[dict[str, object]], payload["choices"])[0]["finish_reason"] = (
+            "content_filter"
+        )
         return httpx2.Response(200, json=payload)
 
     with pytest.raises(WorkbenchError) as captured:
@@ -273,7 +287,9 @@ async def test_real_sdk_rejects_filtered_output_even_when_json_is_valid(
     assert captured.value.code == "agent_output_refused"
 
 
-def test_unlimited_catalog_is_not_wrapped_and_prompts_have_no_character_ceiling() -> None:
+def test_unlimited_catalog_is_not_wrapped_and_prompts_have_no_character_ceiling() -> (
+    None
+):
     class Catalog(FixtureCatalog):
         max_cumulative_result_bytes = None
 
@@ -331,7 +347,9 @@ async def test_every_authoring_workflow_persists_safe_stage_failure_without_hand
         )
     elif workflow == "code_generation":
         agent = code_generation._AgentExecutor(responses=[])
-        service, _, _, handoff, _no_op, lifecycle = code_generation._service(executor=agent)
+        service, _, _, handoff, _no_op, lifecycle = code_generation._service(
+            executor=agent
+        )
     elif workflow == "validation":
         service, _, agent, handoff, _no_op, lifecycle = validation._service(
             context=validation._context()
@@ -379,7 +397,11 @@ async def test_every_authoring_workflow_persists_safe_stage_failure_without_hand
 async def test_local_fake_downstream_readers_are_optional_and_use_returned_evidence(
     workflow: str, enabled: bool
 ) -> None:
-    tool_name = "get_code_source_systems" if workflow == "code_generation" else "get_current_code"
+    tool_name = (
+        "get_code_source_systems"
+        if workflow == "code_generation"
+        else "get_current_code"
+    )
     calls: list[str] = []
 
     class Catalog:
@@ -413,7 +435,9 @@ async def test_local_fake_downstream_readers_are_optional_and_use_returned_evide
     request = _request(tools=True).model_copy(
         update={
             "workflow": workflow,
-            "stage": "sql_generation" if workflow == "code_generation" else "validation_generation",
+            "stage": "sql_generation"
+            if workflow == "code_generation"
+            else "validation_generation",
             "allowed_tool_names": (tool_name,) if enabled else (),
             "local_tool_catalog": Catalog(),
             "context": {
@@ -423,6 +447,23 @@ async def test_local_fake_downstream_readers_are_optional_and_use_returned_evide
                         "target_ref": "target_1",
                         "system_ref": "system_1",
                         "source_systems": [{"system_code": "INLINE_ONLY"}],
+                        "mapping_evidence": [
+                            {
+                                "context": {
+                                    "target_metadata": {
+                                        "tenant_catalog": "catalog",
+                                        "object_schema": "silver",
+                                        "object_name": "customer",
+                                        "attributes": [
+                                            {
+                                                "attribute_name": "customer_id",
+                                                "attribute_nullability": False,
+                                            }
+                                        ],
+                                    }
+                                }
+                            }
+                        ],
                     },
                 },
                 "repair": None,
@@ -438,7 +479,8 @@ async def test_local_fake_downstream_readers_are_optional_and_use_returned_evide
             ["READ_FROM_TOOL"] if enabled else ["INLINE_ONLY"]
         )
     else:
-        description = candidate["validation_groups"][0]["validation_checks"][0][
-            "validation_check_description"
-        ]
-        assert ("1 SQL artifacts" in description) == enabled
+        check = candidate["validation_groups"][0]["validation_checks"][0]
+        assert check["validation_query_sql"] == (
+            "SELECT COUNT(*) FROM `catalog`.`silver`.`customer` WHERE `customer_id` IS NULL"
+        )
+        assert check["validation_comparison_value"] == 0

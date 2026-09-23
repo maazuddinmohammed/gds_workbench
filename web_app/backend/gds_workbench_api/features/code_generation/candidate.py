@@ -15,7 +15,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from sqlglot import parse
+from sqlglot import exp, parse
 from sqlglot.errors import ErrorLevel, ParseError
 from sqlglot.expressions.ddl import DDL, Command, Set, Transaction, Use
 from sqlglot.expressions.dml import DML
@@ -36,6 +36,9 @@ class CodeGenerationTargetReference(BaseModel):
     target_ref: str = Field(pattern=r"^[a-z][a-z0-9_]{0,99}$")
     object_id: int = Field(gt=0, repr=False)
     source_system_codes: tuple[str, ...] = Field(min_length=1, max_length=200)
+
+    file_layout: Literal["combined", "per_system"] | None = None
+    preserved_artifact_names: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def validate_source_systems(self) -> Self:
@@ -116,8 +119,12 @@ class _AgentSqlArtifact(BaseModel):
 class _AgentSqlBatch(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
+    issues: list[Literal["missing_requirement_evidence", "conflicting_requirement"]] = Field(
+        default=[],
+        description="Unresolved business requirements; return no artifacts when reporting issues.",
+    )
     artifacts: list[_AgentSqlArtifact] = Field(
-        min_length=1,
+        min_length=0,
         max_length=50_000,
         description=(
             "Complete artifact ledger assigning each frozen source System exactly once "
@@ -148,11 +155,43 @@ class CodeGenerationCandidateValidator:
             return AgentCandidateValidation(issues=issues)
         if batch is None:
             raise AssertionError("validated SQL batch is missing")
+        if batch.issues:
+            return AgentCandidateValidation(
+                issues=tuple(
+                    AgentValidationIssue(
+                        code=f"code_generation.{code}",
+                        path=("issues",),
+                        message=(
+                            "A business requirement has missing inputs or conflicts with applied "
+                            "Mapping. Resolve the requirement and Mapping before generating SQL."
+                        ),
+                    )
+                    for code in dict.fromkeys(batch.issues)
+                )
+            )
 
         issue = self._coverage_issue(batch)
         if issue is not None:
             return issue
         for index, artifact in enumerate(batch.artifacts):
+            if (
+                self._by_ref[artifact.target_ref].file_layout is not None
+                and artifact.artifact_role == "target_transformation"
+                and not _is_transformation_sql(artifact.generated_sql)
+            ):
+                return AgentCandidateValidation(
+                    issues=(
+                        AgentValidationIssue(
+                            code="candidate.transformation_sql_contract",
+                            path=("artifacts", index, "generated_sql"),
+                            message=(
+                                "Use only unqualified temporary views followed by one "
+                                "explicit-column "
+                                "SELECT; no persistent DDL, DML, SELECT * or comments."
+                            ),
+                        ),
+                    )
+                )
             if not _is_valid_sql(artifact.generated_sql):
                 return AgentCandidateValidation(
                     issues=(
@@ -167,13 +206,21 @@ class CodeGenerationCandidateValidator:
 
     def parse_validated(self, candidate: JsonValue) -> tuple[GeneratedSqlArtifact, ...]:
         batch, issues = _parse_batch(candidate)
-        if issues or batch is None:
+        if issues or batch is None or batch.issues:
             raise InvalidRequestError("The Code Generation candidate is invalid.")
         if self._coverage_issue(batch) is not None:
             raise InvalidRequestError("The Code Generation candidate is invalid.")
         artifacts: list[GeneratedSqlArtifact] = []
         for candidate_artifact in batch.artifacts:
             target = self._by_ref[candidate_artifact.target_ref]
+            if (
+                target.file_layout is not None
+                and candidate_artifact.artifact_role == "target_transformation"
+                and not _is_transformation_sql(candidate_artifact.generated_sql)
+            ):
+                raise InvalidRequestError(
+                    "The transformation SQL does not follow the delivery contract."
+                )
             try:
                 artifacts.append(
                     GeneratedSqlArtifact(
@@ -219,6 +266,22 @@ class CodeGenerationCandidateValidator:
                 return _validation(
                     "candidate.artifact_name_duplicate",
                     "Artifact names must be unique within each target.",
+                )
+            if set(names) & {name.strip().casefold() for name in target.preserved_artifact_names}:
+                return _validation(
+                    "candidate.preserved_artifact",
+                    "Do not overwrite SQL files outside the selected scope.",
+                )
+            transformations = [
+                item for item in artifacts if item.artifact_role == "target_transformation"
+            ]
+            if (target.file_layout == "combined" and len(transformations) != 1) or (
+                target.file_layout == "per_system"
+                and any(len(item.source_system_codes) != 1 for item in transformations)
+            ):
+                return _validation(
+                    "candidate.file_layout",
+                    "Follow the requested combined or per-System file layout exactly.",
                 )
             assigned: list[str] = []
             transformation_count = 0
@@ -309,4 +372,36 @@ def _is_valid_sql(value: Any) -> bool:
     )
     return bool(statements) and all(
         isinstance(statement, executable_statement_types) for statement in statements
+    )
+
+
+def _is_transformation_sql(value: str) -> bool:
+    try:
+        statements = parse(value, read="databricks", error_level=ErrorLevel.RAISE)
+    except ParseError:
+        return False
+    if not statements or not isinstance(statements[-1], Query):
+        return False
+    for statement in statements[:-1]:
+        if not isinstance(statement, exp.Create) or statement.kind != "VIEW":
+            return False
+        properties = statement.args.get("properties")
+        if not isinstance(properties, exp.Properties) or not any(
+            isinstance(item, exp.TemporaryProperty) for item in properties.expressions
+        ):
+            return False
+        target = statement.this
+        if not isinstance(target, exp.Table) or target.db or target.catalog:
+            return False
+    if any(
+        node.comments
+        for statement in statements
+        if statement is not None
+        for node in statement.walk()
+    ):
+        return False
+    return not any(
+        isinstance(column, exp.Star) or isinstance(column, exp.Column) and column.is_star
+        for select in statements[-1].find_all(exp.Select)
+        for column in select.expressions
     )

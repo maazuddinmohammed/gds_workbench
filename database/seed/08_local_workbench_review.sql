@@ -76,6 +76,8 @@ DECLARE
     v_validation_group_id BIGINT;
     v_principal_id BIGINT;
     v_workflow_run_id BIGINT;
+    v_guide_id BIGINT;
+    v_guide_content TEXT := 'Generate Databricks transformation SQL from the applied Mapping. Use registered schema.table identifiers and isolate each contributing System. Declare unqualified temporary views before use; end with an explicit target-column SELECT. The runtime writes the target and supplies framework-managed fields. Do not emit persistent DDL, DML, comments, Markdown, invented columns, joins, or reconciliation.';
 BEGIN
     IF current_database() !~ '^gds_local_[0-9a-f]{12}$' THEN
         RAISE EXCEPTION 'local Workbench review seed requires a disposable gds_local database';
@@ -852,6 +854,23 @@ BEGIN
        AND is_active
      ORDER BY principal_id
      LIMIT 1;
+
+    IF NOT EXISTS (SELECT 1 FROM application.sql_generation_guide WHERE is_default) THEN
+        INSERT INTO application.sql_generation_guide (
+            sql_generation_guide_code, sql_generation_guide_name, is_default,
+            created_by_principal_id, updated_by_principal_id
+        ) VALUES ('local.transformation', 'Local transformation SQL', true,
+            v_principal_id, v_principal_id)
+        RETURNING sql_generation_guide_id INTO v_guide_id;
+        INSERT INTO application.sql_generation_guide_version (
+            sql_generation_guide_id, sql_generation_guide_version_number,
+            sql_generation_guide_content, sql_generation_guide_digest,
+            sql_generation_guide_version_status, created_by_principal_id,
+            updated_by_principal_id, published_time, published_by_principal_id
+        ) VALUES (v_guide_id, 1, v_guide_content,
+            encode(sha256(convert_to(v_guide_content, 'UTF8')), 'hex'),
+            'published', v_principal_id, v_principal_id, CURRENT_TIMESTAMP, v_principal_id);
+    END IF;
 
     INSERT INTO application.workflow_run (
         tenant_id, model_id, model_revision, model_workflow,

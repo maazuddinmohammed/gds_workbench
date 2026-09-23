@@ -2,6 +2,8 @@
 
 from typing import Any, cast
 
+from .context_contracts import INPUT_SHAPES
+
 CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
     "mapping": {
         "mapping_route": {
@@ -1143,7 +1145,14 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                 "intent, not physical join proof; source_relationships carry Analysis "
                 "confidence and measured validation when available; profiles are saved "
                 "aggregate counts, percentages and lengths, not live rows or guaranteed current "
-                "observations; assertions contain the linked active business rules. Empty lists "
+                "observations; assertions contain active Model/System context automatically "
+                "without requiring Entity links or matching legacy layer flags. Evaluate "
+                "relevance to this Entity; assertions are not proof of available sources. Keys "
+                "identify provenance; free-text type and statement distinguish intent from facts. "
+                "details may include notes, formula, grain, dimensions, date_basis, "
+                "exclusions, history "
+                "and acceptance_criteria when supplied. Missing details are unspecified. "
+                "Empty lists "
                 "mean no saved evidence, never permission to invent rules."
             ),
             "value_schema": {
@@ -1599,7 +1608,13 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "source_system_code, dependency "
             "order and exact modeled Entity "
             "identity, definition, "
-            "classification and grain.",
+            "classification and grain. entity.assertions contains active Model/System assertions "
+            "without requiring Entity links: assess relevance; keys identify provenance, "
+            "text states context, "
+            "details may include notes, formula, grain, dimensions, date_basis, "
+            "exclusions, history and "
+            "acceptance_criteria. Use these to interpret approved transformations and report "
+            "conflicts; never silently replace approved Mapping rules.",
             "value_schema": {
                 "$defs": {
                     "JsonValue": {},
@@ -1616,6 +1631,12 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 "minLength": 1,
                                 "title": "Entity Name",
                                 "type": "string",
+                            },
+                            "assertions": {
+                                "type": "array",
+                                "items": INPUT_SHAPES["modeling_assertions"]["schema"]["$defs"][
+                                    "modeling_assertions_entry"
+                                ],
                             },
                             "definition": {"title": "Definition", "type": "string"},
                             "classification": {"title": "Classification", "type": "string"},
@@ -2181,6 +2202,12 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 "minLength": 1,
                                 "title": "Entity Name",
                                 "type": "string",
+                            },
+                            "assertions": {
+                                "type": "array",
+                                "items": INPUT_SHAPES["modeling_assertions"]["schema"]["$defs"][
+                                    "modeling_assertions_entry"
+                                ],
                             },
                             "definition": {"title": "Definition", "type": "string"},
                             "classification": {"title": "Classification", "type": "string"},

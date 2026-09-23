@@ -344,7 +344,35 @@ class CodeGenerationWorkflow:
                 prompt_values = project_downstream_inputs(
                     "code_generation", cast(dict[str, Any], target_context)
                 )
-                prompt_values["sql_generation_guide"] = guide_content
+                run_guide = guide_content
+                if plan.code_generation_file_layout is not None:
+                    run_guide += "\n\nRun delivery contract: " + (
+                        "Write exactly one transformation SQL file for this Object combining "
+                        "its selected Systems. Build isolated System branches. Combine only "
+                        "according to applied Mapping; never invent UNION, joins "
+                        "or reconciliation. "
+                        if plan.code_generation_file_layout == "combined"
+                        else "Write one standalone transformation SQL file per selected System "
+                        "for this Object. Never use temporary state from another file. "
+                    )
+                    run_guide += (
+                        "Use successive CREATE OR REPLACE TEMPORARY VIEW statements where "
+                        "Mapping needs stages; declare each temporary dependency before use. "
+                        "Finish each file with one explicit target-column SELECT through "
+                        "SourceSystemID in registered order. Omit the target surrogate and "
+                        "framework-populated audit/history fields. No SELECT *, persistent DDL, "
+                        "DML, loading commands, comments, Markdown or prose in transformation SQL. "
+                        "The runtime writes the target. Use the published guide's resolved "
+                        "identifiers and confirmed runtime parameters. Separate files cannot "
+                        "replace Mapping that requires joint System comparison; report missing "
+                        "or incompatible evidence instead of inventing independent transformations."
+                    )
+                if target.preserved_artifact_names:
+                    run_guide += (
+                        "\nPreserve these existing file names; do not emit them: "
+                        + ", ".join(target.preserved_artifact_names)
+                    )
+                prompt_values["sql_generation_guide"] = run_guide
                 prompt_context = cast(
                     JsonValue,
                     {
@@ -369,6 +397,8 @@ class CodeGenerationWorkflow:
                             target_ref=target.target_ref,
                             object_id=target.object_id,
                             source_system_codes=target.source_system_codes,
+                            file_layout=plan.code_generation_file_layout,
+                            preserved_artifact_names=target.preserved_artifact_names,
                         ),
                     )
                 )
@@ -418,7 +448,7 @@ class CodeGenerationWorkflow:
                         "workflow.code_generation.common.sql_generation.context": (
                             _target_context_manifest(target_context)
                         ),
-                        "workflow.code_generation.sql_generation_guide": guide_content,
+                        "workflow.code_generation.sql_generation_guide": run_guide,
                         "workflow.validation_failures": [],
                     },
                     context=prompt_context,

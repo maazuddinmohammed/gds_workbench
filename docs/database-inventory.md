@@ -7,7 +7,7 @@ objects installed by `database/01_reference.sql` through
 `database/19_runtime_integrity.sql`. It excludes seed data plus preflight and
 verification queries.
 
-Inventory totals: **102 tables, 86 functions, and 18 installed triggers**.
+Inventory totals: **102 tables, 87 functions, and 19 installed triggers**.
 
 Read the schemas in dependency order:
 
@@ -105,7 +105,7 @@ retained rather than cascade-deleted.
 - `workflow.mapping_attribute` — Modeled Attribute to physical target Attribute mapping and transformation under a Mapping Object.
 - `workflow.generated_code` — Current Model-owned Code Artifact per bound target, including artifact name/type/content, one server-derived input digest, lifecycle, and optional Run provenance.
 - `workflow.generated_code_source_system` — Retained source-System membership for one Generated Code Artifact.
-- `workflow.validation_group` — Model/Tenant/System-scoped Validation group with internal Mapping and optional Code-context digests, lifecycle, and optional Run provenance.
+- `workflow.validation_group` — Model/Tenant/System-scoped Validation group with a durable optional modeled layer, internal Mapping and optional Code-context digests, lifecycle, and optional Run provenance.
 - `workflow.validation_check` — Validation query and assertion definition under one Validation Group, including Query A, optional Query B or literal/list operand, result type, operator, category, severity, and lifecycle.
 
 ### `application` — web preferences, authoring configuration, and run orchestration (18)
@@ -269,6 +269,8 @@ Each entry gives purpose, then execution order.
 - `application.review_metadata_records` — Apply exact authorized lock, status, or description changes with parent locks, physical revisions, idempotency and audit. Description audit receipts retain a digest rather than the text.
 - `workflow.list_mapping_source_objects` — Resolve eligible Mapping source Objects with source-Tenant provenance.
 
+- `workflow.tr_validation_group_layer` — Derive a new Validation Group’s modeled layer from its authoring Run, preserve it through manual review, and reject cross-layer reassignment.
+
 ## 3. Installed triggers
 
 All are `BEFORE` triggers. “Row” means once per affected row; “statement” means once for the whole statement.
@@ -292,6 +294,8 @@ All are `BEFORE` triggers. “Row” means once per affected row; “statement�
 - `guard_metadata_enrichment_result` on `application.metadata_enrichment_result` — Protect enrichment result history.
 - `guard_metadata_review_event` on `application.metadata_review_event` — Protect review audit history.
 - `guard_workflow_run_model_request` on `application.workflow_run_model_request` — Fence request identity and usage transitions.
+
+- `tr_validation_group_layer` on `workflow.validation_group` — Row-level INSERT/UPDATE scope preservation; see `workflow.tr_validation_group_layer`.
 
 ## 4. Explicit exclusions
 

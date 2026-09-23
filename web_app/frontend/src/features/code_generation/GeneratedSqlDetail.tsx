@@ -112,6 +112,7 @@ function GeneratedSqlDetailView({
         <div>
           <Link
             className="text-action"
+            search={{ layer: detail.entity_type === "logical_entity" ? "logical" : "dimensional" }}
             aria-label="Back to Code Generation"
             to="/tenants/$tenantId/code-generation/models/$modelId"
             params={{ tenantId: String(tenantId), modelId: String(model.model_id) }}
@@ -265,6 +266,7 @@ function humanize(value: string): string {
 
 function targetFromArtifact(detail: GeneratedSqlArtifactDetail): CodeGenerationTarget {
   return {
+    is_locked: detail.generated_code_is_locked,
     target: detail.target,
     entity_type: detail.entity_type,
     mapping_supports: detail.mapping_supports,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, LiteralString
+from typing import Any, LiteralString, cast
 from uuid import UUID
 
 import pytest
@@ -200,7 +200,9 @@ async def test_context_rejects_inconsistent_mapping_counts() -> None:
 
 
 @pytest.mark.asyncio
-async def test_context_allows_complete_object_mapping_without_attribute_mappings() -> None:
+async def test_context_allows_complete_object_mapping_without_attribute_mappings() -> (
+    None
+):
     first = _row(501)
     second = _row(502)
     first["attribute_mapping_count"] = 0
@@ -215,3 +217,64 @@ async def test_context_allows_complete_object_mapping_without_attribute_mappings
     )
 
     assert len(context.targets) == 2
+
+
+@pytest.mark.asyncio
+async def test_selected_system_context_preserves_other_files_and_rejects_partial_combined_file() -> (
+    None
+):
+    row = _row(501)
+    source = row["source_context"]
+    source["source_systems"][0]["source_system_id"] = 11
+    source["source_systems"][1]["source_system_id"] = 12
+    source["attribute_mappings"][0]["source_system_id"] = 11
+    source["physical_sources"] = [
+        {"selected_source_system_id": 11},
+        {"selected_source_system_id": 12},
+    ]
+    row["applied_artifacts"] = [
+        {
+            "modeled_entity_type": "logical_entity",
+            "modeled_entity_name": "Target501",
+            "artifact_name": "erp.sql",
+            "artifact_type": "sql_file",
+            "generated_code_content": "SELECT 1",
+            "generated_code_is_locked": False,
+            "generated_code_status": "active",
+            "_is_current": True,
+            "source_systems": [
+                {
+                    "source_system_code": "ERP",
+                    "generated_code_source_system_is_locked": False,
+                    "generated_code_source_system_status": "active",
+                }
+            ],
+        }
+    ]
+    plan = _plan(selected_object_ids=(501,)).model_copy(
+        update={
+            "selected_system_codes": ("crm",),
+            "code_generation_file_layout": "per_system",
+        }
+    )
+    context = await PostgresCodeGenerationContextRepository().load(
+        ContextTransaction([row]), tenant_id=7, plan=plan
+    )
+    assert context.targets[0].source_system_codes == ("CRM",)
+    assert context.targets[0].applied_generated_code == ()
+    assert context.targets[0].preserved_artifact_names == ("erp.sql",)
+    assert isinstance(context.agent_context, dict)
+    provider = cast(dict[str, Any], context.agent_context)["targets"][0]["context"]
+    assert [item["system_code"] for item in provider["source_systems"]] == ["CRM"]
+    assert len(provider["physical_sources"]) == 1
+    cast(list[dict[str, Any]], row["applied_artifacts"])[0]["source_systems"].append(
+        {
+            "source_system_code": "CRM",
+            "generated_code_source_system_is_locked": False,
+            "generated_code_source_system_status": "active",
+        }
+    )
+    with pytest.raises(InvalidRequestError, match="partially selected SQL file"):
+        await PostgresCodeGenerationContextRepository().load(
+            ContextTransaction([row]), tenant_id=7, plan=plan
+        )

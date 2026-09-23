@@ -66,6 +66,19 @@ def test_complete_25_dataset_model_graph_validates() -> None:
     assert len(result.candidate_digest) == 64
 
 
+@pytest.mark.parametrize("legacy_layers", [[], ["analysis"]])
+def test_assertion_supports_do_not_require_legacy_layer_flags(legacy_layers: list[str]) -> None:
+    graph = complete_model_graph()
+    for record in graph["modeling_assertion_record"]:
+        record["modeling_assertion_applicable_layers"] = legacy_layers
+    result = validate_future_graph(
+        snapshot=empty_model_snapshot(),
+        staged_documents=graph,
+        physical_scope=complete_physical_scope(),
+    )
+    assert result.valid, result.issues
+
+
 def test_schema_failure_reports_a_bounded_repair_path() -> None:
     record = deepcopy(complete_model_graph()["logical_attribute"][0])
     del record["logical_attribute_definition"]

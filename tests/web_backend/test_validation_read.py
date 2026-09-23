@@ -155,7 +155,7 @@ def test_ledger_currentness_normalizes_mixed_case_target_natural_keys() -> None:
         "object_schema": "Sales",
         "object_name": "Customer",
     }
-    contexts, generated = _ledger_digest_context([context_row])
+    contexts, generated = _ledger_digest_context([_context_row()])
     mapping_digest = validation_mapping_context_digest(contexts, "ERP")
     code_digest = validation_code_context_digest(contexts, generated, "erp")
     assert mapping_digest is not None
@@ -233,7 +233,7 @@ class EligibleSystemsTransaction:
             return []
         assert "LIMIT" not in query
         assert "workflow.list_code_generation_target_context" in query
-        assert parameters == (7, 18)
+        assert parameters == (7, 18, None, None, None, None)
         return [
             {
                 "system_id": 9,
@@ -375,6 +375,7 @@ class StaticValidationService:
         *,
         tenant_id: int,
         model_id: int,
+        entity_type: str | None = None,
     ) -> ValidationEligibleSystemCollection:
         assert principal.actor_kind is ActorKind.HUMAN
         assert (tenant_id, model_id) == (7, 18)
@@ -400,6 +401,7 @@ class StaticValidationService:
         *,
         tenant_id: int,
         model_id: int,
+        entity_type: str | None = None,
     ) -> ValidationLedger:
         del principal
         assert (tenant_id, model_id) == (7, 18)

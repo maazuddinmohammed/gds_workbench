@@ -1,3 +1,4 @@
+import type { ModelLayer } from "../../shared/ModelLayerTabs";
 import type { ModelReviewSelection } from "../model_record_review/selection";
 import { useEffect, useRef } from "react";
 import { Link } from "@tanstack/react-router";
@@ -6,9 +7,11 @@ import { ApiError } from "../../core/http";
 import type { ValidationValidationCheck, ValidationValidationGroup } from "./api";
 
 export function ValidationLedger({
-  tenantId, modelId, groupId, checkId, selection, groups,
+  tenantId, modelId, groupId, checkId, selection, groups, layer, isFiltered = false,
   modelRevision, loadedModelRevision, isLoading, error,
 }: {
+  layer?: ModelLayer;
+  isFiltered?: boolean;
   tenantId: number;
   modelId: number;
   groupId?: number | undefined;
@@ -65,7 +68,7 @@ export function ValidationLedger({
         <>
           <p>{check.validation_check_description ?? "No description provided."}</p>
           <div className="validation-group-statuses">
-            <StateBadge value={check.is_locked ? "Locked" : "Open"} tone="neutral" />
+            <StateBadge value={group?.is_locked ? "Group locked" : check.is_locked ? "Locked" : "Open"} tone="neutral" />
             <StateBadge value={check.is_active ? "Active" : "Inactive"} tone={check.is_active ? "success" : "neutral"} />
             <SeverityBadge severity={check.validation_severity} />
             <code>{check.validation_category_code}</code>
@@ -93,9 +96,9 @@ export function ValidationLedger({
                     <td><code>{item.validation_category_code}</code></td>
                     <td><SeverityBadge severity={item.validation_severity} /></td>
                     <td>{assertionLabel(item)}</td>
-                    <td><StateBadge value={item.is_locked ? "Locked" : "Open"} tone="neutral" />
+                    <td><StateBadge value={group.is_locked ? "Group locked" : item.is_locked ? "Locked" : "Open"} tone="neutral" />
                       <StateBadge value={item.is_active ? "Active" : "Inactive"} tone={item.is_active ? "success" : "neutral"} /></td>
-                    <td><Link className="text-action"
+                    <td><Link search={{ layer: layer ?? "logical" }} className="text-action"
                       to="/tenants/$tenantId/validation/models/$modelId/groups/$groupId/checks/$checkId"
                       params={{ ...params, groupId: String(group.validation_group_id), checkId: String(item.validation_check_id) }}
                       aria-label={`Show details for ${item.validation_check_name}`}>Show details</Link></td>
@@ -106,7 +109,7 @@ export function ValidationLedger({
           )}
         </>
       ) : groups.length === 0 ? (
-        <div className="empty-state compact">No Validation Groups are applied to this Model. Run Validation to author the first draft.</div>
+        <div className="empty-state compact">{isFiltered ? "No Validation Groups match these filters." : "No Validation Groups are applied to this Model. Run Validation to author the first draft."}</div>
       ) : (
         <div className="table-scroll validation-check-table-scroll">
           <table aria-label="Validation Groups">
@@ -116,11 +119,11 @@ export function ValidationLedger({
                 {selection ? <td><input type="checkbox" aria-label={`Select Validation Group ${item.validation_group_id}`}
                   checked={selection.selectedIds.has(item.validation_group_id)}
                   onChange={(event) => select(item.validation_group_id, event.target.checked)} /></td> : null}
-                <td><span className="validation-check-name"><strong>{item.validation_group_name}</strong>
+                <td><span className="validation-check-name"><strong>{item.validation_group_name}</strong>{!item.modeled_entity_type ? <small>Shared across layers</small> : null}
                   <span>{item.validation_group_description ?? "No description provided."}</span></span></td>
                 <td>{item.system_code}</td><td>{item.checks.length}</td>
                 <td><GroupStatus group={item} /></td>
-                <td><Link className="text-action"
+                <td><Link search={{ layer: layer ?? "logical" }} className="text-action"
                   to="/tenants/$tenantId/validation/models/$modelId/groups/$groupId"
                   params={{ ...params, groupId: String(item.validation_group_id) }}
                   aria-label={`Show details for ${item.validation_group_name}`}>Show details</Link></td>

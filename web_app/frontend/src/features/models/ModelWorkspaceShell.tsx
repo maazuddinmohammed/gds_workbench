@@ -97,22 +97,22 @@ export function ModelWorkspaceShell({
               <i>3</i><span><strong>Profiling</strong><small>Run evidence</small></span>
             </Link>
             <Link
-              aria-label="Analysis"
-              className={`model-step${activeStage === "analysis" ? " is-active" : ""}`}
-              to="/tenants/$tenantId/models/$modelId/analysis"
-              params={{ tenantId, modelId }}
-              title="Analysis — Relationship evidence"
-            >
-              <i>4</i><span><strong>Analysis</strong><small>Relationship evidence</small></span>
-            </Link>
-            <Link
               aria-label="Assertions"
               className={`model-step${activeStage === "assertions" ? " is-active" : ""}`}
               to="/tenants/$tenantId/models/$modelId/assertions"
               params={{ tenantId, modelId }}
               title="Assertions — Modeling assertions"
             >
-              <i>5</i><span><strong>Assertions</strong><small>Modeling assertions</small></span>
+              <i>4</i><span><strong>Assertions</strong><small>Modeling assertions</small></span>
+            </Link>
+            <Link
+              aria-label="Analysis"
+              className={`model-step${activeStage === "analysis" ? " is-active" : ""}`}
+              to="/tenants/$tenantId/models/$modelId/analysis"
+              params={{ tenantId, modelId }}
+              title="Analysis — Relationship evidence"
+            >
+              <i>5</i><span><strong>Analysis</strong><small>Relationship evidence</small></span>
             </Link>
             <Link
               aria-label="Conceptual"

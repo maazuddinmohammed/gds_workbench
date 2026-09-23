@@ -471,6 +471,9 @@ function mappingFetchStub(options: {
   let executeAttempts = 0;
   return vi.fn<typeof fetch>(async (input) => {
     const url = String(input);
+    if (url.includes("/metadata/datasets/system/rows?")) return jsonResponse({
+      items: [{ system_code: "CRM", system_name: "CRM", is_active: true }], next_cursor: null,
+    });
     if (url === "/api/v1/tenants/7/home") return jsonResponse({
       ...tenantHome,
       tenant: { ...tenantHome.tenant, effective_role: options.role ?? "tenant_admin" },
@@ -846,7 +849,7 @@ it("selects Objects with their unlocked Attributes and preserves explicit exclus
 });
 
 it.each([false, true])("saves a manual System dependency, editing=%s", async (edit) => {
-  const base = mappingFetchStub();
+  const base = mappingFetchStub({ generationTargets: [] });
   const fetcher = vi.fn<typeof fetch>(async (input, init) => String(input).endsWith("/change-sets/mapping/dependencies")
     ? jsonResponse({ model_id: 18, model_revision: 19, model_change_set_id: "receipt", action_count: 1 })
     : base(input, init));
@@ -861,9 +864,10 @@ it.each([false, true])("saves a manual System dependency, editing=%s", async (ed
   expect(dialog.getByRole("button", { name: "Close System dependency" })).toHaveFocus();
   if (edit) {
     expect(dialog.getByLabelText("Layer")).toBeDisabled();
-    expect(dialog.getByLabelText("Source System code")).toHaveAttribute("readonly");
+    expect(dialog.getByLabelText("Source System code")).toBeDisabled();
   } else {
-    await user.type(dialog.getByLabelText("Source System code"), "CRM");
+    await dialog.findByRole("option", { name: "CRM" });
+    await user.selectOptions(dialog.getByLabelText("Source System code"), "CRM");
   }
   await user.clear(dialog.getByLabelText("Dependency order"));
   await user.type(dialog.getByLabelText("Dependency order"), "20");
@@ -992,4 +996,33 @@ it("selects unlocked Attributes across every page and rejects excluded missing m
   expect(JSON.parse(String(call?.[1]?.body)).mapping_targets[0].selected_attribute_ids).toEqual(
     Array.from({ length: 51 }, (_, index) => 801 + index),
   );
+});
+
+
+it("loads every active registered System page before adding a dependency", async () => {
+  const base = mappingFetchStub({ generationTargets: [] });
+  const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+    const url = String(input);
+    if (url.includes("/metadata/datasets/system/rows?")) {
+      const query = new URL(url, "http://localhost").searchParams;
+      expect(query.has("filters")).toBe(false);
+      return jsonResponse({ items: [{ system_code: query.has("cursor") ? "ERP" : "CRM", is_active: true }, { system_code: "INACTIVE", is_active: false }],
+        next_cursor: query.has("cursor") ? null : "next-system-page" });
+    }
+    if (url.endsWith("/change-sets/mapping/dependencies")) return jsonResponse({ model_revision: 19 });
+    return base(input, init);
+  });
+  const user = userEvent.setup();
+  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18"] }),
+  })} />);
+  await user.click(await screen.findByRole("button", { name: "Add System dependency" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  await dialog.findByRole("option", { name: "ERP" });
+  expect(dialog.queryByRole("option", { name: "INACTIVE" })).not.toBeInTheDocument();
+  await user.selectOptions(dialog.getByRole("combobox", { name: "Source System code" }), "ERP");
+  await user.click(dialog.getByRole("button", { name: "Save dependency" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  const call = fetcher.mock.calls.find(([input]) => String(input).endsWith("/change-sets/mapping/dependencies"));
+  expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ source_system_code: "ERP" });
 });

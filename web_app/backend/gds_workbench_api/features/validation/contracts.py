@@ -68,6 +68,7 @@ class ValidationValidationCheck(_Contract):
 
 class ValidationValidationGroup(_Contract):
     validation_group_id: int = Field(gt=0)
+    modeled_entity_type: Literal["logical_entity", "dimensional_entity"] | None = None
     system_id: int = Field(gt=0)
     system_code: str = Field(min_length=1, max_length=100)
     validation_group_name: str = Field(min_length=1, max_length=200)

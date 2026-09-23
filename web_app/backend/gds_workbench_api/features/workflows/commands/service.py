@@ -60,7 +60,7 @@ SELECT created.created,
   FROM application.create_workflow_run(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS created
 """
 
@@ -178,6 +178,7 @@ class DatabaseWorkflowCommandService:
                         )
                         if command.mapping_targets is not None
                         else None,
+                        command.code_generation_file_layout,
                     ),
                 )
         except Exception as error:
@@ -224,6 +225,8 @@ def _raise_safe_workflow_error(error: Exception) -> Never:
         "Selected Scope Object IDs must be unique",
         "Selected Scope contains an unavailable or ineligible Object",
         "Selected Scope is required",
+        "Invalid Code Generation file layout",
+        "Selected Code Generation System is unavailable",
         "Invalid description regeneration target",
         "Validation requires selected Systems and no Object selection",
         "System selection is available only for Validation",
