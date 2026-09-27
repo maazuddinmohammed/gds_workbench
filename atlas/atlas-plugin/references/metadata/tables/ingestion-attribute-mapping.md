@@ -67,15 +67,12 @@ Apply these checks only to records that are present. No minimum record count or 
 
 Development provenance; these source files are not runtime dependencies of the packaged skill.
 
-User-confirmed intended behavior: these optional records are not required by ingestion or downstream workflows. Legacy GDS profiling still reads active mappings to propagate masking (`plugins/v2/gds/skills/gds/scripts/profiling.js:23`). Review that dependency when porting profiling; an empty mapping dataset does not prove a column is unmasked. Do not silently remove existing masking safeguards.
+User-confirmed intended behavior: these optional records are not required by ingestion or downstream workflows. Profiling must still propagate masking from active mappings; an empty mapping dataset does not prove a column is unmasked. Preserve existing masking safeguards.
 
 - `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,226,241`.
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:179,441,450`.
 - `database/02_core.sql:263,274,275,292,298`.
 - `database/16_mcp_metadata_apply.sql:593,639,649`.
-- `plugins/v2/gds/skills/gds/references/orchestration-rules.md:8`.
-- `plugins/v2/gds/skills/gds/workbench/validation/common.js:205,357,525`.
 - `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:354,474,533`.
-- `plugins/v2/gds/skills/gds/workbench/validation/metadata.js:11,177,241`.
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

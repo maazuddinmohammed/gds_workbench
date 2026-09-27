@@ -3,7 +3,7 @@ import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import type { ModelDetail } from "../models/api";
-import type { ModelInputScopeObject } from "../model_input_scope/api";
+import { loadWorkflowScope } from "../workflows/api";
 import { profilingQueryKeys, type ProfilingApi } from "./api";
 import { DrawerHeader } from "./shared";
 
@@ -23,7 +23,7 @@ export function ProfilingRunConfiguration({
   const closeButton = useRef<HTMLButtonElement>(null);
   const scopeQuery = useQuery({
     queryKey: profilingQueryKeys.scope(tenantId, model.model_id),
-    queryFn: () => loadAllBronzeScope(api, tenantId, model.model_id),
+    queryFn: () => loadWorkflowScope(api, tenantId, model.model_id, "bronze"),
   });
   const createMutation = useMutation({
     mutationFn: ({
@@ -239,37 +239,4 @@ export function ProfilingRunConfiguration({
       </section>
     </div>
   );
-}
-
-async function loadAllBronzeScope(
-  api: ProfilingApi,
-  tenantId: number,
-  modelId: number,
-): Promise<{ modelRevision: number; items: ModelInputScopeObject[] }> {
-  const items: ModelInputScopeObject[] = [];
-  const seenCursors = new Set<string>();
-  let cursor: string | undefined;
-  let modelRevision: number | null = null;
-
-  for (let page = 0; page < 250; page += 1) {
-    const response = await api.listModelInputScope(
-      tenantId,
-      modelId,
-      { zone: "bronze" },
-      200,
-      cursor,
-    );
-    if (modelRevision !== null && modelRevision !== response.model_revision) {
-      throw new Error("Model Input Scope revision changed while loading");
-    }
-    modelRevision = response.model_revision;
-    items.push(...response.items);
-    if (!response.next_cursor) return { modelRevision, items };
-    if (seenCursors.has(response.next_cursor)) {
-      throw new Error("Model Input Scope cursor repeated");
-    }
-    seenCursors.add(response.next_cursor);
-    cursor = response.next_cursor;
-  }
-  throw new Error("Active Bronze Scope exceeds the supported bounded selection");
 }

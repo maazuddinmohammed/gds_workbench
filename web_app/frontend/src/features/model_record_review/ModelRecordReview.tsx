@@ -30,8 +30,8 @@ export function ModelRecordReview({
         <div className="workflow-command-actions">
           {actions.map((action) => (
             <button
-              key={action} className="button button-secondary button-small" type="button"
-              disabled={selectedIds.size === 0 || Boolean(reason)} title={reason}
+              key={action} className={`button button-secondary button-small${action === "delete" ? " model-delete-action" : ""}`} type="button"
+              disabled={selectedIds.size === 0 || Boolean(reason)} title={reason ?? (action === "lock" ? "Protect selected records from edits and regeneration" : action === "unlock" ? "Allow selected records to be edited or regenerated" : undefined)}
               onClick={() => {
                 setNotice("");
                 setCommand({
@@ -39,7 +39,7 @@ export function ModelRecordReview({
                   expected_model_revision: modelRevision,
                 });
               }}
-            >{action.charAt(0).toUpperCase() + action.slice(1)} selected</button>
+            >{action === "deactivate" ? "Deactivate" : action === "reactivate" ? "Activate" : action.charAt(0).toUpperCase() + action.slice(1)} selected</button>
           ))}
         </div>
       </div>
@@ -53,7 +53,7 @@ export function ModelRecordReview({
           onClose={() => setCommand(null)}
           onApplied={async (count) => {
             setCommand(null);
-            setNotice(`${count} record${count === 1 ? "" : "s"} updated.`);
+            setNotice(`${count} record${count === 1 ? "" : "s"} ${command.action === "delete" ? "deleted" : "updated"}.`);
             await onApplied();
           }}
         />
@@ -62,7 +62,7 @@ export function ModelRecordReview({
   );
 }
 
-function ReviewDialog({
+export function ReviewDialog({
   api, tenantId, modelId, command, hasTenantLock, modelRevision, onClose, onApplied, onReview,
 }: {
   api: ModelRecordReviewApi;
@@ -113,6 +113,7 @@ function ReviewDialog({
   const preview = previewQuery.data?.pages[0];
   const items = previewQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const stale = modelRevision !== command.expected_model_revision;
+  const deleting = command.action === "delete";
   const canApply = hasTenantLock && !stale && preview?.can_apply && preview.action_count > 0
     && !previewQuery.isError && !previewQuery.isFetching && !applyMutation.isPending
     && !applyMutation.isError;
@@ -148,7 +149,7 @@ function ReviewDialog({
         <header className="drawer-header">
           <div>
             <small>Model revision {command.expected_model_revision}</small>
-            <h2 id="record-review-heading">Review {command.action}</h2>
+            <h2 id="record-review-heading">{command.layer ? `Clear ${command.layer} layer` : deleting ? "Delete records permanently" : command.action === "deactivate" ? "Deactivate records" : command.action === "reactivate" ? "Activate records" : `Review ${command.action}`}</h2>
           </div>
           <button ref={closeButton} className="panel-close" type="button" aria-label="Close review"
             disabled={cannotClose} onClick={onClose}><span aria-hidden="true">×</span></button>
@@ -158,7 +159,14 @@ function ReviewDialog({
           {previewQuery.isError ? <p role="alert">{failureMessage(previewQuery.error, false)}</p> : null}
           {stale ? <p role="alert">The Model changed. Close this preview and refresh before reviewing again.</p> : null}
           {!hasTenantLock ? <p role="alert">Tenant Lock required to apply this review.</p> : null}
+          {command.layer ? <p>{command.layer === "conceptual"
+            ? `This includes every ${deleting ? "" : "active "}Conceptual object, relationship, and support link, across all pages and filters.`
+            : `This includes every ${deleting ? "" : "active "}${command.layer === "logical" ? "Logical" : "Dimensional"} entity, attribute, relationship, and submodel, including memberships and support records, across all pages and filters.`}</p> : null}
+          {deleting ? <p className="model-delete-warning">Permanently deletes the listed records and their dependent records, including inactive ones. This cannot be undone. Locked records must be unlocked first.</p> : null}
+          {command.action === "deactivate" ? <p>Deactivation keeps records in the database and excludes them from active workflows. You can activate them again. Required dependent status changes are listed below.</p> : null}
           {preview ? <>
+            {preview.changes_by_dataset ? <details className="model-review-breakdown"><summary>Counts by record type</summary><dl className="detail-fact-grid">{Object.entries(preview.changes_by_dataset).map(([dataset, count]) => <div key={dataset}><dt>{dataset.replaceAll("_", " ")}</dt><dd>{count}</dd></div>)}</dl></details> : null}
+            {preview.warnings?.map((warning) => <p className="field-help" key={warning}>{warning}</p>)}
             <p>{preview.action_count} {preview.action_count === 1 ? "change" : "changes"}: {preview.action_count - preview.additional_change_count} selected,
               {" "}{preview.additional_change_count} required by dependencies.</p>
             {preview.issues.length ? <div role="alert">
@@ -177,10 +185,10 @@ function ReviewDialog({
                       : `${item.status} → ${item.desired_status}`
                     : "Unchanged"}{item.is_locked ? <small>Locked</small> : null}</td>
                   <td>{item.reason}
-                    {item.is_locked && command.action !== "lock" && command.action !== "unlock" ? (
+                    {item.is_locked && item.can_unlock !== false && command.action !== "lock" && command.action !== "unlock" ? (
                       <button className="text-action" type="button"
                         disabled={cannotClose || stale || !hasTenantLock}
-                        onClick={() => onReview({ dataset: item.dataset, record_ids: [item.record_id],
+                        onClick={() => onReview({ dataset: item.dataset as ModelReviewDataset, record_ids: [item.record_id],
                           action: "unlock", expected_model_revision: command.expected_model_revision })}
                       >Review unlock for {item.label}</button>
                     ) : null}
@@ -199,14 +207,14 @@ function ReviewDialog({
             {retryable ? <button className="button button-primary" type="button"
               disabled={!hasTenantLock || applyMutation.isPending}
               onClick={() => { if (request.current) applyMutation.mutate(request.current); }}>Retry review</button>
-              : <button className="button button-primary" type="button" disabled={!canApply}
+              : <button className={`button button-primary${deleting ? " model-delete-confirm" : ""}`} type="button" disabled={!canApply}
                 onClick={() => {
                   if (!canApply || !preview) return;
                   request.current = {
                     command: { ...command, expected_plan_digest: preview.plan_digest }, key: requestKey,
                   };
                   applyMutation.mutate(request.current);
-                }}>{applyMutation.isPending ? "Applying…" : preview?.action_count === 1 ? "Apply this change" : `Apply these ${preview?.action_count ?? 0} changes`}</button>}
+                }}>{applyMutation.isPending ? deleting ? "Deleting…" : "Applying…" : deleting ? `Delete ${preview?.action_count ?? 0} records permanently` : preview?.action_count === 1 ? "Apply this change" : `Apply these ${preview?.action_count ?? 0} changes`}</button>}
           </div>
         </div>
       </section>

@@ -21,6 +21,18 @@ def test_archive_round_trip_and_reproducibility(tmp_path: Path) -> None:
     second = build_plugin.build(tmp_path / "two.zip")
     assert first.read_bytes() == second.read_bytes()
     manifest = json.loads((PLUGIN_ROOT / "plugin.json").read_text(encoding="utf-8"))
+    marketplace = json.loads(
+        (ROOT / ".github/plugin/marketplace.json").read_text(encoding="utf-8")
+    )
+    assert marketplace["plugins"] == [
+        {
+            "name": "atlas",
+            "description": "Atlas metadata and modeling workflows.",
+            "version": manifest["version"],
+            "source": "./atlas/atlas-plugin",
+            "strict": True,
+        }
+    ]
     delivered = ROOT / "atlas" / "dist" / f"atlas-agent-plugin-{manifest['version']}.zip"
     assert delivered.read_bytes() == first.read_bytes()
 
@@ -54,7 +66,7 @@ def test_archive_round_trip_and_reproducibility(tmp_path: Path) -> None:
 
     extracted = tmp_path / "extracted" / "atlas"
     schema = json.loads(
-        (ROOT / "tests/plugin_v2/agent_plugins_1_0_0/plugin.schema.json").read_text(
+        (ROOT / "tests/atlas/plugin.schema.json").read_text(
             encoding="utf-8"
         )
     )

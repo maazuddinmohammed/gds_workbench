@@ -19,14 +19,19 @@ from gds_etl_workbench.domain.snapshots.model import ModelChangeSetDataset, Mode
 from pydantic import JsonValue
 
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
-    WorkflowChangeSetFinalizationResult,
+    WorkflowChangeSetFinalizer as MappingChangeSetHandoff,
+)
+from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetHandoffResult,
     WorkflowChangeSetValidationError,
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
+    AgentWorkflowLifecycle,
     AgentWorkflowRunStart,
-    AgentWorkflowTerminalResult,
+)
+from gds_workbench_api.features.workflows.authoring.no_op import (
+    AuthoringNoOpCompleter as MappingNoOpCompleter,
 )
 from gds_workbench_api.features.workflows.authoring.no_op import (
     AuthoringNoOpReceipt,
@@ -34,7 +39,6 @@ from gds_workbench_api.features.workflows.authoring.no_op import (
     authoring_no_op_candidate_digest,
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
-    ModelWorkflow,
     WorkflowExecutionMode,
 )
 from gds_workbench_api.features.workflows.authoring.repair import (
@@ -76,86 +80,6 @@ class MappingPreparationService(Protocol):
     ) -> tuple[MappingPreparation, ...]: ...
 
 
-class MappingChangeSetHandoff(Protocol):
-    async def retain_failed_candidate(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
-        issues: tuple[ModelValidationIssue, ...],
-        failure_code: str,
-        safe_failure_message: str,
-    ) -> object: ...
-
-    async def finalize(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        workflow_run_claim_token: UUID,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
-        changes: tuple[StageModelChange, ...],
-        final_event: AgentWorkflowEvent,
-    ) -> WorkflowChangeSetFinalizationResult: ...
-
-
-class MappingNoOpCompleter(Protocol):
-    async def complete(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        workflow_run_claim_token: UUID,
-        request: AuthoringNoOpRequest,
-    ) -> AuthoringNoOpReceipt: ...
-
-
-class MappingLifecycle(Protocol):
-    async def start(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_execution_mode: WorkflowExecutionMode | None,
-        expected_model_revision: int,
-    ) -> AgentWorkflowRunStart: ...
-
-    async def append_event(
-        self,
-        principal: RequestPrincipal,
-        *,
-        workflow_run_id: int,
-        workflow_run_claim_token: UUID,
-        expected_model_revision: int,
-        event: AgentWorkflowEvent,
-    ) -> None: ...
-
-    async def fail(
-        self,
-        principal: RequestPrincipal,
-        *,
-        workflow_run_id: int,
-        workflow_run_claim_token: UUID,
-        expected_model_revision: int,
-        failure_code: str,
-        safe_failure_message: str,
-    ) -> AgentWorkflowTerminalResult: ...
-
-
 class MappingExecutionFailedError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
@@ -185,7 +109,7 @@ class MappingWorkflow:
         agent_executor: AgentExecutor,
         handoff: MappingChangeSetHandoff,
         no_op: MappingNoOpCompleter,
-        lifecycle: MappingLifecycle,
+        lifecycle: AgentWorkflowLifecycle,
         context_policy: AgentContextPolicy | None = None,
         context_limits: MappingExecutionContextLimits | None = None,
     ) -> None:

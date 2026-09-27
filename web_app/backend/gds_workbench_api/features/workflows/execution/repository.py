@@ -1,15 +1,13 @@
 """Least-privilege PostgreSQL access for durable Workflow Run claims."""
 
-from contextlib import AbstractAsyncContextManager
 from datetime import datetime
-from typing import LiteralString, Protocol
+from typing import LiteralString
 from uuid import UUID
 
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation, WriteTransaction
 from pydantic import BaseModel, ConfigDict, Field
 
-from .contracts import WorkflowExecutionClaim
+from .contracts import WorkflowExecutionClaim, WorkflowExecutionDatabase
 
 _CLAIM_NEXT_SQL: LiteralString = """
 SELECT claimed.*
@@ -41,16 +39,8 @@ class WorkflowClaimLease(BaseModel):
     workflow_run_claim_expires_time: datetime
 
 
-class WorkflowClaimDatabase(Protocol):
-    def write_transaction(
-        self,
-        *,
-        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AbstractAsyncContextManager[WriteTransaction]: ...
-
-
 class DatabaseWorkflowClaimRepository:
-    def __init__(self, *, database: WorkflowClaimDatabase) -> None:
+    def __init__(self, *, database: WorkflowExecutionDatabase) -> None:
         self._database = database
 
     async def claim_next(
@@ -112,6 +102,5 @@ def _validate_lease_duration(value: int) -> None:
 
 __all__ = [
     "DatabaseWorkflowClaimRepository",
-    "WorkflowClaimDatabase",
     "WorkflowClaimLease",
 ]

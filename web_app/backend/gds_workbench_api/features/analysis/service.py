@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import logging
-from contextlib import AbstractAsyncContextManager
-from typing import Protocol, cast
+from typing import cast
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import ModelValidationIssue
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.domain.modeling_records import (
@@ -17,32 +15,30 @@ from gds_etl_workbench.domain.modeling_records import (
 )
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
-    ReadTransaction,
-    WriteTransaction,
 )
 
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
-    WorkflowChangeSetFinalizationResult,
+    WorkflowChangeSetFinalizer,
     WorkflowChangeSetHandoffResult,
     WorkflowChangeSetValidationError,
 )
 from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextBundle,
+    AgentContextRepository,
     PostgresAgentContextRepository,
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
-    AgentWorkflowEvent,
+    AgentWorkflowLifecycle,
     AgentWorkflowRunStart,
-    AgentWorkflowTerminalResult,
 )
 from gds_workbench_api.features.workflows.authoring.no_op import (
-    AuthoringNoOpReceipt,
+    AuthoringNoOpCompleter,
     AuthoringNoOpRequest,
     authoring_no_op_candidate_digest,
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
-    ModelWorkflow,
+    AgentRunPlanRepository,
     PostgresAgentRunPlanRepository,
     WorkflowExecutionMode,
 )
@@ -57,119 +53,11 @@ from gds_workbench_api.features.workflows.authoring.repair import (
 from gds_workbench_api.features.workflows.authoring.stage_runner import (
     AgentStageRunner,
 )
+from gds_workbench_api.features.workflows.execution.contracts import WorkflowExecutionDatabase
 
 from .candidate import AnalysisInferenceCandidateValidator
 
 _logger = logging.getLogger(__name__)
-
-
-class AnalysisInferenceExecutionDatabase(Protocol):
-    def write_transaction(
-        self,
-        *,
-        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AbstractAsyncContextManager[WriteTransaction]: ...
-
-
-class AnalysisInferencePlanRepository(Protocol):
-    async def load(
-        self,
-        transaction: ReadTransaction,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-    ) -> AgentRunPlan: ...
-
-
-class AnalysisInferenceContextRepository(Protocol):
-    async def load(
-        self,
-        transaction: ReadTransaction,
-        *,
-        tenant_id: int,
-        plan: AgentRunPlan,
-    ) -> AgentContextBundle: ...
-
-
-class AnalysisInferenceChangeSetHandoff(Protocol):
-    async def retain_failed_candidate(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
-        issues: tuple[ModelValidationIssue, ...],
-        failure_code: str,
-        safe_failure_message: str,
-    ) -> object: ...
-
-    async def finalize(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
-        final_event: AgentWorkflowEvent,
-    ) -> WorkflowChangeSetFinalizationResult: ...
-
-
-class AnalysisInferenceNoOpCompleter(Protocol):
-    async def complete(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        workflow_run_claim_token: UUID,
-        request: AuthoringNoOpRequest,
-    ) -> AuthoringNoOpReceipt: ...
-
-
-class AnalysisInferenceLifecycle(Protocol):
-    async def start(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_execution_mode: WorkflowExecutionMode | None,
-        expected_model_revision: int,
-    ) -> AgentWorkflowRunStart: ...
-
-    async def append_event(
-        self,
-        principal: RequestPrincipal,
-        *,
-        workflow_run_id: int,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-        event: AgentWorkflowEvent,
-    ) -> None: ...
-
-    async def fail(
-        self,
-        principal: RequestPrincipal,
-        *,
-        workflow_run_id: int,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-        failure_code: str,
-        safe_failure_message: str,
-    ) -> AgentWorkflowTerminalResult: ...
 
 
 class AnalysisInferenceExecutionFailedError(WorkbenchError):
@@ -194,14 +82,14 @@ class AnalysisInferenceWorkflow:
     def __init__(
         self,
         *,
-        database: AnalysisInferenceExecutionDatabase,
+        database: WorkflowExecutionDatabase,
         authorizer: AuthorizationService,
         agent_executor: AgentExecutor,
-        handoff: AnalysisInferenceChangeSetHandoff,
-        no_op: AnalysisInferenceNoOpCompleter,
-        lifecycle: AnalysisInferenceLifecycle,
-        plan_repository: AnalysisInferencePlanRepository | None = None,
-        context_repository: AnalysisInferenceContextRepository | None = None,
+        handoff: WorkflowChangeSetFinalizer,
+        no_op: AuthoringNoOpCompleter,
+        lifecycle: AgentWorkflowLifecycle,
+        plan_repository: AgentRunPlanRepository | None = None,
+        context_repository: AgentContextRepository | None = None,
         context_policy: AgentContextPolicy | None = None,
     ) -> None:
         self._database = database

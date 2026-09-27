@@ -18,7 +18,7 @@ INSTALL_DATABASE = ROOT / "web_app" / "local" / "install_database.sh"
 DATABASE_ROOT = ROOT / "database"
 AZURE_FRESH_DEPLOYMENT = ROOT / "docs" / "AZURE_FRESH_DEPLOYMENT.md"
 WEB_APP_WORKFLOW = ROOT / ".github" / "workflows" / "web-app.yml"
-PLUGIN_WINDOWS_WORKFLOW = ROOT / ".github" / "workflows" / "plugin-windows.yml"
+ATLAS_WINDOWS_WORKFLOW = ROOT / ".github" / "workflows" / "plugin-windows.yml"
 DATABASE_ARCHITECTURE = ROOT / "docs" / "architecture" / "database.md"
 MCP_ARCHITECTURE = ROOT / "docs" / "architecture" / "overview.md"
 
@@ -96,7 +96,6 @@ def test_combined_image_context_excludes_local_and_generated_content() -> None:
         "deployment",
         "docs",
         "artifacts",
-        "plugins",
         "tests",
         "web_app/compose.local.yaml",
         "web_app/local",
@@ -279,13 +278,14 @@ def test_database_and_mcp_changes_trigger_the_disposable_postgres_ci_suite() -> 
     assert "-c mcp_server/pyproject.toml tests/mcp" in workflow
 
 
-def test_windows_plugin_ci_tracks_and_uses_the_frozen_mcp_project() -> None:
-    workflow = PLUGIN_WINDOWS_WORKFLOW.read_text(encoding="utf-8")
+def test_windows_atlas_ci_tracks_and_uses_the_frozen_mcp_project() -> None:
+    workflow = ATLAS_WINDOWS_WORKFLOW.read_text(encoding="utf-8")
 
     assert '      - "mcp_server/**"' in workflow
     assert "uv sync --frozen --project mcp_server" in workflow
     assert "uv run --frozen --project mcp_server python -m pytest" in workflow
-    assert "tests/plugin_v2 -q" in workflow
+    assert "tests/atlas/test_native_parity.py" in workflow
+    assert "atlas/atlas-vs-code" in workflow
     assert "pip install pytest" not in workflow
 
 

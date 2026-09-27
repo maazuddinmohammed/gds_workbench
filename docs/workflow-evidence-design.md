@@ -706,11 +706,9 @@ for consequential architectural trade-offs.
 - Its description agent receives batches of compact Object/Attribute metadata.
   Backend evidence collection handles type inference and source schema comments:
   `features/metadata_enrichment/service.py`, `DatabaseMetadataEnrichmentExecutor`.
-- The plugin enrichment guide also calls for available Profiles, Analysis,
-  Assertions, and ingestion lineage when establishing business meaning:
-  `plugins/v2/gds/skills/gds/references/workflows/metadata-enrichment.md`.
-  Its Analysis/Assertion guidance must later align with the accepted exclusions
-  below; it does not override this design agreement.
+- The Atlas enrichment guide uses existing definitions, relevant profile evidence,
+  and confirmed lineage when establishing business meaning:
+  `atlas/atlas-plugin/references/metadata/enrichment-quality.md`.
 - Shared modeling authoring already supports bounded, immutable in-memory evidence
   retrieval. One-shot embeds context; Tool-assisted receives a manifest and tools:
   `features/workflows/authoring/context.py`. Tool configuration currently selects
@@ -1291,9 +1289,9 @@ accepted enrichment flow. The following are code observations, not new decisions
   queries with configured bounded parallelism, validates complete coverage, and
   commits the selected Run's results together. A query failure currently prevents
   that Run's new Profile results from being committed.
-- An explicit web Profiling run recomputes its selected scope. The plugin guide
-  at `plugins/v2/gds/skills/gds/references/workflows/profiling.md` first uses saved
-  Profiles and governs further SQL through the Work Session SQL policy. Preserve
+- An explicit web Profiling run recomputes its selected scope. The Atlas guide
+  at `atlas/atlas-plugin/references/logical-build/profiling.md` first uses saved
+  Profiles and governs further SQL through its query-scope policy. Preserve
   this authorization boundary when defining authoring-path parity.
 - Current saved Profile replacement, rather than selectable historical Profile
   versions, is already agreed. An unsuccessful attempt does not replace the last
@@ -1454,7 +1452,7 @@ implementation-design detail to preserve in the final coordinated plan.
   and source rationales rather than invented endpoint pairs.
 
 Backend paths above are relative to `web_app/backend/gds_workbench_api/`; the
-plugin path is relative to `plugins/v2/gds/skills/gds/`. These observations do not
+Atlas path is relative to `atlas/atlas-plugin/`. These observations do not
 silently settle the next design decisions.
 
 ## Accepted: Analysis result and validation boundaries

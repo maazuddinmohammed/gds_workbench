@@ -15,6 +15,7 @@ DECLARE
     v_application_web_function_signatures TEXT[] := ARRAY[
         'application.metadata_object_review_revision(core.object)',
         'application.metadata_attribute_review_revision(core.attribute,core.object)',
+        'application.delete_model_records(uuid,uuid,bigint,bigint,bigint,uuid,jsonb)',
         'application.authorize_model_record_review(uuid,uuid,character varying,bigint,bigint)',
         'application.add_model_input_scope_objects(uuid,uuid,bigint,bigint,bigint,bigint[])',
         'application.review_metadata_records(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,uuid)',

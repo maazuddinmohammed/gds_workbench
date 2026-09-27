@@ -5,7 +5,7 @@ import { ApiError } from "../../core/http";
 import type { ModelDetail } from "../models/api";
 import type { WorkflowRunFilterState } from "../workflows/api";
 import {
-  loadAllBronzeScope,
+  loadWorkflowScope,
   workflowCreationQueryKeys,
   workflowRunQueryKeys,
 } from "../workflows/api";
@@ -62,7 +62,7 @@ export function AnalysisScreen({
   });
   const endpointOptionsQuery = useQuery({
     queryKey: workflowCreationQueryKeys.bronzeScope(tenantId, model.model_id),
-    queryFn: () => loadAllBronzeScope(api, tenantId, model.model_id),
+    queryFn: () => loadWorkflowScope(api, tenantId, model.model_id, "bronze"),
   });
   const runsQuery = useQuery({
     queryKey: analysisQueryKeys.runs(tenantId, model.model_id, runState),

@@ -651,10 +651,11 @@ export const workflowCreationQueryKeys = {
   ),
 };
 
-export async function loadAllBronzeScope<TScope extends WorkflowScopeObject>(
+export async function loadWorkflowScope<TScope extends WorkflowScopeObject>(
   api: WorkflowScopeReader<TScope>,
   tenantId: number,
   modelId: number,
+  scope: "bronze" | "enrichment" | "dimensional",
 ): Promise<{ modelRevision: number; items: TScope[] }> {
   const items: TScope[] = [];
   const seenCursors = new Set<string>();
@@ -665,7 +666,7 @@ export async function loadAllBronzeScope<TScope extends WorkflowScopeObject>(
     const response = await api.listModelInputScope(
       tenantId,
       modelId,
-      { zone: "bronze" },
+      scope === "enrichment" ? {} : { zone: scope === "dimensional" ? "silver" : "bronze" },
       200,
       cursor,
     );
@@ -673,43 +674,13 @@ export async function loadAllBronzeScope<TScope extends WorkflowScopeObject>(
       throw new Error("Model Input Scope revision changed while loading");
     }
     modelRevision = response.model_revision;
-    items.push(...response.items);
-    if (!response.next_cursor) return { modelRevision, items };
-    if (seenCursors.has(response.next_cursor)) {
-      throw new Error("Model Input Scope cursor repeated");
-    }
-    seenCursors.add(response.next_cursor);
-    cursor = response.next_cursor;
-  }
-  throw new Error("Active Bronze Scope exceeds the supported bounded selection");
-}
-
-export async function loadAllEnrichmentScope<TScope extends WorkflowScopeObject>(
-  api: WorkflowScopeReader<TScope>,
-  tenantId: number,
-  modelId: number,
-): Promise<{ modelRevision: number; items: TScope[] }> {
-  const items: TScope[] = [];
-  const seenCursors = new Set<string>();
-  let cursor: string | undefined;
-  let modelRevision: number | null = null;
-
-  for (let page = 0; page < 250; page += 1) {
-    const response = await api.listModelInputScope(
-      tenantId,
-      modelId,
-      {},
-      200,
-      cursor,
-    );
-    if (modelRevision !== null && modelRevision !== response.model_revision) {
-      throw new Error("Model Input Scope revision changed while loading");
-    }
-    modelRevision = response.model_revision;
-    if (response.items.some((item) => item.zone_code !== "source" && item.zone_code !== "bronze")) {
+    if (scope === "enrichment"
+      && response.items.some((item) => item.zone_code !== "source" && item.zone_code !== "bronze")) {
       throw new Error("Enrichment requires Source and Bronze Model Input Scope");
     }
-    items.push(...response.items);
+    items.push(...(scope === "dimensional"
+      ? response.items.filter((item) => item.is_dimensional_source_eligible)
+      : response.items));
     if (!response.next_cursor) return { modelRevision, items };
     if (seenCursors.has(response.next_cursor)) {
       throw new Error("Model Input Scope cursor repeated");
@@ -717,40 +688,8 @@ export async function loadAllEnrichmentScope<TScope extends WorkflowScopeObject>
     seenCursors.add(response.next_cursor);
     cursor = response.next_cursor;
   }
-  throw new Error("Active Source and Bronze Scope exceeds the supported bounded selection");
-}
-
-export async function loadAllDimensionalScope<TScope extends WorkflowScopeObject>(
-  api: WorkflowScopeReader<TScope>,
-  tenantId: number,
-  modelId: number,
-): Promise<{ modelRevision: number; items: TScope[] }> {
-  const items: TScope[] = [];
-  const seenCursors = new Set<string>();
-  let cursor: string | undefined;
-  let modelRevision: number | null = null;
-
-  for (let page = 0; page < 250; page += 1) {
-    const response = await api.listModelInputScope(
-      tenantId,
-      modelId,
-      { zone: "silver" },
-      200,
-      cursor,
-    );
-    if (modelRevision !== null && modelRevision !== response.model_revision) {
-      throw new Error("Model Input Scope revision changed while loading");
-    }
-    modelRevision = response.model_revision;
-    items.push(...response.items.filter((item) => item.is_dimensional_source_eligible));
-    if (!response.next_cursor) return { modelRevision, items };
-    if (seenCursors.has(response.next_cursor)) {
-      throw new Error("Model Input Scope cursor repeated");
-    }
-    seenCursors.add(response.next_cursor);
-    cursor = response.next_cursor;
-  }
-  throw new Error("Active Silver Scope exceeds the supported bounded selection");
+  const zoneName = scope === "enrichment" ? "Source and Bronze" : scope === "dimensional" ? "Silver" : "Bronze";
+  throw new Error(`Active ${zoneName} Scope exceeds the supported bounded selection`);
 }
 
 export function resolveDefaultAgent(

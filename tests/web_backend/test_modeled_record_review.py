@@ -5,9 +5,13 @@ from typing import cast
 
 import pytest
 from gds_etl_workbench.application.model_snapshot import ModelReviewSnapshot
-from gds_etl_workbench.domain.snapshots.model import ModelChangeSetDataset, model_snapshot_records
+from gds_etl_workbench.domain.snapshots.model import (
+    ModelChangeSetDataset,
+    model_snapshot_records,
+)
 from gds_workbench_api.features.model_change_sets.review import (
     REVIEW_FIELDS,
+    ModelLayer,
     ModelReviewDataset,
     prepare_model_record_review,
     review_lifecycle,
@@ -120,7 +124,9 @@ def test_bound_attribute_retirement_includes_binding_mapping_code_and_validation
 
 
 def test_stale_code_review_preserves_assignments_and_authoring_still_rejects() -> None:
-    from gds_etl_workbench.application.change_sets.model_validation import validate_future_graph
+    from gds_etl_workbench.application.change_sets.model_validation import (
+        validate_future_graph,
+    )
 
     graph = complete_model_graph()
     for dataset in ("mapping_dependency", "mapping_object", "mapping_attribute"):
@@ -134,7 +140,11 @@ def test_stale_code_review_preserves_assignments_and_authoring_still_rejects() -
     for action in ("lock", "unlock"):
         review = review_graph(graph)
         prepared = prepare_model_record_review(
-            review, physical_scope=physical, dataset="generated_code", record_ids=[1], action=action
+            review,
+            physical_scope=physical,
+            dataset="generated_code",
+            record_ids=[1],
+            action=action,
         )
         assert prepared.validation.valid
         graph["generated_code"][0] = prepared.decisions[0].reviewed.model_dump(mode="json")
@@ -193,3 +203,92 @@ def test_partial_code_retirement_previews_the_bundle_and_reactivation_requires_c
         action="reactivate",
     )
     assert complete.validation.valid
+
+
+@pytest.mark.parametrize("layer", ["conceptual", "logical", "dimensional"])
+def test_clear_layer_selects_every_active_record_and_required_dependents(
+    layer: ModelLayer,
+) -> None:
+    review = review_graph(complete_model_graph())
+    prepared = prepare_model_record_review(
+        review,
+        physical_scope=complete_physical_scope(),
+        dataset=cast(
+            ModelReviewDataset,
+            "conceptual_object" if layer == "conceptual" else f"{layer}_entity",
+        ),
+        record_ids=[],
+        action="deactivate",
+        layer=layer,
+    )
+    assert prepared.validation.valid
+    selected = {(item.dataset, item.record_id) for item in prepared.decisions if item.selected}
+    assert selected == {
+        (dataset, record_id)
+        for dataset, records in review.records_by_id.items()
+        if dataset.startswith(layer + "_")
+        for record_id, row in records.items()
+        if review_lifecycle(row, cast(ModelReviewDataset, dataset))[1] == "active"
+    }
+    if layer != "conceptual":
+        assert any(item.dataset == "model_object_binding" for item in prepared.decisions)
+
+
+def test_clear_layer_includes_records_beyond_the_ledger_page_and_blocks_locked_children() -> None:
+    graph = complete_model_graph()
+    template = graph["conceptual_object"][0]
+    graph["conceptual_object"].extend(
+        {**template, "conceptual_object_name": f"Extra {number}"} for number in range(230)
+    )
+    graph["conceptual_relationship"][0]["conceptual_relationship_is_locked"] = True
+    prepared = prepare_model_record_review(
+        review_graph(graph),
+        physical_scope=complete_physical_scope(),
+        dataset="conceptual_object",
+        record_ids=[],
+        action="deactivate",
+        layer="conceptual",
+    )
+    assert len(prepared.decisions) > 230
+    assert not prepared.validation.valid
+    assert any(issue.code == "record_locked" for issue in prepared.validation.issues)
+
+
+def test_removing_logical_output_traces_persisted_dimensional_silver_lineage() -> None:
+    graph = complete_model_graph()
+    binding = graph["model_object_binding"][0]
+    graph["dimensional_entity"][0]["sources"] = [
+        {
+            "support_source_type": "object",
+            "source_object": {
+                field: binding[field]
+                for field in (
+                    "tenant_code",
+                    "system_code",
+                    "connection_code",
+                    "object_schema",
+                    "object_name",
+                )
+            },
+            "source_role": "fact input",
+            "rationale": "Registered Silver input.",
+            "status": "active",
+            "is_locked": False,
+        }
+    ]
+    prepared = prepare_model_record_review(
+        review_graph(graph),
+        physical_scope=complete_physical_scope(),
+        dataset="logical_entity",
+        record_ids=[1],
+        action="deactivate",
+    )
+    assert prepared.validation.valid
+    assert any(
+        item.dataset == "dimensional_entity" and item.record_id == 1 for item in prepared.decisions
+    )
+    assert any(
+        item.dataset == "model_object_binding"
+        and item.original.model_dump()["modeled_entity_name"] == "SalesFact"
+        for item in prepared.decisions
+    )

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from hashlib import sha256
 from io import BytesIO
+from typing import cast
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile, ZipInfo
 
 from gds_etl_workbench.domain.snapshots.metadata import (
@@ -15,6 +16,7 @@ from gds_etl_workbench.domain.snapshots.metadata import (
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import Cell
 from openpyxl.worksheet.worksheet import Worksheet
+from openpyxl.xml.functions import tostring
 from pydantic import ValidationError
 
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -132,9 +134,11 @@ def build_metadata_workbook(
     manifest.sheet_state = "veryHidden"
 
     buffer = BytesIO()
+    # Workbook.save overwrites modified time; retain the fixed document properties.
+    core_properties = cast(bytes, tostring(workbook.properties.to_tree()))
     workbook.save(buffer)
     workbook.close()
-    content = _canonicalize_xlsx_package(buffer.getvalue())
+    content = _canonicalize_xlsx_package(buffer.getvalue(), core_properties=core_properties)
     if len(content) > MAX_XLSX_BYTES:
         raise MetadataWorkbookBuildError("XLSX package is too large")
     return content
@@ -370,7 +374,7 @@ def _validated_cell_value(value: object) -> object:
     return value
 
 
-def _canonicalize_xlsx_package(content: bytes) -> bytes:
+def _canonicalize_xlsx_package(content: bytes, *, core_properties: bytes) -> bytes:
     source = BytesIO(content)
     output = BytesIO()
     with (
@@ -384,7 +388,7 @@ def _canonicalize_xlsx_package(content: bytes) -> bytes:
         ) as canonical,
     ):
         for name in sorted(package.namelist()):
-            payload = package.read(name)
+            payload = core_properties if name == "docProps/core.xml" else package.read(name)
             lower_name = name.lower()
             if (
                 "vbaproject" in lower_name

@@ -328,8 +328,8 @@ function ConceptualFilterBar({
           className="button button-secondary button-small"
           type="button"
           onClick={() => {
-            form.reset();
-            onApplyFilters({});
+            form.reset({ namePrefix: "", status: "active", locked: "" });
+            onApplyFilters({ status: "active" });
           }}
         >
           Clear

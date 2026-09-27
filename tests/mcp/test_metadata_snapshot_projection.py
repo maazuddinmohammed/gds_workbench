@@ -4,9 +4,9 @@ import json
 from datetime import date
 from typing import Any, cast
 
-from gds_etl_workbench.tools.snapshots.metadata.archive import encode_dataset
+from gds_etl_workbench.application.metadata_snapshot.archive import encode_dataset
+from gds_etl_workbench.application.metadata_snapshot.projection import project_id_free_rows
 from gds_etl_workbench.domain.snapshots.metadata import DATASETS
-from gds_etl_workbench.tools.snapshots.metadata.projection import project_id_free_rows
 
 
 def test_projection_resolves_ids_and_every_projected_row_matches_its_model() -> None:

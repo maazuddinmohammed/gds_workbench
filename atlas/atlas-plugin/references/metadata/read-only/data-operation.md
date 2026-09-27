@@ -53,6 +53,5 @@ User-confirmed runtime decisions above supersede older descriptions implying tha
 - `database/seed/01_metadata_snapshot_demo.sql:50`.
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:352,514`.
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:292`.
-- `plugins/v2/gds/skills/gds/references/orchestration-rules.md:12`.
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

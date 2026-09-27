@@ -227,7 +227,7 @@ async def test_start_binds_mapping_without_executing(
 @pytest.mark.parametrize("layer", ("logical_entity", "dimensional_entity"))
 async def test_mapping_local_fake_completes_each_mode(
     mode: WorkflowExecutionMode,
-    layer: ModeledEntityType = "logical_entity",
+    layer: ModeledEntityType,
 ) -> None:
     agent = _RecordingFake()
     preparation = mapping_preparation(

@@ -573,7 +573,7 @@ async def test_xlsx_import_parses_before_write_stages_then_validates_without_app
             },
         )
 
-    monkeypatch.setattr(canonical_metadata, "_validate_and_persist", validated)
+    monkeypatch.setattr(canonical_metadata, "validate_and_persist", validated)
 
     result = await service.import_workbook(
         _principal(),

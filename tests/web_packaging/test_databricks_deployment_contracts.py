@@ -99,7 +99,6 @@ def test_bundle_grants_only_required_app_resources() -> None:
     assert "database/**" in bundle
     assert "deployment/**" in bundle
     assert "artifacts/**" in bundle
-    assert "plugins/**" in bundle
 
 
 def test_root_manifests_are_locked_hybrid_app_inputs() -> None:

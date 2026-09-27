@@ -55,6 +55,5 @@ Development provenance; these source files are not runtime dependencies of the p
 - `database/seed/01_metadata_snapshot_demo.sql:59`.
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:362,557`.
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:244`.
-- `plugins/v2/gds/skills/gds/references/orchestration-rules.md:34`.
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

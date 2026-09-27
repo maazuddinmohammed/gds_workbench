@@ -24,7 +24,6 @@ database
 deployment
 docs
 mcp_server/dist
-plugins
 tests
 web_app/compose.local.yaml
 web_app/local

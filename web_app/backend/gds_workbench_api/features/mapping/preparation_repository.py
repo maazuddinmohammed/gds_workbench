@@ -7,10 +7,12 @@ from typing import LiteralString
 from gds_etl_workbench.infrastructure.postgres import ReadTransaction
 from pydantic import ValidationError
 
-from gds_workbench_api.features.workflows.authoring.plan import PostgresAgentRunPlanRepository
+from gds_workbench_api.features.workflows.authoring.plan import (
+    AgentRunPlanRepository,
+    PostgresAgentRunPlanRepository,
+)
 
 from .preparation_contracts import (
-    CommonAgentPlanRepository,
     ExistingMappingHeader,
     MappingRunContext,
     MappingRunContextUnavailableError,
@@ -546,7 +548,7 @@ class PostgresMappingRunPlanRepository:
     def __init__(
         self,
         *,
-        agent_plan_repository: CommonAgentPlanRepository | None = None,
+        agent_plan_repository: AgentRunPlanRepository | None = None,
     ) -> None:
         self._agent_plan_repository = agent_plan_repository or PostgresAgentRunPlanRepository()
 

@@ -91,6 +91,16 @@ describe("Model Logical", () => {
       "/api/v1/tenants/7/models/18/logical/entities?status=inactive&locked=true&name_prefix=customer&logical_submodel_id=91&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.getByLabelText("Entity status")).toHaveValue("active");
+    expect(screen.getByLabelText("Entity name prefix")).toHaveValue("");
+    expect(screen.getByLabelText("Entity Submodel")).toHaveValue("");
+    expect(screen.getByLabelText("Entity lock")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Activate selected" })).toBeInTheDocument();
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/tenants/7/models/18/logical/entities?status=active&page_size=200",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
     filtered.unmount();
 
     const empty = render(

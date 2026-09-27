@@ -72,9 +72,6 @@ User-confirmed framework behavior supersedes the older one-Source/one-Bronze con
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:178,427,436`.
 - `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:354,425,474,533`.
 - `database/02_core.sql:237,246,250,258`.
-- `plugins/v2/gds/skills/gds/references/orchestration-rules.md:7`.
-- `plugins/v2/gds/skills/gds/workbench/validation/common.js:203,357,525`.
-- `plugins/v2/gds/skills/gds/workbench/validation/metadata.js:11,177,241`.
 - `database/16_mcp_metadata_apply.sql:507,550`.
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

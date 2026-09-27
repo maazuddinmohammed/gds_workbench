@@ -9,12 +9,13 @@ from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import AuthorizationDeniedError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 
+from gds_workbench_api.features.workflows.execution.contracts import WorkflowExecutionDatabase
+
 from .preparation_contracts import (
     MappingAttributeReadiness,
     MappingAuthorizer,
     MappingHeaderReadiness,
     MappingPreparation,
-    MappingPreparationDatabase,
     MappingReadiness,
     MappingReadinessIssue,
     MappingRunContext,
@@ -30,7 +31,7 @@ class MappingReadinessService:
     def __init__(
         self,
         *,
-        database: MappingPreparationDatabase,
+        database: WorkflowExecutionDatabase,
         authorizer: MappingAuthorizer,
         plan_repository: MappingRunPlanRepository,
         context_repository: MappingRunContextRepository,

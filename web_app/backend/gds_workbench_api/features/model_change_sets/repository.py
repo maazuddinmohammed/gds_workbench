@@ -241,7 +241,8 @@ SELECT change_set.model_change_set_id, event.action_count, event.event_metadata
     ON event.model_change_set_id = change_set.model_change_set_id
    AND event.event_type = 'applied'
    AND event.outcome IN (
-       'review_applied', 'bindings_applied', 'scope_added', 'dependency_saved', 'assertion_saved'
+       'review_applied', 'bindings_applied', 'scope_added', 'dependency_saved',
+       'assertion_saved', 'record_edited', 'records_deleted'
    )
  WHERE change_set.model_id = %s
    AND change_set.created_by_principal_id = %s

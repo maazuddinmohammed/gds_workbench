@@ -10,11 +10,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
 
-import pytest
-from psycopg import AsyncConnection
-from psycopg.errors import InsufficientPrivilege
-
 import gds_etl_workbench.diagnostics.metadata_snapshot as diagnostic_module
+import pytest
+from gds_etl_workbench.application.metadata_snapshot.sql import (
+    OBJECT_CLOSURE_SQL,
+    OBJECT_ROWS_SQL,
+)
 from gds_etl_workbench.configuration import RuntimeSettings
 from gds_etl_workbench.diagnostics.metadata_snapshot import (
     _failure_fields,
@@ -23,10 +24,8 @@ from gds_etl_workbench.diagnostics.metadata_snapshot import (
     inspect_deployment,
     load_settings_for_diagnostic,
 )
-from gds_etl_workbench.tools.snapshots.metadata.sql import (
-    OBJECT_CLOSURE_SQL,
-    OBJECT_ROWS_SQL,
-)
+from psycopg import AsyncConnection
+from psycopg.errors import InsufficientPrivilege
 
 BUILD_SCRIPT = Path(__file__).parents[2] / "mcp_server" / "build_zip.py"
 

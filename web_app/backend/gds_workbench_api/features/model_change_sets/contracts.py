@@ -39,14 +39,16 @@ class ReviewModelRecordsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     dataset: Literal["analysis_result"] | ModelReviewDataset
-    record_ids: Annotated[list[Annotated[int, Field(gt=0)]], Field(min_length=1, max_length=200)]
-    action: Literal["lock", "unlock", "deactivate", "reactivate"]
+    record_ids: Annotated[list[Annotated[int, Field(gt=0)]], Field(max_length=200)]
+    action: Literal["lock", "unlock", "deactivate", "reactivate", "delete"]
+    layer: Literal["conceptual", "logical", "dimensional"] | None = None
     expected_model_revision: int = Field(gt=0)
 
     expected_plan_digest: str | None = Field(default=None, pattern=SHA256_PATTERN)
 
     @model_validator(mode="after")
     def unique_selection(self) -> Self:
+        _validate_review_selection(self.dataset, self.record_ids, self.action, self.layer)
         if len(set(self.record_ids)) != len(self.record_ids):
             raise ValueError("Select each record once.")
         return self
@@ -65,30 +67,62 @@ class PreviewModelRecordsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     dataset: ModelReviewDataset
-    record_ids: Annotated[list[Annotated[int, Field(gt=0)]], Field(min_length=1, max_length=200)]
-    action: Literal["lock", "unlock", "deactivate", "reactivate"]
+    record_ids: Annotated[list[Annotated[int, Field(gt=0)]], Field(max_length=200)]
+    action: Literal["lock", "unlock", "deactivate", "reactivate", "delete"]
+    layer: Literal["conceptual", "logical", "dimensional"] | None = None
     expected_model_revision: int = Field(gt=0)
     expected_plan_digest: str | None = Field(default=None, pattern=SHA256_PATTERN)
 
     @model_validator(mode="after")
     def unique_selection(self) -> Self:
+        _validate_review_selection(self.dataset, self.record_ids, self.action, self.layer)
         if len(set(self.record_ids)) != len(self.record_ids):
             raise ValueError("Select each record once.")
         return self
 
 
+def _validate_review_selection(
+    dataset: str, record_ids: list[int], action: str, layer: str | None
+) -> None:
+    if action == "delete" and dataset not in {
+        "conceptual_object",
+        "conceptual_relationship",
+        "logical_entity",
+        "logical_attribute",
+        "logical_relationship",
+        "logical_submodel",
+        "dimensional_entity",
+        "dimensional_attribute",
+        "dimensional_relationship",
+        "dimensional_submodel",
+    }:
+        raise ValueError("Permanent deletion is available only for modeled records.")
+    if layer is None:
+        if not record_ids:
+            raise ValueError("Select at least one record.")
+    elif (
+        record_ids
+        or action not in {"deactivate", "delete"}
+        or dataset != ("conceptual_object" if layer == "conceptual" else f"{layer}_entity")
+    ):
+        raise ValueError(
+            "Clear layer requires its primary dataset, no record IDs, and a removal action."
+        )
+
+
 class ModelRecordReviewItem(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    dataset: ModelReviewDataset
+    dataset: str
     record_id: int = Field(gt=0)
     label: str
     selected: bool
     reason: str
     is_locked: bool
     desired_locked: bool
+    can_unlock: bool = True
     status: Literal["active", "inactive", "deprecated"]
-    desired_status: Literal["active", "inactive", "deprecated"]
+    desired_status: Literal["active", "inactive", "deprecated", "deleted"]
     changed: bool
 
 
@@ -110,6 +144,8 @@ class PreviewModelRecordsResult(BaseModel):
     action_count: int = Field(ge=0)
     additional_change_count: int = Field(ge=0)
     total_record_count: int = Field(ge=0)
+    changes_by_dataset: dict[str, int] = Field(default_factory=dict)
+    warnings: tuple[str, ...] = ()
     items: tuple[ModelRecordReviewItem, ...] = Field(max_length=200)
     issues: tuple[ModelRecordReviewIssue, ...] = Field(max_length=20)
     issue_count: int = Field(ge=0)

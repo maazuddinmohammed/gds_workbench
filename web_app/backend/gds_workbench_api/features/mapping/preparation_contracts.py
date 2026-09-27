@@ -7,7 +7,6 @@ not Mapping authoring inputs.
 
 from __future__ import annotations
 
-from contextlib import AbstractAsyncContextManager
 from typing import Literal, Protocol, Self
 from uuid import UUID
 
@@ -17,9 +16,7 @@ from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
 from gds_etl_workbench.infrastructure.postgres import (
-    ReadIsolation,
     ReadTransaction,
-    WriteTransaction,
 )
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -389,14 +386,6 @@ class MappingPreparation(_FrozenModel):
     physical_scope: PhysicalModelCatalog | None = Field(default=None, repr=False, exclude=True)
 
 
-class MappingPreparationDatabase(Protocol):
-    def write_transaction(
-        self,
-        *,
-        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AbstractAsyncContextManager[WriteTransaction]: ...
-
-
 class MappingAuthorizer(Protocol):
     async def authorize_tenant(
         self,
@@ -420,17 +409,6 @@ class MappingRunPlanRepository(Protocol):
         workflow_run_id: int,
         expected_model_revision: int,
     ) -> tuple[MappingRunPlan, ...]: ...
-
-
-class CommonAgentPlanRepository(Protocol):
-    async def load(
-        self,
-        transaction: ReadTransaction,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-    ) -> AgentRunPlan: ...
 
 
 class MappingRunPlanUnavailableError(WorkbenchError):

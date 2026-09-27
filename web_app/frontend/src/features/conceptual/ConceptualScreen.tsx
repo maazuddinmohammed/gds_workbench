@@ -1,3 +1,4 @@
+import { ModelLayerActions } from "../model_record_review/ModelLayerActions";
 import { useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -16,19 +17,21 @@ export function ConceptualScreen({
   tenantId,
   model,
   hasTenantLock,
+  canDelete = false,
 }: {
   api: ConceptualApi;
   tenantId: number;
   model: ModelDetail;
   hasTenantLock: boolean;
+  canDelete?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [view, setView] = useState<ConceptualView>("objects");
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [recentRunId, setRecentRunId] = useState<number | null>(null);
-  const [objectFilters, setObjectFilters] = useState<ConceptualFilters>({});
-  const [relationshipFilters, setRelationshipFilters] = useState<ConceptualFilters>({});
+  const [objectFilters, setObjectFilters] = useState<ConceptualFilters>({ status: "active" });
+  const [relationshipFilters, setRelationshipFilters] = useState<ConceptualFilters>({ status: "active" });
   const objectsQuery = useInfiniteQuery({
     queryKey: conceptualQueryKeys.objects(tenantId, model.model_id, objectFilters),
     queryFn: ({ pageParam }) => api.listConceptualObjects(
@@ -60,7 +63,9 @@ export function ConceptualScreen({
     enabled: view === "relationships",
   });
 
+  const activeReviewQuery = view === "objects" ? objectsQuery : relationshipsQuery;
   const refresh = async () => {
+    setSelectedIds(new Set());
     await Promise.all([
       view === "objects" ? objectsQuery.refetch() : relationshipsQuery.refetch(),
       queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
@@ -80,7 +85,8 @@ export function ConceptualScreen({
 
   return (
     <div className="conceptual-page page-enter">
-      <header className="workflow-commandbar conceptual-commandbar">
+      <header className="workflow-commandbar model-layer-commandbar conceptual-commandbar">
+        <h1>Conceptual</h1>
         <div className="workflow-command-context">
           <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
             {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
@@ -105,8 +111,9 @@ export function ConceptualScreen({
           </nav>
         </div>
         <div className="workflow-command-actions">
-          <button className="button button-secondary button-small" type="button" onClick={refresh}>
-            Refresh
+          <ModelLayerActions api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="conceptual" onApplied={() => setSelectedIds(new Set())} />
+          <button className="button button-secondary button-small" type="button" disabled={activeReviewQuery.isFetching} onClick={() => void refresh()}>
+            {activeReviewQuery.isFetching ? "Refreshing…" : "Refresh"}
           </button>
           <button
             className="button button-primary button-small"
@@ -132,6 +139,7 @@ export function ConceptualScreen({
       />
 
       <ModelRecordReview
+        actions={canDelete ? ["lock", "unlock", "deactivate", "reactivate", "delete"] : ["lock", "unlock", "deactivate", "reactivate"]}
         api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
         dataset={view === "objects" ? "conceptual_object" : "conceptual_relationship"}
         selectedIds={selectedIds} hasTenantLock={hasTenantLock}

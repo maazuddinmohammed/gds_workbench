@@ -483,11 +483,10 @@ CREATE TABLE application.workflow_run_mapping_target_selection (
         model_id
     ) REFERENCES application.workflow_run (workflow_run_id, model_id)
         ON DELETE NO ACTION,
-    CONSTRAINT fk_workflow_run_mapping_target_selection_binding FOREIGN KEY (
-        model_id,
-        object_id
-    ) REFERENCES workflow.model_object_binding (model_id, object_id)
-        ON DELETE NO ACTION,
+    -- A run selection is immutable historical evidence. Live bindings may be
+    -- deleted later; target registration remains the durable physical identity.
+    CONSTRAINT fk_workflow_run_mapping_target_selection_object FOREIGN KEY (object_id)
+        REFERENCES core.object (object_id) ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_mapping_target_selection_system FOREIGN KEY (
         source_system_id
     ) REFERENCES core.system (system_id) ON DELETE NO ACTION,

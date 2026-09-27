@@ -108,6 +108,38 @@ class WorkflowChangeSetValidationError(WorkbenchError):
         )
 
 
+class WorkflowChangeSetFinalizer(Protocol):
+    async def retain_failed_candidate(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: ModelWorkflow,
+        expected_model_revision: int,
+        workflow_run_claim_token: UUID,
+        changes: tuple[StageModelChange, ...],
+        issues: tuple[ModelValidationIssue, ...],
+        failure_code: str,
+        safe_failure_message: str,
+    ) -> object: ...
+
+    async def finalize(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: ModelWorkflow,
+        expected_model_revision: int,
+        workflow_run_claim_token: UUID,
+        changes: tuple[StageModelChange, ...],
+        final_event: AgentWorkflowEvent,
+    ) -> WorkflowChangeSetFinalizationResult: ...
+
+
 class WorkflowChangeSetHandoff:
     """Create or replay one draft, with optional atomic Run completion."""
 
@@ -571,6 +603,7 @@ class WorkflowChangeSetHandoff:
 
 __all__ = [
     "WorkflowChangeSetFinalizationResult",
+    "WorkflowChangeSetFinalizer",
     "WorkflowChangeSetHandoff",
     "WorkflowChangeSetHandoffResult",
     "WorkflowChangeSetValidationError",

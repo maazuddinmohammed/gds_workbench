@@ -25,7 +25,6 @@ from .no_op import (
     AuthoringNoOpReceipt,
     AuthoringNoOpRequest,
     DatabaseAuthoringNoOpService,
-    PostgresAuthoringNoOpRepository,
     authoring_no_op_candidate_digest,
 )
 from .plan import (
@@ -59,7 +58,6 @@ __all__ = [
     "InMemoryAgentContextToolCatalog",
     "PostgresAgentContextRepository",
     "PostgresAgentRunPlanRepository",
-    "PostgresAuthoringNoOpRepository",
     "SelectedObjectContext",
     "authoring_no_op_candidate_digest",
     "load_default_agent_context_limits",

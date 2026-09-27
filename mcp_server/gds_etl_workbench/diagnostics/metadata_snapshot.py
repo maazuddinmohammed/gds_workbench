@@ -25,17 +25,12 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import ConfigurationError, RuntimeSettings
-from gds_etl_workbench.domain.authorization import RequestPrincipal
-from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.infrastructure.postgres import QueryParameters, ReadTransaction
-from gds_etl_workbench.tools.snapshots.archive import SnapshotContractError
-from gds_etl_workbench.tools.snapshots.metadata.archive import build_snapshot_archive
-from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
+from gds_etl_workbench.application.metadata_snapshot.archive import build_snapshot_archive
+from gds_etl_workbench.application.metadata_snapshot.selection import (
     SelectedMetadataSnapshot,
     select_snapshot_datasets,
 )
-from gds_etl_workbench.tools.snapshots.metadata.sql import (
+from gds_etl_workbench.application.metadata_snapshot.sql import (
     ATTRIBUTE_ROWS_SQL,
     COPY_GROUP_CONTROL_ROWS_SQL,
     COPY_GROUP_ROWS_SQL,
@@ -53,6 +48,11 @@ from gds_etl_workbench.tools.snapshots.metadata.sql import (
     PROCESS_ROWS_SQL,
     REFERENCE_ROWS_SQL,
 )
+from gds_etl_workbench.configuration import ConfigurationError, RuntimeSettings
+from gds_etl_workbench.domain.authorization import RequestPrincipal
+from gds_etl_workbench.domain.errors import WorkbenchError
+from gds_etl_workbench.infrastructure.postgres import QueryParameters, ReadTransaction
+from gds_etl_workbench.infrastructure.snapshot_archive import SnapshotContractError
 
 _CONFIGURATION_PATH = "gds_etl_workbench/configuration.py"
 _METADATA_SNAPSHOT_PATH = "gds_etl_workbench/tools/snapshots/metadata/get_metadata_snapshot.py"

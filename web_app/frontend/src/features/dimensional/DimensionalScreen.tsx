@@ -1,8 +1,9 @@
+import { ModelLayerActions } from "../model_record_review/ModelLayerActions";
 import { TargetExportButton } from "../model_targets/TargetExportDialog";
 import { ModelRecordHistory } from "../model_record_review/ModelRecordHistory";
 import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
 import { useState } from "react";
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useIsFetching, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
 import type {
@@ -27,20 +28,22 @@ export function DimensionalScreen({
   tenantId,
   model,
   hasTenantLock,
+  canDelete = false,
 }: {
   api: DimensionalApi;
   tenantId: number;
   model: ModelDetail;
   hasTenantLock: boolean;
+  canDelete?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [view, setView] = useState<DimensionalView>("objects");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [recentRunId, setRecentRunId] = useState<number | null>(null);
-  const [objectFilters, setObjectFilters] = useState<DimensionalFilters>({});
-  const [attributeFilters, setAttributeFilters] = useState<DimensionalAttributeFilters>({});
-  const [relationshipFilters, setRelationshipFilters] = useState<DimensionalRelationshipFilters>({});
+  const [objectFilters, setObjectFilters] = useState<DimensionalFilters>({ status: "active" });
+  const [attributeFilters, setAttributeFilters] = useState<DimensionalAttributeFilters>({ status: "active" });
+  const [relationshipFilters, setRelationshipFilters] = useState<DimensionalRelationshipFilters>({ status: "active" });
   const objectsQuery = useInfiniteQuery({
     queryKey: dimensionalQueryKeys.objects(tenantId, model.model_id, objectFilters),
     queryFn: ({ pageParam }) => api.listDimensionalObjects(
@@ -82,10 +85,14 @@ export function DimensionalScreen({
   });
 
   const activeReviewQuery = view === "objects" ? objectsQuery : view === "attributes" ? attributesQuery : relationshipsQuery;
+  const submodelsFetching = useIsFetching({ queryKey: ["model-record-history", tenantId, model.model_id, "dimensional_submodel"] }) > 0;
+  const refreshing = view === "submodels" ? submodelsFetching : activeReviewQuery.isFetching;
   const refresh = async () => {
     setSelectedIds(new Set());
     await Promise.all([
-      view === "objects"
+      view === "submodels"
+        ? queryClient.invalidateQueries({ queryKey: ["model-record-history", tenantId, model.model_id, "dimensional_submodel"] })
+        : view === "objects"
         ? objectsQuery.refetch()
         : view === "attributes"
           ? attributesQuery.refetch()
@@ -110,7 +117,8 @@ export function DimensionalScreen({
 
   return (
     <div className="dimensional-page page-enter">
-      <header className="workflow-commandbar dimensional-commandbar">
+      <header className="workflow-commandbar model-layer-commandbar dimensional-commandbar">
+        <h1>Dimensional</h1>
         <div className="workflow-command-context">
           <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
             {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
@@ -135,9 +143,10 @@ export function DimensionalScreen({
           </nav>
         </div>
         <div className="workflow-command-actions">
+          <ModelLayerActions api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="dimensional" onApplied={() => setSelectedIds(new Set())} />
           <TargetExportButton api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} layer="dimensional" entityIds={view === "objects" && selectedIds.size ? [...selectedIds] : undefined} />
-          <button className="button button-secondary button-small" type="button" onClick={refresh}>
-            Refresh
+          <button className="button button-secondary button-small" type="button" disabled={refreshing} onClick={() => void refresh()}>
+            {refreshing ? "Refreshing…" : "Refresh"}
           </button>
           <button
             className="button button-primary button-small"
@@ -163,8 +172,10 @@ export function DimensionalScreen({
       {view === "submodels" ? <ModelRecordHistory
         api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
         dataset="dimensional_submodel" label="Dimensional Submodels" hasTenantLock={hasTenantLock}
+        showHeader={false} actions={canDelete ? ["lock", "unlock", "deactivate", "reactivate", "delete"] : ["lock", "unlock", "deactivate", "reactivate"]}
       /> : <>
       <ModelRecordReview
+        actions={canDelete ? ["lock", "unlock", "deactivate", "reactivate", "delete"] : ["lock", "unlock", "deactivate", "reactivate"]}
         api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
         dataset={view === "objects" ? "dimensional_entity" : view === "attributes" ? "dimensional_attribute" : "dimensional_relationship"}
         selectedIds={selectedIds} hasTenantLock={hasTenantLock}

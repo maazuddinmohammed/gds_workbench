@@ -238,6 +238,41 @@ async def fail_agent_workflow_run(
     return AgentWorkflowTerminalResult.model_validate(row, strict=True)
 
 
+class AgentWorkflowLifecycle(Protocol):
+    async def start(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: ModelWorkflow,
+        expected_execution_mode: WorkflowExecutionMode | None,
+        expected_model_revision: int,
+    ) -> AgentWorkflowRunStart: ...
+
+    async def append_event(
+        self,
+        principal: RequestPrincipal,
+        *,
+        workflow_run_id: int,
+        expected_model_revision: int,
+        workflow_run_claim_token: UUID,
+        event: AgentWorkflowEvent,
+    ) -> None: ...
+
+    async def fail(
+        self,
+        principal: RequestPrincipal,
+        *,
+        workflow_run_id: int,
+        expected_model_revision: int,
+        workflow_run_claim_token: UUID,
+        failure_code: str,
+        safe_failure_message: str,
+    ) -> AgentWorkflowTerminalResult: ...
+
+
 class DatabaseAgentWorkflowLifecycle:
     """Use only the governed Workflow Run functions for lifecycle mutations."""
 

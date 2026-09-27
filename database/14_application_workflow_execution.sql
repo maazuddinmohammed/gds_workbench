@@ -3608,3 +3608,118 @@ BEGIN
 END;
 $review_metadata_records$;
 REVOKE ALL ON FUNCTION application.review_metadata_records(UUID, UUID, VARCHAR, BIGINT, VARCHAR, VARCHAR, JSONB, UUID) FROM PUBLIC;
+
+-- Web-only permanent deletion. The server supplies an explicitly confirmed plan;
+-- this primitive rechecks identity, ownership, locks, revision, and the audit receipt.
+-- No direct DELETE privilege is granted to either application role.
+CREATE FUNCTION application.delete_model_records(
+    p_entra_tenant_id UUID, p_entra_object_id UUID, p_tenant_id BIGINT,
+    p_model_id BIGINT, p_expected_model_revision BIGINT,
+    p_change_set_id UUID, p_records JSONB
+)
+RETURNS INTEGER
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
+AS $delete_model_records$
+DECLARE
+    v_decision RECORD;
+    v_table TEXT;
+    v_ids BIGINT[];
+    v_scope TEXT;
+    v_lock_column TEXT;
+    v_count INTEGER;
+    v_locked BOOLEAN;
+    v_total INTEGER := 0;
+    v_tables CONSTANT TEXT[] := ARRAY[
+        'validation_check', 'validation_group',
+        'generated_code_source_system', 'generated_code',
+        'mapping_attribute', 'mapping_object', 'model_attribute_binding',
+        'dimensional_attribute_source_mapping', 'dimensional_entity_source_mapping',
+        'dimensional_entity_submodel', 'dimensional_relationship', 'dimensional_attribute',
+        'model_object_binding',
+        'logical_attribute_source_mapping', 'logical_entity_source_mapping',
+        'logical_entity_submodel', 'logical_relationship', 'logical_attribute',
+        'dimensional_entity', 'logical_entity', 'dimensional_submodel', 'logical_submodel',
+        'conceptual_support', 'conceptual_relationship', 'conceptual_object'
+    ];
+BEGIN
+    SELECT * INTO v_decision FROM application.authorize_model_record_review(
+        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, p_model_id);
+    IF NOT FOUND OR v_decision.denial_code IS NOT NULL THEN
+        RAISE EXCEPTION 'Model deletion authorization denied' USING ERRCODE = '42501';
+    END IF;
+    IF v_decision.model_revision IS DISTINCT FROM p_expected_model_revision THEN
+        RAISE EXCEPTION 'Model revision changed' USING ERRCODE = '40001';
+    END IF;
+    SELECT * INTO v_decision FROM security.authorize_tenant_operation(
+        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, 'tenant_model_write');
+    IF NOT FOUND OR NOT v_decision.authorized
+       OR v_decision.effective_role NOT IN ('super_admin', 'tenant_admin') THEN
+        RAISE EXCEPTION 'Only administrators may delete Model records' USING ERRCODE = '42501';
+    END IF;
+    IF EXISTS (SELECT 1 FROM application.workflow_run AS run
+        JOIN model.model AS target ON target.model_id = run.model_id
+        WHERE target.tenant_id = p_tenant_id AND run.workflow_run_state = 'running') THEN
+        RAISE EXCEPTION 'Tenant workflow is running' USING ERRCODE = '55000';
+    END IF;
+    IF p_records IS NULL OR jsonb_typeof(p_records) <> 'object' OR p_records = '{}'::JSONB THEN
+        RAISE EXCEPTION 'Invalid deletion plan' USING ERRCODE = '22023';
+    END IF;
+    IF EXISTS (SELECT 1 FROM jsonb_object_keys(p_records) AS names(name)
+               WHERE NOT name = ANY(v_tables)) THEN
+        RAISE EXCEPTION 'Unsupported deletion dataset' USING ERRCODE = '22023';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM mcp.model_change_set AS change_set
+        WHERE change_set.model_change_set_id = p_change_set_id
+          AND change_set.model_id = p_model_id
+          AND change_set.created_by_principal_id = v_decision.principal_id
+          AND change_set.model_change_set_status = 'validated'
+          AND change_set.validation_outcome->'delete_records' = p_records) THEN
+        RAISE EXCEPTION 'A validated deletion receipt is required' USING ERRCODE = '42501';
+    END IF;
+    -- Parent rows remain present while each child is checked and removed. Any
+    -- mismatch, protected row, or missing dependency rolls back the whole call.
+    FOREACH v_table IN ARRAY v_tables LOOP
+        IF NOT p_records ? v_table THEN CONTINUE; END IF;
+        IF jsonb_typeof(p_records->v_table) <> 'array' THEN
+            RAISE EXCEPTION 'Invalid deletion identities' USING ERRCODE = '22023';
+        END IF;
+        SELECT array_agg(value::BIGINT ORDER BY value::BIGINT) INTO v_ids
+          FROM jsonb_array_elements_text(p_records->v_table) AS ids(value);
+        IF v_ids IS NULL OR EXISTS (SELECT 1 FROM unnest(v_ids) AS ids(id) WHERE id IS NULL OR id < 1)
+           OR cardinality(v_ids) <> (SELECT count(DISTINCT id) FROM unnest(v_ids) AS ids(id)) THEN
+            RAISE EXCEPTION 'Invalid deletion identities' USING ERRCODE = '22023';
+        END IF;
+        v_scope := CASE v_table
+            WHEN 'model_attribute_binding' THEN 'EXISTS (SELECT 1 FROM workflow.model_object_binding b WHERE b.model_object_binding_id = target.model_object_binding_id AND b.model_id = $1)'
+            WHEN 'mapping_attribute' THEN 'EXISTS (SELECT 1 FROM workflow.mapping_object m WHERE m.mapping_object_id = target.mapping_object_id AND m.model_id = $1)'
+            WHEN 'generated_code' THEN 'EXISTS (SELECT 1 FROM workflow.model_object_binding b WHERE b.model_object_binding_id = target.model_object_binding_id AND b.model_id = $1)'
+            WHEN 'generated_code_source_system' THEN 'EXISTS (SELECT 1 FROM workflow.generated_code c JOIN workflow.model_object_binding b ON b.model_object_binding_id = c.model_object_binding_id WHERE c.generated_code_id = target.generated_code_id AND b.model_id = $1)'
+            WHEN 'validation_check' THEN 'EXISTS (SELECT 1 FROM workflow.validation_group g WHERE g.validation_group_id = target.validation_group_id AND g.model_id = $1)'
+            ELSE 'target.model_id = $1'
+        END;
+        v_lock_column := CASE v_table
+            WHEN 'mapping_object' THEN 'object_mapping_is_locked'
+            WHEN 'mapping_attribute' THEN 'attribute_mapping_is_locked'
+            WHEN 'validation_group' THEN 'is_locked'
+            WHEN 'validation_check' THEN 'is_locked'
+            ELSE v_table || '_is_locked'
+        END;
+        EXECUTE format('SELECT count(*), bool_or(target.%I) FROM workflow.%I target WHERE %s AND target.%I = ANY($2)',
+            v_lock_column, v_table, v_scope, v_table || '_id')
+            INTO v_count, v_locked USING p_model_id, v_ids;
+        IF v_count <> cardinality(v_ids) THEN
+            RAISE EXCEPTION 'Deletion records changed or are outside the Model' USING ERRCODE = '40001';
+        END IF;
+        IF v_locked THEN
+            RAISE EXCEPTION 'Unlock protected records before deletion' USING ERRCODE = '55000';
+        END IF;
+        EXECUTE format('DELETE FROM workflow.%I target WHERE %s AND target.%I = ANY($2)',
+            v_table, v_scope, v_table || '_id') USING p_model_id, v_ids;
+        GET DIAGNOSTICS v_count = ROW_COUNT;
+        v_total := v_total + v_count;
+    END LOOP;
+    RETURN v_total;
+END;
+$delete_model_records$;
+REVOKE ALL ON FUNCTION application.delete_model_records(
+    UUID, UUID, BIGINT, BIGINT, BIGINT, UUID, JSONB) FROM PUBLIC;

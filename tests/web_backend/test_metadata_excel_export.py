@@ -8,6 +8,7 @@ from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from typing import Any, LiteralString, Protocol, cast
+from unittest.mock import patch
 from uuid import UUID, uuid4
 from zipfile import ZipFile
 
@@ -492,10 +493,12 @@ def test_identical_export_inputs_produce_byte_identical_canonical_xlsx_packages(
     )
     request = {"schema_version": "1.0", "sheet_codes": ["copy_group"]}
 
-    with TestClient(app) as client:
+    with TestClient(app) as client, patch("openpyxl.writer.excel.datetime") as clock:
+        clock.datetime.now.side_effect = [datetime(2026, 1, 1), datetime(2026, 1, 2)]
         first = client.post("/api/v1/tenants/7/metadata/exports/xlsx", json=request)
         second = client.post("/api/v1/tenants/7/metadata/exports/xlsx", json=request)
 
+    assert first.status_code == second.status_code == 200
     assert first.content == second.content
     with ZipFile(BytesIO(first.content)) as archive:
         assert archive.namelist() == sorted(archive.namelist())

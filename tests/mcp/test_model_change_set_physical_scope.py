@@ -5,12 +5,10 @@ from types import SimpleNamespace
 from typing import Any, LiteralString, cast
 
 import pytest
-
-from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from gds_etl_workbench.application.change_sets import model as model_change_sets
 from gds_etl_workbench.application.change_sets.model import (
-    _load_physical_scope,
-    _validate_locked_change_set,
+    load_model_physical_scope,
+    validate_locked_model_change_set,
 )
 from gds_etl_workbench.application.change_sets.model_validation import (
     CodeGenerationTargetContext,
@@ -18,6 +16,7 @@ from gds_etl_workbench.application.change_sets.model_validation import (
     validation_mapping_context_digest,
 )
 from gds_etl_workbench.application.model_read import ModelReadContext
+from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 
 
 @dataclass
@@ -132,7 +131,7 @@ async def test_load_physical_scope_uses_placement_keys_and_new_eligibility_flags
         model_revision=4,
     )
 
-    scope = await _load_physical_scope(cast(WriteTransaction, transaction), model)
+    scope = await load_model_physical_scope(cast(WriteTransaction, transaction), model)
 
     source = ("tenant-a", "erp", "foreign-catalog", "source", "orders")
     silver = ("gds", "gds", "lakehouse", "silver", "orders")
@@ -177,10 +176,10 @@ async def test_locked_change_set_loads_one_neutral_physical_scope(
         return result
 
     monkeypatch.setattr(model_change_sets, "build_model_snapshot", build_snapshot)
-    monkeypatch.setattr(model_change_sets, "_load_physical_scope", load_scope)
+    monkeypatch.setattr(model_change_sets, "load_model_physical_scope", load_scope)
     monkeypatch.setattr(model_change_sets, "validate_future_graph", validate_graph)
 
-    actual = await _validate_locked_change_set(
+    actual = await validate_locked_model_change_set(
         cast(WriteTransaction, object()),
         model,
         row,

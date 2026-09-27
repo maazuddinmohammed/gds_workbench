@@ -47,6 +47,6 @@ Use safe argument passing for JSON. Do not hand-roll key normalization, guess di
 
 ## Source and contract corrections
 
-Current sources: `domain/modeling_records.py`, `domain/snapshots/model.py`, `application/change_sets/model.py`, `application/change_sets/model_validation.py` and `tools/snapshots/model/describe_model_dataset.py` under `mcp_server/gds_etl_workbench/`; `plugins/v2/gds/skills/gds/contracts/local-helper.json`.
+Current sources: `domain/modeling_records.py`, `domain/snapshots/model.py`, `application/change_sets/model.py`, `application/change_sets/model_validation.py` and `tools/snapshots/model/describe_model_dataset.py` under `mcp_server/gds_etl_workbench/`; `atlas/atlas-plugin/contracts/local-helper.json`.
 
 Known guidance corrections for later implementation: `domain/snapshots/model_guidance.py` still describes single-source-Tenant scope, while governed selection supports additionally authorized Source/Bronze source Tenants. It also describes Analysis findings too broadly for the exact endpoint record shape. Use authorized scope and the dataset contract; do not reproduce those stale descriptions as new restrictions or payload fields.

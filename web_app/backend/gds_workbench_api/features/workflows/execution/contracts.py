@@ -1,10 +1,12 @@
 """Internal durable Workflow Run execution contracts."""
 
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from typing import Literal, Protocol, Self
 from uuid import UUID
 
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
+from gds_etl_workbench.infrastructure.postgres import ReadIsolation, WriteTransaction
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 type ModelWorkflow = Literal[
@@ -77,6 +79,14 @@ class WorkflowExecutionClaim(BaseModel):
         )
 
 
+class WorkflowExecutionDatabase(Protocol):
+    def write_transaction(
+        self,
+        *,
+        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
+    ) -> AbstractAsyncContextManager[WriteTransaction]: ...
+
+
 class WorkflowExecutor(Protocol):
     async def execute_started(
         self,
@@ -93,6 +103,7 @@ class WorkflowExecutor(Protocol):
 __all__ = [
     "ModelWorkflow",
     "WorkflowExecutionClaim",
+    "WorkflowExecutionDatabase",
     "WorkflowExecutionMode",
     "WorkflowExecutor",
 ]

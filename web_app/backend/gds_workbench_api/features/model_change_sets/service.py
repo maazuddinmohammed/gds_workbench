@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import replace
@@ -55,7 +56,12 @@ from gds_etl_workbench.application.model_snapshot import (
     build_model_snapshot,
     read_model_review_snapshot,
 )
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal, ToolPolicy
+from gds_etl_workbench.domain.authorization import (
+    ActorKind,
+    RequestPrincipal,
+    TenantRole,
+    ToolPolicy,
+)
 from gds_etl_workbench.domain.errors import (
     AuthorizationDeniedError,
     CandidateDigestConflictError,
@@ -81,6 +87,7 @@ from gds_etl_workbench.domain.snapshots.model import (
     model_snapshot_records,
 )
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
+from psycopg.types.json import Jsonb
 
 from gds_workbench_api.features.assertions.authoring import SaveAssertionRequest, prepare_assertion
 from gds_workbench_api.features.mapping.dependencies import (
@@ -128,8 +135,16 @@ from .contracts import (
     StageModelChangeSetResult,
     ValidateModelChangeSetResult,
 )
+from .deletion import plan_model_deletion
+from .editor import (
+    ModelRecordEditor,
+    ModelRecordEditorRequest,
+    SaveModelRecordRequest,
+    model_record_editor,
+    prepare_model_record_edit,
+)
 from .repository import PostgresModelChangeSetRepository, require_datetime
-from .review import ModelReviewDataset, prepare_model_record_review, review_lifecycle
+from .review import REVIEW_FIELDS, ModelReviewDataset, prepare_model_record_review, review_lifecycle
 
 
 class ModelChangeSetDatabase(Protocol):
@@ -495,6 +510,90 @@ class DatabaseModelChangeSetService:
                 outcome="assertion_saved",
             )
 
+    async def edit_record(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        command: ModelRecordEditorRequest | SaveModelRecordRequest,
+        idempotency_key: UUID | None = None,
+    ) -> ModelRecordEditor | ReviewModelRecordsResult:
+        saving = isinstance(command, SaveModelRecordRequest)
+        if saving and idempotency_key is None:
+            raise InvalidRequestError("An idempotency key is required to save.")
+        request_digest = hashlib.sha256(
+            json.dumps(
+                {"operation": "edit_model_record", **command.model_dump()},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        async with self._database.write_transaction() as transaction:
+            repository, model, principal_id = await self._authorize_record_review(
+                transaction,
+                principal,
+                tenant_id=tenant_id,
+                model_id=model_id,
+            )
+            if saving and idempotency_key is not None:
+                replay = await repository.replay_review(
+                    model_id=model_id,
+                    principal_id=principal_id,
+                    correlation_id=idempotency_key,
+                )
+                if replay is not None:
+                    metadata = replay["event_metadata"]
+                    if metadata.get("request_digest") != request_digest:
+                        raise WorkbenchError("review_conflict", "This review key was already used.")
+                    return ReviewModelRecordsResult(
+                        model_id=model_id,
+                        model_change_set_id=replay["model_change_set_id"],
+                        model_revision=metadata["model_revision"],
+                        action_count=replay["action_count"],
+                    )
+            if model["model_revision"] != command.expected_model_revision:
+                raise ModelRevisionConflictError()
+            if await repository.has_running_tenant_workflow(tenant_id=tenant_id):
+                raise TenantWorkflowConflictError()
+            context = ModelReadContext(
+                model_id=model_id,
+                tenant_id=tenant_id,
+                model_name=model["model_name"],
+                model_revision=model["model_revision"],
+                readable_source_tenant_ids=model["readable_source_tenant_ids"],
+            )
+            review = await read_model_review_snapshot(
+                transaction, context, enforce_row_limits=False
+            )
+            if not isinstance(command, SaveModelRecordRequest):
+                return model_record_editor(review, command)
+            validation = prepare_model_record_edit(
+                review,
+                command,
+                await load_model_physical_scope(transaction, context),
+            )
+            await self._authorizer.authorize_tenant(
+                transaction,
+                principal,
+                tenant_id=tenant_id,
+                policy=ToolPolicy.TENANT_MODEL_WRITE,
+                model_id=model_id,
+            )
+            assert idempotency_key is not None
+            return await self._apply_validated_review(
+                transaction,
+                repository,
+                validation,
+                model_id=model_id,
+                principal_id=principal_id,
+                idempotency_key=idempotency_key,
+                expected_model_revision=command.expected_model_revision,
+                request_digest=request_digest,
+                section=DATASETS_BY_NAME[command.dataset].section,
+                outcome="record_edited",
+            )
+
     async def _apply_validated_review(
         self,
         transaction: WriteTransaction,
@@ -601,6 +700,16 @@ class DatabaseModelChangeSetService:
         idempotency_key: UUID,
     ) -> ReviewModelRecordsResult:
         """Apply a human's exact lifecycle decision, preserving authored content."""
+        if command.action == "delete":
+            result = await self.delete_records(
+                principal,
+                tenant_id=tenant_id,
+                model_id=model_id,
+                command=command,
+                idempotency_key=idempotency_key,
+            )
+            assert isinstance(result, ReviewModelRecordsResult)
+            return result
         request_digest = hashlib.sha256(
             json.dumps(
                 {**command.model_dump(exclude_none=True), "record_ids": sorted(command.record_ids)},
@@ -648,6 +757,7 @@ class DatabaseModelChangeSetService:
                     dataset=command.dataset,
                     record_ids=command.record_ids,
                     action=command.action,
+                    layer=command.layer,
                 )
                 validation = prepared.validation
                 if any(issue.code == "record_locked" for issue in validation.issues):
@@ -662,9 +772,12 @@ class DatabaseModelChangeSetService:
                     raise WorkbenchError(
                         "review_conflict", "The review changed. Refresh its preview."
                     )
-                if command.expected_plan_digest is None and any(
-                    not item.selected and item.original != item.reviewed
-                    for item in prepared.decisions
+                if command.expected_plan_digest is None and (
+                    command.layer is not None
+                    or any(
+                        not item.selected and item.original != item.reviewed
+                        for item in prepared.decisions
+                    )
                 ):
                     raise WorkbenchError(
                         "review_confirmation_required",
@@ -851,6 +964,12 @@ class DatabaseModelChangeSetService:
         command: PreviewModelRecordsRequest,
         page: int = 1,
     ) -> PreviewModelRecordsResult:
+        if command.action == "delete":
+            result = await self.delete_records(
+                principal, tenant_id=tenant_id, model_id=model_id, command=command, page=page
+            )
+            assert isinstance(result, PreviewModelRecordsResult)
+            return result
         async with self._database.write_transaction() as transaction:
             repository, model, _ = await self._authorize_record_review(
                 transaction, principal, tenant_id=tenant_id, model_id=model_id
@@ -875,6 +994,7 @@ class DatabaseModelChangeSetService:
                 dataset=command.dataset,
                 record_ids=command.record_ids,
                 action=command.action,
+                layer=command.layer,
             )
             if (
                 command.expected_plan_digest is not None
@@ -882,7 +1002,7 @@ class DatabaseModelChangeSetService:
             ):
                 raise WorkbenchError("review_conflict", "The review changed. Refresh its preview.")
             count = len(prepared.decisions)
-            if page < 1 or (page - 1) * 200 >= count:
+            if page < 1 or (page > 1 and (page - 1) * 200 >= count):
                 raise InvalidRequestError("The review page is unavailable.")
             items: list[ModelRecordReviewItem] = []
             for decision in prepared.decisions[(page - 1) * 200 : page * 200]:
@@ -917,6 +1037,28 @@ class DatabaseModelChangeSetService:
                     for item in prepared.decisions
                 ),
                 total_record_count=count,
+                changes_by_dataset=dict(
+                    Counter(
+                        item.dataset
+                        for item in prepared.decisions
+                        if item.original != item.reviewed
+                    )
+                ),
+                warnings=(
+                    (
+                        "Conceptual records have no stored ownership link to Logical or "
+                        "Dimensional entities; those layers remain unchanged.",
+                    )
+                    if command.dataset.startswith("conceptual_") and command.action == "deactivate"
+                    else (
+                        "Physical tables and registered metadata remain unchanged.",
+                        "Validation checks are grouped by System, without target-object links. "
+                        "A group is removed only when its System loses its last active mapping; "
+                        "remaining checks need review after this change.",
+                    )
+                    if command.action == "deactivate"
+                    else ()
+                ),
                 items=tuple(items),
                 issues=tuple(
                     ModelRecordReviewIssue(
@@ -927,6 +1069,218 @@ class DatabaseModelChangeSetService:
                 issue_count=len(prepared.validation.issues),
                 page=page,
                 next_page=page + 1 if page * 200 < count else None,
+            )
+
+    async def delete_records(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        command: PreviewModelRecordsRequest | ReviewModelRecordsRequest,
+        idempotency_key: UUID | None = None,
+        page: int = 1,
+    ) -> PreviewModelRecordsResult | ReviewModelRecordsResult:
+        """Preview or atomically apply an administrator's confirmed deletion."""
+        if command.action != "delete":
+            raise InvalidRequestError("A delete action is required.")
+        request_digest = hashlib.sha256(
+            json.dumps(
+                {**command.model_dump(exclude_none=True), "record_ids": sorted(command.record_ids)},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        async with self._database.write_transaction() as transaction:
+            repository, model, principal_id = await self._authorize_record_review(
+                transaction, principal, tenant_id=tenant_id, model_id=model_id
+            )
+            authorization = await self._authorizer.authorize_tenant(
+                transaction,
+                principal,
+                tenant_id=tenant_id,
+                policy=ToolPolicy.TENANT_MODEL_WRITE,
+                model_id=model_id,
+            )
+            if authorization.effective_role not in {
+                TenantRole.SUPER_ADMIN,
+                TenantRole.TENANT_ADMIN,
+            }:
+                raise AuthorizationDeniedError()
+            if idempotency_key is not None:
+                replay = await repository.replay_review(
+                    model_id=model_id, principal_id=principal_id, correlation_id=idempotency_key
+                )
+                if replay is not None:
+                    metadata = replay["event_metadata"]
+                    if metadata.get("request_digest") != request_digest:
+                        raise WorkbenchError(
+                            "review_conflict", "This deletion key was already used."
+                        )
+                    return ReviewModelRecordsResult(
+                        model_id=model_id,
+                        model_change_set_id=replay["model_change_set_id"],
+                        model_revision=metadata["model_revision"],
+                        action_count=replay["action_count"],
+                    )
+            if model["model_revision"] != command.expected_model_revision:
+                raise ModelRevisionConflictError()
+            if await repository.has_running_tenant_workflow(tenant_id=tenant_id):
+                raise TenantWorkflowConflictError()
+            context = ModelReadContext(
+                model_id=model_id,
+                tenant_id=tenant_id,
+                model_name=model["model_name"],
+                model_revision=model["model_revision"],
+                readable_source_tenant_ids=model["readable_source_tenant_ids"],
+            )
+            plan = await plan_model_deletion(
+                transaction,
+                await read_model_review_snapshot(transaction, context, enforce_row_limits=False),
+                dataset=cast(ModelReviewDataset, command.dataset),
+                record_ids=command.record_ids,
+                layer=command.layer,
+            )
+            if (
+                command.expected_plan_digest is not None
+                and command.expected_plan_digest != plan.digest
+            ):
+                raise WorkbenchError(
+                    "review_conflict", "The deletion plan changed. Preview it again."
+                )
+            locked = [item for item in plan.items if item.is_locked]
+            if idempotency_key is None:
+                count = len(plan.items)
+                if page < 1 or (page > 1 and (page - 1) * 200 >= count):
+                    raise InvalidRequestError("The deletion page is unavailable.")
+                return PreviewModelRecordsResult(
+                    model_id=model_id,
+                    model_revision=model["model_revision"],
+                    plan_digest=plan.digest,
+                    can_apply=not locked,
+                    action_count=count,
+                    additional_change_count=sum(not item.selected for item in plan.items),
+                    total_record_count=count,
+                    changes_by_dataset={name: len(ids) for name, ids in plan.records.items()},
+                    warnings=(
+                        "Physical tables, registered metadata, assertions, "
+                        "and workflow history are retained.",
+                        *(
+                            ("Conceptual deletion does not delete Logical or Dimensional records.",)
+                            if command.dataset.startswith("conceptual_")
+                            else (
+                                "System-level validations are deleted only when their System loses "
+                                "its last Mapping. Review remaining checks manually.",
+                            )
+                        ),
+                    ),
+                    items=tuple(
+                        ModelRecordReviewItem(
+                            dataset=item.dataset,
+                            record_id=item.record_id,
+                            label=item.label,
+                            selected=item.selected,
+                            reason=item.reason,
+                            is_locked=item.is_locked,
+                            desired_locked=False,
+                            status=cast(Any, item.status),
+                            desired_status="deleted",
+                            can_unlock=item.dataset in REVIEW_FIELDS,
+                            changed=True,
+                        )
+                        for item in plan.items[(page - 1) * 200 : page * 200]
+                    ),
+                    issues=tuple(
+                        ModelRecordReviewIssue(
+                            code="record_locked",
+                            dataset=item.dataset,
+                            message=f"Unlock {item.label} before deleting it.",
+                        )
+                        for item in locked[:20]
+                    ),
+                    issue_count=len(locked),
+                    page=page,
+                    next_page=page + 1 if page * 200 < count else None,
+                )
+            if command.expected_plan_digest is None:
+                raise WorkbenchError(
+                    "review_confirmation_required",
+                    "Preview and confirm all affected records before deletion.",
+                )
+            if locked:
+                raise WorkbenchError(
+                    "record_locked", "Unlock selected and dependent records before deletion."
+                )
+            if not plan.items:
+                raise WorkbenchError("review_conflict", "There are no records to delete.")
+            change_set_id = uuid4()
+            row = await repository.create(
+                change_set_id=change_set_id,
+                model_id=model_id,
+                workflow_run_id=None,
+                principal_id=principal_id,
+                correlation_id=idempotency_key,
+            )
+            if row is None:
+                raise ModelNotFoundError()
+            await repository.record_validation(
+                change_set_id=change_set_id,
+                status="validated",
+                candidate_digest=plan.digest,
+                valid=True,
+                outcome={"valid": True, "delete_records": plan.records},
+            )
+            result = await transaction.fetch_one(
+                "SELECT application.delete_model_records(%s, %s, %s, %s, %s, %s, %s) AS count",
+                (
+                    principal.entra_tenant_id,
+                    principal.entra_object_id,
+                    tenant_id,
+                    model_id,
+                    command.expected_model_revision,
+                    change_set_id,
+                    Jsonb(plan.records),
+                ),
+            )
+            if result is None:
+                raise DependencyUnavailableError()
+            count = result["count"]
+            if count != len(plan.items):
+                raise WorkbenchError("review_conflict", "Deletion counts changed. Preview again.")
+            revision = await repository.advance_model_revision(
+                model_id=model_id,
+                expected_model_revision=command.expected_model_revision,
+                changed=True,
+            )
+            if revision is None:
+                raise ModelRevisionConflictError()
+            await repository.mark_applied(change_set_id=change_set_id)
+            for event_type in ("created", "validated", "applied"):
+                await repository.insert_event(
+                    change_set_id=change_set_id,
+                    model_id=model_id,
+                    event_type=event_type,
+                    draft_revision=row["draft_revision"],
+                    section=DATASETS_BY_NAME[command.dataset].section,
+                    action_count=count,
+                    outcome="records_deleted" if event_type == "applied" else "deletion",
+                    metadata={
+                        "action": "delete",
+                        "dataset": command.dataset,
+                        "request_digest": request_digest,
+                        "plan_digest": plan.digest,
+                        "model_revision": revision["model_revision"],
+                        "changes_by_dataset": {
+                            name: len(ids) for name, ids in plan.records.items()
+                        },
+                    },
+                    correlation_id=idempotency_key,
+                )
+            return ReviewModelRecordsResult(
+                model_id=model_id,
+                model_change_set_id=change_set_id,
+                model_revision=revision["model_revision"],
+                action_count=count,
             )
 
     async def _authorize_record_review(

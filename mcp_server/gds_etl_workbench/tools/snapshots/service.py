@@ -11,8 +11,8 @@ from tempfile import TemporaryDirectory
 from uuid import UUID, uuid4
 
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
+from gds_etl_workbench.infrastructure.snapshot_archive import SnapshotArchive, SnapshotContractError
 
-from .archive import SnapshotArchive, SnapshotContractError
 from .storage import SnapshotKind, SnapshotStore
 
 type ArchiveBuilder = Callable[[Path], SnapshotArchive]

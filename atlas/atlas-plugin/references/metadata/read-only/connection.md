@@ -59,6 +59,5 @@ Development provenance; these source files are not runtime dependencies of the p
 - `database/02_core.sql:80`.
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:157,277`.
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:397`.
-- `plugins/v2/gds/skills/gds/references/workflows/metadata-authoring.md:13`.
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

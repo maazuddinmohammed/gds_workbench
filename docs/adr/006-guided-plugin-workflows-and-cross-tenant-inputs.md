@@ -1,6 +1,6 @@
 # ADR 006: Guided Plugin Workflows and Cross-Tenant Inputs
 
-- Status: accepted
+- Status: superseded by Atlas for plugin workflow behavior; cross-Tenant domain rules remain historical context
 - Date: 2026-09-09
 
 ## Decision
@@ -46,4 +46,4 @@ remain in place. CREATE IF NOT EXISTS and known migration SQL are user artifacts
 not populated-PostgreSQL migration helpers. Updated SQL remains fresh-install
 source; existing databases are never modified by a plugin rebuild.
 
-The approved detailed workflow plan is in `.scratch/plugin-workflow-plan.md`.
+The GDS plugin and its detailed workflow plan were retired after Atlas replaced it.

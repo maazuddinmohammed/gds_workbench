@@ -14,14 +14,13 @@ from uuid import UUID
 
 import httpx2
 import pytest
-from mcp import Client
-from mcp.client.streamable_http import streamable_http_client
-from mcp.shared.exceptions import MCPError
-from starlette.testclient import TestClient
-
 from gds_etl_workbench import runtime as runtime_module
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.server import create_mcp_server
+from gds_etl_workbench.application.metadata_snapshot.archive import (
+    SnapshotArchive,
+    build_dataset_document,
+)
 from gds_etl_workbench.configuration import AuthMode, Environment, RuntimeSettings
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
 from gds_etl_workbench.domain.snapshots.description import (
@@ -48,13 +47,13 @@ from gds_etl_workbench.runtime import (
 from gds_etl_workbench.tools.snapshots.metadata import (
     get_metadata_snapshot as metadata_snapshot_module,
 )
-from gds_etl_workbench.tools.snapshots.metadata.archive import (
-    SnapshotArchive,
-    build_dataset_document,
-)
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     ReadyMetadataSnapshot,
 )
+from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
+from mcp.shared.exceptions import MCPError
+from starlette.testclient import TestClient
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres

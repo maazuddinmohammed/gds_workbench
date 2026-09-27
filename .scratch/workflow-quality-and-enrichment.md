@@ -905,8 +905,6 @@ Final verification:
   Browser viewport restored, temporary tab closed, preview server stopped.
 
 Rebuilt local deliverables:
-- plugins/v2/dist/gds-agent-plugin-0.5.0.zip
-- plugins/v2/dist/gds-stage-runner-0.1.0.vsix and generated extension bundle
 - mcp_server/dist/gds-mcp-appservice-0.2.0.zip
 - artifacts/databricks-ui/gds-workbench-app-source.zip
 - artifacts/databricks-ui/gds-workbench-notebooks.zip

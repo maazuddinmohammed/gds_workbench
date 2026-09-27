@@ -2,11 +2,12 @@ import { useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
-import type { ModelRecordHistoryApi, ModelReviewDataset } from "./api";
+import type { ModelRecordHistoryApi, ModelReviewCommand, ModelReviewDataset } from "./api";
 import { ModelRecordReview } from "./ModelRecordReview";
 
-export function ModelRecordHistory({ api, tenantId, modelId, modelRevision, dataset, label, hasTenantLock, entityType }: {
+export function ModelRecordHistory({ api, tenantId, modelId, modelRevision, dataset, label, hasTenantLock, entityType, actions, showHeader = true }: {
   api: ModelRecordHistoryApi; tenantId: number; modelId: number; modelRevision: number;
+  showHeader?: boolean; actions?: readonly ModelReviewCommand["action"][];
   entityType?: "logical_entity" | "dimensional_entity";
   dataset: ModelReviewDataset; label: string; hasTenantLock: boolean;
 }) {
@@ -21,13 +22,13 @@ export function ModelRecordHistory({ api, tenantId, modelId, modelRevision, data
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
   const stale = query.data?.pages.some((page) => page.model_revision !== modelRevision) === true;
   return <section className="workflow-surface" aria-label={label}>
-    <header className="workflow-commandbar"><h2>{label}</h2>
+    {showHeader ? <header className="workflow-commandbar"><h2>{label}</h2>
       <button className="button button-secondary button-small" type="button" disabled={query.isFetching}
         onClick={() => { setSelectedIds(new Set()); void query.refetch(); }}>Refresh records</button>
-    </header>
+    </header> : null}
     <p className="field-help">Includes inactive records. Review shows required dependencies before Apply.</p>
     <ModelRecordReview api={api} tenantId={tenantId} modelId={modelId} modelRevision={modelRevision}
-      dataset={dataset} selectedIds={selectedIds} hasTenantLock={hasTenantLock}
+      {...(actions ? { actions } : {})} dataset={dataset} selectedIds={selectedIds} hasTenantLock={hasTenantLock}
       disabled={query.isPending || query.isError || stale}
       onApplied={async () => { setSelectedIds(new Set()); await client.invalidateQueries({ predicate: (q) => q.queryKey[1] === tenantId }); }} />
     {query.isPending ? <p aria-busy="true">Loading records…</p>

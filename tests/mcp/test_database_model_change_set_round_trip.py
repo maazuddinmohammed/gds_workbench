@@ -21,14 +21,7 @@ from gds_etl_workbench.application.change_sets.contracts import (
     stage_batch_sha256,
 )
 from gds_etl_workbench.application.change_sets.model import (
-    _DATABASE_TIME_SQL,
-    _EXPIRE_OWNED_SQL,
-    _LOCK_OWNED_CHANGE_SETS_SQL,
-    _STAGE_SQL,
-    _TOUCH_MODEL_STAGE_BATCH_SQL,
-    WRITE_SECTION_COLUMNS,
     StageModelChange,
-    register_model_change_set_tools,
     validate_model_stage_changes,
 )
 from gds_etl_workbench.configuration import AuthMode
@@ -41,6 +34,16 @@ from gds_etl_workbench.domain.snapshots.model import (
     DATASETS,
     ModelChangeSetDataset,
 )
+from gds_etl_workbench.infrastructure.snapshot_archive import SnapshotArchive
+from gds_etl_workbench.tools.change_sets.model import (
+    _DATABASE_TIME_SQL,
+    _EXPIRE_OWNED_SQL,
+    _LOCK_OWNED_CHANGE_SETS_SQL,
+    _STAGE_SQL,
+    _TOUCH_MODEL_STAGE_BATCH_SQL,
+    WRITE_SECTION_COLUMNS,
+    register_model_change_set_tools,
+)
 from gds_etl_workbench.tools.modeling.model_details import register_list_models_tool
 from gds_etl_workbench.tools.modeling.model_input_scope import (
     register_get_model_input_scope_tool,
@@ -51,7 +54,6 @@ from gds_etl_workbench.tools.modeling.read_mapping_context import (
 from gds_etl_workbench.tools.modeling.read_model_section import (
     register_read_model_section_tool,
 )
-from gds_etl_workbench.tools.snapshots.archive import SnapshotArchive
 from gds_etl_workbench.tools.snapshots.model.get_model_snapshot import (
     register_create_model_snapshot_tool,
 )

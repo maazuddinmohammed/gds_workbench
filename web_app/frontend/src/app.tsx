@@ -1,7 +1,6 @@
+import { ModelRecordTools } from "./features/model_record_review/ModelRecordEditor";
 import { modelLayerSearch } from "./shared/ModelLayerTabs";
 import { ModelTargetsScreen } from "./features/model_targets/ModelTargetsScreen";
-import { TablePrototype } from "./features/table_prototype/TablePrototype";
-import { ObjectCardsPrototype, type CardVariant } from "./features/models/ObjectCardsPrototype";
 import {
   QueryClient,
   QueryClientProvider,
@@ -86,8 +85,6 @@ interface MappingRouteSearch {
   view?: "dependencies" | "objects";
 }
 
-type TablePrototypeVariant = "A" | "B" | "C";
-
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: () => <Outlet />,
   notFoundComponent: () => (
@@ -105,25 +102,6 @@ const tenantEntryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: TenantEntry,
-});
-
-const tablePrototypeRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/prototype/data-table",
-  validateSearch: (search: Record<string, unknown>): { variant: TablePrototypeVariant } => ({
-    variant: search.variant === "B" || search.variant === "C" ? search.variant : "A",
-  }),
-  component: DataTablePrototype,
-});
-
-const objectCardsPrototypeRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/prototype/object-cards",
-  validateSearch: (search: Record<string, unknown>): { variant: CardVariant; stage: number } => ({
-    variant: search.variant === "B" || search.variant === "C" ? search.variant : "A",
-    stage: Number.isInteger(Number(search.stage)) && Number(search.stage) >= 0 && Number(search.stage) <= 5 ? Number(search.stage) : 1,
-  }),
-  component: ModelObjectCardsPrototype,
 });
 
 const tenantHomeRoute = createRoute({
@@ -390,8 +368,6 @@ const tenantModelDimensionalRelationshipRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   tenantEntryRoute,
-  tablePrototypeRoute,
-  objectCardsPrototypeRoute,
   tenantHomeRoute,
   tenantMetadataRoute,
   tenantMetadataObjectsRoute,
@@ -473,29 +449,6 @@ export function WorkbenchApp({ router }: { router: WorkbenchRouter }) {
       <RouterProvider router={router} />
     </QueryClientProvider>
   );
-}
-
-function DataTablePrototype() {
-  const { variant } = tablePrototypeRoute.useSearch();
-  const navigate = useNavigate({ from: "/prototype/data-table" });
-  if (!import.meta.env.DEV) return <ErrorPage />;
-  return (
-    <TablePrototype
-      variant={variant}
-      onVariantChange={(nextVariant) => {
-        void navigate({ search: { variant: nextVariant }, replace: true });
-      }}
-    />
-  );
-}
-
-function ModelObjectCardsPrototype() {
-  const { variant, stage } = objectCardsPrototypeRoute.useSearch();
-  const navigate = useNavigate({ from: "/prototype/object-cards" });
-  if (!import.meta.env.DEV) return <ErrorPage />;
-  return <ObjectCardsPrototype variant={variant} stage={stage} onNavigate={(nextVariant, nextStage) => {
-    void navigate({ search: { variant: nextVariant, stage: nextStage }, replace: true });
-  }} />;
 }
 
 function TenantEntry() {
@@ -1138,6 +1091,7 @@ function ModelConceptual() {
           api={api}
           tenantId={numericTenantId}
           model={model}
+          canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"}
           hasTenantLock={home.lock.owned_by_current_principal === true}
         />
       )}
@@ -1195,7 +1149,10 @@ function ConceptualDetailRoute({
       activeStage="conceptual"
       loadingLabel="Loading Conceptual"
     >
-      {() => (
+      {({ home, model }) => (<>
+        <ModelRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={tenantId} modelId={modelId} modelRevision={model.model_revision}
+          hasTenantLock={home.lock.owned_by_current_principal === true} dataset={`conceptual_${kind}`} recordId={detailId} />
+        {
         kind === "object" ? (
           <ConceptualObjectDetailPage
             api={api}
@@ -1211,7 +1168,7 @@ function ConceptualDetailRoute({
             relationshipId={detailId}
           />
         )
-      )}
+      }</>)}
     </ModelRouteFrame>
   );
 }
@@ -1243,6 +1200,7 @@ function ModelLogical() {
           api={api}
           tenantId={numericTenantId}
           model={model}
+          canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"}
           hasTenantLock={home.lock.owned_by_current_principal === true}
         />
       )}
@@ -1265,7 +1223,9 @@ function ModelLogicalEntity() {
       activeStage="logical"
       loadingLabel="Loading Logical"
     >
-      {({ home, model }) => (
+      {({ home, model }) => (<>
+        <ModelRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={numericTenantId} modelId={numericModelId} modelRevision={model.model_revision}
+          hasTenantLock={home.lock.owned_by_current_principal === true} dataset="logical_entity" recordId={numericEntityId} />
         <LogicalEntityDetailPage
           api={api}
           tenantId={numericTenantId}
@@ -1274,7 +1234,7 @@ function ModelLogicalEntity() {
           modelRevision={model.model_revision}
           hasTenantLock={home.lock.owned_by_current_principal === true}
         />
-      )}
+      </>)}
     </ModelRouteFrame>
   );
 }
@@ -1343,7 +1303,10 @@ function LogicalDetailRoute({
       activeStage="logical"
       loadingLabel="Loading Logical"
     >
-      {() => (
+      {({ home, model }) => (<>
+        <ModelRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={tenantId} modelId={modelId} modelRevision={model.model_revision}
+          hasTenantLock={home.lock.owned_by_current_principal === true} dataset={`logical_${kind}`} recordId={detailId} />
+        {
         kind === "attribute" ? (
           <LogicalAttributeDetailPage
             api={api}
@@ -1366,7 +1329,7 @@ function LogicalDetailRoute({
             submodelId={detailId}
           />
         )
-      )}
+      }</>)}
     </ModelRouteFrame>
   );
 }
@@ -1389,6 +1352,7 @@ function ModelDimensional() {
           api={api}
           tenantId={numericTenantId}
           model={model}
+          canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"}
           hasTenantLock={home.lock.owned_by_current_principal === true}
         />
       )}
@@ -1411,7 +1375,9 @@ function ModelDimensionalObject() {
       activeStage="dimensional"
       loadingLabel="Loading Dimensional"
     >
-      {({ home, model }) => (
+      {({ home, model }) => (<>
+        <ModelRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={numericTenantId} modelId={numericModelId} modelRevision={model.model_revision}
+          hasTenantLock={home.lock.owned_by_current_principal === true} dataset="dimensional_entity" recordId={numericEntityId} />
         <DimensionalObjectDetailPage
           api={api}
           tenantId={numericTenantId}
@@ -1420,7 +1386,7 @@ function ModelDimensionalObject() {
           modelRevision={model.model_revision}
           hasTenantLock={home.lock.owned_by_current_principal === true}
         />
-      )}
+      </>)}
     </ModelRouteFrame>
   );
 }
@@ -1471,7 +1437,10 @@ function DimensionalDetailRoute({
       activeStage="dimensional"
       loadingLabel="Loading Dimensional"
     >
-      {() => (
+      {({ home, model }) => (<>
+        <ModelRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={tenantId} modelId={modelId} modelRevision={model.model_revision}
+          hasTenantLock={home.lock.owned_by_current_principal === true} dataset={`dimensional_${kind}`} recordId={detailId} />
+        {
         kind === "attribute" ? (
           <DimensionalAttributeDetailPage
             api={api}
@@ -1487,7 +1456,7 @@ function DimensionalDetailRoute({
             relationshipId={detailId}
           />
         )
-      )}
+      }</>)}
     </ModelRouteFrame>
   );
 }

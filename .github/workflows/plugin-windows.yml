@@ -1,13 +1,10 @@
-name: GDS plugin Windows smoke
+name: Atlas Windows smoke
 
 on:
   pull_request:
   push:
     paths:
       - "mcp_server/**"
-      - "plugins/v2/**"
-      - "plugins/build_gds_v2_plugin_zip.py"
-      - "tests/plugin_v2/**"
       - "atlas/**"
       - "tests/atlas/**"
       - ".github/workflows/plugin-windows.yml"
@@ -24,22 +21,22 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: plugins/v2/gds-stage-runner/package-lock.json
+          cache-dependency-path: atlas/atlas-vs-code/package-lock.json
       - name: Install Workbench test dependencies
         run: npm ci
-      - name: Test Workbench
-        run: node --test tests/plugin_v2/*.test.mjs
-      - name: Install frozen Stage Runner dependencies
-        working-directory: plugins/v2/gds-stage-runner
+      - name: Test Atlas Workbench
+        run: node --test tests/atlas/*.test.mjs
+      - name: Install frozen Atlas Stage Runner dependencies
+        working-directory: atlas/atlas-vs-code
         run: npm ci
-      - name: Test Stage Runner
-        working-directory: plugins/v2/gds-stage-runner
+      - name: Test Atlas Stage Runner
+        working-directory: atlas/atlas-vs-code
         run: npm test
-      - name: Type-check Stage Runner
-        working-directory: plugins/v2/gds-stage-runner
+      - name: Type-check Atlas Stage Runner
+        working-directory: atlas/atlas-vs-code
         run: npm run check
-      - name: Build Stage Runner VSIX
-        working-directory: plugins/v2/gds-stage-runner
+      - name: Build Atlas Stage Runner VSIX
+        working-directory: atlas/atlas-vs-code
         run: npm run package:vsix
 
   powershell-51:
@@ -58,10 +55,6 @@ jobs:
         run: python -m pip install uv==0.10.2
       - name: Verify frozen MCP dependencies
         run: uv sync --frozen --project mcp_server
-      - name: Test the V2 plugin with Windows PowerShell 5.1
-        run: >-
-          uv run --frozen --project mcp_server python -m pytest
-          -c mcp_server/pyproject.toml tests/plugin_v2 -q
       - name: Test Atlas native workspace parity with Windows PowerShell 5.1
         shell: powershell
         run: |

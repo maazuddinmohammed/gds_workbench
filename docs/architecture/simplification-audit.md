@@ -2,6 +2,8 @@
 
 > Historical verification record. The interactive notebook runtime was retired
 > by [ADR 007](../adr/007-web-owned-workflows-and-notebook-retirement.md); notebook checks below describe the earlier release.
+> The [September 23 pass](production-simplification-2026-09-23.md) completes the
+> deferred Change Set transport separation and records current verification.
 
 The audit removed **424 net lines of production source** while keeping the
 existing deployment model and public behavior. No dependencies were added or

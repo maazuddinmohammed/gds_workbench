@@ -14,7 +14,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ModelDetail } from "../models/api";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
 import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
-import { loadAllEnrichmentScope, type AgentCapabilities, type WorkflowCreationApi, type WorkflowRunDetail, type WorkflowRunMonitorApi } from "../workflows/api";
+import { loadWorkflowScope, type AgentCapabilities, type WorkflowCreationApi, type WorkflowRunDetail, type WorkflowRunMonitorApi } from "../workflows/api";
 import { createHttpRequest } from "../../core/http";
 import { createMetadataEnrichmentApi, type MetadataEnrichmentResult, type MetadataEnrichmentResultPage } from "./api";
 import { MetadataEnrichmentResults } from "./MetadataEnrichmentResults";
@@ -91,14 +91,14 @@ describe("Metadata enrichment scope and run creation", () => {
     const api = creationApi();
     api.listModelInputScope.mockResolvedValueOnce({ model_revision: 18, items: [scope(501)], next_cursor: "opaque" })
       .mockResolvedValueOnce({ model_revision: 18, items: [scope(502, "bronze")], next_cursor: null });
-    expect((await loadAllEnrichmentScope(api, 7, 18)).items.map((item) => item.object_id)).toEqual([501, 502]);
+    expect((await loadWorkflowScope(api, 7, 18, "enrichment")).items.map((item) => item.object_id)).toEqual([501, 502]);
     expect(api.listModelInputScope.mock.calls).toEqual([[7, 18, {}, 200, undefined], [7, 18, {}, 200, "opaque"]]);
   });
   it.each(["revision", "cursor", "zone"])("rejects %s drift while loading scope", async (drift) => {
     const api = creationApi();
     api.listModelInputScope.mockResolvedValueOnce({ model_revision: 18, items: [scope(501)], next_cursor: "opaque" })
       .mockResolvedValue({ model_revision: drift === "revision" ? 19 : 18, items: [{ ...scope(502), zone_code: drift === "zone" ? "silver" : "bronze" }], next_cursor: drift === "cursor" ? "opaque" : null });
-    await expect(loadAllEnrichmentScope(api, 7, 18)).rejects.toThrow();
+    await expect(loadWorkflowScope(api, 7, 18, "enrichment")).rejects.toThrow();
   });
   it("restricts profiles to one shot and reuses create identity after an ambiguous response", async () => {
     const api = creationApi(); const user = userEvent.setup(); const onCreated = vi.fn(async () => undefined);

@@ -8,16 +8,21 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
 _WEB_PACKAGE = _ROOT / "web_app" / "backend" / "gds_workbench_api"
+_SHARED_PACKAGE = _ROOT / "mcp_server" / "gds_etl_workbench"
 
 
-def test_web_backend_does_not_import_mcp_tool_or_identity_adapters() -> None:
+def test_web_and_shared_rules_do_not_import_mcp_tool_or_identity_adapters() -> None:
     forbidden = (
         "gds_etl_workbench.adapters.auth",
         "gds_etl_workbench.adapters.mcp",
         "gds_etl_workbench.tools",
     )
     violations: list[str] = []
-    for path in sorted(_WEB_PACKAGE.rglob("*.py")):
+    packages = [
+        _WEB_PACKAGE,
+        *(_SHARED_PACKAGE / name for name in ("application", "domain", "infrastructure")),
+    ]
+    for path in sorted(path for package in packages for path in package.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         imported = [
             node.module
@@ -37,7 +42,7 @@ def test_web_backend_does_not_import_mcp_tool_or_identity_adapters() -> None:
     assert violations == []
 
 
-def test_workflow_assembly_imports_without_mcp_sdk() -> None:
+def test_workflows_and_change_sets_import_without_mcp_transport() -> None:
     environment = os.environ.copy()
     environment["PYTHONPATH"] = os.pathsep.join(
         (
@@ -51,15 +56,26 @@ import sys
 
 real_import = builtins.__import__
 
+forbidden = (
+    "mcp",
+    "gds_etl_workbench.adapters.auth",
+    "gds_etl_workbench.adapters.mcp",
+    "gds_etl_workbench.tools",
+)
+
 def reject_mcp(name, globals=None, locals=None, fromlist=(), level=0):
-    if name == "mcp" or name.startswith("mcp."):
-        raise AssertionError(f"workflow assembly imported MCP SDK: {name}")
+    if any(name == root or name.startswith(root + ".") for root in forbidden):
+        raise AssertionError(f"shared application imported MCP transport: {name}")
     return real_import(name, globals, locals, fromlist, level)
 
 builtins.__import__ = reject_mcp
 
 from gds_etl_workbench.application.change_sets.metadata import CHANGE_SET_DATASETS
 from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_workbench_api.features.metadata_change_sets.service import (
+    DatabaseMetadataChangeSetService,
+)
+from gds_workbench_api.features.model_change_sets.service import DatabaseModelChangeSetService
 from gds_workbench_api.features.workflows.execution.assembly import (
     WorkflowRuntimeServices,
     create_workflow_runtime_services,
@@ -69,7 +85,11 @@ assert StageModelChange.__module__ == "gds_etl_workbench.application.change_sets
 assert "source_object" in CHANGE_SET_DATASETS
 assert WorkflowRuntimeServices.__module__.endswith("workflows.execution.assembly")
 assert callable(create_workflow_runtime_services)
-assert not any(name == "mcp" or name.startswith("mcp.") for name in sys.modules)
+assert DatabaseMetadataChangeSetService and DatabaseModelChangeSetService
+assert not any(
+    name == root or name.startswith(root + ".")
+    for name in sys.modules for root in forbidden
+)
 """
     completed = subprocess.run(
         [sys.executable, "-c", script],

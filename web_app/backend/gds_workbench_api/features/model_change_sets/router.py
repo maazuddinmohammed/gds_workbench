@@ -42,6 +42,7 @@ from .contracts import (
     StageModelChangeSetResult,
     ValidateModelChangeSetResult,
 )
+from .editor import ModelRecordEditor, ModelRecordEditorRequest, SaveModelRecordRequest
 from .review import ModelReviewDataset
 
 type PositivePathId = Annotated[int, Path(gt=0)]
@@ -50,6 +51,16 @@ type IdempotencyKey = Annotated[UUID, Header(alias="Idempotency-Key")]
 
 
 class ModelChangeSetService(Protocol):
+    async def edit_record(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        command: ModelRecordEditorRequest | SaveModelRecordRequest,
+        idempotency_key: UUID | None = None,
+    ) -> ModelRecordEditor | ReviewModelRecordsResult: ...
+
     async def add_input_scope(
         self,
         principal: RequestPrincipal,
@@ -303,6 +314,40 @@ def create_model_change_sets_router(
         save_assertion,
         methods=["POST"],
         response_model=ReviewModelRecordsResult,
+    )
+
+    async def load_record_editor(
+        tenant_id: PositivePathId,
+        model_id: PositivePathId,
+        command: ModelRecordEditorRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
+    ) -> ModelRecordEditor | ReviewModelRecordsResult:
+        return await service.edit_record(
+            principal, tenant_id=tenant_id, model_id=model_id, command=command
+        )
+
+    async def save_record(
+        tenant_id: PositivePathId,
+        model_id: PositivePathId,
+        command: SaveModelRecordRequest,
+        idempotency_key: IdempotencyKey,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
+    ) -> ModelRecordEditor | ReviewModelRecordsResult:
+        return await service.edit_record(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            command=command,
+            idempotency_key=idempotency_key,
+        )
+
+    router.add_api_route(
+        "/review/editor", load_record_editor, methods=["POST"], response_model=ModelRecordEditor
+    )
+    router.add_api_route(
+        "/review/edit", save_record, methods=["POST"], response_model=ReviewModelRecordsResult
     )
 
     async def preview_binding(

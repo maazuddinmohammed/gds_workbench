@@ -5,16 +5,17 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-
+from gds_etl_workbench.application.change_sets.model import (
+    require_mcp_writable_pending,
+    require_mutable_model_change_set,
+)
 from gds_etl_workbench.domain.errors import (
     InvalidRequestError,
     ModelChangeSetNotActiveError,
 )
-from gds_etl_workbench.application.change_sets.model import (
+from gds_etl_workbench.tools.change_sets.model import (
     _EXPIRE_OWNED_SQL,
     _FIND_ONGOING_SQL,
-    _require_mcp_writable_pending,
-    _require_mutable,
 )
 
 
@@ -23,7 +24,7 @@ def test_generic_mcp_draft_lookup_excludes_workflow_bound_change_sets() -> None:
     assert "workflow_run_id IS NULL" in _EXPIRE_OWNED_SQL
 
 
-@pytest.mark.parametrize("guard", [_require_mutable, _require_mcp_writable_pending])
+@pytest.mark.parametrize("guard", [require_mutable_model_change_set, require_mcp_writable_pending])
 def test_generic_mcp_mutations_reject_workflow_bound_change_sets(
     guard: Callable[[Mapping[str, Any]], None],
 ) -> None:
@@ -55,8 +56,8 @@ def test_model_change_set_mutability_uses_the_database_expiry_decision() -> None
         "expires_time": datetime.now(UTC) - timedelta(hours=1),
     }
 
-    _require_mutable(row)
+    require_mutable_model_change_set(row)
 
     row["is_expired"] = True
     with pytest.raises(ModelChangeSetNotActiveError):
-        _require_mutable(row)
+        require_mutable_model_change_set(row)

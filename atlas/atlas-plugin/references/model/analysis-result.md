@@ -104,6 +104,6 @@ Illustrates `model-change-set/analysis_result.json` without SQL. Replace the syn
 
 ## Source pointers
 
-Current contract: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`AnalysisResultRecord`, `AnalysisValidationEvidence`); key in `domain/snapshots/model.py`; scope checks in `application/change_sets/model_validation.py`; database rules in `database/05_workflow_analysis.sql`. Probe semantics: `plugins/v2/gds/skills/gds/scripts/analysis.js` and `references/analysis-probes.md`.
+Current contract: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`AnalysisResultRecord`, `AnalysisValidationEvidence`); key in `domain/snapshots/model.py`; scope checks in `application/change_sets/model_validation.py`; database rules in `database/05_workflow_analysis.sql`. Atlas probe planning lives in `atlas/atlas-plugin/scripts/analysis.js`.
 
 Atlas `analysis-plan` applies the shared resolved batch lists to each endpoint before measurements. Broad existing schema guidance about grain/dependency findings does not add fields or composite endpoints to this contract.

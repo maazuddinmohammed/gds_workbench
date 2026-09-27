@@ -7,6 +7,7 @@ from typing import Any, Literal, LiteralString, Protocol, cast
 from uuid import UUID
 
 from gds_etl_workbench.domain.errors import WorkbenchError
+from gds_etl_workbench.infrastructure.postgres import ReadTransaction
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from gds_workbench_api.capabilities import AgentRunSelection
@@ -259,6 +260,17 @@ class AgentRunPlan(BaseModel):
         if len(stage_ids) != len(set(stage_ids)) or len(stage_orders) != len(set(stage_orders)):
             raise ValueError("Agent stages must be unique")
         return self
+
+
+class AgentRunPlanRepository(Protocol):
+    async def load(
+        self,
+        transaction: ReadTransaction,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+    ) -> AgentRunPlan: ...
 
 
 class PostgresAgentRunPlanRepository:

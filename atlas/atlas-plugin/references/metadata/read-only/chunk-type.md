@@ -54,6 +54,5 @@ User-confirmed behavior: chunking splits a large initial extraction through exis
 - `database/seed/01_metadata_snapshot_demo.sql:36`.
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:332,512`.
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:290`.
-- `plugins/v2/gds/skills/gds/references/orchestration-rules.md:12`.
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

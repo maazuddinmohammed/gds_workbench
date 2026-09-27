@@ -35,7 +35,7 @@ You need:
 
    ```text
    mcp_server/dist/gds-mcp-appservice-0.2.0.zip
-   plugins/v2/dist/gds-agent-plugin-0.5.0.zip
+   atlas/dist/atlas-agent-plugin-0.1.2.zip
    ```
 
 If the MCP ZIP is missing, build it from the repository root:
@@ -707,95 +707,27 @@ az webapp config set \
 
 4. Perform Portal Step 13.
 
-## 5. Package and install the Agent Plugins 1.0 package in VS Code
+## 5. Package and install Atlas in VS Code
 
-### Step 1: build an endpoint-specific archive
-
-Keep the tracked `plugins/v2/gds/mcp.json` unchanged. Inject the deployed MCP
-URL into a new archive:
+The Atlas MCP endpoint is declared in `atlas/atlas-plugin/mcp.json`. Set it to
+the reviewed deployed `/mcp` URL before building a release archive. Build a
+new archive from the repository root:
 
 ```bash
-python3 plugins/build_gds_v2_plugin_zip.py \
-  --output plugins/v2/dist/gds-agent-plugin-local.zip \
-  --mcp-url "https://<WEB_APP>.azurewebsites.net/mcp"
+python3 atlas/build_plugin.py --output atlas/dist/atlas-agent-plugin-release.zip
 ```
 
-The builder validates the Agent Plugins manifests and URL, refuses to overwrite
-an existing archive, and prints the archive SHA-256 digest. Store that digest
-with the release record.
+The builder refuses to overwrite an existing archive and prints its SHA-256
+digest. Inspect the archive before distribution; its root must contain
+`atlas/plugin.json`, `atlas/mcp.json`, and `atlas/skills/atlas/SKILL.md`.
+Unzip it through an approved internal channel and register the `atlas`
+directory that contains `plugin.json` in VS Code. The repository marketplace
+entry in `.github/plugin/marketplace.json` also points to the Atlas source.
 
-### Step 2: inspect and publish it
-
-Inspect the archive before distribution. Its root must contain one `gds/`
-directory with these required paths:
-
-```text
-gds/plugin.json
-gds/mcp.json
-gds/skills/gds/SKILL.md
-```
-
-`plugin.json` and `mcp.json` must declare the Agent Plugins 1.0 schemas. The ZIP
-is a transport artifact; VS Code does not install this ZIP directly. Distribute
-it through an approved internal channel, then unzip it before registration.
-
-### Step 3: register the unzipped plugin in VS Code
-
-Unzip the archive into a reviewed local directory. In VS Code user
-`settings.json`, enable Agent Plugins and register the exact `gds` directory
-that contains `plugin.json`:
-
-```json
-{
-  "chat.plugins.enabled": true,
-  "chat.pluginLocations": {
-    "/absolute/path/to/gds": true
-  }
-}
-```
-
-Use forward slashes or correctly escaped backslashes for a Windows path. Reload
-the VS Code window after changing the setting.
-
-For managed distribution, this repository already contains
-`.github/plugin/marketplace.json`, whose `gds` entry points to
-`./plugins/v2/gds`. Publish the repository, add its `owner/repository` value to
-the VS Code `chat.plugins.marketplaces` setting, then install `gds` from the
-Agent Plugins view. For a local clone, that setting also accepts a
-`file:///absolute/path/to/repository` marketplace.
-
-```json
-{
-  "chat.plugins.marketplaces": ["owner/repository"]
-}
-```
-
-**Chat: Install Plugin From Source** requires a dedicated Git repository whose
-root is the `gds` directory; this monorepository's root is a marketplace, not an
-individual plugin root. Agent Plugins 1.0 standardizes the package;
-installation and marketplace policy remain VS Code responsibilities.
-
-### Step 4: verify discovery and authentication
-
-1. Run **Chat: Configure Skills** and confirm the `gds` skill is present.
-2. Run **MCP: List Servers** and confirm `gds-workbench` is present and enabled.
-3. Open a fresh VS Code Chat in Agent mode and ask:
-
-```text
-List the GDS Tenants I can access. Do not make any changes.
-```
-
-Expected behavior:
-
-1. VS Code completes its client-managed Microsoft Entra sign-in when required.
-2. The server calls `list_tenants`.
-3. Only Tenants allowed for the signed-in database Principal appear.
-4. No Tenant Lock is acquired for this read-only request.
-
-If the skill appears but the MCP server does not connect, recheck the packaged
-URL, the protected-resource metadata paths, and the VS Code client registration
-from Portal Step 11. Agent Plugins 1.0 does not embed OAuth credentials;
-authentication remains client-managed.
+Install the matching Atlas Stage Runner VSIX from `atlas/dist/`. Confirm the
+`atlas` skill and `gds-workbench` MCP server appear in VS Code, then perform a
+read-only `list_tenants` call to verify client-managed Microsoft Entra sign-in
+and Tenant authorization.
 
 ## 6. Production hardening after the first successful deployment
 
@@ -833,7 +765,7 @@ Repository-specific sources:
 
 - `database/README.md`
 - `mcp_server/README.md`
-- `plugins/v2/gds/plugin.json`
-- `plugins/v2/gds/mcp.json`
-- `plugins/v2/gds/docs/USER_GUIDE.md`
+- `atlas/atlas-plugin/plugin.json`
+- `atlas/atlas-plugin/mcp.json`
+- `atlas/atlas-plugin/docs/user-guide.md`
 - `docs/security.md`

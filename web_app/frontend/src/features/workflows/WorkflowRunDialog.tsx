@@ -11,9 +11,7 @@ import type { CreateWorkflowRunCommand } from "./api";
 import {
   findAgentExecutionProfile,
   listCompatibleExecutionModes,
-  loadAllBronzeScope,
-  loadAllDimensionalScope,
-  loadAllEnrichmentScope,
+  loadWorkflowScope,
   reasoningEffortDisplayName,
   resolveAgentProfileSelection,
   resolveDefaultAgent,
@@ -81,11 +79,9 @@ export function WorkflowRunDialog({
       : isDimensional
       ? workflowCreationQueryKeys.dimensionalScope(tenantId, model.model_id)
       : workflowCreationQueryKeys.bronzeScope(tenantId, model.model_id),
-    queryFn: () => isEnrichment
-      ? loadAllEnrichmentScope(api, tenantId, model.model_id)
-      : isDimensional
-      ? loadAllDimensionalScope(api, tenantId, model.model_id)
-      : loadAllBronzeScope(api, tenantId, model.model_id),
+    queryFn: () => loadWorkflowScope(
+      api, tenantId, model.model_id, isEnrichment ? "enrichment" : isDimensional ? "dimensional" : "bronze",
+    ),
   });
   const scopeRows = enrichmentObject
     ? (enrichmentObject.is_locked || enrichmentObject.source_tenant_id !== tenantId ? [] : enrichmentObject.attributes

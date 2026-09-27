@@ -257,7 +257,7 @@ not imply activity and must not enter these checks.
 Plugin parity: `workbench/validation/model.js::validateActiveDependencies`
 mirrors the backend and has the same gap; add exactly these checks using its
 `active`, `normalized`, `tuple`, `entityKey` and `attributeKey` helpers. Existing
-Python/Node parity suite is `tests/plugin_v2/test_local_validation_parity.py`.
+The legacy plugin parity suite was retired with the GDS plugin.
 PowerShell fallback `gds-local.ps1::Add-ModelValidationIssues` currently checks
 locks and declared references only; explicitly implement the same bounded
 active-parent checks against EffectiveRecords, with its normalizers, rather

@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import cast
 
 import pytest
+from gds_etl_workbench.application.metadata_snapshot.archive import (
+    build_dataset_document,
+)
 from gds_etl_workbench.domain.metadata_records import (
     CopyGroupControlRecord,
     CopyRecord,
@@ -14,9 +17,6 @@ from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS,
     PHYSICAL_TABLE_COUNT,
     SnapshotSection,
-)
-from gds_etl_workbench.tools.snapshots.metadata.archive import (
-    build_dataset_document,
 )
 from pydantic import ValidationError
 

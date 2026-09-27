@@ -102,7 +102,7 @@ describe("Model Dimensional", () => {
     await user.type(screen.getByLabelText("Attribute Object ID"), "301");
     await user.click(screen.getByRole("button", { name: "Apply Attribute filters" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/dimensional/attributes?name_prefix=amount&dimensional_entity_id=301&page_size=200",
+      "/api/v1/tenants/7/models/18/dimensional/attributes?status=active&name_prefix=amount&dimensional_entity_id=301&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
@@ -112,7 +112,7 @@ describe("Model Dimensional", () => {
     await user.type(screen.getByLabelText("Relationship Object ID"), "302");
     await user.click(screen.getByRole("button", { name: "Apply Relationship filters" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/dimensional/relationships?name_prefix=customer&dimensional_entity_id=302&page_size=200",
+      "/api/v1/tenants/7/models/18/dimensional/relationships?status=active&name_prefix=customer&dimensional_entity_id=302&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });

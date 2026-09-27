@@ -4,6 +4,7 @@ import { createHttpRequest } from "../../core/http";
 import {
   createWorkflowsApi,
   listCompatibleExecutionModes,
+  loadWorkflowScope,
   reasoningEffortDisplayName,
   resolveAgentProfileSelection,
   resolveDefaultAgent,
@@ -153,6 +154,88 @@ describe("Workflow HTTP adapter", () => {
     expect(fetcher.mock.calls[10]?.[1]?.body).toBe(JSON.stringify({
       expected_model_revision: 18,
     }));
+  });
+});
+
+describe.each([
+  ["bronze", { zone: "bronze" }, "Bronze"],
+  ["enrichment", {}, "Source and Bronze"],
+  ["dimensional", { zone: "silver" }, "Silver"],
+] as const)("Workflow scope: %s", (scope, filters, zoneName) => {
+  const object = {
+    object_id: 501,
+    system_id: 9,
+    system_code: "CRM",
+    source_tenant_code: "TENANT",
+    object_name: "customers",
+    zone_code: scope === "dimensional" ? "silver" as const : "bronze" as const,
+    is_dimensional_source_eligible: true,
+    batch_attribute_name: "batch_id",
+  };
+
+  it("loads complete ordered pages, preserves item fields, and applies only its scope filter", async () => {
+    const second = { ...object, object_id: 502, is_dimensional_source_eligible: false };
+    const third = { ...object, object_id: 503 };
+    const listModelInputScope = vi.fn(async () => ({
+      model_revision: 18, items: [third], next_cursor: null as string | null,
+    }))
+      .mockResolvedValueOnce({ model_revision: 18, items: [object, second], next_cursor: "page+/=" })
+      .mockResolvedValueOnce({ model_revision: 18, items: [], next_cursor: "page-3" });
+
+    const result = await loadWorkflowScope({ listModelInputScope }, 7, 18, scope);
+
+    expect(result).toEqual({ modelRevision: 18, items: scope === "dimensional" ? [object, third] : [object, second, third] });
+    expect(result.items[0]?.batch_attribute_name).toBe("batch_id");
+    expect(listModelInputScope.mock.calls).toEqual([
+      [7, 18, filters, 200, undefined],
+      [7, 18, filters, 200, "page+/="],
+      [7, 18, filters, 200, "page-3"],
+    ]);
+  });
+
+  it("returns the first page revision for an empty scope", async () => {
+    const listModelInputScope = vi.fn(async () => ({ model_revision: 19, items: [], next_cursor: null }));
+    await expect(loadWorkflowScope({ listModelInputScope }, 7, 18, scope))
+      .resolves.toEqual({ modelRevision: 19, items: [] });
+    expect(listModelInputScope).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["revision", "Model Input Scope revision changed while loading"],
+    ["cursor", "Model Input Scope cursor repeated"],
+  ])("rejects %s drift without returning a partial scope", async (drift, message) => {
+    const listModelInputScope = vi.fn(async () => ({
+      model_revision: drift === "revision" ? 19 : 18,
+      items: [object],
+      next_cursor: drift === "cursor" ? "repeated" : null,
+    })).mockResolvedValueOnce({ model_revision: 18, items: [object], next_cursor: "repeated" });
+
+    await expect(loadWorkflowScope({ listModelInputScope }, 7, 18, scope)).rejects.toThrow(message);
+    expect(listModelInputScope).toHaveBeenCalledTimes(2);
+  });
+
+  it("accepts a complete final page at the selection limit", async () => {
+    let pagesRead = 0;
+    const listModelInputScope = vi.fn(async () => ({
+      model_revision: 18,
+      items: [object],
+      next_cursor: ++pagesRead < 250 ? String(pagesRead) : null,
+    }));
+
+    const result = await loadWorkflowScope({ listModelInputScope }, 7, 18, scope);
+    expect(result.items).toHaveLength(250);
+    expect(listModelInputScope).toHaveBeenCalledTimes(250);
+  });
+
+  it("rejects continuation past the selection limit with its existing label", async () => {
+    let pagesRead = 0;
+    const listModelInputScope = vi.fn(async () => ({
+      model_revision: 18, items: [object], next_cursor: String(++pagesRead),
+    }));
+
+    await expect(loadWorkflowScope({ listModelInputScope }, 7, 18, scope))
+      .rejects.toThrow(`Active ${zoneName} Scope exceeds the supported bounded selection`);
+    expect(listModelInputScope).toHaveBeenCalledTimes(250);
   });
 });
 

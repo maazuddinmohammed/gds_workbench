@@ -7,8 +7,8 @@ flowchart LR
     subgraph developerAccess["DEVELOPER ACCESS"]
         direction TB
         developer(["Developer"])
-        vscode["VS Code<br/>GDS Plugin"]
-        localHtml["Local HTML<br/>Workbench"]
+        vscode["VS Code<br/>Atlas Plugin"]
+        localHtml["Atlas<br/>Workbench"]
         developer --> vscode
         vscode --- localHtml
     end

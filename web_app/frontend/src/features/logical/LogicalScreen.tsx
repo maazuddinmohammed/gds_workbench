@@ -1,3 +1,4 @@
+import { ModelLayerActions } from "../model_record_review/ModelLayerActions";
 import { TargetExportButton } from "../model_targets/TargetExportDialog";
 import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
 import { useState } from "react";
@@ -25,20 +26,22 @@ export function LogicalScreen({
   tenantId,
   model,
   hasTenantLock,
+  canDelete = false,
 }: {
   api: LogicalApi;
   tenantId: number;
   model: ModelDetail;
   hasTenantLock: boolean;
+  canDelete?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [view, setView] = useState<LogicalView>("entities");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [recentRunId, setRecentRunId] = useState<number | null>(null);
-  const [entityFilters, setEntityFilters] = useState<LogicalEntityFilters>({});
-  const [relationshipFilters, setRelationshipFilters] = useState<LogicalRelationshipFilters>({});
-  const [submodelFilters, setSubmodelFilters] = useState<LogicalFilters>({});
+  const [entityFilters, setEntityFilters] = useState<LogicalEntityFilters>({ status: "active" });
+  const [relationshipFilters, setRelationshipFilters] = useState<LogicalRelationshipFilters>({ status: "active" });
+  const [submodelFilters, setSubmodelFilters] = useState<LogicalFilters>({ status: "active" });
   const entitiesQuery = useInfiniteQuery({
     queryKey: logicalQueryKeys.entities(tenantId, model.model_id, entityFilters),
     queryFn: ({ pageParam }) => api.listLogicalEntities(
@@ -112,7 +115,8 @@ export function LogicalScreen({
 
   return (
     <div className="logical-page page-enter">
-      <header className="workflow-commandbar logical-commandbar">
+      <header className="workflow-commandbar model-layer-commandbar logical-commandbar">
+        <h1>Logical</h1>
         <div className="workflow-command-context">
           <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
             {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
@@ -136,9 +140,10 @@ export function LogicalScreen({
           </nav>
         </div>
         <div className="workflow-command-actions">
+          <ModelLayerActions api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="logical" onApplied={() => setSelectedIds(new Set())} />
           <TargetExportButton api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} layer="logical" entityIds={view === "entities" && selectedIds.size ? [...selectedIds] : undefined} />
-          <button className="button button-secondary button-small" type="button" onClick={refresh}>
-            Refresh
+          <button className="button button-secondary button-small" type="button" disabled={activeReviewQuery.isFetching} onClick={() => void refresh()}>
+            {activeReviewQuery.isFetching ? "Refreshing…" : "Refresh"}
           </button>
           <button
             className="button button-primary button-small"
@@ -162,6 +167,7 @@ export function LogicalScreen({
         onApplied={invalidateLedgers}
       />
       <ModelRecordReview
+        actions={canDelete ? ["lock", "unlock", "deactivate", "reactivate", "delete"] : ["lock", "unlock", "deactivate", "reactivate"]}
         api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
         dataset={view === "entities" ? "logical_entity" : view === "relationships" ? "logical_relationship" : "logical_submodel"} selectedIds={selectedIds} hasTenantLock={hasTenantLock}
         disabled={activeReviewQuery.isPending || activeReviewQuery.isError || activeReviewQuery.data?.pages.some((page) => page.model_revision !== model.model_revision) === true}

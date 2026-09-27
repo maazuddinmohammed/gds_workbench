@@ -10,6 +10,9 @@ from gds_etl_workbench.application.change_sets.model_apply import ModelMateriali
 from gds_etl_workbench.application.change_sets.model_validation import (
     validate_future_graph,
 )
+from gds_etl_workbench.application.metadata_snapshot.selection import (
+    select_snapshot_datasets,
+)
 from gds_etl_workbench.application.model_read import (
     ModelReadContext,
     authorize_model_read,
@@ -17,9 +20,6 @@ from gds_etl_workbench.application.model_read import (
 from gds_etl_workbench.application.model_snapshot import build_model_snapshot
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError, TenantNotFoundError
-from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
-    select_snapshot_datasets,
-)
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.model_test_fixtures import complete_model_graph

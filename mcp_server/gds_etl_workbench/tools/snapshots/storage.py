@@ -13,8 +13,7 @@ from azure.storage.blob.aio import BlobServiceClient
 
 from gds_etl_workbench.configuration import RuntimeSettings
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
-
-from .archive import SnapshotArchive, SnapshotContractError
+from gds_etl_workbench.infrastructure.snapshot_archive import SnapshotArchive, SnapshotContractError
 
 type SnapshotKind = Literal["metadata", "model"]
 

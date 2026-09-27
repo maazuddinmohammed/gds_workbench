@@ -105,6 +105,10 @@ APPLICATION_WEB_FUNCTIONS = (
         "bigint, bigint, bigint, character varying, bigint, jsonb, jsonb, character varying",
     ),
     (
+        "delete_model_records",
+        "uuid, uuid, bigint, bigint, bigint, uuid, jsonb",
+    ),
+    (
         "fail_workflow_run",
         "uuid, uuid, character varying, bigint, bigint, character varying, character varying",
     ),
@@ -247,7 +251,7 @@ def test_application_web_function_allowlist_is_exact_and_verified(
             """
         ).fetchall()
 
-    assert len(APPLICATION_WEB_FUNCTIONS) == 42
+    assert len(APPLICATION_WEB_FUNCTIONS) == 43
     assert [(row["function_name"], row["argument_types"]) for row in rows] == list(
         APPLICATION_WEB_FUNCTIONS
     )

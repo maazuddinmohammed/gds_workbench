@@ -21,7 +21,7 @@ from gds_etl_workbench.domain.snapshots.model import (
     build_model_dataset_schema,
     model_snapshot_records,
 )
-from gds_etl_workbench.tools.snapshots.archive import (
+from gds_etl_workbench.infrastructure.snapshot_archive import (
     SnapshotArchive,
     SnapshotContractError,
     SnapshotMember,

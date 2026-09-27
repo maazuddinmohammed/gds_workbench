@@ -7,7 +7,7 @@ objects installed by `database/01_reference.sql` through
 `database/19_runtime_integrity.sql`. It excludes seed data plus preflight and
 verification queries.
 
-Inventory totals: **102 tables, 88 functions, and 19 installed triggers**.
+Inventory totals: **102 tables, 89 functions, and 19 installed triggers**.
 
 Read the schemas in dependency order:
 
@@ -254,6 +254,7 @@ Each entry gives purpose, then execution order.
 - `application.assert_workflow_run_usage_binding` — Verify claim, actor and frozen run binding before consumption writes.
 - `application.add_model_input_scope_objects` — Add eligible Source/Bronze Objects through the human-only Model review fence; preserve locks and require revision and workflow checks. The web command records its Change Set in the same transaction.
 - `application.authorize_model_record_review` — Resolve human Model review authority and acquire the Model then Tenant fence.
+- `application.delete_model_records` — Web-only permanent deletion of a confirmed Model record plan. Steps: (1) recheck human administrator, owned Tenant Lock, revision, and validated receipt; (2) check Model ownership and row locks against a fixed dataset allowlist; (3) delete child rows before parents atomically. No direct table DELETE grant is exposed.
 - `application.begin_workflow_run_model_request` — Start one idempotent request receipt with immutable pricing and attribution.
 - `application.begin_workflow_run_usage` — Bind consumption tracking to the current governed run claim.
 - `application.complete_metadata_enrichment` — Validate the physical baseline and atomically save enrichment outcomes. Normal runs fill missing metadata; explicit regeneration replaces selected Object descriptions or selected Attribute descriptions within one Object, while every frozen physical revision matches. Attribute runs also fill missing inferred types and preserve existing types. Locks and concurrent edits remain protected.

@@ -4,23 +4,21 @@ GDS Workbench has two workflow entry points over one governed PostgreSQL
 model:
 
 ```text
-VS Code Agent Plugin --> Azure App Service MCP --> PostgreSQL
+Atlas Agent Plugin --> Azure App Service MCP --> PostgreSQL
 Databricks web App -----------------------------> PostgreSQL
 ```
 
-The Agent Plugin is the primary developer experience. The web application runs
+The Atlas Agent Plugin is the primary developer experience. The web application runs
 equivalent workflows for users who do not use the plugin. It uses OpenAI Agents
 SDK with Microsoft Foundry deployments and executes workflows in its background
 worker. The web App does not call the MCP server.
 
 ## Plugin
 
-`plugins/v2/gds/` is an Agent Plugins 1.0 bundle with root `plugin.json`,
-`mcp.json`, and `skills/`. It provides Quick, Guided, Automatic, and Custom
-interaction modes. Grill With Docs is loaded only when requested.
+`atlas/atlas-plugin/` is an Agent Plugins 1.0 bundle with root `plugin.json`,
+`mcp.json`, and `skills/`. `atlas/atlas-vs-code/` provides the Stage Runner.
 
-The plugin keeps a local Snapshot session and one Workbench tab. The user
-refreshes the Workbench to inspect changed files. A positive acknowledgement
+Atlas keeps a local Snapshot workspace and Workbench. A positive acknowledgement
 means local review is complete and authorizes an ordinary free Tenant Lock,
 reconciliation, Stage, and Change Set validation. Lock override and Apply still
 require separate explicit approval. A revision mismatch stops for a fresh
@@ -43,7 +41,7 @@ instructions contain only shared safety and dependency rules.
 - five governed Tenant Lock operations; and
 - bounded Databricks SQL preflight.
 
-DBML generation remains a local browser Workbench display export from the effective
+DBML generation remains a local Workbench display export from the effective
 Snapshot plus pending Change Set.
 
 It exposes no foundational CRUD, individual model-graph mutation, direct lock

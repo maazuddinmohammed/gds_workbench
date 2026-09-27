@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-from contextlib import AbstractAsyncContextManager
 from hashlib import sha256
 from typing import Any, Protocol, cast
 from uuid import UUID
@@ -28,13 +27,12 @@ from gds_etl_workbench.domain.modeling_records import (
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
     ReadTransaction,
-    WriteTransaction,
 )
 from pydantic import JsonValue, ValidationError
 
 from gds_workbench_api.capabilities import CODE_GENERATION_AGENT_EXECUTION_MODE
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
-    WorkflowChangeSetFinalizationResult,
+    WorkflowChangeSetFinalizer,
     WorkflowChangeSetHandoffResult,
     WorkflowChangeSetValidationError,
 )
@@ -48,12 +46,14 @@ from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowTerminalResult,
 )
 from gds_workbench_api.features.workflows.authoring.no_op import (
+    AuthoringNoOpCompleter,
     AuthoringNoOpReceipt,
     AuthoringNoOpRequest,
     authoring_no_op_candidate_digest,
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
+    AgentRunPlanRepository,
     ModelWorkflow,
     PostgresAgentRunPlanRepository,
 )
@@ -71,6 +71,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     model_validation_issues,
 )
 from gds_workbench_api.features.workflows.authoring.stage_runner import AgentStageRunner
+from gds_workbench_api.features.workflows.execution.contracts import WorkflowExecutionDatabase
 
 from .artifact_context import CodeGenerationArtifactContext, ModeledEntityType
 from .candidate import (
@@ -86,25 +87,6 @@ from .context import (
 _logger = logging.getLogger(__name__)
 
 
-class CodeGenerationExecutionDatabase(Protocol):
-    def write_transaction(
-        self,
-        *,
-        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AbstractAsyncContextManager[WriteTransaction]: ...
-
-
-class CodeGenerationPlanRepository(Protocol):
-    async def load(
-        self,
-        transaction: ReadTransaction,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-    ) -> AgentRunPlan: ...
-
-
 class CodeGenerationContextRepository(Protocol):
     async def load(
         self,
@@ -113,51 +95,6 @@ class CodeGenerationContextRepository(Protocol):
         tenant_id: int,
         plan: AgentRunPlan,
     ) -> CodeGenerationExecutionContext: ...
-
-
-class CodeGenerationChangeSetHandoff(Protocol):
-    async def retain_failed_candidate(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
-        issues: tuple[ModelValidationIssue, ...],
-        failure_code: str,
-        safe_failure_message: str,
-    ) -> object: ...
-
-    async def finalize(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
-        final_event: AgentWorkflowEvent,
-    ) -> WorkflowChangeSetFinalizationResult: ...
-
-
-class CodeGenerationNoOpCompleter(Protocol):
-    async def complete(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        workflow_run_claim_token: UUID,
-        request: AuthoringNoOpRequest,
-    ) -> AuthoringNoOpReceipt: ...
 
 
 class CodeGenerationLifecycle(Protocol):
@@ -220,13 +157,13 @@ class CodeGenerationWorkflow:
     def __init__(
         self,
         *,
-        database: CodeGenerationExecutionDatabase,
+        database: WorkflowExecutionDatabase,
         authorizer: AuthorizationService,
         agent_executor: AgentExecutor,
-        handoff: CodeGenerationChangeSetHandoff,
-        no_op: CodeGenerationNoOpCompleter,
+        handoff: WorkflowChangeSetFinalizer,
+        no_op: AuthoringNoOpCompleter,
         lifecycle: CodeGenerationLifecycle,
-        plan_repository: CodeGenerationPlanRepository | None = None,
+        plan_repository: AgentRunPlanRepository | None = None,
         context_repository: CodeGenerationContextRepository | None = None,
         context_policy: AgentContextPolicy | None = None,
     ) -> None:

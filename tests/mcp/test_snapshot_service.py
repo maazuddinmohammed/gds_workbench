@@ -4,9 +4,8 @@ from datetime import UTC, datetime, timedelta, timezone
 from uuid import UUID
 
 import pytest
-
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_etl_workbench.tools.snapshots.archive import (
+from gds_etl_workbench.infrastructure.snapshot_archive import (
     SnapshotArchive,
     SnapshotContractError,
 )

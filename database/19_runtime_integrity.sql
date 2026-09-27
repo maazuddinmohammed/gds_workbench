@@ -1236,6 +1236,9 @@ GRANT EXECUTE ON FUNCTION application.metadata_attribute_review_revision(core.at
 GRANT EXECUTE ON FUNCTION application.add_model_input_scope_objects(
     UUID, UUID, BIGINT, BIGINT, BIGINT, BIGINT[]) TO gds_web_write;
 
+GRANT EXECUTE ON FUNCTION application.delete_model_records(
+    UUID, UUID, BIGINT, BIGINT, BIGINT, UUID, JSONB) TO gds_web_write;
+
 GRANT EXECUTE ON FUNCTION application.authorize_model_record_review(
     UUID, UUID, VARCHAR, BIGINT, BIGINT
 ) TO gds_web_write;

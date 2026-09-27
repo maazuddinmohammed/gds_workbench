@@ -25,7 +25,7 @@ from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
 from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation
-from gds_etl_workbench.tools.snapshots.archive import (
+from gds_etl_workbench.infrastructure.snapshot_archive import (
     SnapshotArchive,
     SnapshotPayloadTooLargeError,
 )

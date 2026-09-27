@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-from contextlib import AbstractAsyncContextManager
 from hashlib import sha256
 from typing import Any, Protocol, cast
 from uuid import UUID
@@ -23,13 +22,12 @@ from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
     ReadTransaction,
-    WriteTransaction,
 )
 from pydantic import JsonValue, ValidationError
 
 from gds_workbench_api.capabilities import VALIDATION_AGENT_EXECUTION_MODE
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
-    WorkflowChangeSetFinalizationResult,
+    WorkflowChangeSetFinalizer,
     WorkflowChangeSetHandoffResult,
     WorkflowChangeSetValidationError,
 )
@@ -43,12 +41,14 @@ from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowTerminalResult,
 )
 from gds_workbench_api.features.workflows.authoring.no_op import (
+    AuthoringNoOpCompleter,
     AuthoringNoOpReceipt,
     AuthoringNoOpRequest,
     authoring_no_op_candidate_digest,
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
+    AgentRunPlanRepository,
     ModelWorkflow,
     PostgresAgentRunPlanRepository,
 )
@@ -66,6 +66,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     model_validation_issues,
 )
 from gds_workbench_api.features.workflows.authoring.stage_runner import AgentStageRunner
+from gds_workbench_api.features.workflows.execution.contracts import WorkflowExecutionDatabase
 
 from .candidate import (
     ValidatedValidationSystemCandidate,
@@ -77,25 +78,6 @@ from .context import PostgresValidationContextRepository, ValidationExecutionCon
 _logger = logging.getLogger(__name__)
 
 
-class ValidationExecutionDatabase(Protocol):
-    def write_transaction(
-        self,
-        *,
-        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AbstractAsyncContextManager[WriteTransaction]: ...
-
-
-class ValidationPlanRepository(Protocol):
-    async def load(
-        self,
-        transaction: ReadTransaction,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-    ) -> AgentRunPlan: ...
-
-
 class ValidationContextRepository(Protocol):
     async def load(
         self,
@@ -104,51 +86,6 @@ class ValidationContextRepository(Protocol):
         tenant_id: int,
         plan: AgentRunPlan,
     ) -> ValidationExecutionContext: ...
-
-
-class ValidationChangeSetHandoff(Protocol):
-    async def retain_failed_candidate(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
-        issues: tuple[ModelValidationIssue, ...],
-        failure_code: str,
-        safe_failure_message: str,
-    ) -> object: ...
-
-    async def finalize(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
-        final_event: AgentWorkflowEvent,
-    ) -> WorkflowChangeSetFinalizationResult: ...
-
-
-class ValidationNoOpCompleter(Protocol):
-    async def complete(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        workflow_run_claim_token: UUID,
-        request: AuthoringNoOpRequest,
-    ) -> AuthoringNoOpReceipt: ...
 
 
 class ValidationLifecycle(Protocol):
@@ -211,13 +148,13 @@ class ValidationWorkflow:
     def __init__(
         self,
         *,
-        database: ValidationExecutionDatabase,
+        database: WorkflowExecutionDatabase,
         authorizer: AuthorizationService,
         agent_executor: AgentExecutor,
-        handoff: ValidationChangeSetHandoff,
-        no_op: ValidationNoOpCompleter,
+        handoff: WorkflowChangeSetFinalizer,
+        no_op: AuthoringNoOpCompleter,
         lifecycle: ValidationLifecycle,
-        plan_repository: ValidationPlanRepository | None = None,
+        plan_repository: AgentRunPlanRepository | None = None,
         context_repository: ValidationContextRepository | None = None,
         context_policy: AgentContextPolicy | None = None,
     ) -> None:

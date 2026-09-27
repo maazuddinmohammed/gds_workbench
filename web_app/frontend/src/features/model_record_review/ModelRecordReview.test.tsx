@@ -56,7 +56,7 @@ describe("Model record review", () => {
     expect(fetcher).not.toHaveBeenCalled();
     const trigger = screen.getByRole("button", { name: "Deactivate selected" });
     await user.click(trigger);
-    const dialog = await screen.findByRole("dialog", { name: "Review deactivate" });
+    const dialog = await screen.findByRole("dialog", { name: "Deactivate records" });
     expect(within(dialog).getByRole("button", { name: "Close review" })).toHaveFocus();
     expect(await within(dialog).findByText("Customer places Order")).toBeVisible();
     expect(within(dialog).getByText("2 changes: 1 selected, 1 required by dependencies.")).toBeVisible();
@@ -78,7 +78,7 @@ describe("Model record review", () => {
   it.each(["Lock", "Unlock", "Deactivate", "Reactivate"])("freezes the selected IDs and %s action", async (label) => {
     const { api, renderReview } = fixture();
     render(renderReview({ selectedIds: new Set([52, 41]) }));
-    await userEvent.setup().click(screen.getByRole("button", { name: `${label} selected` }));
+    await userEvent.setup().click(screen.getByRole("button", { name: `${label === "Deactivate" ? "Deactivate" : label === "Reactivate" ? "Activate" : label} selected` }));
     await waitFor(() => expect(api.previewModelRecordReview).toHaveBeenCalledWith(9, 18, {
       dataset: "conceptual_object", record_ids: [41, 52], action: label.toLowerCase(), expected_model_revision: 7,
     }, 1));

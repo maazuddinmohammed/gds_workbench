@@ -319,7 +319,7 @@ async def test_installed_mapping_defaults_execute(
 
     monkeypatch.setattr(mapping, "_executor", seeded_executor)
     monkeypatch.setattr(stage_runner, "render_prompt", checked_render)
-    await mapping.test_mapping_local_fake_completes_each_mode(mode)
+    await mapping.test_mapping_local_fake_completes_each_mode(mode, "logical_entity")
     assert seen == {stage.stage_code for stage in stages}
 
 

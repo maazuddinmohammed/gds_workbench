@@ -1,9 +1,5 @@
 """Governed Metadata Change Set web application service."""
 
-# This web adapter deliberately reuses the canonical MCP staging and validation
-# implementation until that shared boundary is promoted to a public module.
-# pyright: reportPrivateUsage=false
-
 from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager
 from typing import Any, Protocol, cast
@@ -67,13 +63,13 @@ class DatabaseMetadataChangeSetService:
         idempotency_key: UUID,
     ) -> CreateMetadataChangeSetResult:
         del command
-        identity = canonical_metadata._identity_arguments(principal)
+        identity = canonical_metadata.metadata_identity_arguments(principal)
         async with self._database.write_transaction() as transaction:
             row = await transaction.fetch_one(
-                canonical_metadata._CREATE_SQL,
+                canonical_metadata.CREATE_SQL,
                 (*identity, tenant_id, uuid4(), idempotency_key),
             )
-        canonical_metadata._raise_governed_denial(row)
+        canonical_metadata.raise_governed_denial(row)
         assert row is not None
         return CreateMetadataChangeSetResult(
             tenant_id=tenant_id,
@@ -94,7 +90,7 @@ class DatabaseMetadataChangeSetService:
         command: StageMetadataChangeSetRequest,
         idempotency_key: UUID,
     ) -> StageMetadataChangeSetResult:
-        documents = canonical_metadata._stage_documents(
+        documents = canonical_metadata.stage_documents(
             [
                 canonical_metadata.StageChange(
                     dataset=change.dataset,
@@ -103,7 +99,7 @@ class DatabaseMetadataChangeSetService:
                 for change in command.changes
             ]
         )
-        identity = canonical_metadata._identity_arguments(principal)
+        identity = canonical_metadata.metadata_identity_arguments(principal)
         async with self._database.write_transaction() as transaction:
             row = await self._stage_in_transaction(
                 transaction,
@@ -129,19 +125,19 @@ class DatabaseMetadataChangeSetService:
         change_set_id: UUID,
         dataset: canonical_metadata.ChangeSetDataset | None,
     ) -> GetMetadataChangeSetResult:
-        identity = canonical_metadata._identity_arguments(principal)
+        identity = canonical_metadata.metadata_identity_arguments(principal)
         # The ownership function takes row-share locks, so this logically read-only
         # operation intentionally uses the write-capable transaction boundary.
         async with self._database.write_transaction() as transaction:
             row = await transaction.fetch_one(
-                canonical_metadata._GET_SQL,
+                canonical_metadata.GET_SQL,
                 (*identity, tenant_id, change_set_id),
             )
-        canonical_metadata._raise_governed_denial(row)
+        canonical_metadata.raise_governed_denial(row)
         assert row is not None
-        documents = canonical_metadata._all_documents(row)
+        documents = canonical_metadata.all_documents(row)
         records = (
-            tuple(canonical_metadata._read_document(row, dataset)) if dataset is not None else None
+            tuple(canonical_metadata.read_document(row, dataset)) if dataset is not None else None
         )
         validation_outcome = row["validation_outcome"]
         if validation_outcome is not None and not isinstance(validation_outcome, dict):
@@ -179,7 +175,7 @@ class DatabaseMetadataChangeSetService:
         command: ExpectedDraftRevisionRequest,
     ) -> ValidateMetadataChangeSetResult:
         async with self._database.write_transaction() as transaction:
-            validation, persisted = await canonical_metadata._validate_and_persist(
+            validation, persisted = await canonical_metadata.validate_and_persist(
                 transaction,
                 tenant_id=tenant_id,
                 metadata_change_set_id=change_set_id,
@@ -203,9 +199,9 @@ class DatabaseMetadataChangeSetService:
         command: ExpectedDraftRevisionRequest,
         idempotency_key: UUID,
     ) -> ApplyMetadataChangeSetResult:
-        identity = canonical_metadata._identity_arguments(principal)
+        identity = canonical_metadata.metadata_identity_arguments(principal)
         async with self._database.write_transaction() as transaction:
-            validation, persisted = await canonical_metadata._validate_and_persist(
+            validation, persisted = await canonical_metadata.validate_and_persist(
                 transaction,
                 tenant_id=tenant_id,
                 metadata_change_set_id=change_set_id,
@@ -217,7 +213,7 @@ class DatabaseMetadataChangeSetService:
             if validation.valid:
                 assert validation.candidate_digest is not None
                 applied = await transaction.fetch_one(
-                    canonical_metadata._APPLY_SQL,
+                    canonical_metadata.APPLY_SQL,
                     (
                         *identity,
                         tenant_id,
@@ -227,7 +223,7 @@ class DatabaseMetadataChangeSetService:
                         idempotency_key,
                     ),
                 )
-                canonical_metadata._raise_governed_denial(applied)
+                canonical_metadata.raise_governed_denial(applied)
                 assert applied is not None
         row = applied or persisted
         return ApplyMetadataChangeSetResult(
@@ -256,10 +252,10 @@ class DatabaseMetadataChangeSetService:
         command: ExpectedDraftRevisionRequest,
         idempotency_key: UUID,
     ) -> ArchiveMetadataChangeSetResult:
-        identity = canonical_metadata._identity_arguments(principal)
+        identity = canonical_metadata.metadata_identity_arguments(principal)
         async with self._database.write_transaction() as transaction:
             row = await transaction.fetch_one(
-                canonical_metadata._ARCHIVE_SQL,
+                canonical_metadata.ARCHIVE_SQL,
                 (
                     *identity,
                     tenant_id,
@@ -268,7 +264,7 @@ class DatabaseMetadataChangeSetService:
                     idempotency_key,
                 ),
             )
-        canonical_metadata._raise_governed_denial(row)
+        canonical_metadata.raise_governed_denial(row)
         assert row is not None
         return ArchiveMetadataChangeSetResult(
             tenant_id=tenant_id,
@@ -294,7 +290,7 @@ class DatabaseMetadataChangeSetService:
 
         # Parsing and canonical row normalization both finish before opening a
         # transaction. The original workbook bytes never cross this boundary.
-        documents = canonical_metadata._stage_documents(
+        documents = canonical_metadata.stage_documents(
             [
                 canonical_metadata.StageChange(
                     dataset=cast(canonical_metadata.ChangeSetDataset, sheet.code),
@@ -303,7 +299,7 @@ class DatabaseMetadataChangeSetService:
                 for sheet in sheets
             ]
         )
-        identity = canonical_metadata._identity_arguments(principal)
+        identity = canonical_metadata.metadata_identity_arguments(principal)
         async with self._database.write_transaction() as transaction:
             staged_row = await self._stage_in_transaction(
                 transaction,
@@ -317,7 +313,7 @@ class DatabaseMetadataChangeSetService:
             staged_revision = staged_row["draft_revision"]
             if type(staged_revision) is not int:
                 raise InvalidRequestError("Stored Metadata Change Set revision is invalid.")
-            validation, persisted = await canonical_metadata._validate_and_persist(
+            validation, persisted = await canonical_metadata.validate_and_persist(
                 transaction,
                 tenant_id=tenant_id,
                 metadata_change_set_id=change_set_id,
@@ -358,7 +354,7 @@ class DatabaseMetadataChangeSetService:
         correlation_id: UUID,
     ) -> Mapping[str, Any]:
         row = await transaction.fetch_one(
-            canonical_metadata._STAGE_SQL,
+            canonical_metadata.STAGE_SQL,
             (
                 *identity,
                 tenant_id,
@@ -368,7 +364,7 @@ class DatabaseMetadataChangeSetService:
                 correlation_id,
             ),
         )
-        canonical_metadata._raise_governed_denial(row)
+        canonical_metadata.raise_governed_denial(row)
         assert row is not None
         return row
 
@@ -390,7 +386,7 @@ class DatabaseMetadataChangeSetService:
             datasets=tuple(
                 MetadataChangeSetDatasetCount(
                     dataset=cast(canonical_metadata.ChangeSetDataset, dataset),
-                    record_count=canonical_metadata._staged_record_count(counts, dataset),
+                    record_count=canonical_metadata.staged_record_count(counts, dataset),
                 )
                 for dataset in datasets
             ),

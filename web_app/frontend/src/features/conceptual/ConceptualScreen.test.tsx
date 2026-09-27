@@ -40,6 +40,9 @@ describe("Model Conceptual", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={conceptualRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Conceptual Objects" });
+    expect(screen.getByLabelText("Object status")).toHaveValue("active");
+    expect(screen.queryByRole("button", { name: "Record history" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Activate selected" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Unlock selected" })).toBeDisabled();
     await user.click(screen.getByRole("checkbox", { name: "Select Conceptual Object 41" }));
     await user.click(screen.getByRole("button", { name: "Unlock selected" }));
@@ -143,7 +146,7 @@ describe("Model Conceptual", () => {
 
     await user.click(screen.getByRole("button", { name: "Load more Conceptual Objects" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/conceptual/objects?page_size=200&cursor=objects-next",
+      "/api/v1/tenants/7/models/18/conceptual/objects?status=active&page_size=200&cursor=objects-next",
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
@@ -151,7 +154,7 @@ describe("Model Conceptual", () => {
     await screen.findByRole("table", { name: "Conceptual Relationships" });
     await user.click(screen.getByRole("button", { name: "Load more Conceptual Relationships" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/conceptual/relationships?page_size=200&cursor=relationships-next",
+      "/api/v1/tenants/7/models/18/conceptual/relationships?status=active&page_size=200&cursor=relationships-next",
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });

@@ -9,9 +9,9 @@ import {
 } from "../src/profile.js";
 
 describe("resolveStageProfile", () => {
-  test("uses the same production endpoint as the packaged GDS plugin", () => {
+  test("uses the same production endpoint as the packaged Atlas plugin", () => {
     const plugin = JSON.parse(
-      readFileSync(new URL("../../../plugins/v2/gds/mcp.json", import.meta.url), "utf8"),
+      readFileSync(new URL("../../atlas-plugin/mcp.json", import.meta.url), "utf8"),
     ) as { mcpServers: { "gds-workbench": { url: string } } };
 
     expect(PRODUCTION_MCP_URL).toBe(plugin.mcpServers["gds-workbench"].url);

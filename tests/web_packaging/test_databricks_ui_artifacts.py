@@ -37,7 +37,6 @@ FORBIDDEN_PARTS = {
     "docs",
     "load_and_merge_scripts",
     "node_modules",
-    "plugins",
     "prototypes",
     "tests",
 }

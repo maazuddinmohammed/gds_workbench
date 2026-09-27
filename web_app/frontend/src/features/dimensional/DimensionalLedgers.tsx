@@ -257,8 +257,8 @@ function DimensionalFilterBar({
           className="button button-secondary button-small"
           type="button"
           onClick={() => {
-            form.reset();
-            onApplyFilters({});
+            form.reset({ namePrefix: "", status: "active", locked: "" });
+            onApplyFilters({ status: "active" });
           }}
         >
           Clear
@@ -564,8 +564,8 @@ function DimensionalCollectionFilterBar<T extends DimensionalAttributeFilters>({
           className="button button-secondary button-small"
           type="button"
           onClick={() => {
-            form.reset();
-            onApplyFilters({} as T);
+            form.reset({ namePrefix: "", dimensionalEntityId: "", status: "active", locked: "" });
+            onApplyFilters({ status: "active" } as T);
           }}
         >
           Clear

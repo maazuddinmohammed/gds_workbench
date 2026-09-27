@@ -10,8 +10,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-
-from gds_etl_workbench.tools.snapshots.metadata.archive import (
+from gds_etl_workbench.application.metadata_snapshot.archive import (
     EncodedDataset,
     SnapshotArchive,
     SnapshotContractError,

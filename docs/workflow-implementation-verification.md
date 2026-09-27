@@ -89,8 +89,8 @@ PowerShell 5.1 execution remain outside this local verification.
 
 - [Web application source ZIP](../artifacts/databricks-ui/gds-workbench-app-source.zip)
 - [MCP App Service ZIP](../mcp_server/dist/gds-mcp-appservice-0.2.0.zip)
-- [GDS plugin ZIP](../plugins/v2/dist/gds-agent-plugin-0.5.0.zip)
-- [Stage Runner VSIX](../plugins/v2/dist/gds-stage-runner-0.1.0.vsix)
+- [Atlas plugin ZIP](../atlas/dist/atlas-agent-plugin-0.1.2.zip)
+- [Atlas Stage Runner VSIX](../atlas/dist/atlas-stage-runner-0.1.1.vsix)
 - [Frontend production entry](../web_app/frontend/dist/index.html)
 
 These are local rebuilds. Existing databases were not migrated: SQL changes

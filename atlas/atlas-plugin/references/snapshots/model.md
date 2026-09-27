@@ -74,5 +74,3 @@ Current implementation evidence, not runtime imports for this reference:
 - mcp_server/gds_etl_workbench/domain/snapshots/model.py
 - mcp_server/gds_etl_workbench/domain/modeling_records.py
 - mcp_server/gds_etl_workbench/application/change_sets/model.py
-- plugins/v2/gds/skills/gds/scripts/gds-local.js
-- plugins/v2/gds/skills/gds/workbench/core.js

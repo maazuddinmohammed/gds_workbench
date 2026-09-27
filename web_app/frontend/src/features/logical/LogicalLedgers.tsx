@@ -294,8 +294,8 @@ function LogicalEntityFilterBar({
           className="button button-secondary button-small"
           type="button"
           onClick={() => {
-            form.reset();
-            onApplyFilters({});
+            form.reset({ namePrefix: "", logicalSubmodelId: "", status: "active", locked: "" });
+            onApplyFilters({ status: "active" });
           }}
         >
           Clear
@@ -593,8 +593,8 @@ function LogicalCollectionFilterBar<T extends LogicalFilters>({
           className="button button-secondary button-small"
           type="button"
           onClick={() => {
-            form.reset();
-            onApplyFilters({} as T);
+            form.reset({ namePrefix: "", logicalEntityId: "", status: "active", locked: "" });
+            onApplyFilters({ status: "active" } as T);
           }}
         >
           Clear

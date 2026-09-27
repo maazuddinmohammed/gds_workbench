@@ -1144,7 +1144,10 @@ a.model-step:hover {
 
 .create-model-fields input,
 .create-model-fields select,
-.create-model-fields textarea {
+.create-model-fields textarea,
+.model-record-editor input:not([type="checkbox"]),
+.model-record-editor select,
+.model-record-editor textarea {
   width: 100%;
   min-width: 0;
   padding: 0.65rem 0.75rem;
@@ -1152,6 +1155,7 @@ a.model-step:hover {
   border-radius: var(--radius-small);
   background: var(--surface);
   color: var(--ink);
+  font: inherit;
   font-size: 0.78rem;
 }
 
@@ -1167,3 +1171,41 @@ a.model-step:hover {
   .models-ledger-actions { justify-content: space-between; }
   .create-model-agent-limits { grid-template-columns: 1fr; }
 }
+
+.model-detail-tools { width: min(64rem, 100%); margin: 1rem auto 0; }
+.model-detail-tools + .workflow-detail-page { padding-top: 1rem; }
+.model-record-editor fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 1rem; }
+.model-record-editor label { display: grid; gap: 0.4rem; font-size: 0.82rem; font-weight: 600; }
+.model-record-editor textarea { resize: vertical; }
+.model-record-editor .model-editor-checkbox { display: flex; align-items: center; gap: 0.6rem; }
+.model-record-editor small { color: var(--muted); font-weight: 400; }
+.model-record-review-body > .workflow-command-actions {
+  position: sticky;
+  bottom: -1.25rem;
+  padding: 0.9rem 0;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.workflow-commandbar.model-layer-commandbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "title actions" "context context";
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  padding-top: 0.5rem;
+}
+.model-layer-commandbar > h1 { grid-area: title; margin: 0; font-size: 1.4rem; }
+.model-layer-commandbar > .workflow-command-actions { grid-area: actions; justify-content: flex-end; }
+.model-layer-commandbar > .workflow-command-context { grid-area: context; }
+@media (max-width: 1100px) {
+  .workflow-commandbar.model-layer-commandbar { grid-template-columns: 1fr; grid-template-areas: "title" "actions" "context"; }
+  .model-layer-commandbar > .workflow-command-actions { justify-content: flex-start; }
+}
+
+.model-review-breakdown { padding: 0.6rem 0; border-block: 1px solid var(--line); }
+.model-review-breakdown summary { cursor: pointer; font-size: 0.8rem; font-weight: 650; }
+
+.button.model-delete-action { color: var(--red); }
+.model-delete-warning { color: var(--red); }
+.button.model-delete-confirm { background: var(--red); border-color: var(--red); color: var(--surface); }

@@ -78,4 +78,4 @@ Illustrates `model-change-set/profiling_profile.json`; keys are fictitious and m
 
 ## Source pointers
 
-Current contract: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`ProfilingProfileRecord`), `domain/snapshots/model.py` dataset key and `application/change_sets/model_validation.py` scope checks. Current formulas and SQL types: `plugins/v2/gds/skills/gds/scripts/profiling.js` (`buildQuery`). Changes to these calculations belong here and in the shared generator/validators, not in duplicate workflow instructions.
+Current contract: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`ProfilingProfileRecord`), `domain/snapshots/model.py` dataset key and `application/change_sets/model_validation.py` scope checks. Current SQL generation is in `web_app/backend/gds_workbench_api/features/profiling/execution.py`; Atlas planning is in `atlas/atlas-plugin/scripts/profiling.js`.

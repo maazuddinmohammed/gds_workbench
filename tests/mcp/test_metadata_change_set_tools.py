@@ -7,11 +7,6 @@ from typing import Any, LiteralString
 from uuid import UUID
 
 import pytest
-from mcp import Client
-from mcp.server.mcpserver import MCPServer
-from mcp.types import TextContent
-from psycopg.types.json import Jsonb
-
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
@@ -19,8 +14,9 @@ from gds_etl_workbench.application.change_sets.contracts import (
     canonical_records_sha256,
     stage_batch_sha256,
 )
-from gds_etl_workbench.application.change_sets.metadata import (
-    register_metadata_change_set_tools,
+from gds_etl_workbench.application.metadata_snapshot.archive import encode_dataset
+from gds_etl_workbench.application.metadata_snapshot.selection import (
+    SelectedMetadataSnapshot,
 )
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
@@ -32,10 +28,11 @@ from gds_etl_workbench.infrastructure.postgres import (
     ToolCallLogRecord,
     WriteTransaction,
 )
-from gds_etl_workbench.tools.snapshots.metadata.archive import encode_dataset
-from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
-    SelectedMetadataSnapshot,
-)
+from gds_etl_workbench.tools.change_sets.metadata import register_metadata_change_set_tools
+from mcp import Client
+from mcp.server.mcpserver import MCPServer
+from mcp.types import TextContent
+from psycopg.types.json import Jsonb
 
 ENTRA_TENANT_ID = UUID("10000000-0000-0000-0000-000000000050")
 ENTRA_OBJECT_ID = UUID("20000000-0000-0000-0000-000000000050")

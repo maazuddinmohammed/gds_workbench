@@ -9,19 +9,12 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
-
 from gds_etl_workbench.domain.modeling_records import (
     GeneratedCodeRecord,
     ProfilingProfileRecord,
     ValidationCheckRecord,
 )
 from gds_etl_workbench.domain.portable_validation import MODEL_RECORD_VALIDATIONS
-from gds_etl_workbench.tools.snapshots.archive import SnapshotContractError
-from gds_etl_workbench.tools.snapshots.model.archive import (
-    build_model_snapshot_archive,
-    encode_model_snapshot,
-)
 from gds_etl_workbench.domain.snapshots.model import (
     CHANGE_SET_DATASETS,
     DATASETS,
@@ -31,6 +24,13 @@ from gds_etl_workbench.domain.snapshots.model import (
     build_model_dataset_schema,
     model_snapshot_records,
 )
+from gds_etl_workbench.infrastructure.snapshot_archive import SnapshotContractError
+from gds_etl_workbench.tools.snapshots.model.archive import (
+    build_model_snapshot_archive,
+    encode_model_snapshot,
+)
+from pydantic import ValidationError
+
 from tests.mcp.model_test_fixtures import (
     complete_model_graph,
     snapshot_from_graph,

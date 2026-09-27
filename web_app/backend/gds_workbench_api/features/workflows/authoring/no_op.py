@@ -157,41 +157,17 @@ class AuthoringNoOpDatabase(Protocol):
     ) -> AbstractAsyncContextManager[AuthoringNoOpTransaction]: ...
 
 
-class PostgresAuthoringNoOpRepository:
-    def __init__(self, transaction: AuthoringNoOpTransaction) -> None:
-        self._transaction = transaction
-
+class AuthoringNoOpCompleter(Protocol):
     async def complete(
         self,
+        principal: RequestPrincipal,
         *,
-        identity: tuple[UUID, UUID, str],
         tenant_id: int,
         model_id: int,
         workflow_run_id: int,
+        workflow_run_claim_token: UUID,
         request: AuthoringNoOpRequest,
-    ) -> dict[str, Any] | None:
-        return await self._transaction.fetch_one(
-            _COMPLETE_AUTHORING_NO_OP_SQL,
-            identity
-            + (
-                tenant_id,
-                model_id,
-                workflow_run_id,
-                request.expected_workflow,
-                request.expected_execution_mode,
-                request.expected_correlation_id,
-                request.expected_model_revision,
-                request.candidate_digest,
-                request.final_event.sequence,
-                request.final_event.attempt,
-                request.final_event.stage,
-                request.final_event.status,
-                request.final_event.message,
-                request.final_event.current,
-                request.final_event.total,
-                request.final_event.finding_count,
-            ),
-        )
+    ) -> AuthoringNoOpReceipt: ...
 
 
 class DatabaseAuthoringNoOpService:
@@ -218,12 +194,27 @@ class DatabaseAuthoringNoOpService:
                     workflow_run_id=workflow_run_id,
                     workflow_run_claim_token=workflow_run_claim_token,
                 )
-                row = await PostgresAuthoringNoOpRepository(transaction).complete(
-                    identity=identity,
-                    tenant_id=tenant_id,
-                    model_id=model_id,
-                    workflow_run_id=workflow_run_id,
-                    request=request,
+                row = await transaction.fetch_one(
+                    _COMPLETE_AUTHORING_NO_OP_SQL,
+                    identity
+                    + (
+                        tenant_id,
+                        model_id,
+                        workflow_run_id,
+                        request.expected_workflow,
+                        request.expected_execution_mode,
+                        request.expected_correlation_id,
+                        request.expected_model_revision,
+                        request.candidate_digest,
+                        request.final_event.sequence,
+                        request.final_event.attempt,
+                        request.final_event.stage,
+                        request.final_event.status,
+                        request.final_event.message,
+                        request.final_event.current,
+                        request.final_event.total,
+                        request.final_event.finding_count,
+                    ),
                 )
         except Exception as error:
             raise_workflow_lifecycle_error(error)
@@ -272,10 +263,10 @@ class DatabaseAuthoringNoOpService:
 
 
 __all__ = [
+    "AuthoringNoOpCompleter",
     "AuthoringNoOpDatabase",
     "AuthoringNoOpReceipt",
     "AuthoringNoOpRequest",
     "DatabaseAuthoringNoOpService",
-    "PostgresAuthoringNoOpRepository",
     "authoring_no_op_candidate_digest",
 ]

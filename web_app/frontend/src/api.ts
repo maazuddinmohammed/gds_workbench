@@ -1,6 +1,6 @@
 import { createModelTargetsApi, type ModelTargetsTransport } from "./features/model_targets/api";
 import { createMetadataEnrichmentApi, type MetadataEnrichmentTransport } from "./features/metadata_enrichment/api";
-import { createModelRecordReviewApi, type ModelRecordHistoryApi } from "./features/model_record_review/api";
+import { createModelRecordReviewApi, type ModelRecordEditorApi } from "./features/model_record_review/api";
 import { ApiError, createHttpRequest } from "./core/http";
 import {
   createAnalysisApi,
@@ -302,7 +302,7 @@ export interface WorkbenchApi
   ModelsApi,
   ModelInputScopeApi,
   MetadataApi,
-  ModelRecordHistoryApi,
+  ModelRecordEditorApi,
   WorkflowsApi,
   ProfilingTransport,
   PromptsApi,

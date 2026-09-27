@@ -63,8 +63,5 @@ Atlas `copy` imports baseline records while preserving matching pending proposal
 
 Current implementation evidence, not runtime imports for this reference:
 
-- mcp_server/gds_etl_workbench/tools/snapshots/metadata/archive.py
+- mcp_server/gds_etl_workbench/application/metadata_snapshot/archive.py
 - mcp_server/gds_etl_workbench/domain/snapshots/metadata.py
-- plugins/v2/gds/skills/gds/contracts/local-helper.json
-- plugins/v2/gds/skills/gds/scripts/gds-local.js
-- plugins/v2/gds/skills/gds/workbench/core.js

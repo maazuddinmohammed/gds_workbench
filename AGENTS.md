@@ -66,14 +66,20 @@ accessibility, and visual rules.
 - MCP: `mcp_server/gds_etl_workbench/runtime.py` wires authentication, tools,
   auditing, and PostgreSQL. `tools/` and `adapters/mcp/` own transport;
   `application/`, `domain/`, and `infrastructure/` hold shared rules and storage.
+  Change Set registration belongs in `tools/change_sets/`. Shared Change Set
+  operations and Metadata Snapshot selection must import without MCP transport.
+  Snapshot selection/encoding lives in `application/metadata_snapshot/`;
+  the bounded ZIP writer lives in `infrastructure/snapshot_archive.py`.
 - Backend: `web_app/backend/gds_workbench_api/main.py` mounts feature routers.
   `runtime.py` wires services; `dependencies.py` provides shared FastAPI authentication.
   Profiling keeps HTTP, PostgreSQL, and execution in its feature package.
   Workflow assembly lives in `features/workflows/execution/assembly.py`;
   shared candidate parsing and diagnostics live in `features/workflows/authoring/repair.py`.
-- Plugin: `plugins/v2/gds/skills/gds/` contains local helpers and Workbench.
+  Shared workflow dependency contracts live beside their implementations;
+  `execution/contracts.py` owns the shared write-transaction interface.
+- Plugin: `atlas/atlas-plugin/` contains local helpers and Workbench.
   `workbench/core.js` owns shared JavaScript normalization and stable serialization.
-- VS Code extension: `plugins/v2/gds-stage-runner/src/extension.ts` exposes the
+- VS Code extension: `atlas/atlas-vs-code/src/extension.ts` exposes the
   local Stage tool; `stage-runner.ts` verifies approval digests and stages chunks.
   Reuse Workbench serialization: chunk hashes must match Python's JSON encoding.
 - Frontend: `web_app/frontend/src/features/` owns screens; reuse matching
@@ -81,7 +87,7 @@ accessibility, and visual rules.
 - SQL: `database/00_preflight.sql`, ordered install files `01`–`19`, then
   `20_verify_install.sql`. Never turn this fresh-install sequence into migrations.
 - Packaging: `deployment/databricks_ui/build_uploads.py`,
-  `plugins/build_gds_v2_plugin_zip.py`, and `mcp_server/build_zip.py`.
+  `atlas/build_plugin.py`, and `mcp_server/build_zip.py`.
   Shared source is copied into independent artifacts;
   see `docs/adr/007-web-owned-workflows-and-notebook-retirement.md`.
 - Before deleting code, check imports, registrations, dynamic references, tests,
@@ -90,6 +96,7 @@ accessibility, and visual rules.
   Unicode normalization, revision checks, and Windows fallback behavior intact.
 - Explain major architecture changes before starting them. Make and verify one
   cohesive simplification at a time. See `docs/architecture/simplification-audit.md`.
+  The current pass is recorded in `docs/architecture/production-simplification-2026-09-23.md`.
 
 ## Local verification
 
@@ -99,18 +106,17 @@ Database tests require local Docker and the disposable fixtures above; never
 substitute an existing database. Keep captured database output hidden.
 
 ```bash
-# MCP, backend, SQL contracts, plugin helpers, and packaging.
-PYTHONPATH=mcp_server:web_app/backend:. web_app/backend/.venv/bin/python -m pytest -c web_app/backend/pyproject.toml tests/mcp tests/web_backend tests/web_packaging tests/plugin_v2 --tb=no --show-capture=no -q
+# MCP, backend, SQL contracts, and packaging.
+PYTHONPATH=mcp_server:web_app/backend:. web_app/backend/.venv/bin/python -m pytest -c web_app/backend/pyproject.toml tests/mcp tests/web_backend tests/web_packaging --tb=no --show-capture=no -q
 
 # Frontend tests, types, and production build.
 npm --prefix web_app/frontend run check
 
-# Plugin Workbench JavaScript tests (root npm dependencies required).
-node --test tests/plugin_v2/*.test.mjs
-
-# VS Code extension tests, types, and bundle.
-npm --prefix plugins/v2/gds-stage-runner test
-npm --prefix plugins/v2/gds-stage-runner run compile
+# Atlas plugin tests and extension.
+PYTHONPATH=mcp_server:web_app/backend:. web_app/backend/.venv/bin/python -m pytest -c web_app/backend/pyproject.toml tests/atlas --tb=no --show-capture=no -q
+node --test tests/atlas/*.test.mjs
+npm --prefix atlas/atlas-vs-code test
+npm --prefix atlas/atlas-vs-code run compile
 ```
 
 Use each Python project's Ruff and Pyright settings. When calling Pyright from
@@ -118,7 +124,7 @@ the root, pass both `--project` and that project's `--pythonpath`; otherwise it
 may use the wrong interpreter. `.github/workflows/web-app.yml` lists the
 backend, packaging, and frontend checks.
 PowerShell fallback execution requires Windows PowerShell 5.1; preserve the
-checks in `.github/workflows/plugin-windows.yml`.
+Atlas checks in `.github/workflows/plugin-windows.yml`.
 After changing plugin or extension source, rebuild its matching local ZIP/VSIX
 and generated bundle; packaging tests compare them with source. Rebuilding does
 not authorize publishing.

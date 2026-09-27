@@ -1025,10 +1025,7 @@ def _validate_active_dependencies(
             continue
         entity = _entity_key(record)
         system = normalize_model_key_value(record.source_system_code)
-        if (
-            entity not in active_object_bindings
-            or record.mapping_transformation_document is None
-        ):
+        if entity not in active_object_bindings or record.mapping_transformation_document is None:
             _active_invalid(
                 issues,
                 "mapping_object",

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-from contextlib import AbstractAsyncContextManager
-from typing import Protocol
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
@@ -21,36 +19,35 @@ from gds_etl_workbench.domain.modeling_records import (
 )
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
-    ReadTransaction,
-    WriteTransaction,
 )
 from pydantic import JsonValue
 
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
-    WorkflowChangeSetFinalizationResult,
+    WorkflowChangeSetFinalizer,
     WorkflowChangeSetHandoffResult,
     WorkflowChangeSetValidationError,
 )
 from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextBundle,
+    AgentContextRepository,
     PostgresAgentContextRepository,
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
-    AgentWorkflowEvent,
+    AgentWorkflowLifecycle,
     AgentWorkflowRunStart,
-    AgentWorkflowTerminalResult,
 )
 from gds_workbench_api.features.workflows.authoring.naming import (
     effective_naming_instructions,
 )
 from gds_workbench_api.features.workflows.authoring.no_op import (
+    AuthoringNoOpCompleter,
     AuthoringNoOpReceipt,
     AuthoringNoOpRequest,
     authoring_no_op_candidate_digest,
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
-    ModelWorkflow,
+    AgentRunPlanRepository,
     PostgresAgentRunPlanRepository,
     WorkflowExecutionMode,
 )
@@ -68,120 +65,12 @@ from gds_workbench_api.features.workflows.authoring.repair import (
 from gds_workbench_api.features.workflows.authoring.stage_runner import (
     AgentStageRunner,
 )
+from gds_workbench_api.features.workflows.execution.contracts import WorkflowExecutionDatabase
 
 from .candidate import LogicalCandidateValidator
 from .policy import project_logical_audit_policy
 
 _logger = logging.getLogger(__name__)
-
-
-class LogicalExecutionDatabase(Protocol):
-    def write_transaction(
-        self,
-        *,
-        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AbstractAsyncContextManager[WriteTransaction]: ...
-
-
-class LogicalPlanRepository(Protocol):
-    async def load(
-        self,
-        transaction: ReadTransaction,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-    ) -> AgentRunPlan: ...
-
-
-class LogicalContextRepository(Protocol):
-    async def load(
-        self,
-        transaction: ReadTransaction,
-        *,
-        tenant_id: int,
-        plan: AgentRunPlan,
-    ) -> AgentContextBundle: ...
-
-
-class LogicalChangeSetHandoff(Protocol):
-    async def retain_failed_candidate(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
-        issues: tuple[ModelValidationIssue, ...],
-        failure_code: str,
-        safe_failure_message: str,
-    ) -> object: ...
-
-    async def finalize(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
-        final_event: AgentWorkflowEvent,
-    ) -> WorkflowChangeSetFinalizationResult: ...
-
-
-class LogicalNoOpCompleter(Protocol):
-    async def complete(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        workflow_run_claim_token: UUID,
-        request: AuthoringNoOpRequest,
-    ) -> AuthoringNoOpReceipt: ...
-
-
-class LogicalLifecycle(Protocol):
-    async def start(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_execution_mode: WorkflowExecutionMode | None,
-        expected_model_revision: int,
-    ) -> AgentWorkflowRunStart: ...
-
-    async def append_event(
-        self,
-        principal: RequestPrincipal,
-        *,
-        workflow_run_id: int,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-        event: AgentWorkflowEvent,
-    ) -> None: ...
-
-    async def fail(
-        self,
-        principal: RequestPrincipal,
-        *,
-        workflow_run_id: int,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-        failure_code: str,
-        safe_failure_message: str,
-    ) -> AgentWorkflowTerminalResult: ...
 
 
 class LogicalExecutionFailedError(WorkbenchError):
@@ -209,14 +98,14 @@ class LogicalWorkflow:
     def __init__(
         self,
         *,
-        database: LogicalExecutionDatabase,
+        database: WorkflowExecutionDatabase,
         authorizer: AuthorizationService,
         agent_executor: AgentExecutor,
-        handoff: LogicalChangeSetHandoff,
-        no_op: LogicalNoOpCompleter,
-        lifecycle: LogicalLifecycle,
-        plan_repository: LogicalPlanRepository | None = None,
-        context_repository: LogicalContextRepository | None = None,
+        handoff: WorkflowChangeSetFinalizer,
+        no_op: AuthoringNoOpCompleter,
+        lifecycle: AgentWorkflowLifecycle,
+        plan_repository: AgentRunPlanRepository | None = None,
+        context_repository: AgentContextRepository | None = None,
         context_policy: AgentContextPolicy | None = None,
     ) -> None:
         self._database = database

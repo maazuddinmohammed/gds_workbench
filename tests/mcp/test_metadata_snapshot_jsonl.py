@@ -5,8 +5,7 @@ from datetime import UTC, date, datetime
 from typing import Any, cast
 
 import pytest
-
-from gds_etl_workbench.tools.snapshots.metadata.archive import (
+from gds_etl_workbench.application.metadata_snapshot.archive import (
     SnapshotContractError,
     encode_dataset,
 )

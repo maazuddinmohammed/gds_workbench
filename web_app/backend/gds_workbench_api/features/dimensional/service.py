@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
@@ -22,18 +21,17 @@ from gds_etl_workbench.domain.modeling_records import (
 )
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
-    ReadTransaction,
-    WriteTransaction,
 )
 from pydantic import JsonValue
 
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
-    WorkflowChangeSetFinalizationResult,
+    WorkflowChangeSetFinalizer,
     WorkflowChangeSetHandoffResult,
     WorkflowChangeSetValidationError,
 )
 from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextBundle,
+    AgentContextRepository,
     PostgresAgentContextRepository,
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
@@ -44,12 +42,14 @@ from gds_workbench_api.features.workflows.authoring.naming import (
     effective_naming_instructions,
 )
 from gds_workbench_api.features.workflows.authoring.no_op import (
+    AuthoringNoOpCompleter,
     AuthoringNoOpReceipt,
     AuthoringNoOpRequest,
     authoring_no_op_candidate_digest,
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
+    AgentRunPlanRepository,
     ModelWorkflow,
     PostgresAgentRunPlanRepository,
     WorkflowExecutionMode,
@@ -66,6 +66,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     model_validation_issues,
 )
 from gds_workbench_api.features.workflows.authoring.stage_runner import AgentStageRunner
+from gds_workbench_api.features.workflows.execution.contracts import WorkflowExecutionDatabase
 
 from .candidate import DimensionalCandidateValidator
 from .policy import (
@@ -84,67 +85,6 @@ class _RejectedCandidate:
 
     changes: tuple[StageModelChange, ...] = ()
     issues: tuple[ModelValidationIssue, ...] = ()
-
-
-class DimensionalExecutionDatabase(Protocol):
-    def write_transaction(
-        self,
-        *,
-        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AbstractAsyncContextManager[WriteTransaction]: ...
-
-
-class DimensionalPlanRepository(Protocol):
-    async def load(
-        self,
-        transaction: ReadTransaction,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-    ) -> AgentRunPlan: ...
-
-
-class DimensionalContextRepository(Protocol):
-    async def load(
-        self,
-        transaction: ReadTransaction,
-        *,
-        tenant_id: int,
-        plan: AgentRunPlan,
-    ) -> AgentContextBundle: ...
-
-
-class DimensionalChangeSetFinalizer(Protocol):
-    async def retain_failed_candidate(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-        changes: tuple[StageModelChange, ...],
-        issues: tuple[ModelValidationIssue, ...],
-        failure_code: str,
-        safe_failure_message: str,
-    ) -> object: ...
-
-    async def finalize(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        workflow_run_claim_token: UUID,
-        expected_workflow: ModelWorkflow,
-        expected_model_revision: int,
-        changes: tuple[StageModelChange, ...],
-        final_event: AgentWorkflowEvent,
-    ) -> WorkflowChangeSetFinalizationResult: ...
 
 
 class DimensionalLifecycle(Protocol):
@@ -182,19 +122,6 @@ class DimensionalLifecycle(Protocol):
     ) -> object: ...
 
 
-class DimensionalNoOpCompleter(Protocol):
-    async def complete(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        workflow_run_id: int,
-        workflow_run_claim_token: UUID,
-        request: AuthoringNoOpRequest,
-    ) -> AuthoringNoOpReceipt: ...
-
-
 class DimensionalExecutionFailedError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
@@ -220,14 +147,14 @@ class DimensionalWorkflow:
     def __init__(
         self,
         *,
-        database: DimensionalExecutionDatabase,
+        database: WorkflowExecutionDatabase,
         authorizer: AuthorizationService,
         agent_executor: AgentExecutor,
-        handoff: DimensionalChangeSetFinalizer,
-        no_op: DimensionalNoOpCompleter,
+        handoff: WorkflowChangeSetFinalizer,
+        no_op: AuthoringNoOpCompleter,
         lifecycle: DimensionalLifecycle,
-        plan_repository: DimensionalPlanRepository | None = None,
-        context_repository: DimensionalContextRepository | None = None,
+        plan_repository: AgentRunPlanRepository | None = None,
+        context_repository: AgentContextRepository | None = None,
         context_policy: AgentContextPolicy | None = None,
     ) -> None:
         self._database = database

@@ -10,22 +10,23 @@ from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID, uuid4
 
 import pytest
-
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import RequestPrincipal
-from gds_etl_workbench.domain.errors import TenantNotFoundError
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_etl_workbench.tools.snapshots.metadata.archive import (
+from gds_etl_workbench.application.metadata_snapshot.archive import (
     EncodedDataset,
     SnapshotArchive,
     SnapshotContractError,
     build_root_documents,
 )
-from gds_etl_workbench.domain.snapshots.metadata import DATASETS
-from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
+from gds_etl_workbench.application.metadata_snapshot.selection import (
     SelectedMetadataSnapshot,
-    create_metadata_snapshot,
     select_snapshot_datasets,
+)
+from gds_etl_workbench.domain.authorization import RequestPrincipal
+from gds_etl_workbench.domain.errors import TenantNotFoundError
+from gds_etl_workbench.domain.snapshots.metadata import DATASETS
+from gds_etl_workbench.infrastructure.postgres import ReadIsolation
+from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
+    create_metadata_snapshot,
 )
 
 if TYPE_CHECKING:

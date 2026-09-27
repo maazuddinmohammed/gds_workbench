@@ -63,10 +63,8 @@ Development provenance; these source files are not runtime dependencies of the p
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:229`.
 - `database/02_core.sql:326,332,338,371,524`.
 - `mcp_server/gds_etl_workbench/tools/ingestion/copy_groups.py:188`.
-- `plugins/v2/gds/skills/gds/workbench/validation/common.js:15,357,525`.
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:161,479`.
 - `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:354,474,533`.
-- `plugins/v2/gds/skills/gds/workbench/validation/metadata.js:11,177,241`.
 - `database/16_mcp_metadata_apply.sql:709,722`.
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

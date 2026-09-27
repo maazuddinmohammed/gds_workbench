@@ -13,7 +13,13 @@ from gds_etl_workbench.application.change_sets.model_validation import (
 )
 from gds_etl_workbench.application.model_snapshot import ModelReviewSnapshot
 from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.domain.modeling_records import ModelingRecord, normalize_model_key_value
+from gds_etl_workbench.domain.modeling_records import (
+    DimensionalAttributeRecord,
+    DimensionalEntityRecord,
+    ModelingRecord,
+    ModelObjectBindingRecord,
+    normalize_model_key_value,
+)
 from gds_etl_workbench.domain.snapshots.model import DATASETS_BY_NAME, ModelChangeSetDataset
 
 type ModelReviewDataset = Literal[
@@ -39,6 +45,7 @@ type ModelReviewDataset = Literal[
     "validation_check",
 ]
 type RecordReviewAction = Literal["lock", "unlock", "deactivate", "reactivate"]
+type ModelLayer = Literal["conceptual", "logical", "dimensional"]
 type RecordIdentity = tuple[ModelReviewDataset, int]
 
 # Dataset-specific lifecycle columns and snapshot collections. Table names remain
@@ -120,11 +127,12 @@ def plan_model_record_review(
     *,
     dataset: ModelReviewDataset,
     record_ids: list[int],
-    action: RecordReviewAction,
+    action: RecordReviewAction | Literal["delete"],
+    layer: ModelLayer | None = None,
 ) -> tuple[ModelReviewDecision, ...]:
     """Close lifecycle dependencies using existing canonical identities only."""
     selected = review.records_by_id.get(dataset, {})
-    if (
+    if layer is None and (
         not record_ids
         or len(record_ids) != len(set(record_ids))
         or any(i not in selected for i in record_ids)
@@ -148,7 +156,21 @@ def plan_model_record_review(
         for name in (identity[0],)
     }
     required: dict[RecordIdentity, str] = {(dataset, i): "Selected record." for i in record_ids}
-    if action in {"deactivate", "reactivate"}:
+    if layer is not None:
+        if (
+            action not in {"deactivate", "delete"}
+            or record_ids
+            or dataset != ("conceptual_object" if layer == "conceptual" else f"{layer}_entity")
+        ):
+            raise WorkbenchError("invalid_request", "The layer review request is invalid.")
+        required = {
+            identity: f"Clear the {layer.title()} layer."
+            for identity, row in records.items()
+            if DATASETS_BY_NAME[identity[0]].section == layer
+            and (action == "delete" or review_lifecycle(row, identity[0])[1] == "active")
+        }
+    selected_identities = set(required)
+    if action in {"deactivate", "reactivate", "delete"}:
         parents: dict[RecordIdentity, set[RecordIdentity]] = defaultdict(set)
         children: dict[RecordIdentity, set[RecordIdentity]] = defaultdict(set)
 
@@ -165,18 +187,20 @@ def plan_model_record_review(
                 for side in ("from", "to"):
                     link(identity, "conceptual_object", v[f"{side}_conceptual_object_name"])
             elif name in {"logical_attribute", "dimensional_attribute"}:
-                layer = name.split("_")[0]
+                record_layer = name.split("_")[0]
                 link(
-                    identity, cast(ModelReviewDataset, layer + "_entity"), v[layer + "_entity_name"]
+                    identity,
+                    cast(ModelReviewDataset, record_layer + "_entity"),
+                    v[record_layer + "_entity_name"],
                 )
             elif name in {"logical_relationship", "dimensional_relationship"}:
-                layer = name.split("_")[0]
+                record_layer = name.split("_")[0]
                 for side in ("from", "to"):
                     link(
                         identity,
-                        cast(ModelReviewDataset, layer + "_attribute"),
-                        v[f"{side}_{layer}_entity_name"],
-                        v[f"{side}_{layer}_attribute_name"],
+                        cast(ModelReviewDataset, record_layer + "_attribute"),
+                        v[f"{side}_{record_layer}_entity_name"],
+                        v[f"{side}_{record_layer}_attribute_name"],
                     )
             elif name in {
                 "model_object_binding",
@@ -187,14 +211,14 @@ def plan_model_record_review(
                 "generated_code_source_system",
             }:
                 entity = (v["modeled_entity_type"], v["modeled_entity_name"])
-                layer = str(entity[0]).split("_")[0]
+                record_layer = str(entity[0]).split("_")[0]
                 if name == "model_object_binding":
                     link(identity, cast(ModelReviewDataset, entity[0]), entity[1])
                 elif name == "model_attribute_binding":
                     link(identity, "model_object_binding", *entity)
                     link(
                         identity,
-                        cast(ModelReviewDataset, layer + "_attribute"),
+                        cast(ModelReviewDataset, record_layer + "_attribute"),
                         entity[1],
                         v["modeled_attribute_name"],
                     )
@@ -216,6 +240,48 @@ def plan_model_record_review(
                     v["system_code"],
                     v["validation_group_name"],
                 )
+
+        # Persisted Silver lineage is the only ownership evidence across layers.
+        # Never infer Conceptual -> Logical ownership from similar names.
+        physical_fields = (
+            "tenant_code",
+            "system_code",
+            "connection_code",
+            "object_schema",
+            "object_name",
+        )
+        logical_targets = {
+            tuple(normalize_model_key_value(getattr(row, field)) for field in physical_fields): row
+            for row in records.values()
+            if isinstance(row, ModelObjectBindingRecord)
+            and row.modeled_entity_type == "logical_entity"
+        }
+        for identity, row in records.items():
+            if not isinstance(row, (DimensionalEntityRecord, DimensionalAttributeRecord)):
+                continue
+            for source in row.sources:
+                if (
+                    source.status != "active" and action != "delete"
+                ) or source.support_source_type == "assertion":
+                    continue
+                physical = (
+                    source.source_attribute
+                    if source.support_source_type == "attribute"
+                    else source.source_object
+                )
+                target = logical_targets.get(
+                    tuple(
+                        normalize_model_key_value(getattr(physical, field))
+                        for field in physical_fields
+                    )
+                )
+                if target is not None:
+                    link(
+                        identity,
+                        "model_object_binding",
+                        "logical_entity",
+                        target.modeled_entity_name,
+                    )
 
         # Coverage is bidirectional for active bindings/mappings. Retiring one
         # covered child retires its complete parent; reactivation restores only
@@ -242,7 +308,7 @@ def plan_model_record_review(
                     and attr is not None
                     and (
                         review_lifecycle(records[attr], attr[0])[1] == "active"
-                        or action == "reactivate"
+                        or action in {"reactivate", "delete"}
                     )
                 ):
                     link(binding, "model_attribute_binding", *entity, v["modeled_attribute_name"])
@@ -270,7 +336,7 @@ def plan_model_record_review(
                     and header is not None
                     and (
                         review_lifecycle(records[binding], binding[0])[1] == "active"
-                        or action == "reactivate"
+                        or action in {"reactivate", "delete"}
                     )
                 ):
                     link(
@@ -303,7 +369,7 @@ def plan_model_record_review(
         active_mappings: dict[str, set[RecordIdentity]] = defaultdict(set)
         active_groups: dict[str, set[RecordIdentity]] = defaultdict(set)
         for key, row in records.items():
-            if review_lifecycle(row, key[0])[1] != "active":
+            if action != "delete" and review_lifecycle(row, key[0])[1] != "active":
                 continue
             if key[0] == "mapping_object":
                 active_mappings[
@@ -313,7 +379,9 @@ def plan_model_record_review(
                 active_groups[normalize_model_key_value(row.model_dump()["system_code"])].add(key)
         code_by_entity: dict[tuple[str, str], set[RecordIdentity]] = defaultdict(set)
         for key, row in records.items():
-            if key[0] == "generated_code" and review_lifecycle(row, key[0])[1] == "active":
+            if key[0] == "generated_code" and (
+                action == "delete" or review_lifecycle(row, key[0])[1] == "active"
+            ):
                 value = row.model_dump()
                 code_by_entity[
                     (
@@ -324,14 +392,18 @@ def plan_model_record_review(
         queue = deque(required)
         while queue:
             identity = queue.popleft()
-            for dependent in (children if action == "deactivate" else parents).get(identity, ()):
+            for dependent in (children if action in {"deactivate", "delete"} else parents).get(
+                identity, ()
+            ):
                 status = review_lifecycle(records[dependent], dependent[0])[1]
-                if dependent not in required and ((status == "active") == (action == "deactivate")):
+                if dependent not in required and (
+                    action == "delete" or ((status == "active") == (action == "deactivate"))
+                ):
                     required[dependent] = (
                         "Required by the selected lifecycle change and active dependency coverage."
                     )
                     queue.append(dependent)
-            if action == "deactivate" and identity[0] == "generated_code":
+            if action in {"deactivate", "delete"} and identity[0] == "generated_code":
                 # Retire the applied Code bundle together. Removing just one
                 # System's artifact must not leave the target apparently current.
                 value = records[identity].model_dump()
@@ -345,7 +417,7 @@ def plan_model_record_review(
                         "complete System assignment coverage."
                     )
                     queue.append(key)
-            if action == "deactivate" and identity[0] == "mapping_object":
+            if action in {"deactivate", "delete"} and identity[0] == "mapping_object":
                 system = normalize_model_key_value(
                     records[identity].model_dump()["source_system_code"]
                 )
@@ -378,7 +450,7 @@ def plan_model_record_review(
             ModelReviewDecision(
                 dataset=name,
                 record_id=record_id,
-                selected=name == dataset and record_id in record_ids,
+                selected=(name, record_id) in selected_identities,
                 reason=reason,
                 original=original,
                 reviewed=DATASETS_BY_NAME[name].row_model.model_validate(values, strict=False),
@@ -403,9 +475,10 @@ def prepare_model_record_review(
     dataset: ModelReviewDataset,
     record_ids: list[int],
     action: RecordReviewAction,
+    layer: ModelLayer | None = None,
 ) -> PreparedModelReview:
     decisions = plan_model_record_review(
-        review, dataset=dataset, record_ids=record_ids, action=action
+        review, dataset=dataset, record_ids=record_ids, action=action, layer=layer
     )
     snapshot = review.snapshot
     if action == "unlock":
@@ -444,6 +517,7 @@ def prepare_model_record_review(
                 "dataset": dataset,
                 "record_ids": sorted(record_ids),
                 "action": action,
+                "layer": layer,
                 "candidate_digest": validation.candidate_digest,
                 "decisions": [
                     {

@@ -38,7 +38,7 @@ Validation reports identify checks run or skipped and bounded findings with rule
 - Field meanings/population guidance: `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py`.
 - Exact field contracts: `mcp_server/gds_etl_workbench/domain/metadata_records.py`.
 - Portable cross-field rules: `mcp_server/gds_etl_workbench/domain/portable_validation.py`.
-- Published Snapshot schemas: `mcp_server/gds_etl_workbench/tools/snapshots/metadata/archive.py`.
+- Published Snapshot schemas: `mcp_server/gds_etl_workbench/application/metadata_snapshot/archive.py`.
 - MCP dataset descriptions: `mcp_server/gds_etl_workbench/tools/snapshots/metadata/describe_metadata_dataset.py`.
 - Backend effective-result validation: `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py`.
 - Shared Atlas validation: [common.js](../../workbench/validation/common.js), [metadata.js](../../workbench/validation/metadata.js) and [run.js](../../workbench/validation/run.js).

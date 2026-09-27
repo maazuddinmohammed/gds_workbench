@@ -10,7 +10,6 @@ from .dispatcher import WorkflowExecutionDispatcher, WorkflowExecutionServices
 from .fence import WorkflowClaimFenceTransaction, assert_workflow_run_claim
 from .repository import (
     DatabaseWorkflowClaimRepository,
-    WorkflowClaimDatabase,
     WorkflowClaimLease,
 )
 from .worker import (
@@ -32,7 +31,6 @@ __all__ = [
     "assert_workflow_run_claim",
     "WorkflowExecutor",
     "DatabaseWorkflowClaimRepository",
-    "WorkflowClaimDatabase",
     "WorkflowClaimLease",
     "WorkerRunResult",
     "WorkflowClaimDispatcher",

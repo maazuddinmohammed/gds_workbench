@@ -115,11 +115,8 @@ The user-confirmed SELECT rules above supersede older GDS guidance claiming auto
 
 - `mcp_server/gds_etl_workbench/domain/metadata_records.py:29,163,171,173`.
 - `database/02_core.sql:199,206,215,223,225,230,516,517`.
-- `plugins/v2/gds/skills/gds/references/orchestration-rules.md:5`.
-- `plugins/v2/gds/skills/gds/workbench/validation/common.js:357,525`.
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:159,415,416`.
 - `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:103,270,354,474,533`.
-- `plugins/v2/gds/skills/gds/workbench/validation/metadata.js:11,93,177,241`.
 - `database/16_mcp_metadata_apply.sql:140,226,270,445,469`.
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py:45,194`.
 

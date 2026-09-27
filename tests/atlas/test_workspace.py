@@ -1,20 +1,15 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 import subprocess
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from tests.atlas import snapshot_fixtures as fixtures
+
 ROOT = Path(__file__).resolve().parents[2]
 HELPER = ROOT / "atlas/atlas-plugin/scripts/atlas-local.js"
-_fixture_spec = importlib.util.spec_from_file_location(
-    "gds_snapshot_fixtures", ROOT / "tests/plugin_v2/test_gds_local_helper.py"
-)
-assert _fixture_spec and _fixture_spec.loader
-fixtures = importlib.util.module_from_spec(_fixture_spec)
-_fixture_spec.loader.exec_module(fixtures)
 
 
 def run(*args: str, success: bool = True) -> dict[str, Any]:

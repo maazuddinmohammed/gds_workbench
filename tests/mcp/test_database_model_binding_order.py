@@ -1,20 +1,16 @@
 """Apply a complete two-layer graph against immediate database dependencies."""
 
+import json
 from copy import deepcopy
 from dataclasses import replace
-import json
 from typing import Any
 from uuid import uuid4
 
 import pytest
-from mcp import Client
-from mcp.server.mcpserver import MCPServer
-
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.change_sets.model import (
     load_model_physical_scope,
-    register_model_change_set_tools,
 )
 from gds_etl_workbench.application.change_sets.model_validation import (
     ValidatedModelChangeSet,
@@ -23,6 +19,10 @@ from gds_etl_workbench.application.change_sets.model_validation import (
 from gds_etl_workbench.application.model_read import ModelReadContext
 from gds_etl_workbench.application.model_snapshot import build_model_snapshot
 from gds_etl_workbench.domain.snapshots.model import ModelChangeSetDataset, ModelSnapshot
+from gds_etl_workbench.tools.change_sets.model import register_model_change_set_tools
+from mcp import Client
+from mcp.server.mcpserver import MCPServer
+
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.model_test_fixtures import (
     SILVER_ORDER,

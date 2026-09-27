@@ -130,10 +130,7 @@ User-confirmed consumer rules above supersede older generic descriptions: SQL va
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:180,500,508,509`.
 - `database/02_core.sql:388,392,393,401,409,425,427`.
 - `mcp_server/gds_etl_workbench/tools/ingestion/copy_groups.py:176`.
-- `plugins/v2/gds/skills/gds/references/orchestration-rules.md:12`.
-- `plugins/v2/gds/skills/gds/workbench/validation/common.js:207,357,525`.
 - `mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py:103,354,474,533`.
-- `plugins/v2/gds/skills/gds/workbench/validation/metadata.js:11,177,241`.
 - `database/16_mcp_metadata_apply.sql:270,816,906,938`.
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

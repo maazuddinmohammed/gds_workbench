@@ -8,7 +8,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import partial
 from hashlib import sha256
-from typing import Any, Literal, LiteralString, cast
+from typing import Any, Literal, LiteralString, Protocol, cast
 
 from gds_etl_workbench.application.change_sets.model import load_model_physical_scope
 from gds_etl_workbench.application.change_sets.model_validation import PhysicalModelCatalog
@@ -593,6 +593,16 @@ class AgentContextBundle:
             f"model_revision={self.context.model_revision}, "
             f"tool_assisted={self.tool_catalog is not None})"
         )
+
+
+class AgentContextRepository(Protocol):
+    async def load(
+        self,
+        transaction: ReadTransaction,
+        *,
+        tenant_id: int,
+        plan: AgentRunPlan,
+    ) -> AgentContextBundle: ...
 
 
 class PostgresAgentContextRepository:

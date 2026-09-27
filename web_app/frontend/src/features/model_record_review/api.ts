@@ -8,7 +8,7 @@ export type ModelReviewDataset =
   | "dimensional_submodel" | "dimensional_entity" | "dimensional_attribute" | "dimensional_relationship"
   | "model_object_binding" | "model_attribute_binding" | "mapping_dependency" | "mapping_object" | "mapping_attribute"
   | "generated_code" | "generated_code_source_system" | "validation_group" | "validation_check";
-export type ModelReviewAction = "lock" | "unlock" | "deactivate" | "reactivate";
+export type ModelReviewAction = "lock" | "unlock" | "deactivate" | "reactivate" | "delete";
 
 export interface ModelReviewCommand {
   dataset: ModelReviewDataset;
@@ -16,6 +16,7 @@ export interface ModelReviewCommand {
   action: ModelReviewAction;
   expected_model_revision: number;
   expected_plan_digest?: string;
+  layer?: "conceptual" | "logical" | "dimensional";
 }
 
 export interface ModelReviewPreview {
@@ -26,8 +27,10 @@ export interface ModelReviewPreview {
   action_count: number;
   additional_change_count: number;
   total_record_count: number;
+  changes_by_dataset?: Record<string, number>;
+  warnings?: string[];
   items: {
-    dataset: ModelReviewDataset;
+    dataset: string;
     record_id: number;
     label: string;
     selected: boolean;
@@ -35,7 +38,8 @@ export interface ModelReviewPreview {
     is_locked: boolean;
     desired_locked: boolean;
     status: ReviewStatus;
-    desired_status: ReviewStatus;
+    desired_status: ReviewStatus | "deleted";
+    can_unlock?: boolean;
     changed: boolean;
   }[];
   issues: { code: string; dataset: string; message: string }[];
@@ -66,8 +70,32 @@ export interface ModelRecordHistoryApi extends ModelRecordReviewApi {
     modelRevision: number, page?: number, entityType?: "logical_entity" | "dimensional_entity") => Promise<ModelRecordHistoryPage>;
 }
 
-export function createModelRecordReviewApi(request: HttpRequest): ModelRecordHistoryApi {
+export type EditableDataset = Extract<ModelReviewDataset, `conceptual_${string}` | `logical_${string}` | `dimensional_${string}`>;
+export interface ModelRecordEditorRequest {
+  dataset: EditableDataset; record_id: number; expected_model_revision: number;
+}
+export interface ModelRecordEditor {
+  model_revision: number; label: string; is_locked: boolean;
+  fields: { name: string; label: string; kind: "text" | "multiline" | "number" | "boolean" | "choice" | "lines";
+    value: string | number | boolean | string[] | null; required: boolean; options: string[];
+    minimum: number | null; maximum_length: number | null;
+  }[];
+}
+export interface ModelRecordEditorApi extends ModelRecordHistoryApi {
+  readModelRecordEditor: (tenantId: number, modelId: number, command: ModelRecordEditorRequest) => Promise<ModelRecordEditor>;
+  saveModelRecord: (tenantId: number, modelId: number, command: ModelRecordEditorRequest & { changes: Record<string, unknown> }, key: string) => Promise<{ model_revision: number }>;
+}
+
+export function createModelRecordReviewApi(request: HttpRequest): ModelRecordEditorApi {
   return {
+    readModelRecordEditor: (tenantId, modelId, command) => request(
+      `/api/v1/tenants/${tenantId}/models/${modelId}/change-sets/review/editor`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(command) },
+    ),
+    saveModelRecord: (tenantId, modelId, command, key) => request(
+      `/api/v1/tenants/${tenantId}/models/${modelId}/change-sets/review/edit`,
+      { method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": key }, body: JSON.stringify(command) },
+    ),
     listModelReviewRecords: (tenantId, modelId, dataset, modelRevision, page = 1, entityType) => request(
       `/api/v1/tenants/${tenantId}/models/${modelId}/change-sets/review/records?dataset=${dataset}&expected_model_revision=${modelRevision}&page=${page}${entityType ? `&entity_type=${entityType}` : ""}`,
     ),

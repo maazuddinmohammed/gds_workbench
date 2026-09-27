@@ -649,7 +649,7 @@ it("finds and reactivates inactive Code without an eligible generation target", 
   expect(within(table).getByText("inactive")).toBeVisible();
   expect(within(table).getByRole("link", { name: "Show SQL details" })).toHaveAttribute("href", "/tenants/7/code-generation/models/18/artifacts/501");
   await user.click(screen.getByRole("checkbox", { name: "Select Applied Code 501" }));
-  await user.click(screen.getByRole("button", { name: "Reactivate selected" }));
+  await user.click(screen.getByRole("button", { name: "Activate selected" }));
   await user.click(await screen.findByRole("button", { name: "Apply this change" }));
   expect(commands[0]).toEqual({ dataset: "generated_code", record_ids: [501], action: "reactivate", expected_model_revision: 18 });
 });
