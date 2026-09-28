@@ -101,12 +101,9 @@ const MODEL_DATASETS = [
   "logical_relationship",
   "logical_submodel",
   "mapping_attribute",
-  "mapping_dependency",
   "mapping_object",
-  "model_attribute_binding",
   "model_details",
   "model_input_scope",
-  "model_object_binding",
   "modeling_assertion_document",
   "modeling_assertion_record",
   "profiling_profile",
@@ -315,6 +312,7 @@ async function bindSession(
   await mkdir(snapshotDirectory, { recursive: true });
   await mkdir(tasksDirectory, { recursive: true });
   const catalog = {
+    schema_version: "2.0",
     snapshot_kind: area,
     ...(area === "model"
       ? { model: { model_id: 42, model_name: "Customer Model", model_revision: 8 } }
@@ -556,7 +554,7 @@ describe("stageApprovedManifest", () => {
   test.each(["missing_acceptance", "changed_decisions", "stale_metadata"])(
     "rejects %s modeling evidence before MCP", async (scenario) => {
       const {workspace, session, manifestPath, acceptedDigest} = await modelRequest(
-        "logical_entity", ["logical_entity_name"], [{logical_entity_name: "Customer"}],
+        "logical_entity", ["logical_entity_schema_name", "logical_entity_name"], [{logical_entity_schema_name: "silver", logical_entity_name: "Customer"}],
       );
       if (scenario === "missing_acceptance") {
         const operation = JSON.parse(await readFile(join(session, OP_PATH), "utf8"));
@@ -580,7 +578,7 @@ describe("stageApprovedManifest", () => {
 
   test("rechecks modeling evidence after remote reads and before the first write", async () => {
     const {workspace, session, manifestPath, acceptedDigest} = await modelRequest(
-      "logical_entity", ["logical_entity_name"], [{logical_entity_name: "Customer"}],
+      "logical_entity", ["logical_entity_schema_name", "logical_entity_name"], [{logical_entity_schema_name: "silver", logical_entity_name: "Customer"}],
     );
     let writes = 0;
     const mcp: McpToolClient = {async callTool(name, input) {
@@ -1490,7 +1488,7 @@ describe("stageApprovedManifest", () => {
     const tasksDirectory = join(session, EVIDENCE);
     await mkdir(changeSetDirectory, { recursive: true });
     await mkdir(tasksDirectory, { recursive: true });
-    const records = [{ logical_entity_name: "Customer" }];
+    const records = [{ logical_entity_schema_name: "silver", logical_entity_name: "Customer" }];
     const payloadPath = join(changeSetDirectory, "logical_entity.json");
     const payload = `${JSON.stringify(records)}\n`;
     await writeFile(payloadPath, payload, { mode: 0o600 });
@@ -1500,7 +1498,7 @@ describe("stageApprovedManifest", () => {
       "model",
       acceptedDigest,
       "logical_entity",
-      ["logical_entity_name"],
+      ["logical_entity_schema_name", "logical_entity_name"],
       3,
     );
     const manifestPath = join(tasksDirectory, `${OP}.stage-request.json`);
@@ -1527,7 +1525,7 @@ describe("stageApprovedManifest", () => {
         datasets: [
           {
             dataset: "logical_entity",
-            canonical_key: ["logical_entity_name"],
+            canonical_key: ["logical_entity_schema_name", "logical_entity_name"],
             record_count: 1,
             payload_file: payloadPath,
             sha256: createHash("sha256").update(payload).digest("hex"),
@@ -1570,6 +1568,24 @@ describe("stageApprovedManifest", () => {
     expect(calls.map(([name]) => name).includes("list_tenants")).toBe(false);
   });
 
+  test.each(["model_object_binding", "model_attribute_binding", "mapping_dependency"])("rejects retired %s before contacting MCP", async (dataset) => {
+    const { workspace, manifestPath, acceptedDigest } = await modelRequest(dataset, ["modeled_entity_schema_name", "modeled_entity_name"], [{modeled_entity_schema_name: "silver", modeled_entity_name: "Customer"}]);
+    let calls = 0;
+    await expect(stageApprovedManifest({manifestPath, expectedDigest: acceptedDigest}, {
+      workspaceRoots: [workspace], mcp: {async callTool() { calls++; return {}; }},
+    })).rejects.toBeInstanceOf(StageRunnerError);
+    expect(calls).toBe(0);
+  });
+
+  test("rejects schema-less Entity catalog keys before contacting MCP", async () => {
+    const { workspace, manifestPath, acceptedDigest } = await modelRequest("logical_entity", ["logical_entity_name"], [{logical_entity_name: "Customer"}]);
+    let calls = 0;
+    await expect(stageApprovedManifest({manifestPath, expectedDigest: acceptedDigest}, {
+      workspaceRoots: [workspace], mcp: {async callTool() { calls++; return {}; }},
+    })).rejects.toMatchObject({code: "SNAPSHOT_MISMATCH"});
+    expect(calls).toBe(0);
+  });
+
   test("stages the singleton model_details dataset with its empty canonical key", async () => {
     const records = [{ model_name: "Customer Model", model_description: "Customers" }];
     const { workspace, manifestPath, acceptedDigest } = await modelRequest(
@@ -1601,10 +1617,10 @@ describe("stageApprovedManifest", () => {
   });
 
   test("binds the local digest to the authoritative fingerprint after server normalization", async () => {
-    const records = [{ logical_entity_name: "Customer" }];
+    const records = [{ logical_entity_schema_name: "silver", logical_entity_name: "Customer" }];
     const { workspace, manifestPath, acceptedDigest } = await modelRequest(
       "logical_entity",
-      ["logical_entity_name"],
+      ["logical_entity_schema_name", "logical_entity_name"],
       records,
     );
     const normalizedFingerprint = fingerprintResponse(
@@ -1639,10 +1655,10 @@ describe("stageApprovedManifest", () => {
   });
 
   test("rejects a self-consistent fingerprint with a noncanonical dataset order", async () => {
-    const records = [{ logical_entity_name: "Customer" }];
+    const records = [{ logical_entity_schema_name: "silver", logical_entity_name: "Customer" }];
     const { workspace, manifestPath, acceptedDigest } = await modelRequest(
       "logical_entity",
-      ["logical_entity_name"],
+      ["logical_entity_schema_name", "logical_entity_name"],
       records,
     );
     const fingerprint = fingerprintResponse("model", 4, { logical_entity: records });
@@ -1678,10 +1694,10 @@ describe("stageApprovedManifest", () => {
   });
 
   test("rejects a tampered aggregate fingerprint", async () => {
-    const records = [{ logical_entity_name: "Customer" }];
+    const records = [{ logical_entity_schema_name: "silver", logical_entity_name: "Customer" }];
     const { workspace, manifestPath, acceptedDigest } = await modelRequest(
       "logical_entity",
-      ["logical_entity_name"],
+      ["logical_entity_schema_name", "logical_entity_name"],
       records,
     );
     const fingerprint = fingerprintResponse("model", 4, { logical_entity: records });
@@ -1708,10 +1724,10 @@ describe("stageApprovedManifest", () => {
   });
 
   test("rejects duplicate server Model keys using Unicode casefolding", async () => {
-    const records = [{ logical_entity_name: "Other" }];
+    const records = [{ logical_entity_schema_name: "silver", logical_entity_name: "Other" }];
     const { workspace, manifestPath, acceptedDigest } = await modelRequest(
       "logical_entity",
-      ["logical_entity_name"],
+      ["logical_entity_schema_name", "logical_entity_name"],
       records,
     );
     let writeCount = 0;
@@ -1719,8 +1735,8 @@ describe("stageApprovedManifest", () => {
       async callTool(name, input) {
         if (name === "get_model_change_set") {
           return changeSetResponse("model", 3, input.dataset, [
-            { logical_entity_name: "Straße" },
-            { logical_entity_name: "STRASSE" },
+            { logical_entity_schema_name: "silver", logical_entity_name: "Straße" },
+            { logical_entity_schema_name: "silver", logical_entity_name: "STRASSE" },
           ]);
         }
         writeCount += 1;
@@ -1746,7 +1762,7 @@ describe("stageApprovedManifest", () => {
     const tasksDirectory = join(session, EVIDENCE);
     await mkdir(changeSetDirectory, { recursive: true });
     await mkdir(tasksDirectory, { recursive: true });
-    const records = [{ artifact_name: "customers.sql", sql: "x".repeat(1_200_000) }];
+    const records = [{ modeled_entity_schema_name: "silver", artifact_name: "customers.sql", sql: "x".repeat(1_200_000) }];
     const payloadPath = join(changeSetDirectory, "generated_code.json");
     const payload = `${JSON.stringify(records)}\n`;
     await writeFile(payloadPath, payload, { mode: 0o600 });
@@ -1756,7 +1772,7 @@ describe("stageApprovedManifest", () => {
       "model",
       acceptedDigest,
       "generated_code",
-      ["artifact_name"],
+      ["modeled_entity_schema_name", "artifact_name"],
       3,
     );
     const manifestPath = join(tasksDirectory, `${OP}.stage-request.json`);
@@ -1783,7 +1799,7 @@ describe("stageApprovedManifest", () => {
         datasets: [
           {
             dataset: "generated_code",
-            canonical_key: ["artifact_name"],
+            canonical_key: ["modeled_entity_schema_name", "artifact_name"],
             record_count: 1,
             payload_file: payloadPath,
             sha256: createHash("sha256").update(payload).digest("hex"),

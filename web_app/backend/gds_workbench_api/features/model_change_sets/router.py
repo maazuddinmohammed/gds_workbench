@@ -11,15 +11,7 @@ from gds_etl_workbench.domain.snapshots.model import ModelDataset
 
 from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.assertions.authoring import SaveAssertionRequest
-from gds_workbench_api.features.mapping.dependencies import SaveMappingDependencyRequest
 from gds_workbench_api.features.model_change_sets.input_scope import AddInputScopeRequest
-from gds_workbench_api.features.model_targets.contracts import (
-    ApplyModelBindingRequest,
-    GeneratedBindingsPreview,
-    GenerateModelBindingsRequest,
-    ModelBindingPreview,
-    PreviewModelBindingRequest,
-)
 
 from .contracts import (
     ApplyModelChangeSetResult,
@@ -71,16 +63,6 @@ class ModelChangeSetService(Protocol):
         idempotency_key: UUID,
     ) -> ReviewModelRecordsResult: ...
 
-    async def save_mapping_dependency(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        command: SaveMappingDependencyRequest,
-        idempotency_key: UUID,
-    ) -> ReviewModelRecordsResult: ...
-
     async def save_assertion(
         self,
         principal: RequestPrincipal,
@@ -90,18 +72,6 @@ class ModelChangeSetService(Protocol):
         command: SaveAssertionRequest,
         idempotency_key: UUID,
     ) -> ReviewModelRecordsResult: ...
-
-    async def bind_registered_target(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        command: PreviewModelBindingRequest
-        | ApplyModelBindingRequest
-        | GenerateModelBindingsRequest,
-        idempotency_key: UUID | None = None,
-    ) -> ModelBindingPreview | GeneratedBindingsPreview | ReviewModelRecordsResult: ...
 
     async def list_review_records(
         self,
@@ -270,29 +240,6 @@ def create_model_change_sets_router(
         response_model=ReviewModelRecordsResult,
     )
 
-    async def save_mapping_dependency(
-        tenant_id: PositivePathId,
-        model_id: PositivePathId,
-        command: SaveMappingDependencyRequest,
-        idempotency_key: IdempotencyKey,
-        *,
-        principal: RequestPrincipal = Depends(authenticate),
-    ) -> ReviewModelRecordsResult:
-        return await service.save_mapping_dependency(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            command=command,
-            idempotency_key=idempotency_key,
-        )
-
-    router.add_api_route(
-        "/mapping/dependencies",
-        save_mapping_dependency,
-        methods=["POST"],
-        response_model=ReviewModelRecordsResult,
-    )
-
     async def save_assertion(
         tenant_id: PositivePathId,
         model_id: PositivePathId,
@@ -348,87 +295,6 @@ def create_model_change_sets_router(
     )
     router.add_api_route(
         "/review/edit", save_record, methods=["POST"], response_model=ReviewModelRecordsResult
-    )
-
-    async def preview_binding(
-        tenant_id: PositivePathId,
-        model_id: PositivePathId,
-        command: PreviewModelBindingRequest,
-        *,
-        principal: RequestPrincipal = Depends(authenticate),
-    ) -> ModelBindingPreview | GeneratedBindingsPreview | ReviewModelRecordsResult:
-        return await service.bind_registered_target(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            command=command,
-        )
-
-    router.add_api_route(
-        "/bindings/preview", preview_binding, methods=["POST"], response_model=ModelBindingPreview
-    )
-
-    async def apply_binding(
-        tenant_id: PositivePathId,
-        model_id: PositivePathId,
-        command: ApplyModelBindingRequest,
-        idempotency_key: IdempotencyKey,
-        *,
-        principal: RequestPrincipal = Depends(authenticate),
-    ) -> ModelBindingPreview | GeneratedBindingsPreview | ReviewModelRecordsResult:
-        return await service.bind_registered_target(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            command=command,
-            idempotency_key=idempotency_key,
-        )
-
-    router.add_api_route(
-        "/bindings/apply", apply_binding, methods=["POST"], response_model=ReviewModelRecordsResult
-    )
-
-    async def generate_bindings(
-        tenant_id: PositivePathId,
-        model_id: PositivePathId,
-        command: GenerateModelBindingsRequest,
-        *,
-        principal: RequestPrincipal = Depends(authenticate),
-    ) -> ModelBindingPreview | GeneratedBindingsPreview | ReviewModelRecordsResult:
-        return await service.bind_registered_target(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            command=command,
-        )
-
-    async def apply_generated_bindings(
-        tenant_id: PositivePathId,
-        model_id: PositivePathId,
-        command: GenerateModelBindingsRequest,
-        idempotency_key: IdempotencyKey,
-        *,
-        principal: RequestPrincipal = Depends(authenticate),
-    ) -> ModelBindingPreview | GeneratedBindingsPreview | ReviewModelRecordsResult:
-        return await service.bind_registered_target(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            command=command,
-            idempotency_key=idempotency_key,
-        )
-
-    router.add_api_route(
-        "/bindings/generate/preview",
-        generate_bindings,
-        methods=["POST"],
-        response_model=GeneratedBindingsPreview,
-    )
-    router.add_api_route(
-        "/bindings/generate/apply",
-        apply_generated_bindings,
-        methods=["POST"],
-        response_model=ReviewModelRecordsResult,
     )
 
     async def list_review_records(

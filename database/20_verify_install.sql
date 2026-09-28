@@ -21,8 +21,8 @@ DECLARE
         'application.review_metadata_records(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,uuid)',
         'application.archive_model(uuid,uuid,character varying,bigint,bigint)',
         'application.set_principal_last_tenant(uuid,uuid,character varying,bigint)',
-        'application.create_model(uuid,uuid,character varying,bigint,character varying,character varying,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer)',
-        'application.update_model(uuid,uuid,character varying,bigint,bigint,character varying,character varying,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer)',
+        'application.create_model(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer)',
+        'application.update_model(uuid,uuid,character varying,bigint,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer)',
         'application.save_prompt_template(uuid,uuid,character varying,bigint,bigint,character varying,bigint,character varying,character varying,text,boolean,timestamp with time zone)',
         'application.save_prompt_template_draft(uuid,uuid,character varying,bigint,bigint,text,text,text,timestamp with time zone,text[])',
         'application.transition_prompt_template_version(uuid,uuid,character varying,bigint,character varying,character varying)',
@@ -32,7 +32,7 @@ DECLARE
         'application.save_sql_generation_guide(uuid,uuid,character varying,bigint,character varying,character varying,character varying,boolean,boolean,timestamp with time zone)',
         'application.save_sql_generation_guide_draft(uuid,uuid,character varying,bigint,bigint,text,timestamp with time zone)',
         'application.transition_sql_generation_guide_version(uuid,uuid,character varying,bigint,character varying,character varying)',
-        'application.create_workflow_run(uuid,uuid,character varying,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,character varying,character varying,bigint,bigint,bigint,character varying,bigint,jsonb,jsonb,character varying)',
+        'application.create_workflow_run(uuid,uuid,character varying,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,character varying,character varying,bigint,bigint,bigint,character varying,bigint,jsonb,jsonb,character varying,bigint[])',
         'application.start_workflow_run(uuid,uuid,character varying,bigint,bigint)',
         'application.claim_next_workflow_run(integer)',
         'application.renew_workflow_run_claim(bigint,uuid,integer)',
@@ -247,6 +247,7 @@ BEGIN
                'sql_generation_guide_version',
                'workflow_run',
                'workflow_run_object_selection',
+                   'workflow_run_entity_selection',
                'workflow_run_system_selection',
                'workflow_run_mapping_target_selection',
                'workflow_run_prompt_snapshot',
@@ -255,7 +256,7 @@ BEGIN
                'metadata_review_event'
            );
 
-    IF v_application_table_count <> 18 OR EXISTS (
+    IF v_application_table_count <> 19 OR EXISTS (
         SELECT 1
           FROM information_schema.tables AS table_record
          WHERE table_record.table_schema = 'application'
@@ -273,6 +274,7 @@ BEGIN
                    'sql_generation_guide_version',
                    'workflow_run',
                    'workflow_run_object_selection',
+                   'workflow_run_entity_selection',
                    'workflow_run_system_selection',
                    'workflow_run_mapping_target_selection',
                    'workflow_run_prompt_snapshot',
@@ -448,7 +450,7 @@ BEGIN
            AND column_record.column_name IN (
                    'workflow_run_id',
                    'model_id',
-                   'object_id',
+                   'workflow_run_entity_selection_id',
                    'source_system_id',
                    'selection_order'
                )
@@ -695,13 +697,16 @@ BEGIN
          WHERE constraint_record.conrelid =
                'workflow.generated_code'::REGCLASS
            AND constraint_record.conname IN (
-                   'fk_generated_code_binding',
+                   'fk_generated_code_model',
+                   'fk_generated_code_logical_entity',
+                   'fk_generated_code_dimensional_entity',
+                   'ck_generated_code_typed_entity',
                    'fk_generated_code_workflow_run',
                    'ck_generated_code_artifact_name',
                    'ck_generated_code_input_digest'
                )
            AND constraint_record.convalidated
-    ) <> 4 OR (
+    ) <> 7 OR (
         SELECT count(*)
           FROM pg_catalog.pg_constraint AS constraint_record
          WHERE constraint_record.conrelid =
@@ -1080,7 +1085,6 @@ BEGIN
                       'workflow.logical_entity_submodel',
                       'workflow.logical_relationship',
                       'workflow.logical_submodel',
-                      'workflow.mapping_source_system_dependency',
                       'workflow.validation_check',
                       'workflow.validation_group',
                       'workflow.mapping_object'
@@ -1205,6 +1209,8 @@ BEGIN
              FROM unnest(ARRAY[
                       'model_name',
                       'model_description',
+                      'logical_schemas',
+                      'dimensional_schemas',
                       'model_revision',
                       'silver_model_naming_instructions',
                       'silver_model_audit_columns_template',

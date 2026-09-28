@@ -18,7 +18,7 @@ export function PromptVariables({
   const [group, setGroup] = useState("");
   const groupOf = (variable: PromptStageVariable) => variable.group
     || (variable.name.startsWith("conceptual_") ? "Conceptual results"
-      : variable.name.startsWith("logical_") ? "Logical results and bindings"
+      : variable.name.startsWith("logical_") ? "Logical results"
         : variable.name.startsWith("dimensional_") ? "Dimensional results"
           : ["naming_instructions", "audit_columns", "technical_columns"].includes(variable.name) ? "Model settings"
             : variable.name === "modeling_assertions" ? "Modeling assertions"

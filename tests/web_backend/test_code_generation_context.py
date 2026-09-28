@@ -49,7 +49,7 @@ def _plan(*, selected_object_ids: tuple[int, ...] = (501, 502)) -> AgentRunPlan:
         sql_generation_guide_version_id=91,
         sql_generation_guide_digest="9" * 64,
         selected_scope_digest="a" * 64,
-        selected_object_ids=selected_object_ids,
+        selected_object_ids=(), selected_entity_ids=selected_object_ids,
         selection=AgentRunSelection(
             sdk_code="openai_agents_sdk",
             provider_code="microsoft_foundry",
@@ -75,9 +75,10 @@ def _plan(*, selected_object_ids: tuple[int, ...] = (501, 502)) -> AgentRunPlan:
     )
 
 
-def _row(object_id: int) -> dict[str, Any]:
+def _row(modeled_entity_id: int) -> dict[str, Any]:
     return {
-        "object_id": object_id,
+        "modeled_entity_id": modeled_entity_id,
+        "modeled_entity_schema_name": "silver",
         "source_system_count": 2,
         "code_input_digest": "c" * 64,
         "sql_generation_guide_version_id": 91,
@@ -92,20 +93,20 @@ def _row(object_id: int) -> dict[str, Any]:
                 "system_code": "GDS",
                 "connection_code": "WAREHOUSE",
                 "object_schema": "silver_crm",
-                "object_name": f"target_{object_id}",
+                "object_name": f"target_{modeled_entity_id}",
             },
             "source_systems": [
-                {"system_code": "CRM", "dependency_order": 10},
-                {"system_code": "ERP", "dependency_order": 20},
+                {"system_code": "CRM"},
+                {"system_code": "ERP"},
             ],
             "object_mappings": [
                 {
-                    "model_object_binding_id": object_id + 1000,
+
                     "source_system_id": 11,
                     "entity": {
                         "entity_type": "logical_entity",
-                        "entity_id": object_id + 2000,
-                        "entity_name": f"Target{object_id}",
+                        "entity_id": modeled_entity_id + 2000,
+                        "entity_schema_name": "silver", "entity_name": f"Target{modeled_entity_id}",
                     },
                     "transformation": {"kind": "direct"},
                 }
@@ -137,7 +138,7 @@ class ContextTransaction:
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
         assert "list_code_generation_target_context" in query
-        assert "workflow_run_object_selection" in query
+        assert "workflow_run_entity_selection" in query
         assert "run.sql_generation_guide_version_id" in query
         assert parameters == (7, 18, 1048, 7, "logical_entity")
         return self.rows
@@ -235,7 +236,7 @@ async def test_selected_system_context_preserves_other_files_and_rejects_partial
     row["applied_artifacts"] = [
         {
             "modeled_entity_type": "logical_entity",
-            "modeled_entity_name": "Target501",
+            "modeled_entity_schema_name": "silver", "modeled_entity_name": "Target501",
             "artifact_name": "erp.sql",
             "artifact_type": "sql_file",
             "generated_code_content": "SELECT 1",

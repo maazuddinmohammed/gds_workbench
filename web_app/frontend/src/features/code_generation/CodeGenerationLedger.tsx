@@ -57,7 +57,7 @@ export function CodeGenerationLedger({
   onPreviousPage: () => void;
 }) {
   const filteredItems = useMemo(
-    () => items.filter((item) => artifactStatusMatches(item, artifactStatus) && (!objectIds.length || objectIds.includes(String(item.target.object_id)))),
+    () => items.filter((item) => artifactStatusMatches(item, artifactStatus) && (!objectIds.length || objectIds.includes(String(item.target.entity_id)))),
     [artifactStatus, items, objectIds],
   );
   const visibleItems = useMemo(
@@ -69,14 +69,14 @@ export function CodeGenerationLedger({
     [visibleItems],
   );
   const allVisibleSelected = selectableItems.length > 0
-    && selectableItems.every((item) => selectedTargetIds.has(item.target.object_id));
+    && selectableItems.every((item) => selectedTargetIds.has(item.target.entity_id));
   const columns = useMemo<ColumnDef<CodeGenerationTarget>[]>(() => [
     {
       id: "select",
       header: () => (
         <input
           type="checkbox"
-          aria-label="Select all visible target Objects"
+          aria-label="Select all visible target Entities"
           checked={allVisibleSelected}
           disabled={!selectableItems.length}
           onChange={(event) => onToggleVisible(visibleItems.filter((item) => !item.is_locked), event.target.checked)}
@@ -87,19 +87,19 @@ export function CodeGenerationLedger({
           type="checkbox"
           aria-label={`Select ${targetName(row.original)}`}
           disabled={row.original.is_locked}
-          checked={selectedTargetIds.has(row.original.target.object_id)}
+          checked={selectedTargetIds.has(row.original.target.entity_id)}
           onChange={(event) => onToggleTarget(row.original, event.target.checked)}
         />
       ),
     },
     {
       id: "target",
-      header: "Target Object",
+      header: "Entity",
       cell: ({ row }) => (
         <span className="code-target-name">
           <strong>{targetName(row.original)}</strong>
           <span>
-            {row.original.target.system_code} · {row.original.target.zone_code}
+            {row.original.entity_type === "logical_entity" ? "Logical Entity" : "Dimensional Entity"}
           </span>
         </span>
       ),
@@ -212,7 +212,7 @@ export function CodeGenerationLedger({
     data: visibleItems,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    getRowId: (row) => String(row.target.object_id),
+    getRowId: (row) => String(row.target.entity_id),
   });
 
   return (
@@ -225,12 +225,12 @@ export function CodeGenerationLedger({
       <header className="code-generation-ledger-heading">
         <div>
           <p className="eyebrow">Eligible delivery targets</p>
-          <h2 id="code-generation-targets-heading">Target Objects</h2>
+          <h2 id="code-generation-targets-heading">Target Entities</h2>
         </div>
-        <span>{filteredItems.length} Objects · Page {state.pageNumber}</span>
+        <span>{filteredItems.length} Entities · Page {state.pageNumber}</span>
       </header>
       {state.isLoading ? (
-        <div className="surface-state" aria-busy="true">Loading eligible target Objects…</div>
+        <div className="surface-state" aria-busy="true">Loading eligible target Entities…</div>
       ) : state.isDenied ? (
         <div className="surface-state is-error" role="alert">
           You do not have permission to view Code Generation targets.
@@ -244,14 +244,14 @@ export function CodeGenerationLedger({
           The Model changed while Code Generation targets were loading. Refresh before generating SQL.
         </div>
       ) : items.length === 0 ? (
-        <div className="empty-state compact">No eligible target Objects in this layer.</div>
+        <div className="empty-state compact">No eligible target Entities in this layer.</div>
       ) : visibleItems.length === 0 ? (
         <div className="empty-state compact">
-          No Objects match these filters.
+          No Entities match these filters.
         </div>
       ) : (
         <div className="workflow-table-scroll code-generation-table-scroll">
-          <table aria-label="Code Generation target Objects">
+          <table aria-label="Code Generation target Entities">
             <thead>
               {table.getHeaderGroups().map((group) => (
                 <tr key={group.id}>
@@ -267,7 +267,7 @@ export function CodeGenerationLedger({
             </thead>
             <tbody>
               {table.getRowModel().rows.map((row) => {
-                const selected = selectedTargetIds.has(row.original.target.object_id);
+                const selected = selectedTargetIds.has(row.original.target.entity_id);
                 return (
                   <tr key={row.id} className={selected ? "is-selected" : ""} aria-selected={selected}>
                     {row.getVisibleCells().map((cell) => (
@@ -315,8 +315,8 @@ function CodeGenerationFilters({ items, objectIds, onObjectIdsChange, artifactSt
   return <form className="workflow-filterbar code-generation-filterbar" aria-label="Filter Code Generation targets" onSubmit={(event) => {
     event.preventDefault(); onObjectIdsChange(draftObjectIds); onArtifactStatusChange(draftStatus);
   }}>
-    <MultiSelectField label="Objects" value={draftObjectIds} onChange={setDraftObjectIds}
-      options={items.map((item) => [String(item.target.object_id), `${item.target.system_code} · ${targetName(item)}`])} />
+    <MultiSelectField label="Entities" emptyLabel="All Entities" value={draftObjectIds} onChange={setDraftObjectIds}
+      options={items.map((item) => [String(item.target.entity_id), `${item.target.entity_type === "logical_entity" ? "Logical Entity" : "Dimensional Entity"} · ${targetName(item)}`])} />
     <label><span>Status</span><select aria-label="Status" value={draftStatus}
       onChange={(event) => setDraftStatus(event.target.value as ArtifactStatusFilter)}>
       <option value="">All statuses</option><option value="current">Current</option>
@@ -353,5 +353,5 @@ function artifactState(target: CodeGenerationTarget): Exclude<ArtifactStatusFilt
 }
 
 function targetName(target: CodeGenerationTarget): string {
-  return `${target.target.object_schema}.${target.target.object_name}`;
+  return `${target.target.entity_schema_name}.${target.target.entity_name}`;
 }

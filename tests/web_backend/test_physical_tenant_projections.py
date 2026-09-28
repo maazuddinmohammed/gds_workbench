@@ -4,7 +4,7 @@ from gds_etl_workbench.tools.catalog.get_objects import _OBJECTS_SQL
 from gds_etl_workbench.tools.catalog.list_objects import _LIST_OBJECTS_SQL
 from gds_workbench_api.features.mapping.preparation_repository import (
     _MAPPING_SOURCE_CONTEXT_SQL,
-    _MAPPING_TARGET_CONTEXT_SQL,
+    _MAPPING_ENTITY_CONTEXT_SQL,
 )
 from gds_workbench_api.features.metadata.repository import (
     _ATTRIBUTE_ROWS_SQL,
@@ -65,12 +65,11 @@ def test_authoring_context_separates_physical_and_source_tenants() -> None:
 
 
 def test_mapping_authoring_context_uses_connection_tenant_for_physical_keys() -> None:
-    target = _compact(_MAPPING_TARGET_CONTEXT_SQL)
+    target = _compact(_MAPPING_ENTITY_CONTEXT_SQL)
     source = _compact(_MAPPING_SOURCE_CONTEXT_SQL)
 
-    assert "target_tenant.tenant_id = target_connection.tenant_id" in target
-    assert "'source_tenant_id', target_object.source_tenant_id" in target
-    assert "'tenant_id', target_tenant.tenant_id" in target
+    assert "workflow.modeled_entity" in target
+    assert "core.object" not in target
     assert "source_placement_tenant.tenant_id = source_connection.tenant_id" in source
     assert "'source_tenant_id', source_object.source_tenant_id" in source
     assert "'tenant_id', source_placement_tenant.tenant_id" in source

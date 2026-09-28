@@ -68,6 +68,7 @@ export function AnalysisDetail({
           <h2 id="analysis-basis-heading">Relationship inference</h2>
           <span>{finding.relationship_kind.replaceAll("_", " ")} · {finding.relationship_confidence} confidence</span>
         </header>
+        <p className="field-help">Inferred cardinality: {finding.inferred_cardinality.replaceAll("_", " ")}</p>
         <p className="detail-prose is-prominent">{finding.relationship_basis}</p>
         {finding.relationship_basis_truncated ? (
           <p className="drawer-warning">The backend returned a safely bounded relationship basis.</p>
@@ -77,6 +78,7 @@ export function AnalysisDetail({
       <section className="detail-section" aria-labelledby="analysis-evidence-heading">
         <header><h2 id="analysis-evidence-heading">Recorded validation evidence</h2></header>
         {finding.observed_cardinality ? <p className="field-help">Observed cardinality: {finding.observed_cardinality.replaceAll("_", " ")}, based on recorded endpoint counts.</p> : null}
+        {finding.cardinality_mismatch ? <p className="drawer-warning">Recorded counts differ from the inferred cardinality. Review the evidence; measured data does not establish a business constraint. This does not block modeling.</p> : null}
         {finding.evidence ? (
           <>
             <div className="table-scroll analysis-count-comparison">

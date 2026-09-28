@@ -23,7 +23,12 @@ class CreateWorkflowRunRequest(BaseModel):
     expected_model_revision: int = Field(gt=0)
     model_workflow: ModelWorkflow
     workflow_execution_mode: ExecutionMode | None = None
-    selected_object_ids: list[Annotated[int, Field(gt=0, strict=True)]]
+    selected_object_ids: list[Annotated[int, Field(gt=0, strict=True)]] = Field(
+        default_factory=list[int]
+    )
+    selected_entity_ids: list[Annotated[int, Field(gt=0, strict=True)]] = Field(
+        default_factory=list[int]
+    )
     selected_system_codes: list[
         Annotated[str, Field(min_length=1, max_length=100, strict=True)]
     ] = Field(default_factory=list)
@@ -94,6 +99,18 @@ class CreateWorkflowRunRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_workflow_shape(self) -> Self:
+        entity_workflow = self.model_workflow in {"dimensional", "mapping", "code_generation"}
+        selected_ids = self.selected_entity_ids if entity_workflow else self.selected_object_ids
+        if (entity_workflow and self.selected_object_ids) or (
+            not entity_workflow and self.selected_entity_ids
+        ):
+            raise ValueError(
+                "Select modeled Entities only for Dimensional, Mapping, and Code Generation"
+            )
+        if len(self.selected_entity_ids) != len(set(self.selected_entity_ids)):
+            raise ValueError("Selected Entity IDs must be unique")
+        if self.model_workflow == "dimensional" and self.modeled_entity_type != "logical_entity":
+            raise ValueError("Dimensional input requires Logical Entities")
         if self.description_targets is not None:
             targets = self.description_targets
             objects = {target.object_id for target in targets}
@@ -101,7 +118,7 @@ class CreateWorkflowRunRequest(BaseModel):
             identities = {(target.object_id, target.attribute_id) for target in targets}
             if (
                 self.model_workflow != "metadata_enrichment"
-                or objects != set(self.selected_object_ids)
+                or objects != set(selected_ids)
                 or len(attributes) != 1
                 or len(identities) != len(targets)
             ):
@@ -121,14 +138,8 @@ class CreateWorkflowRunRequest(BaseModel):
                 raise ValueError("Code Generation inputs are unavailable for this workflow")
         elif self.model_workflow == "code_generation":
             if (
-                (
-                    self.code_generation_coverage_mode == "selected_targets"
-                    and not self.selected_object_ids
-                )
-                or (
-                    self.code_generation_coverage_mode == "all_eligible_targets"
-                    and self.selected_object_ids
-                )
+                (self.code_generation_coverage_mode == "selected_targets" and not selected_ids)
+                or (self.code_generation_coverage_mode == "all_eligible_targets" and selected_ids)
                 or self.code_generation_coverage_mode is None
             ):
                 raise ValueError("Code Generation coverage is invalid")
@@ -137,7 +148,7 @@ class CreateWorkflowRunRequest(BaseModel):
                 raise ValueError(
                     "System selection is available only for Validation or Code Generation"
                 )
-            if not self.selected_object_ids:
+            if not selected_ids:
                 raise ValueError("Selected Object IDs are required")
             if (
                 self.code_generation_coverage_mode is not None
@@ -172,11 +183,14 @@ class CreateWorkflowRunRequest(BaseModel):
         if not agentic and (self.agent is not None or self.prompt_overrides):
             raise ValueError("Deterministic workflows cannot use agent inputs")
 
-        if self.model_workflow == "code_generation" and (self.modeled_entity_type is None):
+        if entity_workflow and (self.modeled_entity_type is None):
             raise ValueError("Code Generation requires a modeled Entity type")
-        if self.model_workflow not in {"code_generation", "validation"} and (
-            self.modeled_entity_type is not None
-        ):
+        if self.model_workflow not in {
+            "dimensional",
+            "mapping",
+            "code_generation",
+            "validation",
+        } and (self.modeled_entity_type is not None):
             raise ValueError("Modeled Entity type is unavailable for this workflow")
 
         required_mapping_inputs = (
@@ -190,22 +204,21 @@ class CreateWorkflowRunRequest(BaseModel):
         )
         if self.model_workflow == "mapping":
             if self.mapping_targets is not None:
-                pairs = {(item.object_id, item.source_system_id) for item in self.mapping_targets}
+                pairs = {
+                    (item.modeled_entity_id, item.source_system_id) for item in self.mapping_targets
+                }
                 if (
                     self.mapping_operation != "generate"
                     or self.mapping_coverage_mode != "selected_targets"
                     or self.mapping_source_system_id is not None
                     or len(pairs) != len(self.mapping_targets)
-                    or {item.object_id for item in self.mapping_targets}
-                    != set(self.selected_object_ids)
+                    or {item.modeled_entity_id for item in self.mapping_targets}
+                    != set(selected_ids)
                 ):
                     raise ValueError(
                         "Mapping requires unique targets matching the selected Objects"
                     )
-            elif (
-                any(value is None for value in required_mapping_inputs)
-                or len(self.selected_object_ids) != 1
-            ):
+            elif any(value is None for value in required_mapping_inputs) or len(selected_ids) != 1:
                 raise ValueError("Mapping requires one complete target selection")
         elif self.mapping_targets is not None or any(value is not None for value in mapping_inputs):
             raise ValueError("Mapping inputs are unavailable for this workflow")

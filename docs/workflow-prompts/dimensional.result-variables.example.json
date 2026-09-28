@@ -14,10 +14,12 @@
   ],
   "dimensional_entity_list": [
     {
-      "dimensional_entity_name": "SalesFact"
+      "dimensional_entity_name": "SalesFact",
+      "dimensional_entity_schema_name": "gold"
     },
     {
-      "dimensional_entity_name": "CustomerDimension"
+      "dimensional_entity_name": "CustomerDimension",
+      "dimensional_entity_schema_name": "gold"
     }
   ],
   "dimensional_entities": [
@@ -61,7 +63,8 @@
           "is_locked": false,
           "source_role": "grain_rule"
         }
-      ]
+      ],
+      "dimensional_entity_schema_name": "gold"
     },
     {
       "dimensional_entity_name": "CustomerDimension",
@@ -92,25 +95,30 @@
           "status": "active",
           "is_locked": false
         }
-      ]
+      ],
+      "dimensional_entity_schema_name": "gold"
     }
   ],
   "dimensional_attribute_list": [
     {
       "dimensional_entity_name": "SalesFact",
-      "dimensional_attribute_name": "SalesKey"
+      "dimensional_attribute_name": "SalesKey",
+      "dimensional_entity_schema_name": "gold"
     },
     {
       "dimensional_entity_name": "SalesFact",
-      "dimensional_attribute_name": "CustomerKey"
+      "dimensional_attribute_name": "CustomerKey",
+      "dimensional_entity_schema_name": "gold"
     },
     {
       "dimensional_entity_name": "SalesFact",
-      "dimensional_attribute_name": "OrderCount"
+      "dimensional_attribute_name": "OrderCount",
+      "dimensional_entity_schema_name": "gold"
     },
     {
       "dimensional_entity_name": "CustomerDimension",
-      "dimensional_attribute_name": "CustomerKey"
+      "dimensional_attribute_name": "CustomerKey",
+      "dimensional_entity_schema_name": "gold"
     }
   ],
   "dimensional_attributes": [
@@ -143,7 +151,8 @@
           "status": "active",
           "is_locked": false
         }
-      ]
+      ],
+      "dimensional_entity_schema_name": "gold"
     },
     {
       "dimensional_entity_name": "SalesFact",
@@ -174,7 +183,8 @@
           "status": "active",
           "is_locked": false
         }
-      ]
+      ],
+      "dimensional_entity_schema_name": "gold"
     },
     {
       "dimensional_entity_name": "SalesFact",
@@ -205,7 +215,8 @@
           "status": "active",
           "is_locked": false
         }
-      ]
+      ],
+      "dimensional_entity_schema_name": "gold"
     },
     {
       "dimensional_entity_name": "CustomerDimension",
@@ -236,7 +247,8 @@
           "status": "active",
           "is_locked": false
         }
-      ]
+      ],
+      "dimensional_entity_schema_name": "gold"
     }
   ],
   "dimensional_relationship_list": [
@@ -246,7 +258,9 @@
       "to_dimensional_entity_name": "CustomerDimension",
       "to_dimensional_attribute_name": "CustomerKey",
       "dimensional_relationship_kind": "fact_dimension",
-      "dimensional_relationship_role_name": null
+      "dimensional_relationship_role_name": null,
+      "from_dimensional_entity_schema_name": "gold",
+      "to_dimensional_entity_schema_name": "gold"
     }
   ],
   "dimensional_relationships": [
@@ -265,7 +279,9 @@
       "dimensional_relationship_basis": "The saved sales policy assigns each order to one customer dimension member.",
       "dimensional_relationship_cardinality_basis": "Each order references one customer member; a customer member may receive many orders.",
       "dimensional_relationship_status": "active",
-      "dimensional_relationship_is_locked": false
+      "dimensional_relationship_is_locked": false,
+      "from_dimensional_entity_schema_name": "gold",
+      "to_dimensional_entity_schema_name": "gold"
     }
   ]
 }

@@ -1,3 +1,4 @@
+import type { LogicalTransport, LogicalEntity } from "../logical/api";
 import type { ModelInputScopeApi, ModelInputScopeDetail } from "../model_input_scope/api";
 import { EnrichmentAttributeSelection, type EnrichmentAttributeSelectionValue } from "../metadata_enrichment/EnrichmentAttributeSelection";
 import { useEffect, useRef, useState } from "react";
@@ -35,6 +36,7 @@ export function WorkflowRunDialog({
   workflow = "analysis",
   executeCreated,
   enrichmentObject,
+  logicalEntitySource,
   enrichmentTarget,
   readEnrichmentObject,
   initialSelectedIds = [],
@@ -48,6 +50,7 @@ export function WorkflowRunDialog({
   kind: AnalysisRunKind;
   workflow?: AgenticWorkflow;
   enrichmentObject?: ModelInputScopeDetail;
+  logicalEntitySource?: Pick<LogicalTransport, "listLogicalEntities">;
   enrichmentTarget?: "object" | "attribute";
   readEnrichmentObject?: ModelInputScopeApi["readModelInputScopeObject"];
   initialSelectedIds?: number[];
@@ -72,18 +75,39 @@ export function WorkflowRunDialog({
       ? "Logical"
       : "Dimensional";
   const workflowName = workflow === "analysis" ? "Analysis" : authoringWorkflowName;
-  const scopeZoneName = isEnrichment ? "Source and Bronze" : isDimensional ? "Silver" : "Bronze";
+  const scopeZoneName = isEnrichment ? "Source and Bronze" : isDimensional ? "Logical Entity" : "Bronze";
   const scopeQuery = useQuery({
     queryKey: isEnrichment
       ? workflowCreationQueryKeys.enrichmentScope(tenantId, model.model_id)
-      : isDimensional
-      ? workflowCreationQueryKeys.dimensionalScope(tenantId, model.model_id)
       : workflowCreationQueryKeys.bronzeScope(tenantId, model.model_id),
+    enabled: !isDimensional,
     queryFn: () => loadWorkflowScope(
-      api, tenantId, model.model_id, isEnrichment ? "enrichment" : isDimensional ? "dimensional" : "bronze",
+      api, tenantId, model.model_id, isEnrichment ? "enrichment" : "bronze",
     ),
   });
-  const scopeRows = enrichmentObject
+  const entityQuery = useQuery({
+    queryKey: ["dimensional-logical-inputs", tenantId, model.model_id],
+    enabled: isDimensional,
+    queryFn: async () => {
+      if (!logicalEntitySource) throw new Error("Logical Entity selection unavailable.");
+      const items: LogicalEntity[] = [];
+      const cursors = new Set<string>();
+      let cursor: string | undefined;
+      let modelRevision: number | undefined;
+      for (;;) {
+        const page = await logicalEntitySource.listLogicalEntities(tenantId, model.model_id, { status: "active" }, 200, cursor);
+        if (modelRevision !== undefined && page.model_revision !== modelRevision) throw new Error("Model changed while loading Entities.");
+        modelRevision = page.model_revision;
+        items.push(...page.items);
+        if (!page.next_cursor) return { items, modelRevision };
+        if (cursors.has(page.next_cursor)) throw new Error("Entity cursor repeated.");
+        cursors.add(page.next_cursor);
+        cursor = page.next_cursor;
+      }
+    },
+  });
+  const selectionQuery = isDimensional ? entityQuery : scopeQuery;
+  const scopeRows = isDimensional ? (entityQuery.data?.items ?? []).map((item) => ({ id: item.logical_entity_id, objectId: item.logical_entity_id, attributeId: null as number | null, name: item.logical_entity_name, context: item.logical_entity_schema_name, revision: "" })) : enrichmentObject
     ? (enrichmentObject.is_locked || enrichmentObject.source_tenant_id !== tenantId ? [] : enrichmentObject.attributes
       .filter((item) => item.is_active && !item.is_locked && /^[0-9a-f]{64}$/.test(item.review_revision ?? ""))
       .map((item) => ({ id: item.attribute_id, objectId: enrichmentObject.object_id, attributeId: item.attribute_id as number | null,
@@ -91,7 +115,7 @@ export function WorkflowRunDialog({
     : (scopeQuery.data?.items ?? []).filter((item) => !isEnrichment || (!item.is_locked && item.source_tenant_id === tenantId && /^[0-9a-f]{64}$/.test(item.review_revision ?? "")))
       .map((item) => ({ id: item.object_id, objectId: item.object_id, attributeId: null as number | null, name: item.object_name,
         context: isEnrichment ? `${item.object_schema ?? ""} · ${item.zone_code}` : `${item.system_code} · ${item.source_tenant_code}`, revision: item.review_revision ?? "" }));
-  const recordName = isAttributeEnrichment ? "Attributes" : "Objects";
+  const recordName = isAttributeEnrichment ? "Attributes" : isDimensional ? "Entities" : "Objects";
   const capabilitiesQuery = useQuery({
     queryKey: workflowCreationQueryKeys.capabilities,
     queryFn: api.readAgentCapabilities,
@@ -125,8 +149,9 @@ export function WorkflowRunDialog({
         expected_model_revision: model.model_revision,
         model_workflow: workflow,
         workflow_execution_mode: kind === "inference" ? value.executionMode : null,
-        selected_object_ids: selectedObjectIds,
-        requested_batch_id: isEnrichment ? null : value.requestedBatchId.trim() || null,
+        selected_object_ids: isDimensional ? [] : selectedObjectIds,
+        ...(isDimensional ? { selected_entity_ids: selectedObjectIds, modeled_entity_type: "logical_entity" as const } : {}),
+        requested_batch_id: isEnrichment || isDimensional ? null : value.requestedBatchId.trim() || null,
         agent: kind === "inference" ? agent : null,
         prompt_overrides: {},
         ...(isEnrichment ? { description_targets: descriptionTargets } : {}),
@@ -143,8 +168,8 @@ export function WorkflowRunDialog({
   const effectiveObjects = scopeQuery.data?.items.filter((item) => effectiveRows.some((row) => row.objectId === item.object_id)) ?? [];
   const batchSystems = new Set(effectiveObjects.map((item) => item.system_id));
   const batchIsIncoherent = Boolean(requestedBatchId.trim()) && batchSystems.size > 1;
-  const revisionChanged = scopeQuery.data?.modelRevision !== undefined
-    && scopeQuery.data.modelRevision !== model.model_revision;
+  const revisionChanged = selectionQuery.data?.modelRevision !== undefined
+    && selectionQuery.data.modelRevision !== model.model_revision;
   const { mutation: runMutation, pendingRunId: pendingStart } = useWorkflowRunSubmission({
     api,
     tenantId,
@@ -347,7 +372,7 @@ export function WorkflowRunDialog({
                     />
                     <span>
                       <strong>All {isEnrichment ? "unlocked " : ""}{recordName}</strong>
-                      {!isEnrichment ? <small>Every eligible active {scopeZoneName} Object in Scope</small> : null}
+                      {!isEnrichment ? <small>Every active {scopeZoneName}{isDimensional ? "" : " Object in Scope"}</small> : null}
                     </span>
                   </label>
                   <label>
@@ -369,9 +394,9 @@ export function WorkflowRunDialog({
               <strong id="workflow-run-scope-heading">{isEnrichment ? `Unlocked ${recordName}` : `Active ${scopeZoneName} Scope`}</strong>
               <span>{effectiveRows.length} selected</span>
             </header>
-            {scopeQuery.isPending ? (
+            {selectionQuery.isPending ? (
               <div className="surface-state compact" aria-busy="true">Loading active Scope…</div>
-            ) : scopeQuery.isError ? (
+            ) : selectionQuery.isError ? (
               <div className="surface-state is-error compact" role="alert">
                 Active Scope could not be loaded.
               </div>
@@ -402,7 +427,7 @@ export function WorkflowRunDialog({
           </section></>}
 
 
-          {!isEnrichment ? <form.Field name="requestedBatchId">
+          {!isEnrichment && !isDimensional ? <form.Field name="requestedBatchId">
             {(field) => (
               <label className="batch-input">
                 <span>Batch ID (optional)</span>
@@ -464,8 +489,8 @@ export function WorkflowRunDialog({
                 disabled={
                   runMutation.isPending
                   || (pendingStart === null && (
-                    scopeQuery.isPending
-                    || scopeQuery.isError
+                    selectionQuery.isPending
+                    || selectionQuery.isError
                     || (isAttributeEnrichment ? !attributeSelection.ready || scopeQuery.isFetching : effectiveRows.length === 0)
                     || batchIsIncoherent
                     || revisionChanged

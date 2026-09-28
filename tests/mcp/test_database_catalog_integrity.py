@@ -37,7 +37,9 @@ def test_installed_catalog_matches_the_exhaustive_inventory(
         re.findall(
             r"^- `((?:reference|core|security|model|workflow|application|mcp)"
             r"\.[a-z][a-z0-9_]*)` —",
-            _inventory_section(inventory, "## 2. Functions", "## 3. Installed triggers"),
+            _inventory_section(
+                inventory, "## 2. Functions", "## 3. Installed triggers"
+            ),
             re.MULTILINE,
         )
     )
@@ -136,8 +138,10 @@ def test_installed_catalog_matches_the_exhaustive_inventory(
     assert [
         (trigger["trigger_name"], trigger["relation_name"]) for trigger in triggers
     ] == trigger_pairs
-    assert all(trigger["function_name"] == trigger["trigger_name"] for trigger in triggers)
-    assert row == {"table_count": 102, "function_count": 89, "trigger_count": 19}
+    assert all(
+        trigger["function_name"] == trigger["trigger_name"] for trigger in triggers
+    )
+    assert row == {"table_count": 100, "function_count": 93, "trigger_count": 23}
 
 
 def test_every_release_table_has_a_valid_primary_key_and_valid_constraints(
@@ -327,3 +331,13 @@ def test_release_functions_and_object_ownership_remain_hardened(
     assert unsafe_definers == []
     assert public_functions == []
     assert runtime_owned_objects == []
+
+
+def test_mapping_system_dependency_table_is_not_installed(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        row = connection.execute(
+            "SELECT to_regclass('workflow.mapping_source_system_dependency') IS NULL AS absent"
+        ).fetchone()
+    assert row == {"absent": True}

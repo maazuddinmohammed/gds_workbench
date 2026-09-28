@@ -15,6 +15,7 @@ from .preparation_contracts import (
     MappingAttributeReadiness,
     MappingAuthorizer,
     MappingHeaderReadiness,
+    MappingModeledEntity,
     MappingPreparation,
     MappingReadiness,
     MappingReadinessIssue,
@@ -101,8 +102,8 @@ class MappingReadinessService:
                 key=lambda item: (
                     item.context.headers[0].object_dependency_order,
                     item.context.source_system.system_code.casefold(),
-                    item.context.target.object_schema.casefold(),
-                    item.context.target.object_name.casefold(),
+                    item.context.target.entity_schema_name.casefold(),
+                    item.context.target.entity_name.casefold(),
                 ),
             )
         )
@@ -135,41 +136,37 @@ def assess_mapping_readiness(
     if not context.source_system.is_active:
         issue("source_system.inactive", "The selected source System is inactive.")
 
-    expected_zone = "silver" if plan.route == "logical_to_silver" else "gold"
     target = context.target
-    if (
-        target.zone_code != expected_zone
-        or not target.is_active
-        or not target.scope_is_active
-        or not target.tenant_is_active
-        or not target.system_is_active
-        or not target.connection_is_active
-        or not target.is_global_data_store
-    ):
-        issue(
-            "target.unavailable", "The selected target is inactive, unbound, or in the wrong zone."
-        )
-    if not target.attributes or any(not item.is_active for item in target.attributes):
-        issue("target.attributes_unavailable", "Every bound target Attribute must be active.")
-
-    if any(
-        not source.object.is_active
-        or not source.object.scope_is_active
-        or not source.object.tenant_is_active
-        or not source.object.system_is_active
-        or not source.object.connection_is_active
-        or not source.object.attributes
-        for source in context.sources
-    ):
-        issue("source.objects_unavailable", "An executable source is inactive or incomplete.")
-    expected_source_zones = (
-        {"source", "bronze"} if plan.route == "logical_to_silver" else {"silver"}
-    )
-    if any(source.object.zone_code not in expected_source_zones for source in context.sources):
-        issue(
-            "source.zone_invalid",
-            "An executable source is in the wrong zone for this Mapping route.",
-        )
+    if target.status != "active":
+        issue("target.unavailable", "The selected Entity is inactive.")
+    if not target.attributes or any(item.status != "active" for item in target.attributes):
+        issue("target.attributes_unavailable", "Every target Attribute must be active.")
+    for source in context.sources:
+        if isinstance(source.object, MappingModeledEntity):
+            if plan.route == "logical_to_silver" and source.object.entity_type != "logical_entity":
+                issue("source.layer_invalid", "Logical Mapping lookups must be Logical Entities.")
+            if (
+                source.object.entity_type == target.entity_type
+                and source.object.entity_id == target.entity_id
+            ):
+                issue("source.self_reference", "An Entity cannot be its own Mapping lookup.")
+            available = source.object.status == "active" and bool(source.object.attributes)
+        else:
+            if plan.route != "logical_to_silver" or source.object.zone_code not in {
+                "source",
+                "bronze",
+            }:
+                issue("source.zone_invalid", "Mapping source does not match the selected layer.")
+            available = (
+                source.object.is_active
+                and source.object.scope_is_active
+                and source.object.tenant_is_active
+                and source.object.system_is_active
+                and source.object.connection_is_active
+                and bool(source.object.attributes)
+            )
+        if not available:
+            issue("source.objects_unavailable", "A source is inactive or incomplete.")
 
     header = context.headers[0]
     modeled_attributes = {
@@ -179,9 +176,9 @@ def assess_mapping_readiness(
     }
     children = {item.modeled_attribute_id: item for item in header.attribute_mappings}
     if header.modeled_entity.status != "active" or not modeled_attributes:
-        issue("binding.entity_unavailable", "The target has no active bound modeled Entity.")
+        issue("entity.unavailable", "The target has no active modeled Entity.")
     if set(children) != set(modeled_attributes):
-        issue("binding.attribute_coverage", "Every active bound Attribute needs Mapping context.")
+        issue("entity.attribute_coverage", "Every active modeled Attribute needs Mapping context.")
 
     templates = {item.output_template_id: item for item in context.output_templates.definitions}
     for target_type, selection in (
@@ -220,7 +217,7 @@ def assess_mapping_readiness(
             or child.is_locked
             or (
                 plan.selected_attribute_ids is not None
-                and child.target_attribute_id not in plan.selected_attribute_ids
+                and child.modeled_attribute_id not in plan.selected_attribute_ids
             )
         ):
             action = (
@@ -247,7 +244,7 @@ def assess_mapping_readiness(
         )
     if plan.selected_attribute_ids is not None:
         eligible_ids = {
-            child.target_attribute_id
+            child.modeled_attribute_id
             for child in header.attribute_mappings
             if not child.is_locked and not header.is_locked
         }
@@ -263,7 +260,7 @@ def assess_mapping_readiness(
         )
 
     readiness_header = MappingHeaderReadiness(
-        model_object_binding_id=header.model_object_binding_id,
+        modeled_entity_id=header.modeled_entity_id,
         mapping_object_id=header.mapping_object_id,
         action=object_action,
         attribute_actions=tuple(attribute_actions),

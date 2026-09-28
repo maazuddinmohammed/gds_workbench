@@ -45,13 +45,17 @@ def model_key_fields(family: str, kind: str) -> tuple[str, ...]:
                 "conceptual_relationship_name",
             )
         )
-    if kind in {"submodel", "entity"}:
-        return (f"{family}_{kind}_name",)
+    if kind == "submodel":
+        return (f"{family}_submodel_name",)
+    if kind == "entity":
+        return (f"{family}_entity_schema_name", f"{family}_entity_name")
     if kind == "attribute":
-        return (f"{family}_entity_name", f"{family}_attribute_name")
+        return (f"{family}_entity_schema_name", f"{family}_entity_name", f"{family}_attribute_name")
     fields = (
+        f"from_{family}_entity_schema_name",
         f"from_{family}_entity_name",
         f"from_{family}_attribute_name",
+        f"to_{family}_entity_schema_name",
         f"to_{family}_entity_name",
         f"to_{family}_attribute_name",
     )
@@ -71,7 +75,7 @@ def project_context_inputs(
         "source_context": deepcopy(context.get("source_context", [])),
         "gds_context": deepcopy(context.get("gds_context", [])),
         "ingestion_mapping": deepcopy(context.get("ingestion_mapping", [])),
-        "logical_bindings": deepcopy(context.get("logical_bindings", [])),
+        "selected_logical_entities": deepcopy(context.get("selected_logical_entities", [])),
         "object_context": [],
         "object_attribute_context": [],
         "object_relationship_context": [],
@@ -174,6 +178,7 @@ def project_context_inputs(
         values["naming_instructions"] = effective_naming_instructions(
             workflow, details[f"{layer}_model_naming_instructions"]
         )
+        values["schemas"] = deepcopy(details[f"{workflow}_schemas"])
         values["audit_columns"] = deepcopy(details[f"{layer}_model_audit_columns_template"])
         if workflow == "dimensional":
             values["technical_columns"] = deepcopy(details["gold_model_technical_columns_template"])

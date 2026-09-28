@@ -1,6 +1,6 @@
 ---
 name: atlas-process-metadata
-description: Register or update Process Groups and Processes for generated transformation files using applied Code, Mapping, target Bindings and confirmed orchestration details. Resolve Copy Group links, runtime paths and execution order, then prepare a local Metadata Change Set for review and Apply.
+description: Register or update Process Groups and Processes for generated transformation files using applied Code, Mapping, registered runtime targets and confirmed orchestration details. Resolve Copy Group links, runtime paths and execution order, then prepare a local Metadata Change Set for review and Apply.
 ---
 
 # Process metadata
@@ -10,7 +10,7 @@ Connect selected transformation artifacts to the framework's Process metadata. R
 ## Establish context and scope
 
 1. Follow the [working method](../../references/working-method.md). Reuse Tenant, working directory, Model, selected layer/targets and artifact choices. SQL execution is normally unnecessary. Start/reuse Workbench through its verified launcher.
-2. Follow [Metadata Snapshot](../../references/snapshots/metadata.md) freshness rules, preserving unfinished local work. For registration from generated files, also load current applied [Model Snapshot](../../references/snapshots/model.md) Code, source-System assignments, Mapping and target Bindings. Pending Code is not applied context. A focused correction to existing Process metadata can use [Metadata authoring](../atlas-metadata-authoring/SKILL.md) without requiring a Model or regenerating code.
+2. Follow [Metadata Snapshot](../../references/snapshots/metadata.md) freshness rules, preserving unfinished local work. For registration from generated files, also load current applied [Model Snapshot](../../references/snapshots/model.md) Code, source-System assignments and Mapping; separately resolve registered runtime targets. Pending Code is not applied context. A focused correction to existing Process metadata can use [Metadata authoring](../atlas-metadata-authoring/SKILL.md) without requiring a Model or regenerating code.
 3. Inspect existing Process Groups/Processes, actual Copy Groups, registered Process Types and earlier local edits. Use the Metadata Snapshot for complete Process identities; current Process read tools omit location/executable. Follow [existing work and update scope](../../references/working-method.md#existing-work-and-update-scope); reuse explicit selection and preserve unrelated/manual work. A change to code text alone does not require a new Process record when its registration and invocation contract are unchanged.
 
 ## Resolve the artifact-to-Process plan
@@ -19,14 +19,14 @@ Derive known values from applied records and explicit prior decisions. Ask one c
 
 | Detail | How to resolve it |
 |---|---|
-| Target | Use the selected artifact's active Entity Binding and complete registered physical Object key. Its GDS placement System can differ from the Process Group's originating System. |
+| Target | Resolve the selected artifact's schema-qualified Entity against the separately registered runtime Object. Verify its complete physical Object key and compatible columns before Process authoring. Its GDS placement System can differ from the Process Group's originating System. |
 | Owning Tenant | Process ownership must match the target Object's source owner, and its physical Connection must be permitted for that owner. Code source-System assignments do not carry a Tenant. Resolve the actual owning Tenant/Copy Group rather than substituting the physical GDS Tenant; report a mismatch with the selected Metadata owner/Change Set Tenant. |
 | Contributing Systems | Read active Code source-System assignments and Mapping. Preserve the approved combined/separate file layout; this workflow does not regroup code. |
 | Process Group and Copy Group | Reuse the actual applicable group per Tenant/System/Zone and its ingestion Copy Group. Preserve split Copy Groups. If several could apply, ask which ingestion should trigger the processing; never invent a stored "all" or "default" group. Propose a new group only when needed for the requested registration. |
 | Executable and type | Preserve the artifact's exact filename and resolve the corresponding active registered Process Type. Follow the [SQL/Python consumer convention](../../references/metadata/read-only/process-type.md); an accepted Code storage type alone does not establish runtime support. |
 | Runtime location | Reuse a confirmed applicable framework path convention or ask for the actual path and any System/target exceptions. A local `code/` folder, Snapshot path or downloadable artifact URL is not automatically its runtime location. |
 | Process execution order | Use verified Mapping dependencies, existing schedule and explicit repeated invocations to explain a proposed sequence. Mapping allows zero; Process order must be positive. No mechanical conversion is established: resolve the intended positive stages rather than copy, offset or renumber blindly. Ask only where the dependency/placement is unresolved. |
-| Process Group dependency order | Follow the [agreed group-order design](../../references/metadata/tables/process-group.md#dependency-order), including new-group default 1. It is separate from Mapping's System order and requires the Atlas-compatible backend/Snapshot schema. Existing installations need operator upgrade and historical order review. |
+| Process Group dependency order | Follow the [agreed group-order design](../../references/metadata/tables/process-group.md#dependency-order), including new-group default 1. Process Groups own this runtime ordering; Mapping has no separate System order. Existing installations need operator upgrade and historical order review. |
 
 Example missing-details question: "For [files], what runtime location should each use? Which Copy Group should trigger [ambiguous group]? Should [unresolved process] run before or after [dependency]?" Include only unresolved items, with actual names and concrete options where known. Do not ask this entire list on every entry.
 

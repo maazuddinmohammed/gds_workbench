@@ -98,7 +98,7 @@ def project_logical_audit_policy(
         if entity.logical_entity_status != "active":
             continue
         entity_attributes: list[LogicalAttributeRecord] = [
-            record for key, record in attributes.items() if key[0] == entity_key
+            record for key, record in attributes.items() if key[:2] == entity_key
         ]
         # Existing tables retain their approved key/ordinal contract. New tables
         # get an own generated key without relabelling the source business key.
@@ -124,6 +124,7 @@ def project_logical_audit_policy(
                         "The generated key name conflicts with a business Attribute."
                     )
                 surrogate = LogicalAttributeRecord(
+                    logical_entity_schema_name=entity.logical_entity_schema_name,
                     logical_entity_name=entity.logical_entity_name,
                     logical_attribute_name=name,
                     logical_attribute_definition=(
@@ -162,7 +163,7 @@ def project_logical_audit_policy(
             default=0,
         )
         for offset, column in enumerate(policy.columns):
-            key = (entity_key, normalize_model_key_value(column.semantic_name))
+            key = (*entity_key, normalize_model_key_value(column.semantic_name))
             existing = attributes.get(key)
             desired = _policy_attribute(
                 entity=entity,
@@ -253,6 +254,7 @@ def _policy_attribute(
             "A configured Logical audit column conflicts with an existing Attribute."
         )
     desired = LogicalAttributeRecord(
+        logical_entity_schema_name=entity.logical_entity_schema_name,
         logical_entity_name=entity.logical_entity_name,
         logical_attribute_name=column.semantic_name,
         logical_attribute_definition=column.definition or column.semantic_name,
@@ -278,12 +280,16 @@ def _policy_attribute(
     return desired
 
 
-def _entity_key(record: LogicalEntityRecord) -> str:
-    return normalize_model_key_value(record.logical_entity_name)
-
-
-def _attribute_key(record: LogicalAttributeRecord) -> tuple[str, str]:
+def _entity_key(record: LogicalEntityRecord) -> tuple[str, str]:
     return (
+        normalize_model_key_value(record.logical_entity_schema_name),
+        normalize_model_key_value(record.logical_entity_name),
+    )
+
+
+def _attribute_key(record: LogicalAttributeRecord) -> tuple[str, str, str]:
+    return (
+        normalize_model_key_value(record.logical_entity_schema_name),
         normalize_model_key_value(record.logical_entity_name),
         normalize_model_key_value(record.logical_attribute_name),
     )

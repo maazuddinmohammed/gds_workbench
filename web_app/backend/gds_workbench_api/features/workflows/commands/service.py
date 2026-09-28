@@ -60,7 +60,7 @@ SELECT created.created,
   FROM application.create_workflow_run(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS created
 """
 
@@ -179,6 +179,7 @@ class DatabaseWorkflowCommandService:
                         if command.mapping_targets is not None
                         else None,
                         command.code_generation_file_layout,
+                        command.selected_entity_ids,
                     ),
                 )
         except Exception as error:

@@ -27,6 +27,7 @@ from gds_etl_workbench.domain.errors import (
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisValidationEvidence as AnalysisValidationEvidence,
 )
+from gds_etl_workbench.domain.modeling_records import InferredCardinality
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 _MAX_RELATIONSHIPS = 50_000
@@ -132,6 +133,7 @@ class AnalysisValidationRelationship(BaseModel):
     relationship_kind: str = Field(min_length=1, max_length=100)
     relationship_confidence: Literal["low", "medium", "high"]
     relationship_basis: str = Field(min_length=1, max_length=8_000)
+    inferred_cardinality: InferredCardinality = "unknown"
     analysis_result_status: Literal["active"]
     analysis_result_is_locked: bool
     gds_connection_id: int = Field(gt=0)

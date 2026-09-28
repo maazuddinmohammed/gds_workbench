@@ -73,11 +73,11 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 | Snapshot catalog | Dataset directory inside a Snapshot: section, data/schema paths, keys and row counts. Use it to locate relevant records and their authoring schemas. |
 | Effective result | Snapshot records overlaid with pending changes using complete natural keys. |
 | Local Change Set | Sparse draft containing complete proposed records. Related edits accumulate locally before governed submission; omitted applied records remain unchanged. |
-| Target registration | Derive Silver/Gold Object and Attribute metadata plus local creation DDL from selected applied modeled Entities. Metadata Apply registers definitions; it does not execute DDL or create Model Bindings. |
-| Entity Binding | Workflow assigning Logical Entities to registered Silver Objects or Dimensional Entities to Gold Objects, plus every active modeled Attribute to its target column. Two [Model Binding datasets](model/binding.md) record these assignments; loading expressions belong to Mapping. |
-| Mapping branch | One bound target Entity and originating source System, with Object steps and per-Attribute population rules. Several branches can feed one target; Code Generation decides their file grouping. |
+| Target registration | Derive Silver/Gold Object and Attribute metadata plus local creation DDL from selected applied modeled Entities. Metadata Apply registers definitions; it does not execute DDL or change modeled ownership. |
+| Entity ownership | Mapping and Code belong to a schema-qualified Logical or Dimensional Entity. Target registration is a separate operational handoff; see [Entity ownership](model/entity-ownership.md). |
+| Mapping branch | One schema-qualified modeled Entity and originating source System, with Object steps and per-Attribute population rules. Several branches can feed one target; Code Generation decides their file grouping. |
 | Object / Attribute transformation | Object steps define relational operations, grain and branch behavior; Attribute rules define individual values or database/framework generation. See the shared [Mapping templates](model/mapping-documents.md). |
-| Complete Mapping view | Derived Mapping instructions plus resolved target/source metadata, physical column bindings and dependency orders. Coding and Validation consume it without reconstructing upstream model design; not another editable dataset. |
+| Complete Mapping view | Derived Mapping instructions plus resolved target/source metadata, modeled column definitions and Object dependency orders. Coding and Validation consume it without reconstructing upstream model design; not another editable dataset. Source-System list order does not define precedence or execution. |
 | Code artifact | One modeled target's named generated file and content. Its Model record is separate from local file placement and does not execute/deploy code. See [Code records](model/generated-code.md). |
 | Code source-System assignment | Separate record linking a contributing System to an artifact. Every active mapped System for an authored target has exactly one active assignment; combined files can have several. |
 | Validation Group / Check | Model-owned, System-associated definitions: a purposeful collection and its individual SQL assertions. [Validation records](model/validation.md) store queries/expected operands, not execution results; association alone does not filter queried rows. |
@@ -87,6 +87,7 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 | SQL environment | Selected registered execution environment: dev, qa, stg, prod. |
 | Query scope | Exact Objects, Attributes, environment, batch selections and measurement context used for evidence; governed by the shared [query-scope guide](query-scope.md). |
 | Relationship candidate | A possible connection supported by names, metadata or business context; it still needs evaluation. |
+| Inferred cardinality | Intended multiplicity from Analysis's from endpoint to its to endpoint, stored as `inferred_cardinality` and explained in `relationship_basis`. May be unknown; independent of measured counts. |
 | Observed cardinality | Multiplicity evidenced in the inspected population; distinguish it from the intended business rule and optional participation. See [finding relationships](logical-build/find-relationships.md). |
 | Tenant Lock | Server-governed write lease; distinct from Object/Attribute protection flags. |
 | Locked / unlocked | Content protection state; unlocked records still require valid authoring intent and eligibility. See [record state](record-state.md) for inherited protection and nested locks. |

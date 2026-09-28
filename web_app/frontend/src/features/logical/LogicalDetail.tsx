@@ -126,7 +126,7 @@ function LogicalEntityView({
       <LogicalDetailHeader
         tenantId={tenantId} modelId={modelId}
         eyebrow={`Logical Entity ${entity.logical_entity_id}`}
-        title={entity.logical_entity_name}
+        title={`${entity.logical_entity_schema_name}.${entity.logical_entity_name}`}
         status={entity.logical_entity_status}
         locked={entity.logical_entity_is_locked}
       />
@@ -201,7 +201,7 @@ function LogicalAttributeView({
         <header><h2 id="logical-attribute-overview">Attribute definition</h2></header>
         <p className="detail-prose is-prominent">{attribute.logical_attribute_definition}</p>
         <dl className="detail-fact-grid">
-          <Fact label="Entity" value={attribute.logical_entity_name} />
+          <Fact label="Entity" value={`${attribute.logical_entity_schema_name}.${attribute.logical_entity_name}`} />
         </dl>
         <h3>Type and nullability</h3>
         <dl className="detail-fact-grid">
@@ -248,14 +248,14 @@ function LogicalRelationshipView({
           <section>
             <small>From</small>
             <strong>
-              {relationship.from_logical_entity_name}.{relationship.from_logical_attribute_name}
+              {relationship.from_logical_entity_schema_name}.{relationship.from_logical_entity_name}.{relationship.from_logical_attribute_name}
             </strong>
           </section>
           <span aria-hidden="true">→</span>
           <section>
             <small>To</small>
             <strong>
-              {relationship.to_logical_entity_name}.{relationship.to_logical_attribute_name}
+              {relationship.to_logical_entity_schema_name}.{relationship.to_logical_entity_name}.{relationship.to_logical_attribute_name}
             </strong>
           </section>
         </div>
@@ -314,7 +314,7 @@ function LogicalSubmodelView({
           <div className="normalized-membership-ledger">
             {submodel.entities.map((membership) => (
               <article key={membership.logical_entity_submodel_id}>
-                <strong>{membership.logical_entity_name}</strong>
+                <strong>{membership.logical_entity_schema_name}.{membership.logical_entity_name}</strong>
                 <dl className="support-facts">
                   <Fact label="Entity ID" value={String(membership.logical_entity_id)} />
                   <Fact label="Type" value={humanize(membership.logical_entity_type)} />

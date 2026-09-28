@@ -9,9 +9,9 @@ const physicalFields = ["tenant_code", "system_code", "connection_code", "object
 const keys = {
   conceptual_object: ["conceptual_object_name"],
   conceptual_relationship: ["from_conceptual_object_name", "to_conceptual_object_name", "conceptual_relationship_name"],
-  logical_entity: ["logical_entity_name"],
-  logical_attribute: ["logical_entity_name", "logical_attribute_name"],
-  logical_relationship: ["from_logical_entity_name", "from_logical_attribute_name", "to_logical_entity_name", "to_logical_attribute_name", "logical_relationship_name"],
+  logical_entity: ["logical_entity_schema_name", "logical_entity_name"],
+  logical_attribute: ["logical_entity_schema_name", "logical_entity_name", "logical_attribute_name"],
+  logical_relationship: ["from_logical_entity_schema_name", "from_logical_entity_name", "from_logical_attribute_name", "to_logical_entity_schema_name", "to_logical_entity_name", "to_logical_attribute_name", "logical_relationship_name"],
   analysis_result: [...["from", "to"].flatMap((prefix) => [...physicalFields, "attribute_name"].map((field) => `${prefix}_${field}`)), "relationship_kind"],
   modeling_assertion_document: ["modeling_assertion_document_name"],
   modeling_assertion_record: ["modeling_assertion_record_key"],
@@ -22,8 +22,8 @@ const physical = (name, attribute) => ({ tenant_code: "Tenant", system_code: "Sy
   object_schema: "bronze", object_name: name, ...(attribute ? { attribute_name: attribute } : {}) });
 const source = (name, attribute) => ({ support_source_type: attribute ? "attribute" : "object",
   [attribute ? "source_attribute" : "source_object"]: physical(name, attribute), status: "active" });
-const entity = (name) => ({ logical_entity_name: name, logical_entity_status: "active", sources: [source(name)] });
-const attr = (entityName, name, natural = false, surrogate = false) => ({ logical_entity_name: entityName,
+const entity = (name) => ({ logical_entity_schema_name: "silver", logical_entity_name: name, logical_entity_status: "active", sources: [source(name)] });
+const attr = (entityName, name, natural = false, surrogate = false) => ({ logical_entity_schema_name: "silver", logical_entity_name: entityName,
   logical_attribute_name: name, logical_attribute_status: "active", logical_attribute_is_natural_key: natural,
   logical_attribute_is_surrogate_key: surrogate, logical_attribute_is_audit_column: false,
   logical_attribute_data_type: "BIGINT", sources: surrogate ? [] : [source(entityName, name)] });
@@ -51,15 +51,15 @@ function sales() {
   const analysis = {
     ...Object.fromEntries(Object.entries(physical("Order", "CustomerCode")).map(([field, value]) => [`from_${field}`, value])),
     ...Object.fromEntries(Object.entries(physical("Customer", "CustomerCode")).map(([field, value]) => [`to_${field}`, value])),
-    relationship_kind: "reference", analysis_result_status: "active", validation_policy_version: "1.0.0",
+    relationship_kind: "reference", inferred_cardinality: "many_to_one", analysis_result_status: "active", validation_policy_version: "1.0.0",
     validation_result: "supported", validation_source_non_null_count: 10, validation_source_distinct_count: 3,
     validation_target_non_null_count: 4, validation_target_distinct_count: 4,
     validation_source_missing_target_count: 0, validation_unused_target_count: 1,
     validation_duplicate_target_key_count: 0,
   };
   const relationship = { logical_relationship_name: "OrderCustomer", logical_relationship_status: "active",
-    from_logical_entity_name: "Order", from_logical_attribute_name: "CustomerCode",
-    to_logical_entity_name: "Customer", to_logical_attribute_name: "CustomerID", logical_relationship_cardinality: "many_to_one" };
+    from_logical_entity_schema_name: "silver", from_logical_entity_name: "Order", from_logical_attribute_name: "CustomerCode",
+    to_logical_entity_schema_name: "silver", to_logical_entity_name: "Customer", to_logical_attribute_name: "CustomerID", logical_relationship_cardinality: "many_to_one" };
   const records = { logical_entity: [entity("Order"), entity("Customer")], logical_attribute: [attr("Order", "OrderCode", true),
     attr("Order", "CustomerCode"), attr("Customer", "CustomerID", false, true), attr("Customer", "CustomerCode", true)],
     logical_relationship: [relationship], analysis_result: [analysis] };
@@ -109,6 +109,46 @@ test("metadata-only Analysis supports explicit inference without fabricated SQL 
   assert.ok(result.warnings.some(issue => issue.code === "analysis_inferred"));
 });
 
+test("Analysis inference disagrees with observed uniqueness as a warning without rewriting evidence", () => {
+  for (const [sourceCount, targetCount, observed] of [
+    [3, 4, "one_to_one"], [3, 8, "one_to_many"], [10, 4, "many_to_one"], [10, 8, "many_to_many"],
+  ]) {
+    const { analysis } = sales();
+    analysis.validation_source_non_null_count = sourceCount;
+    analysis.validation_target_non_null_count = targetCount;
+    analysis.validation_duplicate_target_key_count = targetCount - analysis.validation_target_distinct_count;
+    analysis.validation_result = targetCount === 4 ? "supported" : "unsupported";
+    analysis.inferred_cardinality = observed === "one_to_one" ? "many_to_one" : "one_to_one";
+    const before = structuredClone(analysis);
+    const graph = model({ analysis_result: [analysis] });
+    const result = evaluateQuality(graph, null);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.required, false);
+    assert.equal(result.warnings.filter(issue => issue.code === "analysis_inferred_cardinality_mismatch").length, 1);
+    assert.deepEqual(analysis, before);
+    analysis.inferred_cardinality = observed;
+    assert.equal(evaluateQuality(graph, null).warnings.some(issue => issue.code === "analysis_inferred_cardinality_mismatch"), false);
+  }
+});
+
+test("Analysis mismatch review requires known inference and complete nonempty measurements", () => {
+  for (const mutate of [
+    analysis => { analysis.inferred_cardinality = "unknown"; },
+    analysis => { delete analysis.inferred_cardinality; },
+    analysis => { for (const field of Object.keys(analysis).filter(field => field.startsWith("validation_"))) analysis[field] = null; },
+    analysis => { analysis.validation_source_distinct_count = null; },
+    analysis => { analysis.validation_policy_version = null; },
+    analysis => { analysis.validation_result = "inconclusive"; analysis.validation_source_non_null_count = 0; analysis.validation_source_distinct_count = 0; analysis.validation_unused_target_count = 4; },
+    analysis => { analysis.validation_source_distinct_count = 20; },
+    analysis => { analysis.analysis_result_status = "inactive"; },
+  ]) {
+    const { analysis } = sales();
+    analysis.inferred_cardinality = "one_to_one";
+    mutate(analysis);
+    assert.equal(evaluateQuality(model({ analysis_result: [analysis] }), null).warnings.some(issue => issue.code === "analysis_inferred_cardinality_mismatch"), false);
+  }
+});
+
 test("supported label cannot hide contradictory counts, an empty domain, or wrong lineage", () => {
   for (const mutation of [
     (analysis) => { analysis.validation_duplicate_target_key_count = 1; },
@@ -141,7 +181,7 @@ test("provided malformed, duplicate and unknown decisions cannot be hidden by an
   const decisions = decisionsFor(graph);
   decisions.reviewed = true;
   decisions.entities.push(structuredClone(decisions.entities[0]));
-  decisions.entities.push({ ...structuredClone(decisions.entities[0]), key: { logical_entity_name: "Imaginary" } });
+  decisions.entities.push({ ...structuredClone(decisions.entities[0]), key: { logical_entity_schema_name: "silver", logical_entity_name: "Imaginary" } });
   const result = evaluateQuality(graph, decisions, options);
   for (const expected of ["decisions_missing_or_invalid", "decision_duplicate", "decision_unknown"]) assert.ok(codes(result).includes(expected));
 });
@@ -202,8 +242,8 @@ test("topology excludes self edges from connectivity and reports framework expan
   const audit = { ...attr("One", "CreatedDate"), logical_attribute_is_audit_column: true };
   const money = { ...attr("One", "Cost"), logical_attribute_data_type: "DECIMAL(5,5)" };
   const relationship = { logical_relationship_name: "Parent", logical_relationship_status: "active",
-    from_logical_entity_name: "One", from_logical_attribute_name: "ParentID",
-    to_logical_entity_name: "One", to_logical_attribute_name: "OneID", logical_relationship_cardinality: "many_to_one" };
+    from_logical_entity_schema_name: "silver", from_logical_entity_name: "One", from_logical_attribute_name: "ParentID",
+    to_logical_entity_schema_name: "silver", to_logical_entity_name: "One", to_logical_attribute_name: "OneID", logical_relationship_cardinality: "many_to_one" };
   const records = { logical_entity: [one, two], logical_attribute: [attr("One", "OneID", false, true), audit, money], logical_relationship: [relationship] };
   const result = evaluateQuality(model(records, {}, records), null);
   assert.equal(result.metrics.self_relationships, 1);
@@ -234,8 +274,8 @@ test("template is directly usable and root's hashed note-file object is supporte
 
 test("inverse one-to-many direction uses the same proven foreign-key lookup", () => {
   const { records, analysis, relationship } = sales();
-  Object.assign(relationship, { from_logical_entity_name: "Customer", from_logical_attribute_name: "CustomerID",
-    to_logical_entity_name: "Order", to_logical_attribute_name: "CustomerCode", logical_relationship_cardinality: "one_to_many" });
+  Object.assign(relationship, { from_logical_entity_schema_name: "silver", from_logical_entity_name: "Customer", from_logical_attribute_name: "CustomerID",
+    to_logical_entity_schema_name: "silver", to_logical_entity_name: "Order", to_logical_attribute_name: "CustomerCode", logical_relationship_cardinality: "one_to_many" });
   const graph = model(records);
   const decisions = decisionsFor(graph);
   decisions.relationships[0].evidence = [{ dataset: "analysis_result", key: recordKey("analysis_result", analysis) }];
@@ -253,7 +293,7 @@ test("supported counts must reconcile distinct source values with unused target 
 test("diagnostic examples are bounded while total counts remain accurate", () => {
   const graph = model({ logical_entity: [entity("Customer")], logical_attribute: [attr("Customer", "CustomerCode", true)] });
   const decisions = decisionsFor(graph);
-  for (let index = 0; index < 210; index += 1) decisions.entities.push({ ...structuredClone(decisions.entities[0]), key: { logical_entity_name: `Unknown${index}` } });
+  for (let index = 0; index < 210; index += 1) decisions.entities.push({ ...structuredClone(decisions.entities[0]), key: { logical_entity_schema_name: "silver", logical_entity_name: `Unknown${index}` } });
   const result = evaluateQuality(graph, decisions, options);
   assert.equal(result.errors.length, 200);
   assert.equal(result.error_count, 210);
@@ -279,7 +319,7 @@ test("one-column Analysis cannot prove a surrogate lookup against composite natu
 });
 
 test("incomplete or malformed modeling records return actionable diagnostics instead of crashing", () => {
-  for (const record of [null, 7, {}, { logical_entity_name: " " },
+  for (const record of [null, 7, {}, { logical_entity_schema_name: "silver", logical_entity_name: " " },
     { ...entity("Customer"), sources: {} }, { ...entity("Customer"), sources: [null] }]) {
     const graph = model({ logical_entity: [record] });
     const result = evaluateQuality(graph, null);
@@ -296,8 +336,8 @@ test("large graph metrics retain full counts while limiting all name examples", 
   const names = Array.from({ length: 650 }, (_, index) => `Entity${String(index).padStart(3, "0")}`);
   const records = { logical_entity: names.map(entity), logical_relationship: names.slice(1, 250).map((name, index) => ({
     logical_relationship_name: `Edge${index}`, logical_relationship_status: "active",
-    from_logical_entity_name: names[index], from_logical_attribute_name: "ID",
-    to_logical_entity_name: name, to_logical_attribute_name: "ParentID", logical_relationship_cardinality: "one_to_many",
+    from_logical_entity_schema_name: "silver", from_logical_entity_name: names[index], from_logical_attribute_name: "ID",
+    to_logical_entity_schema_name: "silver", to_logical_entity_name: name, to_logical_attribute_name: "ParentID", logical_relationship_cardinality: "one_to_many",
   })) };
   const result = evaluateQuality(model(records), {schema_version: "1.0", entities: [], relationships: [], pass: true});
   assert.equal(result.metrics.logical_entities, 650);
@@ -421,8 +461,8 @@ test("disconnected connected pairs prompt review even without isolated Entities"
   const names = ["Customer", "Order", "Product", "Category"];
   const edge = (from, to, status = "active") => ({
     logical_relationship_name: `${from}${to}`, logical_relationship_status: status,
-    from_logical_entity_name: from, from_logical_attribute_name: `${from}ID`,
-    to_logical_entity_name: to, to_logical_attribute_name: `${to}ID`,
+    from_logical_entity_schema_name: "silver", from_logical_entity_name: from, from_logical_attribute_name: `${from}ID`,
+    to_logical_entity_schema_name: "silver", to_logical_entity_name: to, to_logical_attribute_name: `${to}ID`,
     logical_relationship_cardinality: "many_to_one",
   });
   const bridge = edge("Order", "Product", "inactive");
@@ -435,7 +475,7 @@ test("disconnected connected pairs prompt review even without isolated Entities"
   assert.deepEqual(disconnected.errors, []);
   assert.equal(disconnected.metrics.connected_components, 2);
   assert.equal(disconnected.metrics.isolated_entity_count, 0);
-  assert.deepEqual(disconnected.metrics.components, [["Customer", "Order"], ["Category", "Product"]]);
+  assert.deepEqual(disconnected.metrics.components, [["silver.Customer", "silver.Order"], ["silver.Category", "silver.Product"]]);
   assert.ok(disconnected.warnings.some(warning => warning.code === "disconnected_components" && /Ask the user/.test(warning.message) && /do not invent joins/.test(warning.message)));
   assert.ok(!disconnected.warnings.some(warning => warning.code === "isolated_entities"));
   assert.equal(core.stableStringify([...graph]), before);
@@ -456,7 +496,7 @@ test("intentional standalone Entities remain warnings and unchanged locked Model
   assert.equal(unchanged.status, "not_required");
   assert.deepEqual(unchanged.errors, []);
   assert.equal(unchanged.metrics.connected_components, 1);
-  assert.deepEqual(unchanged.metrics.isolated_entities, ["Calendar"]);
+  assert.deepEqual(unchanged.metrics.isolated_entities, ["silver.Calendar"]);
   assert.ok(unchanged.warnings.some(warning => warning.code === "isolated_entities" && /Ask the user/.test(warning.message) && /intentionally standalone/.test(warning.message)));
   assert.ok(!unchanged.warnings.some(warning => warning.code === "disconnected_components"));
   assert.equal(core.stableStringify([...graph]), before);

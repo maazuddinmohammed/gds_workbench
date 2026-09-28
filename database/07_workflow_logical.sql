@@ -33,6 +33,7 @@ CREATE TABLE workflow.logical_entity (
     model_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
+    logical_entity_schema_name VARCHAR(400) NOT NULL,
     logical_entity_name VARCHAR(255) NOT NULL,
     logical_entity_definition TEXT NOT NULL,
     logical_entity_type VARCHAR(50) NOT NULL,
@@ -49,6 +50,9 @@ CREATE TABLE workflow.logical_entity (
     CONSTRAINT fk_logical_entity_model FOREIGN KEY (model_id)
         REFERENCES model.model (model_id) ON DELETE NO ACTION,
     CONSTRAINT uq_logical_entity_id_model UNIQUE (logical_entity_id, model_id),
+    CONSTRAINT ck_logical_entity_schema_name CHECK (
+        reference.is_nonblank(logical_entity_schema_name)
+    ),
     CONSTRAINT ck_logical_entity_name CHECK (reference.is_nonblank(logical_entity_name)),
     CONSTRAINT ck_logical_entity_definition CHECK (
         reference.is_nonblank(logical_entity_definition)
@@ -76,7 +80,9 @@ CREATE TABLE workflow.logical_entity (
 );
 
 CREATE UNIQUE INDEX ux_logical_entity_model_name
-    ON workflow.logical_entity (model_id, lower(btrim(logical_entity_name)));
+    ON workflow.logical_entity (
+        model_id, lower(btrim(logical_entity_schema_name)), lower(btrim(logical_entity_name))
+    );
 
 CREATE TABLE workflow.logical_entity_submodel (
     logical_entity_submodel_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

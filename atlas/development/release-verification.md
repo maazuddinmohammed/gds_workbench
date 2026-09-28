@@ -9,7 +9,7 @@ Use synthetic workspaces, in-memory/loopback MCP fixtures and fixture-created di
 | Initialization/resume | Reuse valid context; metadata-only SQL Never needs no unnecessary Model or query; retain unfinished drafts and operation evidence. |
 | Snapshot plus local editing | Preserve baseline and unrelated pending records; reject malformed/duplicate keys; detect concurrent edits without losing unsaved input. |
 | DBML | Include new, changed and untouched records; preserve active locked records; block invalid/prohibited edits and baseline-only fallback; bind output to the inputs actually rendered. |
-| Model-to-Code round trip | First own surrogate, complete natural keys, audit/history definitions and Mapping coverage survive registration/binding; SQL omits framework-populated columns correctly. |
+| Model-to-Code round trip | Schema-qualified Entity identity, first own surrogate, complete natural keys, audit/history definitions and Mapping coverage survive Entity-owned authoring; SQL omits framework-populated columns correctly. Optional metadata export is a separate handoff. |
 | Backend compatibility | Agreed Process/Copy order rules round-trip through storage, MCP, Snapshots, local drafts and validation; existing-record handling follows the selected compatibility rule. |
 | Stage and recovery | Direct/chunked/large-Code transport preserves canonical bytes/revisions; retained server changes remain reviewable; changed approval stops writes; uncertain writes require inspection. |
 | Apply | Local acknowledgement/Stage does not approve Apply; verify server review and result, refresh affected Snapshots and retain unrelated work. |

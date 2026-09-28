@@ -23,9 +23,9 @@ from gds_workbench_api.features.model_change_sets.contracts import (
 from gds_workbench_api.features.model_change_sets.service import DatabaseModelChangeSetService
 
 from tests.mcp.conftest import DisposablePostgres
-from tests.mcp.test_database_model_binding_order import (
-    assert_bound_layers_preserved,
-    bound_layer_graph,
+from tests.mcp.test_database_model_entity_order import (
+    assert_entity_layers_preserved,
+    entity_layer_graph,
 )
 from tests.mcp.test_database_model_change_set_round_trip import (
     StaticIdentityProvider,
@@ -41,7 +41,7 @@ async def test_web_validated_draft_applies_both_bound_layers_once(
     prefix = f"WEB_BINDING_{uuid4().hex}"
     model_id, tenant_id = _seed_model_foundation(web_postgres_database, code_prefix=prefix)
     _acquire_tenant_lock(web_postgres_database, tenant_id)
-    graph = bound_layer_graph(prefix)
+    graph = entity_layer_graph(prefix)
     scope_records = graph.pop("model_input_scope")
     # Scope is fixture setup, mirroring the separately governed Scope command.
     # Ordinary web drafts must never acquire direct Scope mutation authority.
@@ -169,7 +169,7 @@ async def test_web_validated_draft_applies_both_bound_layers_once(
             )
         async with database.read_transaction() as transaction:
             snapshot = await build_model_snapshot(transaction, replace(model, model_revision=2))
-            assert_bound_layers_preserved(snapshot, canonical)
+            assert_entity_layers_preserved(snapshot, canonical)
             current_physical = await load_model_physical_scope(transaction, model)
             assert validate_future_graph(
                 snapshot=snapshot, staged_documents={}, physical_scope=current_physical

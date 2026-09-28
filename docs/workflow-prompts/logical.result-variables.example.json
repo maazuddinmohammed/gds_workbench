@@ -14,10 +14,12 @@
   ],
   "logical_entity_list": [
     {
-      "logical_entity_name": "Customer"
+      "logical_entity_name": "Customer",
+      "logical_entity_schema_name": "silver"
     },
     {
-      "logical_entity_name": "Order"
+      "logical_entity_name": "Order",
+      "logical_entity_schema_name": "silver"
     }
   ],
   "logical_entities": [
@@ -53,7 +55,8 @@
           "status": "active",
           "is_locked": false
         }
-      ]
+      ],
+      "logical_entity_schema_name": "silver"
     },
     {
       "logical_entity_name": "Order",
@@ -97,21 +100,25 @@
           "status": "active",
           "is_locked": false
         }
-      ]
+      ],
+      "logical_entity_schema_name": "silver"
     }
   ],
   "logical_attribute_list": [
     {
       "logical_entity_name": "Customer",
-      "logical_attribute_name": "CustomerId"
+      "logical_attribute_name": "CustomerId",
+      "logical_entity_schema_name": "silver"
     },
     {
       "logical_entity_name": "Order",
-      "logical_attribute_name": "OrderId"
+      "logical_attribute_name": "OrderId",
+      "logical_entity_schema_name": "silver"
     },
     {
       "logical_entity_name": "Order",
-      "logical_attribute_name": "CustomerId"
+      "logical_attribute_name": "CustomerId",
+      "logical_entity_schema_name": "silver"
     }
   ],
   "logical_attributes": [
@@ -144,7 +151,8 @@
           "status": "active",
           "is_locked": false
         }
-      ]
+      ],
+      "logical_entity_schema_name": "silver"
     },
     {
       "logical_entity_name": "Order",
@@ -175,7 +183,8 @@
           "status": "active",
           "is_locked": false
         }
-      ]
+      ],
+      "logical_entity_schema_name": "silver"
     },
     {
       "logical_entity_name": "Order",
@@ -216,7 +225,8 @@
           "status": "active",
           "is_locked": false
         }
-      ]
+      ],
+      "logical_entity_schema_name": "silver"
     }
   ],
   "logical_relationship_list": [
@@ -225,7 +235,9 @@
       "from_logical_attribute_name": "CustomerId",
       "to_logical_entity_name": "Customer",
       "to_logical_attribute_name": "CustomerId",
-      "logical_relationship_name": "OrderCustomer"
+      "logical_relationship_name": "OrderCustomer",
+      "from_logical_entity_schema_name": "silver",
+      "to_logical_entity_schema_name": "silver"
     }
   ],
   "logical_relationships": [
@@ -241,7 +253,9 @@
       "logical_relationship_basis": "The saved business rule identifies the Order customer reference.",
       "logical_relationship_cardinality_basis": "The rule requires one Customer per Order and permits many Orders per Customer.",
       "logical_relationship_status": "active",
-      "logical_relationship_is_locked": false
+      "logical_relationship_is_locked": false,
+      "from_logical_entity_schema_name": "silver",
+      "to_logical_entity_schema_name": "silver"
     }
   ]
 }

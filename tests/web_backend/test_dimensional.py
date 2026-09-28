@@ -1,3 +1,4 @@
+from gds_workbench_api.features.dimensional.read_contracts import LogicalEntityReference, LogicalAttributeReference
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -10,20 +11,18 @@ from gds_workbench_api.features.dimensional import (
     DimensionalAttributeDetail,
     DimensionalAttributeFilters,
     DimensionalAttributePage,
-    DimensionalAttributePhysicalSource,
+    DimensionalAttributeLogicalSource,
     DimensionalAttributeSummary,
     DimensionalObjectDetail,
     DimensionalObjectPage,
     DimensionalObjectSummary,
-    DimensionalPhysicalObjectSource,
+    DimensionalLogicalEntitySource,
     DimensionalRelationshipDetail,
     DimensionalRelationshipFilters,
     DimensionalRelationshipPage,
     DimensionalRelationshipSummary,
     DimensionalSubmodelMembership,
     ModeledFilters,
-    PhysicalAttributeReference,
-    PhysicalObjectReference,
     create_dimensional_router,
 )
 
@@ -80,18 +79,11 @@ class StaticDimensionalService:
                 ),
             ),
             sources=(
-                DimensionalPhysicalObjectSource(
+                DimensionalLogicalEntitySource(
                     dimensional_entity_source_mapping_id=401,
                     workflow_run_id=None,
-                    support_source_type="object",
-                    source_object=PhysicalObjectReference(
-                        object_id=501,
-                        tenant_code="GRDM",
-                        system_code="SILVER",
-                        connection_code="lakehouse",
-                        object_schema="silver_sales",
-                        object_name="order",
-                    ),
+                    support_source_type="logical_entity",
+                    source_logical_entity=LogicalEntityReference(logical_entity_id=501, logical_entity_schema_name="silver_sales", logical_entity_name="order"),
                     source_role="fact_source",
                     source_order=1,
                     rationale="Supplies the fact grain.",
@@ -108,7 +100,7 @@ class StaticDimensionalService:
         return DimensionalObjectSummary(
             dimensional_entity_id=101,
             workflow_run_id=None,
-            dimensional_entity_name="Fact Order",
+            dimensional_entity_schema_name="gold", dimensional_entity_name="Fact Order",
             dimensional_entity_type="fact",
             dimensional_fact_type="transaction",
             dimensional_entity_dependency_order=0,
@@ -158,21 +150,12 @@ class StaticDimensionalService:
             dimensional_attribute_aggregation_basis=None,
             created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
             sources=(
-                DimensionalAttributePhysicalSource(
+                DimensionalAttributeLogicalSource(
                     dimensional_attribute_source_mapping_id=801,
                     workflow_run_id=None,
                     dimensional_entity_source_mapping_id=401,
-                    support_source_type="attribute",
-                    source_attribute=PhysicalAttributeReference(
-                        object_id=501,
-                        attribute_id=502,
-                        tenant_code="GRDM",
-                        system_code="SILVER",
-                        connection_code="lakehouse",
-                        object_schema="silver_sales",
-                        object_name="order",
-                        attribute_name="order_amount",
-                    ),
+                    support_source_type="logical_attribute",
+                    source_logical_attribute=LogicalAttributeReference(logical_entity_id=501, logical_entity_schema_name="silver_sales", logical_entity_name="order", logical_attribute_id=502, logical_attribute_name="order_amount"),
                     source_order=1,
                     rationale="Maps the governed amount.",
                     status="active",
@@ -189,7 +172,7 @@ class StaticDimensionalService:
             dimensional_attribute_id=701,
             workflow_run_id=None,
             dimensional_entity_id=101,
-            dimensional_entity_name="Fact Order",
+            dimensional_entity_schema_name="gold", dimensional_entity_name="Fact Order",
             dimensional_attribute_name="Order Amount",
             dimensional_attribute_data_type="DECIMAL(18,2)",
             dimensional_attribute_is_nullable=False,
@@ -255,11 +238,11 @@ class StaticDimensionalService:
             dimensional_relationship_id=901,
             workflow_run_id=None,
             from_dimensional_entity_id=101,
-            from_dimensional_entity_name="Fact Order",
+            from_dimensional_entity_schema_name="gold", from_dimensional_entity_name="Fact Order",
             from_dimensional_attribute_id=702,
             from_dimensional_attribute_name="Customer Key",
             to_dimensional_entity_id=102,
-            to_dimensional_entity_name="Dim Customer",
+            to_dimensional_entity_schema_name="gold", to_dimensional_entity_name="Dim Customer",
             to_dimensional_attribute_id=703,
             to_dimensional_attribute_name="Customer Key",
             dimensional_relationship_name="Order to Customer",
@@ -342,7 +325,7 @@ def test_dimensional_attribute_collection_and_detail_return_normalized_sources()
     assert collection.status_code == 200
     assert collection.json()["items"][0]["dimensional_attribute_role"] == "measure"
     assert detail.status_code == 200
-    assert detail.json()["sources"][0]["source_attribute"]["attribute_name"] == ("order_amount")
+    assert detail.json()["sources"][0]["source_logical_attribute"]["logical_attribute_name"] == ("order_amount")
 
 
 def test_dimensional_relationship_collection_and_detail_return_named_endpoints() -> None:

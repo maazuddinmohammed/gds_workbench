@@ -1,6 +1,6 @@
 ---
 name: atlas-target-registration
-description: Register or update Silver or Gold target Object and Attribute metadata from an applied Logical or Dimensional model, and optionally prepare local Databricks creation DDL. Use before Entity Binding; registration does not deploy tables or author Mapping.
+description: Register or update Silver or Gold target Object and Attribute metadata from an applied Logical or Dimensional model, and optionally prepare local Databricks creation DDL. Use for an operational/export handoff when registration is requested; model authoring does not require it. Registration does not deploy tables or author Mapping.
 ---
 
 # Target registration
@@ -30,11 +30,11 @@ Follow [DDL scope](references/target-definition.md#choose-ddl-output): DDL is op
 4. Save complete affected arrays in `metadata-change-set/silver_object.json` / `silver_attribute.json` or the Gold equivalents, under the appropriate owner context. Keep requested DDL local; report **not requested** when declined. Follow the target-definition projection/checks; do not infer completion from a generated file.
 5. Run [local validation](../../references/local-validation.md), shared [Metadata checks](../../references/metadata/validation.md) and the [registration checks](references/target-definition.md#registration-checks). Repair affected failures before dependent work. Record unsupported checks as pending, not passed.
 6. Complete the related local batch, then follow the shared [Change Set lifecycle](../../references/change-set-lifecycle.md) for Workbench review, extension staging, server validation and separate Apply approval of Metadata changes. Skip that lifecycle when the request produces only local DDL and no Metadata changes. Check input freshness before handoff/Apply; if a fresh Snapshot is required, reconcile it with pending work rather than replacing the draft blindly.
-7. After **verified Metadata Apply**, fetch/install a fresh Metadata Snapshot in the affected owner context and verify the registered targets. Report local DDL separately from registration status. Stop before [Entity Binding](../atlas-entity-binding/SKILL.md), Mapping, Process registration or Code Generation.
+7. After **verified Metadata Apply**, fetch/install a fresh Metadata Snapshot in the affected owner context and verify the registered targets. Report local DDL separately from registration status. Registration is a separate operational handoff; modeling, Mapping and Code Generation do not depend on it. Continue to Process registration only when requested.
 
 ## Gotchas
 
-- Current Model Binding requires target ownership to equal the Model Tenant. A correctly registered target with another owner may therefore be unbindable today. Surface this before preparing a downstream-ready result; never change true ownership to satisfy that limitation.
+- Resolve and authorize the true target owner for the operational handoff. Registration does not change the ownership of modeled Entities or grant runtime access.
 - Multiple owners require separate Metadata Change Sets and their governed authorization/locks. They do not form one atomic Apply.
 - Applying Metadata does not create or alter a Databricks table. `execute_databricks_sql` cannot execute persistent target DDL; generated DDL remains a user handoff artifact.
 - Schema/Connection/name changes to existing metadata keys follow the shared manual-change procedure. A new default schema is not permission to move or recreate existing targets.

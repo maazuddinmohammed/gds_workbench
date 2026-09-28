@@ -13,7 +13,9 @@ from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.server import create_mcp_server
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.contracts import decode_canonical_base64_fragment
+from gds_etl_workbench.application.change_sets.contracts import (
+    decode_canonical_base64_fragment,
+)
 from gds_etl_workbench.configuration import AuthMode, RuntimeSettings
 from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS_BY_NAME as METADATA_DATASETS_BY_NAME,
@@ -213,8 +215,9 @@ async def test_focused_model_reader_excludes_broad_code_and_validation_payloads(
         tools["read_model_section"].input_schema["$defs"]["ReadableModelDataset"]["enum"]
     )
 
-    assert {"model_object_binding", "model_attribute_binding"} <= readable
-    assert {"mapping_dependency", "mapping_object", "mapping_attribute"} <= readable
+    assert not ({"model_object_binding", "model_attribute_binding"} & readable)
+    assert {"mapping_object", "mapping_attribute"} <= readable
+    assert "mapping_dependency" not in readable
     assert (
         not {
             "generated_code",
@@ -273,6 +276,9 @@ async def test_public_schemas_exclude_removed_and_web_only_contracts() -> None:
         "application.",
         "default_agent_",
         "generated_sql_artifact",
+        "mapping_dependency",
+        "mapping_source_system_dependency",
+        "source_system_dependency_order",
         "mapping_package_document",
         "mapping_profile_key",
         "prompt_assignment",
@@ -337,10 +343,16 @@ def test_server_instructions_state_the_simple_authoring_boundary() -> None:
     assert instructions is not None
     text = " ".join(instructions.split())
 
-    assert "Metadata registration must Apply before Model Binding" in text
+    assert (
+        "Mapping and Code reference schema-qualified Logical or Dimensional Entities."
+        in instructions
+    )
+    assert (
+        "Target export and metadata registration are optional downstream handoff steps."
+        in instructions
+    )
+    assert "Model Binding" not in instructions
     assert "Model Input Scope must Apply before Profiling or model development" in text
-    assert "Metadata registration must Apply before Model Binding" in text
-    assert "Binding must Apply before Mapping" in text
     assert "Mapping must Apply before Code or Validation" in text
     assert "Clients own interaction and workflow orchestration" in text
     assert "Tenant Lock ownership, revision fencing, idempotency" in text

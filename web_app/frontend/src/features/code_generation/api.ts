@@ -3,7 +3,6 @@ import type { HttpRequest } from "../../core/http";
 import type {
   MappingEntityType,
   MappingModeledEntity,
-  MappingPhysicalObject,
   MappingSourceSystem,
 } from "../mapping/api";
 import type { ModelsApi } from "../models/api";
@@ -37,7 +36,7 @@ export interface CodeMappingSupport {
 
 export interface CodeGenerationTarget {
   is_locked: boolean;
-  target: MappingPhysicalObject;
+  target: MappingModeledEntity;
   entity_type: MappingEntityType;
   mapping_supports: CodeMappingSupport[];
   mapping_support_count: number;
@@ -76,7 +75,7 @@ export interface GeneratedSqlArtifactDetail {
   generated_sql_artifact_id: number;
   artifact_name: string;
   model_id: number;
-  target: MappingPhysicalObject;
+  target: MappingModeledEntity;
   entity_type: MappingEntityType;
   source_systems: MappingSourceSystem[];
   source_system_count: number;

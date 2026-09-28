@@ -52,8 +52,8 @@ INPUT_SHAPES: dict[str, Any] = {
         },
     },
     "gds_context": {
-        "description": "Unique GDS Connection/zone placements for the selected Objects; "
-        "empty for Source-only scope.",
+        "description": "GDS Connection/zone placements for selected physical inputs "
+        "or the Model-assigned placement of modeled Entity outputs.",
         "schema": {
             "type": "array",
             "items": {"$ref": "#/$defs/gds_context_entry"},
@@ -112,8 +112,8 @@ INPUT_SHAPES: dict[str, Any] = {
     },
     "object_attribute_context": {
         "description": "Eligible Attributes grouped by physical Object, "
-        "with current saved descriptions, types, flags, and "
-        "Profiles.",
+        "with current saved descriptions, types, flags, "
+        "and Profiles.",
         "schema": {
             "type": "array",
             "items": {"$ref": "#/$defs/object_attribute_context_entry"},
@@ -325,11 +325,12 @@ INPUT_SHAPES: dict[str, Any] = {
         },
     },
     "object_relationship_context": {
-        "description": "Existing applied relationships grouped by each "
-        "scoped physical Object. Incoming matches the "
-        "to-Object; outgoing matches the from-Object. "
-        "Include groups with empty arrays. Each "
-        "relationship retains all 17 approved "
+        "description": "Existing applied relationships grouped by "
+        "each scoped physical Object. Incoming matches "
+        "the to-Object; outgoing matches the "
+        "from-Object. Include groups with empty "
+        "arrays. Each relationship retains all 17 "
+        "approved "
         "endpoint/kind/confidence/basis/status/lock "
         "fields and excludes validation fields.",
         "schema": {
@@ -382,6 +383,15 @@ INPUT_SHAPES: dict[str, Any] = {
                         "relationship_kind": {"type": "string", "minLength": 1},
                         "relationship_confidence": {"enum": ["low", "medium", "high"]},
                         "relationship_basis": {"type": "string", "minLength": 1},
+                        "inferred_cardinality": {
+                            "enum": [
+                                "one_to_one",
+                                "one_to_many",
+                                "many_to_one",
+                                "many_to_many",
+                                "unknown",
+                            ]
+                        },
                         "analysis_result_status": {"enum": ["active", "inactive", "deprecated"]},
                         "analysis_result_is_locked": {"type": "boolean"},
                     },
@@ -401,6 +411,7 @@ INPUT_SHAPES: dict[str, Any] = {
                         "relationship_kind",
                         "relationship_confidence",
                         "relationship_basis",
+                        "inferred_cardinality",
                         "analysis_result_status",
                         "analysis_result_is_locked",
                     ],
@@ -410,15 +421,21 @@ INPUT_SHAPES: dict[str, Any] = {
         },
     },
     "modeling_assertions": {
-        "description": "Active assertions from active documents in authorized Model/System scope, "
-        "available automatically to all downstream workflows. Determine relevance from the "
-        "statement and task, not legacy layer flags. record_type is a free-text classification "
-        "of facts, definitions, relationships, conventions, constraints or requirements. "
-        "text is the statement; details.notes adds context, examples and exceptions. Other "
-        "details may contain formula, grain, dimensions, date_basis, exclusions, history or "
-        "acceptance_criteria; missing details are unspecified. document_name and source_location "
-        "identify provenance. confidence is evidence confidence, not priority. Keys link "
-        "model support to assertions; they are not physical lineage or proof of source data.",
+        "description": "Active assertions from active documents in authorized "
+        "Model/System scope, available automatically to all "
+        "downstream workflows. Determine relevance from the "
+        "statement and task, not legacy layer flags. "
+        "record_type is a free-text classification of facts, "
+        "definitions, relationships, conventions, constraints "
+        "or requirements. text is the statement; details.notes "
+        "adds context, examples and exceptions. Other details "
+        "may contain formula, grain, dimensions, date_basis, "
+        "exclusions, history or acceptance_criteria; missing "
+        "details are unspecified. document_name and "
+        "source_location identify provenance. confidence is "
+        "evidence confidence, not priority. Keys link model "
+        "support to assertions; they are not physical lineage "
+        "or proof of source data.",
         "schema": {
             "type": "array",
             "items": {"$ref": "#/$defs/modeling_assertions_entry"},
@@ -453,9 +470,9 @@ INPUT_SHAPES: dict[str, Any] = {
         "Conceptual record identities in the frozen Model. "
         "Natural-key fields only; no descriptions, types, "
         "supports, status, or locks. Use the corresponding "
-        "detail variable or reader to interpret a record. [] "
-        "means known empty; null means the applied Conceptual "
-        "section is unavailable.",
+        "detail variable or reader to interpret a record. "
+        "[] means known empty; null means the applied "
+        "Conceptual section is unavailable.",
         "schema": {
             "$defs": {
                 "ConceptualObjectKey": {
@@ -482,8 +499,8 @@ INPUT_SHAPES: dict[str, Any] = {
     "conceptual_objects": {
         "description": "Existing Conceptual objects, retaining all existing "
         "record fields and nested Object/Assertion supports, "
-        "confidence, lifecycle status, and locks. Known empty is "
-        "[]; null means the applied section is unavailable.",
+        "confidence, lifecycle status, and locks. Known empty "
+        "is []; null means the applied section is unavailable.",
         "schema": {
             "$defs": {
                 "AssertionRecordKey": {
@@ -763,8 +780,8 @@ INPUT_SHAPES: dict[str, Any] = {
         "descriptions, types, supports, status, or "
         "locks. Use the corresponding detail variable "
         "or reader to interpret a record. [] means "
-        "known empty; null means the applied Conceptual "
-        "section is unavailable.",
+        "known empty; null means the applied "
+        "Conceptual section is unavailable.",
         "schema": {
             "$defs": {
                 "ConceptualRelationshipKey": {
@@ -808,10 +825,10 @@ INPUT_SHAPES: dict[str, Any] = {
     },
     "conceptual_relationships": {
         "description": "Existing Conceptual relationships, retaining all "
-        "existing record fields and nested Object/Assertion "
-        "supports, confidence, lifecycle status, and locks. "
-        "Known empty is []; null means the applied section "
-        "is unavailable.",
+        "existing record fields and nested "
+        "Object/Assertion supports, confidence, lifecycle "
+        "status, and locks. Known empty is []; null means "
+        "the applied section is unavailable.",
         "schema": {
             "$defs": {
                 "AssertionRecordKey": {
@@ -1211,9 +1228,15 @@ INPUT_SHAPES: dict[str, Any] = {
                                 "pattern": "\\S",
                                 "title": "Logical Entity Name",
                                 "type": "string",
-                            }
+                            },
+                            "logical_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                                "pattern": "\\S",
+                            },
                         },
-                        "required": ["logical_entity_name"],
+                        "required": ["logical_entity_name", "logical_entity_schema_name"],
                         "additionalProperties": False,
                     },
                 },
@@ -1223,8 +1246,8 @@ INPUT_SHAPES: dict[str, Any] = {
     },
     "logical_entities": {
         "description": "Complete existing LogicalEntityRecord entries without "
-        "added or removed fields. Exact nominal keys; current saved "
-        "statuses and locks.",
+        "added or removed fields. Exact nominal keys; current "
+        "saved statuses and locks.",
         "schema": {
             "$defs": {
                 "AssertionRecordKey": {
@@ -1282,6 +1305,13 @@ INPUT_SHAPES: dict[str, Any] = {
                 "LogicalEntityRecord": {
                     "additionalProperties": False,
                     "properties": {
+                        "logical_entity_schema_name": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Logical Entity Schema Name",
+                            "type": "string",
+                        },
                         "logical_entity_name": {
                             "maxLength": 255,
                             "minLength": 1,
@@ -1355,6 +1385,7 @@ INPUT_SHAPES: dict[str, Any] = {
                         },
                     },
                     "required": [
+                        "logical_entity_schema_name",
                         "logical_entity_name",
                         "logical_entity_definition",
                         "logical_entity_type",
@@ -1501,8 +1532,8 @@ INPUT_SHAPES: dict[str, Any] = {
         },
     },
     "logical_attribute_list": {
-        "description": "Compact existing Logical attribute identities only. "
-        "All authorized applied records, including "
+        "description": "Compact existing Logical attribute identities "
+        "only. All authorized applied records, including "
         "inactive/deprecated history; obtain details to "
         "interpret status, meaning, and locks.",
         "schema": {
@@ -1526,8 +1557,18 @@ INPUT_SHAPES: dict[str, Any] = {
                                 "title": "Logical Attribute Name",
                                 "type": "string",
                             },
+                            "logical_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                                "pattern": "\\S",
+                            },
                         },
-                        "required": ["logical_entity_name", "logical_attribute_name"],
+                        "required": [
+                            "logical_entity_name",
+                            "logical_attribute_name",
+                            "logical_entity_schema_name",
+                        ],
                         "additionalProperties": False,
                     },
                 },
@@ -1536,9 +1577,9 @@ INPUT_SHAPES: dict[str, Any] = {
         },
     },
     "logical_attributes": {
-        "description": "Complete existing LogicalAttributeRecord entries without "
-        "added or removed fields. Exact nominal keys; current "
-        "saved statuses and locks.",
+        "description": "Complete existing LogicalAttributeRecord entries "
+        "without added or removed fields. Exact nominal keys; "
+        "current saved statuses and locks.",
         "schema": {
             "$defs": {
                 "AssertionRecordKey": {
@@ -1646,6 +1687,13 @@ INPUT_SHAPES: dict[str, Any] = {
                 "LogicalAttributeRecord": {
                     "additionalProperties": False,
                     "properties": {
+                        "logical_entity_schema_name": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Logical Entity Schema Name",
+                            "type": "string",
+                        },
                         "logical_entity_name": {
                             "maxLength": 255,
                             "minLength": 1,
@@ -1714,6 +1762,7 @@ INPUT_SHAPES: dict[str, Any] = {
                         },
                     },
                     "required": [
+                        "logical_entity_schema_name",
                         "logical_entity_name",
                         "logical_attribute_name",
                         "logical_attribute_definition",
@@ -1796,10 +1845,11 @@ INPUT_SHAPES: dict[str, Any] = {
         },
     },
     "logical_relationship_list": {
-        "description": "Compact existing Logical relationship identities "
-        "only. All authorized applied records, including "
-        "inactive/deprecated history; obtain details to "
-        "interpret status, meaning, and locks.",
+        "description": "Compact existing Logical relationship "
+        "identities only. All authorized applied "
+        "records, including inactive/deprecated history; "
+        "obtain details to interpret status, meaning, "
+        "and locks.",
         "schema": {
             "anyOf": [
                 {
@@ -1842,6 +1892,18 @@ INPUT_SHAPES: dict[str, Any] = {
                                 "title": "Logical Relationship Name",
                                 "type": "string",
                             },
+                            "from_logical_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                                "pattern": "\\S",
+                            },
+                            "to_logical_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                                "pattern": "\\S",
+                            },
                         },
                         "required": [
                             "from_logical_entity_name",
@@ -1849,6 +1911,8 @@ INPUT_SHAPES: dict[str, Any] = {
                             "to_logical_entity_name",
                             "to_logical_attribute_name",
                             "logical_relationship_name",
+                            "from_logical_entity_schema_name",
+                            "to_logical_entity_schema_name",
                         ],
                         "additionalProperties": False,
                     },
@@ -1859,13 +1923,27 @@ INPUT_SHAPES: dict[str, Any] = {
     },
     "logical_relationships": {
         "description": "Complete existing LogicalRelationshipRecord entries "
-        "without added or removed fields. Exact nominal keys; "
-        "current saved statuses and locks.",
+        "without added or removed fields. Exact nominal "
+        "keys; current saved statuses and locks.",
         "schema": {
             "$defs": {
                 "LogicalRelationshipRecord": {
                     "additionalProperties": False,
                     "properties": {
+                        "from_logical_entity_schema_name": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "From Logical Entity Schema Name",
+                            "type": "string",
+                        },
+                        "to_logical_entity_schema_name": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "To Logical Entity Schema Name",
+                            "type": "string",
+                        },
                         "logical_relationship_name": {
                             "maxLength": 255,
                             "minLength": 1,
@@ -1940,6 +2018,8 @@ INPUT_SHAPES: dict[str, Any] = {
                         },
                     },
                     "required": [
+                        "from_logical_entity_schema_name",
+                        "to_logical_entity_schema_name",
                         "logical_relationship_name",
                         "logical_relationship_definition",
                         "from_logical_entity_name",
@@ -1968,8 +2048,8 @@ INPUT_SHAPES: dict[str, Any] = {
         "saved Silver Model override when present, "
         "otherwise the existing Logical default. "
         "Advisory guidance; preserve saved identities. "
-        "This is resolved before rendering and remains a "
-        "Logical-local variable.",
+        "This is resolved before rendering and remains "
+        "a Logical-local variable.",
         "schema": {"maxLength": 32768, "minLength": 1, "pattern": "\\S", "type": "string"},
     },
     "logical.audit_columns": {
@@ -2041,11 +2121,11 @@ INPUT_SHAPES: dict[str, Any] = {
         },
     },
     "dimensional_submodel_list": {
-        "description": "Compact existing Dimensional submodel identities "
-        "only. Retain complete natural keys, including "
-        "nullable role for relationship identity. Read "
-        "details to interpret meaning, lifecycle, and "
-        "locks.",
+        "description": "Compact existing Dimensional submodel "
+        "identities only. Retain complete natural keys, "
+        "including nullable role for relationship "
+        "identity. Read details to interpret meaning, "
+        "lifecycle, and locks.",
         "schema": {
             "anyOf": [
                 {
@@ -2070,9 +2150,9 @@ INPUT_SHAPES: dict[str, Any] = {
         },
     },
     "dimensional_submodels": {
-        "description": "Complete existing DimensionalSubmodelRecord entries. "
-        "Preserve all fields, nested sources/memberships, "
-        "lifecycle, and locks.",
+        "description": "Complete existing DimensionalSubmodelRecord "
+        "entries. Preserve all fields, nested "
+        "sources/memberships, lifecycle, and locks.",
         "schema": {
             "$defs": {
                 "DimensionalSubmodelRecord": {
@@ -2121,7 +2201,8 @@ INPUT_SHAPES: dict[str, Any] = {
         "description": "Compact existing Dimensional entity identities "
         "only. Retain complete natural keys, including "
         "nullable role for relationship identity. Read "
-        "details to interpret meaning, lifecycle, and locks.",
+        "details to interpret meaning, lifecycle, and "
+        "locks.",
         "schema": {
             "anyOf": [
                 {
@@ -2135,9 +2216,15 @@ INPUT_SHAPES: dict[str, Any] = {
                                 "pattern": "\\S",
                                 "title": "Dimensional Entity Name",
                                 "type": "string",
-                            }
+                            },
+                            "dimensional_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                                "pattern": "\\S",
+                            },
                         },
-                        "required": ["dimensional_entity_name"],
+                        "required": ["dimensional_entity_name", "dimensional_entity_schema_name"],
                         "additionalProperties": False,
                     },
                 },
@@ -2214,6 +2301,13 @@ INPUT_SHAPES: dict[str, Any] = {
                 "DimensionalEntityRecord": {
                     "additionalProperties": False,
                     "properties": {
+                        "dimensional_entity_schema_name": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Dimensional Entity Schema Name",
+                            "type": "string",
+                        },
                         "dimensional_entity_name": {
                             "maxLength": 255,
                             "minLength": 1,
@@ -2285,6 +2379,7 @@ INPUT_SHAPES: dict[str, Any] = {
                         },
                     },
                     "required": [
+                        "dimensional_entity_schema_name",
                         "dimensional_entity_name",
                         "dimensional_entity_definition",
                         "dimensional_entity_type",
@@ -2304,24 +2399,24 @@ INPUT_SHAPES: dict[str, Any] = {
                     "discriminator": {
                         "mapping": {
                             "assertion": "#/$defs/DimensionalAssertionSourceRecord",
-                            "object": "#/$defs/DimensionalObjectSourceRecord",
+                            "logical_entity": "#/$defs/DimensionalLogicalEntitySourceRecord",
                         },
                         "propertyName": "support_source_type",
                     },
                     "oneOf": [
-                        {"$ref": "#/$defs/DimensionalObjectSourceRecord"},
+                        {"$ref": "#/$defs/DimensionalLogicalEntitySourceRecord"},
                         {"$ref": "#/$defs/DimensionalAssertionSourceRecord"},
                     ],
                 },
-                "DimensionalObjectSourceRecord": {
+                "DimensionalLogicalEntitySourceRecord": {
                     "additionalProperties": False,
                     "properties": {
                         "support_source_type": {
-                            "const": "object",
+                            "const": "logical_entity",
                             "title": "Support Source Type",
                             "type": "string",
                         },
-                        "source_object": {"$ref": "#/$defs/PhysicalObjectKey"},
+                        "source_logical_entity": {"$ref": "#/$defs/LogicalEntityKey"},
                         "source_order": {
                             "anyOf": [{"exclusiveMinimum": 0, "type": "integer"}, {"type": "null"}],
                             "default": None,
@@ -2349,62 +2444,35 @@ INPUT_SHAPES: dict[str, Any] = {
                     },
                     "required": [
                         "support_source_type",
-                        "source_object",
+                        "source_logical_entity",
                         "rationale",
                         "status",
                         "is_locked",
                         "source_role",
                     ],
-                    "title": "DimensionalObjectSourceRecord",
+                    "title": "DimensionalLogicalEntitySourceRecord",
                     "type": "object",
                 },
-                "PhysicalObjectKey": {
+                "LogicalEntityKey": {
                     "additionalProperties": False,
                     "properties": {
-                        "tenant_code": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Tenant Code",
-                            "type": "string",
-                        },
-                        "system_code": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "System Code",
-                            "type": "string",
-                        },
-                        "connection_code": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Connection Code",
-                            "type": "string",
-                        },
-                        "object_schema": {
+                        "logical_entity_schema_name": {
                             "maxLength": 400,
                             "minLength": 1,
                             "pattern": "\\S",
-                            "title": "Object Schema",
+                            "title": "Logical Entity Schema Name",
                             "type": "string",
                         },
-                        "object_name": {
-                            "maxLength": 400,
+                        "logical_entity_name": {
+                            "maxLength": 255,
                             "minLength": 1,
                             "pattern": "\\S",
-                            "title": "Object Name",
+                            "title": "Logical Entity Name",
                             "type": "string",
                         },
                     },
-                    "required": [
-                        "tenant_code",
-                        "system_code",
-                        "connection_code",
-                        "object_schema",
-                        "object_name",
-                    ],
-                    "title": "PhysicalObjectKey",
+                    "required": ["logical_entity_schema_name", "logical_entity_name"],
+                    "title": "LogicalEntityKey",
                     "type": "object",
                 },
                 "SubmodelMembershipRecord": {
@@ -2465,8 +2533,18 @@ INPUT_SHAPES: dict[str, Any] = {
                                 "title": "Dimensional Attribute Name",
                                 "type": "string",
                             },
+                            "dimensional_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                                "pattern": "\\S",
+                            },
                         },
-                        "required": ["dimensional_entity_name", "dimensional_attribute_name"],
+                        "required": [
+                            "dimensional_entity_name",
+                            "dimensional_attribute_name",
+                            "dimensional_entity_schema_name",
+                        ],
                         "additionalProperties": False,
                     },
                 },
@@ -2532,15 +2610,15 @@ INPUT_SHAPES: dict[str, Any] = {
                     "title": "AttributeAssertionSourceRecord",
                     "type": "object",
                 },
-                "AttributePhysicalSourceRecord": {
+                "AttributeLogicalSourceRecord": {
                     "additionalProperties": False,
                     "properties": {
                         "support_source_type": {
-                            "const": "attribute",
+                            "const": "logical_attribute",
                             "title": "Support Source Type",
                             "type": "string",
                         },
-                        "source_attribute": {"$ref": "#/$defs/PhysicalAttributeKey"},
+                        "source_logical_attribute": {"$ref": "#/$defs/LogicalAttributeKey"},
                         "source_order": {
                             "anyOf": [{"exclusiveMinimum": 0, "type": "integer"}, {"type": "null"}],
                             "default": None,
@@ -2561,30 +2639,24 @@ INPUT_SHAPES: dict[str, Any] = {
                     },
                     "required": [
                         "support_source_type",
-                        "source_attribute",
+                        "source_logical_attribute",
                         "rationale",
                         "status",
                         "is_locked",
                     ],
-                    "title": "AttributePhysicalSourceRecord",
+                    "title": "AttributeLogicalSourceRecord",
                     "type": "object",
-                },
-                "AttributeSourceRecord": {
-                    "discriminator": {
-                        "mapping": {
-                            "assertion": "#/$defs/AttributeAssertionSourceRecord",
-                            "attribute": "#/$defs/AttributePhysicalSourceRecord",
-                        },
-                        "propertyName": "support_source_type",
-                    },
-                    "oneOf": [
-                        {"$ref": "#/$defs/AttributePhysicalSourceRecord"},
-                        {"$ref": "#/$defs/AttributeAssertionSourceRecord"},
-                    ],
                 },
                 "DimensionalAttributeRecord": {
                     "additionalProperties": False,
                     "properties": {
+                        "dimensional_entity_schema_name": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Dimensional Entity Schema Name",
+                            "type": "string",
+                        },
                         "dimensional_entity_name": {
                             "maxLength": 255,
                             "minLength": 1,
@@ -2698,12 +2770,13 @@ INPUT_SHAPES: dict[str, Any] = {
                             "type": "boolean",
                         },
                         "sources": {
-                            "items": {"$ref": "#/$defs/AttributeSourceRecord"},
+                            "items": {"$ref": "#/$defs/DimensionalAttributeSourceRecord"},
                             "title": "Sources",
                             "type": "array",
                         },
                     },
                     "required": [
+                        "dimensional_entity_schema_name",
                         "dimensional_entity_name",
                         "dimensional_attribute_name",
                         "dimensional_attribute_definition",
@@ -2726,61 +2799,50 @@ INPUT_SHAPES: dict[str, Any] = {
                     "title": "DimensionalAttributeRecord",
                     "type": "object",
                 },
-                "PhysicalAttributeKey": {
+                "DimensionalAttributeSourceRecord": {
+                    "discriminator": {
+                        "mapping": {
+                            "assertion": "#/$defs/AttributeAssertionSourceRecord",
+                            "logical_attribute": "#/$defs/AttributeLogicalSourceRecord",
+                        },
+                        "propertyName": "support_source_type",
+                    },
+                    "oneOf": [
+                        {"$ref": "#/$defs/AttributeLogicalSourceRecord"},
+                        {"$ref": "#/$defs/AttributeAssertionSourceRecord"},
+                    ],
+                },
+                "LogicalAttributeKey": {
                     "additionalProperties": False,
                     "properties": {
-                        "tenant_code": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Tenant Code",
-                            "type": "string",
-                        },
-                        "system_code": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "System Code",
-                            "type": "string",
-                        },
-                        "connection_code": {
-                            "maxLength": 100,
-                            "minLength": 1,
-                            "pattern": "\\S",
-                            "title": "Connection Code",
-                            "type": "string",
-                        },
-                        "object_schema": {
+                        "logical_entity_schema_name": {
                             "maxLength": 400,
                             "minLength": 1,
                             "pattern": "\\S",
-                            "title": "Object Schema",
+                            "title": "Logical Entity Schema Name",
                             "type": "string",
                         },
-                        "object_name": {
-                            "maxLength": 400,
+                        "logical_entity_name": {
+                            "maxLength": 255,
                             "minLength": 1,
                             "pattern": "\\S",
-                            "title": "Object Name",
+                            "title": "Logical Entity Name",
                             "type": "string",
                         },
-                        "attribute_name": {
-                            "maxLength": 400,
+                        "logical_attribute_name": {
+                            "maxLength": 255,
                             "minLength": 1,
                             "pattern": "\\S",
-                            "title": "Attribute Name",
+                            "title": "Logical Attribute Name",
                             "type": "string",
                         },
                     },
                     "required": [
-                        "tenant_code",
-                        "system_code",
-                        "connection_code",
-                        "object_schema",
-                        "object_name",
-                        "attribute_name",
+                        "logical_entity_schema_name",
+                        "logical_entity_name",
+                        "logical_attribute_name",
                     ],
-                    "title": "PhysicalAttributeKey",
+                    "title": "LogicalAttributeKey",
                     "type": "object",
                 },
             },
@@ -2850,6 +2912,18 @@ INPUT_SHAPES: dict[str, Any] = {
                                 ],
                                 "title": "Dimensional Relationship Role Name",
                             },
+                            "from_dimensional_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                                "pattern": "\\S",
+                            },
+                            "to_dimensional_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                                "pattern": "\\S",
+                            },
                         },
                         "required": [
                             "from_dimensional_entity_name",
@@ -2858,6 +2932,8 @@ INPUT_SHAPES: dict[str, Any] = {
                             "to_dimensional_attribute_name",
                             "dimensional_relationship_kind",
                             "dimensional_relationship_role_name",
+                            "from_dimensional_entity_schema_name",
+                            "to_dimensional_entity_schema_name",
                         ],
                         "additionalProperties": False,
                     },
@@ -2875,6 +2951,20 @@ INPUT_SHAPES: dict[str, Any] = {
                 "DimensionalRelationshipRecord": {
                     "additionalProperties": False,
                     "properties": {
+                        "from_dimensional_entity_schema_name": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "From Dimensional Entity Schema Name",
+                            "type": "string",
+                        },
+                        "to_dimensional_entity_schema_name": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "To Dimensional Entity Schema Name",
+                            "type": "string",
+                        },
                         "dimensional_relationship_name": {
                             "maxLength": 255,
                             "minLength": 1,
@@ -2972,6 +3062,8 @@ INPUT_SHAPES: dict[str, Any] = {
                         },
                     },
                     "required": [
+                        "from_dimensional_entity_schema_name",
+                        "to_dimensional_entity_schema_name",
                         "dimensional_relationship_name",
                         "dimensional_relationship_definition",
                         "from_dimensional_entity_name",
@@ -2998,111 +3090,21 @@ INPUT_SHAPES: dict[str, Any] = {
             ],
         },
     },
-    "logical_bindings": {
-        "description": "Compact active upstream binding projection: one selected "
-        "eligible Silver Object key, its Logical Entity name, and "
-        "eligible selected physical-to-Logical Attribute name "
-        "pairs. Identity link only; no repeated Logical "
-        "definitions, Mapping bodies, downstream dependency "
-        "records, or IDs.",
-        "schema": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "tenant_code": {
-                        "maxLength": 100,
-                        "minLength": 1,
-                        "pattern": "\\S",
-                        "title": "Tenant Code",
-                        "type": "string",
-                    },
-                    "system_code": {
-                        "maxLength": 100,
-                        "minLength": 1,
-                        "pattern": "\\S",
-                        "title": "System Code",
-                        "type": "string",
-                    },
-                    "connection_code": {
-                        "maxLength": 100,
-                        "minLength": 1,
-                        "pattern": "\\S",
-                        "title": "Connection Code",
-                        "type": "string",
-                    },
-                    "object_schema": {
-                        "maxLength": 400,
-                        "minLength": 1,
-                        "pattern": "\\S",
-                        "title": "Object Schema",
-                        "type": "string",
-                    },
-                    "object_name": {
-                        "maxLength": 400,
-                        "minLength": 1,
-                        "pattern": "\\S",
-                        "title": "Object Name",
-                        "type": "string",
-                    },
-                    "logical_entity_name": {
-                        "maxLength": 255,
-                        "minLength": 1,
-                        "pattern": "\\S",
-                        "title": "Logical Entity Name",
-                        "type": "string",
-                    },
-                    "attributes": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "attribute_name": {
-                                    "maxLength": 400,
-                                    "minLength": 1,
-                                    "pattern": "\\S",
-                                    "title": "Attribute Name",
-                                    "type": "string",
-                                },
-                                "logical_attribute_name": {
-                                    "maxLength": 255,
-                                    "minLength": 1,
-                                    "pattern": "\\S",
-                                    "title": "Logical Attribute Name",
-                                    "type": "string",
-                                },
-                            },
-                            "required": ["attribute_name", "logical_attribute_name"],
-                            "additionalProperties": False,
-                        },
-                    },
-                },
-                "required": [
-                    "tenant_code",
-                    "system_code",
-                    "connection_code",
-                    "object_schema",
-                    "object_name",
-                    "logical_entity_name",
-                    "attributes",
-                ],
-                "additionalProperties": False,
-            },
-        },
-    },
     "dimensional.naming_instructions": {
         "description": "Effective Gold naming override, otherwise "
         "the existing Dimensional default: "
-        "PascalCase names and key Attributes ending "
-        "in Key. Preserve existing identities.",
+        "PascalCase names and key Attributes "
+        "ending in Key. Preserve existing "
+        "identities.",
         "schema": {"maxLength": 32768, "minLength": 1, "pattern": "\\S", "type": "string"},
     },
     "dimensional.audit_columns": {
         "description": "Exact required Gold audit template. Same "
-        "schema_version/ordered columns layout as Logical "
-        "audit settings. Each column has semantic_name, "
-        "data_type, nullable, definition. Gold requires "
-        "this template before model execution.",
+        "schema_version/ordered columns layout as "
+        "Logical audit settings. Each column has "
+        "semantic_name, data_type, nullable, definition. "
+        "Gold requires this template before model "
+        "execution.",
         "schema": {
             "$defs": {
                 "GoldPolicyColumn": {
@@ -3262,6 +3264,625 @@ INPUT_SHAPES: dict[str, Any] = {
             "type": "object",
         },
     },
+    "logical.schemas": {
+        "description": "Configured logical schema names and placement "
+        "descriptions. Assign every Entity to one listed schema.",
+        "schema": {
+            "$defs": {
+                "ModelSchemaDefinition": {
+                    "additionalProperties": False,
+                    "properties": {
+                        "schema_name": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Schema Name",
+                            "type": "string",
+                        },
+                        "description": {
+                            "anyOf": [
+                                {
+                                    "maxLength": 2000,
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string",
+                                },
+                                {"type": "null"},
+                            ],
+                            "title": "Description",
+                        },
+                    },
+                    "required": ["schema_name", "description"],
+                    "title": "ModelSchemaDefinition",
+                    "type": "object",
+                }
+            },
+            "items": {"$ref": "#/$defs/ModelSchemaDefinition"},
+            "type": "array",
+        },
+    },
+    "dimensional.schemas": {
+        "description": "Configured dimensional schema names and placement "
+        "descriptions. Assign every Entity to one listed "
+        "schema.",
+        "schema": {
+            "$defs": {
+                "ModelSchemaDefinition": {
+                    "additionalProperties": False,
+                    "properties": {
+                        "schema_name": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Schema Name",
+                            "type": "string",
+                        },
+                        "description": {
+                            "anyOf": [
+                                {
+                                    "maxLength": 2000,
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                    "type": "string",
+                                },
+                                {"type": "null"},
+                            ],
+                            "title": "Description",
+                        },
+                    },
+                    "required": ["schema_name", "description"],
+                    "title": "ModelSchemaDefinition",
+                    "type": "object",
+                }
+            },
+            "items": {"$ref": "#/$defs/ModelSchemaDefinition"},
+            "type": "array",
+        },
+    },
+    "selected_logical_entities": {
+        "description": "Frozen selected Logical Entity definitions and "
+        "their active Attributes; schema-qualified "
+        "source identities for Dimensional generation.",
+        "schema": {
+            "$defs": {
+                "AssertionRecordKey": {
+                    "additionalProperties": False,
+                    "properties": {
+                        "modeling_assertion_record_key": {
+                            "maxLength": 100,
+                            "minLength": 1,
+                            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
+                            "title": "Modeling Assertion Record Key",
+                            "type": "string",
+                        }
+                    },
+                    "required": ["modeling_assertion_record_key"],
+                    "title": "AssertionRecordKey",
+                    "type": "object",
+                },
+                "AttributeAssertionSourceRecord": {
+                    "additionalProperties": False,
+                    "properties": {
+                        "support_source_type": {
+                            "const": "assertion",
+                            "title": "Support Source Type",
+                            "type": "string",
+                        },
+                        "assertion_record": {"$ref": "#/$defs/AssertionRecordKey"},
+                        "source_order": {
+                            "anyOf": [{"exclusiveMinimum": 0, "type": "integer"}, {"type": "null"}],
+                            "default": None,
+                            "title": "Source Order",
+                        },
+                        "rationale": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Rationale",
+                            "type": "string",
+                        },
+                        "status": {
+                            "enum": ["active", "inactive", "deprecated"],
+                            "title": "Status",
+                            "type": "string",
+                        },
+                        "is_locked": {"title": "Is Locked", "type": "boolean"},
+                    },
+                    "required": [
+                        "support_source_type",
+                        "assertion_record",
+                        "rationale",
+                        "status",
+                        "is_locked",
+                    ],
+                    "title": "AttributeAssertionSourceRecord",
+                    "type": "object",
+                },
+                "AttributePhysicalSourceRecord": {
+                    "additionalProperties": False,
+                    "properties": {
+                        "support_source_type": {
+                            "const": "attribute",
+                            "title": "Support Source Type",
+                            "type": "string",
+                        },
+                        "source_attribute": {"$ref": "#/$defs/PhysicalAttributeKey"},
+                        "source_order": {
+                            "anyOf": [{"exclusiveMinimum": 0, "type": "integer"}, {"type": "null"}],
+                            "default": None,
+                            "title": "Source Order",
+                        },
+                        "rationale": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Rationale",
+                            "type": "string",
+                        },
+                        "status": {
+                            "enum": ["active", "inactive", "deprecated"],
+                            "title": "Status",
+                            "type": "string",
+                        },
+                        "is_locked": {"title": "Is Locked", "type": "boolean"},
+                    },
+                    "required": [
+                        "support_source_type",
+                        "source_attribute",
+                        "rationale",
+                        "status",
+                        "is_locked",
+                    ],
+                    "title": "AttributePhysicalSourceRecord",
+                    "type": "object",
+                },
+                "AttributeSourceRecord": {
+                    "discriminator": {
+                        "mapping": {
+                            "assertion": "#/$defs/AttributeAssertionSourceRecord",
+                            "attribute": "#/$defs/AttributePhysicalSourceRecord",
+                        },
+                        "propertyName": "support_source_type",
+                    },
+                    "oneOf": [
+                        {"$ref": "#/$defs/AttributePhysicalSourceRecord"},
+                        {"$ref": "#/$defs/AttributeAssertionSourceRecord"},
+                    ],
+                },
+                "LogicalAssertionSourceRecord": {
+                    "additionalProperties": False,
+                    "properties": {
+                        "support_source_type": {
+                            "const": "assertion",
+                            "title": "Support Source Type",
+                            "type": "string",
+                        },
+                        "assertion_record": {"$ref": "#/$defs/AssertionRecordKey"},
+                        "source_order": {
+                            "anyOf": [{"exclusiveMinimum": 0, "type": "integer"}, {"type": "null"}],
+                            "default": None,
+                            "title": "Source Order",
+                        },
+                        "rationale": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Rationale",
+                            "type": "string",
+                        },
+                        "status": {
+                            "enum": ["active", "inactive", "deprecated"],
+                            "title": "Status",
+                            "type": "string",
+                        },
+                        "is_locked": {"title": "Is Locked", "type": "boolean"},
+                    },
+                    "required": [
+                        "support_source_type",
+                        "assertion_record",
+                        "rationale",
+                        "status",
+                        "is_locked",
+                    ],
+                    "title": "LogicalAssertionSourceRecord",
+                    "type": "object",
+                },
+                "LogicalAttributeRecord": {
+                    "additionalProperties": False,
+                    "properties": {
+                        "logical_entity_schema_name": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Logical Entity Schema Name",
+                            "type": "string",
+                        },
+                        "logical_entity_name": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Logical Entity Name",
+                            "type": "string",
+                        },
+                        "logical_attribute_name": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Logical Attribute Name",
+                            "type": "string",
+                        },
+                        "logical_attribute_definition": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Logical Attribute Definition",
+                            "type": "string",
+                        },
+                        "logical_attribute_data_type": {
+                            "maxLength": 100,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Logical Attribute Data Type",
+                            "type": "string",
+                        },
+                        "logical_attribute_is_nullable": {
+                            "title": "Logical Attribute Is Nullable",
+                            "type": "boolean",
+                        },
+                        "logical_attribute_is_primary_key": {
+                            "title": "Logical Attribute Is Primary Key",
+                            "type": "boolean",
+                        },
+                        "logical_attribute_is_natural_key": {
+                            "title": "Logical Attribute Is Natural Key",
+                            "type": "boolean",
+                        },
+                        "logical_attribute_is_surrogate_key": {
+                            "title": "Logical Attribute Is Surrogate Key",
+                            "type": "boolean",
+                        },
+                        "logical_attribute_ordinal_position": {
+                            "exclusiveMinimum": 0,
+                            "title": "Logical Attribute Ordinal Position",
+                            "type": "integer",
+                        },
+                        "logical_attribute_is_audit_column": {
+                            "title": "Logical Attribute Is Audit Column",
+                            "type": "boolean",
+                        },
+                        "logical_attribute_status": {
+                            "enum": ["active", "inactive", "deprecated"],
+                            "title": "Logical Attribute Status",
+                            "type": "string",
+                        },
+                        "logical_attribute_is_locked": {
+                            "title": "Logical Attribute Is Locked",
+                            "type": "boolean",
+                        },
+                        "sources": {
+                            "items": {"$ref": "#/$defs/AttributeSourceRecord"},
+                            "title": "Sources",
+                            "type": "array",
+                        },
+                    },
+                    "required": [
+                        "logical_entity_schema_name",
+                        "logical_entity_name",
+                        "logical_attribute_name",
+                        "logical_attribute_definition",
+                        "logical_attribute_data_type",
+                        "logical_attribute_is_nullable",
+                        "logical_attribute_is_primary_key",
+                        "logical_attribute_is_natural_key",
+                        "logical_attribute_is_surrogate_key",
+                        "logical_attribute_ordinal_position",
+                        "logical_attribute_is_audit_column",
+                        "logical_attribute_status",
+                        "logical_attribute_is_locked",
+                        "sources",
+                    ],
+                    "title": "LogicalAttributeRecord",
+                    "type": "object",
+                },
+                "LogicalEntityRecord": {
+                    "additionalProperties": False,
+                    "properties": {
+                        "logical_entity_schema_name": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Logical Entity Schema Name",
+                            "type": "string",
+                        },
+                        "logical_entity_name": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Logical Entity Name",
+                            "type": "string",
+                        },
+                        "logical_entity_definition": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Logical Entity Definition",
+                            "type": "string",
+                        },
+                        "logical_entity_type": {
+                            "enum": [
+                                "core",
+                                "reference",
+                                "transaction",
+                                "event",
+                                "bridge",
+                                "history",
+                                "snapshot",
+                                "association",
+                                "aggregate",
+                                "other",
+                            ],
+                            "title": "Logical Entity Type",
+                            "type": "string",
+                        },
+                        "logical_entity_type_detail": {
+                            "anyOf": [
+                                {"minLength": 1, "pattern": "\\S", "type": "string"},
+                                {"type": "null"},
+                            ],
+                            "title": "Logical Entity Type Detail",
+                        },
+                        "logical_entity_grain": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Logical Entity Grain",
+                            "type": "string",
+                        },
+                        "logical_entity_dependency_order": {
+                            "minimum": 0,
+                            "title": "Logical Entity Dependency Order",
+                            "type": "integer",
+                        },
+                        "logical_entity_confidence": {
+                            "enum": ["low", "medium", "high"],
+                            "title": "Logical Entity Confidence",
+                            "type": "string",
+                        },
+                        "logical_entity_status": {
+                            "enum": ["active", "inactive", "deprecated"],
+                            "title": "Logical Entity Status",
+                            "type": "string",
+                        },
+                        "logical_entity_is_locked": {
+                            "title": "Logical Entity Is Locked",
+                            "type": "boolean",
+                        },
+                        "submodels": {
+                            "items": {"$ref": "#/$defs/SubmodelMembershipRecord"},
+                            "title": "Submodels",
+                            "type": "array",
+                        },
+                        "sources": {
+                            "items": {"$ref": "#/$defs/LogicalEntitySourceRecord"},
+                            "title": "Sources",
+                            "type": "array",
+                        },
+                    },
+                    "required": [
+                        "logical_entity_schema_name",
+                        "logical_entity_name",
+                        "logical_entity_definition",
+                        "logical_entity_type",
+                        "logical_entity_type_detail",
+                        "logical_entity_grain",
+                        "logical_entity_dependency_order",
+                        "logical_entity_confidence",
+                        "logical_entity_status",
+                        "logical_entity_is_locked",
+                        "submodels",
+                        "sources",
+                    ],
+                    "title": "LogicalEntityRecord",
+                    "type": "object",
+                },
+                "LogicalEntitySourceRecord": {
+                    "discriminator": {
+                        "mapping": {
+                            "assertion": "#/$defs/LogicalAssertionSourceRecord",
+                            "object": "#/$defs/LogicalObjectSourceRecord",
+                        },
+                        "propertyName": "support_source_type",
+                    },
+                    "oneOf": [
+                        {"$ref": "#/$defs/LogicalObjectSourceRecord"},
+                        {"$ref": "#/$defs/LogicalAssertionSourceRecord"},
+                    ],
+                },
+                "LogicalObjectSourceRecord": {
+                    "additionalProperties": False,
+                    "properties": {
+                        "support_source_type": {
+                            "const": "object",
+                            "title": "Support Source Type",
+                            "type": "string",
+                        },
+                        "source_object": {"$ref": "#/$defs/PhysicalObjectKey"},
+                        "source_order": {
+                            "anyOf": [{"exclusiveMinimum": 0, "type": "integer"}, {"type": "null"}],
+                            "default": None,
+                            "title": "Source Order",
+                        },
+                        "rationale": {
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Rationale",
+                            "type": "string",
+                        },
+                        "status": {
+                            "enum": ["active", "inactive", "deprecated"],
+                            "title": "Status",
+                            "type": "string",
+                        },
+                        "is_locked": {"title": "Is Locked", "type": "boolean"},
+                    },
+                    "required": [
+                        "support_source_type",
+                        "source_object",
+                        "rationale",
+                        "status",
+                        "is_locked",
+                    ],
+                    "title": "LogicalObjectSourceRecord",
+                    "type": "object",
+                },
+                "PhysicalAttributeKey": {
+                    "additionalProperties": False,
+                    "properties": {
+                        "tenant_code": {
+                            "maxLength": 100,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Tenant Code",
+                            "type": "string",
+                        },
+                        "system_code": {
+                            "maxLength": 100,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "System Code",
+                            "type": "string",
+                        },
+                        "connection_code": {
+                            "maxLength": 100,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Connection Code",
+                            "type": "string",
+                        },
+                        "object_schema": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Object Schema",
+                            "type": "string",
+                        },
+                        "object_name": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Object Name",
+                            "type": "string",
+                        },
+                        "attribute_name": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Attribute Name",
+                            "type": "string",
+                        },
+                    },
+                    "required": [
+                        "tenant_code",
+                        "system_code",
+                        "connection_code",
+                        "object_schema",
+                        "object_name",
+                        "attribute_name",
+                    ],
+                    "title": "PhysicalAttributeKey",
+                    "type": "object",
+                },
+                "PhysicalObjectKey": {
+                    "additionalProperties": False,
+                    "properties": {
+                        "tenant_code": {
+                            "maxLength": 100,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Tenant Code",
+                            "type": "string",
+                        },
+                        "system_code": {
+                            "maxLength": 100,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "System Code",
+                            "type": "string",
+                        },
+                        "connection_code": {
+                            "maxLength": 100,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Connection Code",
+                            "type": "string",
+                        },
+                        "object_schema": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Object Schema",
+                            "type": "string",
+                        },
+                        "object_name": {
+                            "maxLength": 400,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Object Name",
+                            "type": "string",
+                        },
+                    },
+                    "required": [
+                        "tenant_code",
+                        "system_code",
+                        "connection_code",
+                        "object_schema",
+                        "object_name",
+                    ],
+                    "title": "PhysicalObjectKey",
+                    "type": "object",
+                },
+                "SelectedLogicalEntity": {
+                    "additionalProperties": False,
+                    "properties": {
+                        "selection_order": {
+                            "exclusiveMinimum": 0,
+                            "title": "Selection Order",
+                            "type": "integer",
+                        },
+                        "entity": {"$ref": "#/$defs/LogicalEntityRecord"},
+                        "attributes": {
+                            "items": {"$ref": "#/$defs/LogicalAttributeRecord"},
+                            "title": "Attributes",
+                            "type": "array",
+                        },
+                    },
+                    "required": ["selection_order", "entity", "attributes"],
+                    "title": "SelectedLogicalEntity",
+                    "type": "object",
+                },
+                "SubmodelMembershipRecord": {
+                    "additionalProperties": False,
+                    "properties": {
+                        "submodel_name": {
+                            "maxLength": 255,
+                            "minLength": 1,
+                            "pattern": "\\S",
+                            "title": "Submodel Name",
+                            "type": "string",
+                        },
+                        "membership_status": {
+                            "enum": ["active", "inactive", "deprecated"],
+                            "title": "Membership Status",
+                            "type": "string",
+                        },
+                        "membership_is_locked": {
+                            "title": "Membership Is Locked",
+                            "type": "boolean",
+                        },
+                    },
+                    "required": ["submodel_name", "membership_status", "membership_is_locked"],
+                    "title": "SubmodelMembershipRecord",
+                    "type": "object",
+                },
+            },
+            "items": {"$ref": "#/$defs/SelectedLogicalEntity"},
+            "type": "array",
+        },
+    },
 }
 
 WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
@@ -3309,8 +3930,10 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         "logical_relationships": "logical_relationships",
         "naming_instructions": "logical.naming_instructions",
         "audit_columns": "logical.audit_columns",
+        "schemas": "logical.schemas",
     },
     "dimensional": {
+        "gds_context": "gds_context",
         "logical_submodel_list": "logical_submodel_list",
         "logical_submodels": "logical_submodels",
         "logical_entity_list": "logical_entity_list",
@@ -3327,14 +3950,12 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         "dimensional_attributes": "dimensional_attributes",
         "dimensional_relationship_list": "dimensional_relationship_list",
         "dimensional_relationships": "dimensional_relationships",
-        "gds_context": "gds_context",
-        "object_context": "object_context",
-        "object_attribute_context": "object_attribute_context",
         "modeling_assertions": "modeling_assertions",
-        "logical_bindings": "logical_bindings",
         "naming_instructions": "dimensional.naming_instructions",
         "audit_columns": "dimensional.audit_columns",
         "technical_columns": "dimensional.technical_columns",
+        "schemas": "dimensional.schemas",
+        "selected_logical_entities": "selected_logical_entities",
     },
 }
 
@@ -3659,7 +4280,8 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "attribute_name": "CustomerCode",
                         "attribute_description": "Business "
                         "identifier "
-                        "of this "
+                        "of "
+                        "this "
                         "ERP "
                         "customer "
                         "account.",
@@ -3847,8 +4469,9 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "identifier "
                         "of one "
                         "order "
-                        "within this "
-                        "ERP source.",
+                        "within "
+                        "this ERP "
+                        "source.",
                         "attribute_data_type": "BIGINT",
                         "attribute_inferred_data_type": "BIGINT",
                         "attribute_nullability": False,
@@ -3884,7 +4507,8 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "attribute_name": "customer_id",
                         "attribute_description": "Business "
                         "identifier "
-                        "of this ERP "
+                        "of this "
+                        "ERP "
                         "customer "
                         "account.",
                         "attribute_data_type": "BIGINT",
@@ -3962,15 +4586,15 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "modeling_assertion_document_name": "ERP relationship notes",
                 "modeling_assertion_record_type": "relationship",
                 "modeling_assertion_text": "Within this ERP source, "
-                "Orders.order_id identifies one "
-                "order. Each order belongs to "
-                "exactly one customer "
-                "identified by "
-                "Customers.customer_id through "
-                "Orders.customer_id; one "
-                "customer may have many orders. "
-                "Customer IDs are stable within "
-                "this source.",
+                "Orders.order_id identifies "
+                "one order. Each order "
+                "belongs to exactly one "
+                "customer identified by "
+                "Customers.customer_id "
+                "through Orders.customer_id; "
+                "one customer may have many "
+                "orders. Customer IDs are "
+                "stable within this source.",
                 "modeling_assertion_details": {},
                 "modeling_assertion_source_location": {"section": "Orders and customers"},
                 "modeling_assertion_confidence": "high",
@@ -3990,8 +4614,8 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
             }
         ],
         "logical_entity_list": [
-            {"logical_entity_name": "Customer"},
-            {"logical_entity_name": "Order"},
+            {"logical_entity_name": "Customer", "logical_entity_schema_name": "silver"},
+            {"logical_entity_name": "Order", "logical_entity_schema_name": "silver"},
         ],
         "logical_entities": [
             {
@@ -4027,6 +4651,7 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     }
                 ],
+                "logical_entity_schema_name": "silver",
             },
             {
                 "logical_entity_name": "Order",
@@ -4072,12 +4697,25 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     },
                 ],
+                "logical_entity_schema_name": "silver",
             },
         ],
         "logical_attribute_list": [
-            {"logical_entity_name": "Customer", "logical_attribute_name": "CustomerId"},
-            {"logical_entity_name": "Order", "logical_attribute_name": "OrderId"},
-            {"logical_entity_name": "Order", "logical_attribute_name": "CustomerId"},
+            {
+                "logical_entity_name": "Customer",
+                "logical_attribute_name": "CustomerId",
+                "logical_entity_schema_name": "silver",
+            },
+            {
+                "logical_entity_name": "Order",
+                "logical_attribute_name": "OrderId",
+                "logical_entity_schema_name": "silver",
+            },
+            {
+                "logical_entity_name": "Order",
+                "logical_attribute_name": "CustomerId",
+                "logical_entity_schema_name": "silver",
+            },
         ],
         "logical_attributes": [
             {
@@ -4110,6 +4748,7 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     }
                 ],
+                "logical_entity_schema_name": "silver",
             },
             {
                 "logical_entity_name": "Order",
@@ -4141,6 +4780,7 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     }
                 ],
+                "logical_entity_schema_name": "silver",
             },
             {
                 "logical_entity_name": "Order",
@@ -4177,12 +4817,14 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                             "modeling_assertion_record_key": "order_customer_reference"
                         },
                         "source_order": 2,
-                        "rationale": "Approved rule defines each Order "
-                        "as belonging to one Customer.",
+                        "rationale": "Approved rule defines each "
+                        "Order as belonging to one "
+                        "Customer.",
                         "status": "active",
                         "is_locked": False,
                     },
                 ],
+                "logical_entity_schema_name": "silver",
             },
         ],
         "logical_relationship_list": [
@@ -4192,13 +4834,15 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "to_logical_entity_name": "Customer",
                 "to_logical_attribute_name": "CustomerId",
                 "logical_relationship_name": "OrderCustomer",
+                "from_logical_entity_schema_name": "silver",
+                "to_logical_entity_schema_name": "silver",
             }
         ],
         "logical_relationships": [
             {
                 "logical_relationship_name": "OrderCustomer",
-                "logical_relationship_definition": "An Order belongs to "
-                "one Customer; a "
+                "logical_relationship_definition": "An Order belongs "
+                "to one Customer; a "
                 "Customer may have "
                 "many Orders.",
                 "from_logical_entity_name": "Order",
@@ -4211,19 +4855,23 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "identifies the Order "
                 "customer reference.",
                 "logical_relationship_cardinality_basis": "The rule "
-                "requires one "
-                "Customer per "
-                "Order and "
-                "permits many "
-                "Orders per "
+                "requires "
+                "one "
+                "Customer "
+                "per Order "
+                "and permits "
+                "many Orders "
+                "per "
                 "Customer.",
                 "logical_relationship_status": "active",
                 "logical_relationship_is_locked": False,
+                "from_logical_entity_schema_name": "silver",
+                "to_logical_entity_schema_name": "silver",
             }
         ],
         "naming_instructions": "Use PascalCase for Logical entity, attribute, and "
-        "relationship names. Identifier Attribute names end with ID, "
-        "with both I and D uppercase.",
+        "relationship names. Identifier Attribute names end with "
+        "ID, with both I and D uppercase.",
         "audit_columns": {
             "schema_version": "1.0",
             "columns": [
@@ -4241,8 +4889,18 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 },
             ],
         },
+        "schemas": [{"schema_name": "silver", "description": "Logical model schema."}],
     },
     "dimensional": {
+        "gds_context": [
+            {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "zone_code": "silver",
+                "zone_description": "Logical entity placement.",
+            }
+        ],
         "logical_submodel_list": [],
         "logical_submodels": [
             {
@@ -4287,6 +4945,7 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     }
                 ],
+                "logical_entity_schema_name": "silver",
             },
             {
                 "logical_entity_name": "Order",
@@ -4333,6 +4992,7 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     },
                 ],
+                "logical_entity_schema_name": "silver",
             },
         ],
         "logical_attribute_list": [],
@@ -4367,6 +5027,7 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     }
                 ],
+                "logical_entity_schema_name": "silver",
             },
             {
                 "logical_entity_name": "Order",
@@ -4398,6 +5059,7 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     }
                 ],
+                "logical_entity_schema_name": "silver",
             },
             {
                 "logical_entity_name": "Order",
@@ -4441,6 +5103,7 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     },
                 ],
+                "logical_entity_schema_name": "silver",
             },
             {
                 "logical_entity_name": "Customer",
@@ -4472,15 +5135,17 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     }
                 ],
+                "logical_entity_schema_name": "silver",
             },
         ],
         "logical_relationship_list": [],
         "logical_relationships": [
             {
                 "logical_relationship_name": "OrderCustomer",
-                "logical_relationship_definition": "An Order belongs "
-                "to one Customer; "
-                "a Customer may "
+                "logical_relationship_definition": "An Order "
+                "belongs to one "
+                "Customer; a "
+                "Customer may "
                 "have many "
                 "Orders.",
                 "from_logical_entity_name": "Order",
@@ -4493,11 +5158,13 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "rule identifies the "
                 "Order customer "
                 "reference.",
-                "logical_relationship_cardinality_basis": "The rule "
+                "logical_relationship_cardinality_basis": "The "
+                "rule "
                 "requires "
                 "one "
                 "Customer "
-                "per Order "
+                "per "
+                "Order "
                 "and "
                 "permits "
                 "many "
@@ -4506,6 +5173,8 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "Customer.",
                 "logical_relationship_status": "active",
                 "logical_relationship_is_locked": False,
+                "from_logical_entity_schema_name": "silver",
+                "to_logical_entity_schema_name": "silver",
             }
         ],
         "dimensional_submodel_list": [{"dimensional_submodel_name": "SalesMart"}],
@@ -4518,21 +5187,25 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
             }
         ],
         "dimensional_entity_list": [
-            {"dimensional_entity_name": "SalesFact"},
-            {"dimensional_entity_name": "CustomerDimension"},
+            {"dimensional_entity_name": "SalesFact", "dimensional_entity_schema_name": "gold"},
+            {
+                "dimensional_entity_name": "CustomerDimension",
+                "dimensional_entity_schema_name": "gold",
+            },
         ],
         "dimensional_entities": [
             {
                 "dimensional_entity_name": "SalesFact",
-                "dimensional_entity_definition": "A transaction fact "
-                "recording one "
-                "governed sales "
-                "order.",
+                "dimensional_entity_definition": "A transaction "
+                "fact recording "
+                "one governed "
+                "sales order.",
                 "dimensional_entity_type": "fact",
                 "dimensional_fact_type": "transaction",
                 "dimensional_entity_grain_definition": "One sales "
-                "order within "
-                "the governed "
+                "order "
+                "within the "
+                "governed "
                 "source "
                 "identity "
                 "scope.",
@@ -4561,15 +5234,16 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "support_source_type": "assertion",
                         "assertion_record": {"modeling_assertion_record_key": "sales_order_count"},
                         "source_order": 2,
-                        "rationale": "The confirmed rule defines "
-                        "one order per fact row and "
-                        "a count of one for that "
-                        "row.",
+                        "rationale": "The confirmed rule "
+                        "defines one order per "
+                        "fact row and a count of "
+                        "one for that row.",
                         "status": "active",
                         "is_locked": False,
                         "source_role": "grain_rule",
                     },
                 ],
+                "dimensional_entity_schema_name": "gold",
             },
             {
                 "dimensional_entity_name": "CustomerDimension",
@@ -4599,15 +5273,29 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     }
                 ],
+                "dimensional_entity_schema_name": "gold",
             },
         ],
         "dimensional_attribute_list": [
-            {"dimensional_entity_name": "SalesFact", "dimensional_attribute_name": "SalesKey"},
-            {"dimensional_entity_name": "SalesFact", "dimensional_attribute_name": "CustomerKey"},
-            {"dimensional_entity_name": "SalesFact", "dimensional_attribute_name": "OrderCount"},
+            {
+                "dimensional_entity_name": "SalesFact",
+                "dimensional_attribute_name": "SalesKey",
+                "dimensional_entity_schema_name": "gold",
+            },
+            {
+                "dimensional_entity_name": "SalesFact",
+                "dimensional_attribute_name": "CustomerKey",
+                "dimensional_entity_schema_name": "gold",
+            },
+            {
+                "dimensional_entity_name": "SalesFact",
+                "dimensional_attribute_name": "OrderCount",
+                "dimensional_entity_schema_name": "gold",
+            },
             {
                 "dimensional_entity_name": "CustomerDimension",
                 "dimensional_attribute_name": "CustomerKey",
+                "dimensional_entity_schema_name": "gold",
             },
         ],
         "dimensional_attributes": [
@@ -4639,6 +5327,7 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     }
                 ],
+                "dimensional_entity_schema_name": "gold",
             },
             {
                 "dimensional_entity_name": "SalesFact",
@@ -4668,15 +5357,18 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     }
                 ],
+                "dimensional_entity_schema_name": "gold",
             },
             {
                 "dimensional_entity_name": "SalesFact",
                 "dimensional_attribute_name": "OrderCount",
                 "dimensional_attribute_definition": "One for each "
-                "governed order "
-                "fact row; sum "
-                "counts orders "
-                "at compatible "
+                "governed "
+                "order fact "
+                "row; sum "
+                "counts "
+                "orders at "
+                "compatible "
                 "aggregation "
                 "levels.",
                 "dimensional_attribute_data_type": "bigint",
@@ -4712,12 +5404,13 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "source_order": 2,
                         "rationale": "The confirmed rule "
                         "defines one order per "
-                        "fact row and a count of "
-                        "one for that row.",
+                        "fact row and a count "
+                        "of one for that row.",
                         "status": "active",
                         "is_locked": False,
                     }
                 ],
+                "dimensional_entity_schema_name": "gold",
             },
             {
                 "dimensional_entity_name": "CustomerDimension",
@@ -4747,6 +5440,7 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "is_locked": False,
                     }
                 ],
+                "dimensional_entity_schema_name": "gold",
             },
         ],
         "dimensional_relationship_list": [
@@ -4757,6 +5451,8 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "to_dimensional_attribute_name": "CustomerKey",
                 "dimensional_relationship_kind": "fact_dimension",
                 "dimensional_relationship_role_name": None,
+                "from_dimensional_entity_schema_name": "gold",
+                "to_dimensional_entity_schema_name": "gold",
             }
         ],
         "dimensional_relationships": [
@@ -4773,9 +5469,11 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "dimensional_relationship_role_name": None,
                 "dimensional_relationship_confidence": "high",
                 "dimensional_relationship_basis": "The saved "
-                "sales policy "
-                "assigns each "
-                "order to one "
+                "sales "
+                "policy "
+                "assigns "
+                "each order "
+                "to one "
                 "customer "
                 "dimension "
                 "member.",
@@ -4794,64 +5492,8 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "orders.",
                 "dimensional_relationship_status": "active",
                 "dimensional_relationship_is_locked": False,
-            }
-        ],
-        "gds_context": [
-            {
-                "tenant_code": "GDS",
-                "system_code": "WAREHOUSE",
-                "connection_code": "MAIN",
-                "zone_code": "silver",
-                "zone_description": "Modeled operational data populated through Logical Mapping.",
-            }
-        ],
-        "object_context": [
-            {
-                "tenant_code": "GDS",
-                "system_code": "WAREHOUSE",
-                "connection_code": "MAIN",
-                "object_schema": "silver",
-                "object_name": "sales_order",
-                "object_description": "One governed sales order, populated "
-                "from the applied Logical Order "
-                "Mapping.",
-                "zone_code": "silver",
-            }
-        ],
-        "object_attribute_context": [
-            {
-                "tenant_code": "GDS",
-                "system_code": "WAREHOUSE",
-                "connection_code": "MAIN",
-                "object_schema": "silver",
-                "object_name": "sales_order",
-                "attributes": [
-                    {
-                        "attribute_name": "order_id",
-                        "attribute_description": "Identifier of one governed sales order.",
-                        "attribute_data_type": "BIGINT",
-                        "attribute_inferred_data_type": "BIGINT",
-                        "attribute_nullability": False,
-                        "is_natural_key": True,
-                        "is_surrogate_key": False,
-                        "is_masking_required": False,
-                        "is_meta_data": False,
-                        "profile": None,
-                    },
-                    {
-                        "attribute_name": "customer_id",
-                        "attribute_description": "Customer reference recorded on the order.",
-                        "attribute_data_type": "BIGINT",
-                        "attribute_inferred_data_type": "BIGINT",
-                        "attribute_nullability": False,
-                        "is_natural_key": False,
-                        "is_surrogate_key": False,
-                        "is_masking_required": False,
-                        "is_meta_data": False,
-                        "profile": None,
-                    },
-                ],
-                "selected_attribute_names": ["order_id", "customer_id"],
+                "from_dimensional_entity_schema_name": "gold",
+                "to_dimensional_entity_schema_name": "gold",
             }
         ],
         "modeling_assertions": [
@@ -4861,27 +5503,14 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "modeling_assertion_record_type": "business_rule",
                 "modeling_assertion_text": "One fact row represents "
                 "one governed order. "
-                "OrderCount is one for that "
-                "row. Sum counts orders "
-                "only across compatible "
-                "aggregation levels.",
+                "OrderCount is one for "
+                "that row. Sum counts "
+                "orders only across "
+                "compatible aggregation "
+                "levels.",
                 "modeling_assertion_details": {},
                 "modeling_assertion_source_location": None,
                 "modeling_assertion_confidence": "high",
-            }
-        ],
-        "logical_bindings": [
-            {
-                "tenant_code": "GDS",
-                "system_code": "WAREHOUSE",
-                "connection_code": "MAIN",
-                "object_schema": "silver",
-                "object_name": "sales_order",
-                "logical_entity_name": "Order",
-                "attributes": [
-                    {"attribute_name": "order_id", "logical_attribute_name": "OrderID"},
-                    {"attribute_name": "customer_id", "logical_attribute_name": "CustomerID"},
-                ],
             }
         ],
         "naming_instructions": "Use PascalCase for Dimensional submodel, entity, "
@@ -4932,6 +5561,149 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 },
             },
         },
+        "schemas": [{"schema_name": "gold", "description": "Dimensional model schema."}],
+        "selected_logical_entities": [
+            {
+                "selection_order": 1,
+                "entity": {
+                    "logical_entity_name": "Order",
+                    "logical_entity_definition": "A recorded business order.",
+                    "logical_entity_type": "transaction",
+                    "logical_entity_type_detail": None,
+                    "logical_entity_grain": "One row per order.",
+                    "logical_entity_dependency_order": 1,
+                    "logical_entity_confidence": "high",
+                    "logical_entity_status": "active",
+                    "logical_entity_is_locked": False,
+                    "submodels": [
+                        {
+                            "submodel_name": "Sales",
+                            "membership_status": "active",
+                            "membership_is_locked": False,
+                        }
+                    ],
+                    "sources": [
+                        {
+                            "support_source_type": "object",
+                            "source_object": {
+                                "tenant_code": "GDS",
+                                "system_code": "WAREHOUSE",
+                                "connection_code": "MAIN",
+                                "object_schema": "bronze",
+                                "object_name": "Orders",
+                            },
+                            "source_order": 1,
+                            "rationale": "Registered physical source for this Entity.",
+                            "status": "active",
+                            "is_locked": False,
+                        },
+                        {
+                            "support_source_type": "assertion",
+                            "assertion_record": {
+                                "modeling_assertion_record_key": "order_customer_reference"
+                            },
+                            "source_order": 2,
+                            "rationale": "Approved "
+                            "rule "
+                            "defines "
+                            "each "
+                            "Order as "
+                            "belonging "
+                            "to one "
+                            "Customer.",
+                            "status": "active",
+                            "is_locked": False,
+                        },
+                    ],
+                    "logical_entity_schema_name": "silver",
+                },
+                "attributes": [
+                    {
+                        "logical_entity_name": "Order",
+                        "logical_attribute_name": "OrderId",
+                        "logical_attribute_definition": "OrderId recorded for this Order.",
+                        "logical_attribute_data_type": "bigint",
+                        "logical_attribute_is_nullable": False,
+                        "logical_attribute_is_primary_key": True,
+                        "logical_attribute_is_natural_key": True,
+                        "logical_attribute_is_surrogate_key": False,
+                        "logical_attribute_ordinal_position": 1,
+                        "logical_attribute_is_audit_column": False,
+                        "logical_attribute_status": "active",
+                        "logical_attribute_is_locked": False,
+                        "sources": [
+                            {
+                                "support_source_type": "attribute",
+                                "source_attribute": {
+                                    "tenant_code": "GDS",
+                                    "system_code": "WAREHOUSE",
+                                    "connection_code": "MAIN",
+                                    "object_schema": "bronze",
+                                    "object_name": "Orders",
+                                    "attribute_name": "order_id",
+                                },
+                                "source_order": 1,
+                                "rationale": "Recorded source for this Attribute.",
+                                "status": "active",
+                                "is_locked": False,
+                            }
+                        ],
+                        "logical_entity_schema_name": "silver",
+                    },
+                    {
+                        "logical_entity_name": "Order",
+                        "logical_attribute_name": "CustomerId",
+                        "logical_attribute_definition": "CustomerId recorded for this Order.",
+                        "logical_attribute_data_type": "bigint",
+                        "logical_attribute_is_nullable": False,
+                        "logical_attribute_is_primary_key": False,
+                        "logical_attribute_is_natural_key": False,
+                        "logical_attribute_is_surrogate_key": False,
+                        "logical_attribute_ordinal_position": 2,
+                        "logical_attribute_is_audit_column": False,
+                        "logical_attribute_status": "active",
+                        "logical_attribute_is_locked": False,
+                        "sources": [
+                            {
+                                "support_source_type": "attribute",
+                                "source_attribute": {
+                                    "tenant_code": "GDS",
+                                    "system_code": "WAREHOUSE",
+                                    "connection_code": "MAIN",
+                                    "object_schema": "bronze",
+                                    "object_name": "Orders",
+                                    "attribute_name": "customer_id",
+                                },
+                                "source_order": 1,
+                                "rationale": "Recorded source for this Attribute.",
+                                "status": "active",
+                                "is_locked": False,
+                            },
+                            {
+                                "support_source_type": "assertion",
+                                "assertion_record": {
+                                    "modeling_assertion_record_key": "order_customer_reference"
+                                },
+                                "source_order": 2,
+                                "rationale": "Approved "
+                                "rule "
+                                "defines "
+                                "each "
+                                "Order "
+                                "as "
+                                "belonging "
+                                "to "
+                                "one "
+                                "Customer.",
+                                "status": "active",
+                                "is_locked": False,
+                            },
+                        ],
+                        "logical_entity_schema_name": "silver",
+                    },
+                ],
+            }
+        ],
     },
 }
 

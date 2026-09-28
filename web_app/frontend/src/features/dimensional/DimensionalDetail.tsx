@@ -123,7 +123,7 @@ function DimensionalObjectView({
             ← Back to Dimensional
           </Link>
           <p className="eyebrow">Dimensional Object {object.dimensional_entity_id}</p>
-          <h1 ref={heading} tabIndex={-1}>{object.dimensional_entity_name}</h1>
+          <h1 ref={heading} tabIndex={-1}>{object.dimensional_entity_schema_name}.{object.dimensional_entity_name}</h1>
         </div>
         <div className="detail-badge-stack">
           <span className={`status-badge ${statusTone(object.dimensional_entity_status)}`}>
@@ -198,7 +198,7 @@ function DimensionalAttributeView({
         <header><h2 id="dimensional-attribute-overview">Attribute definition</h2></header>
         <p className="detail-prose is-prominent">{attribute.dimensional_attribute_definition}</p>
         <dl className="detail-fact-grid">
-          <Fact label="Object" value={attribute.dimensional_entity_name} />
+          <Fact label="Object" value={`${attribute.dimensional_entity_schema_name}.${attribute.dimensional_entity_name}`} />
           <Fact label="Confidence" value={humanize(attribute.dimensional_attribute_confidence)} />
         </dl>
         <h3>Type and role</h3>
@@ -266,12 +266,12 @@ function DimensionalRelationshipView({
         <div className="conceptual-endpoints" aria-label="Relationship endpoints">
           <section>
             <small>From</small>
-            <strong>{relationship.from_dimensional_entity_name}.{relationship.from_dimensional_attribute_name}</strong>
+            <strong>{relationship.from_dimensional_entity_schema_name}.{relationship.from_dimensional_entity_name}.{relationship.from_dimensional_attribute_name}</strong>
           </section>
           <span aria-hidden="true">→</span>
           <section>
             <small>To</small>
-            <strong>{relationship.to_dimensional_entity_name}.{relationship.to_dimensional_attribute_name}</strong>
+            <strong>{relationship.to_dimensional_entity_schema_name}.{relationship.to_dimensional_entity_name}.{relationship.to_dimensional_attribute_name}</strong>
           </section>
         </div>
         <dl className="detail-fact-grid">

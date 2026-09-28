@@ -75,23 +75,14 @@ class PhysicalScopeTransaction:
                 {
                     "object_id": 101,
                     "is_model_input_eligible": True,
-                    "is_dimensional_source_eligible": False,
-                    "is_logical_mapping_target_eligible": False,
-                    "is_dimensional_mapping_target_eligible": False,
                 },
                 {
                     "object_id": 202,
                     "is_model_input_eligible": True,
-                    "is_dimensional_source_eligible": True,
-                    "is_logical_mapping_target_eligible": True,
-                    "is_dimensional_mapping_target_eligible": False,
                 },
                 {
                     "object_id": 303,
                     "is_model_input_eligible": False,
-                    "is_dimensional_source_eligible": False,
-                    "is_logical_mapping_target_eligible": False,
-                    "is_dimensional_mapping_target_eligible": True,
                 },
             ]
         if "list_model_attribute_eligibility" in normalized:
@@ -99,23 +90,14 @@ class PhysicalScopeTransaction:
                 {
                     "attribute_id": 1001,
                     "is_model_input_eligible": True,
-                    "is_dimensional_source_eligible": False,
-                    "is_logical_mapping_target_eligible": False,
-                    "is_dimensional_mapping_target_eligible": False,
                 },
                 {
                     "attribute_id": 2002,
                     "is_model_input_eligible": True,
-                    "is_dimensional_source_eligible": True,
-                    "is_logical_mapping_target_eligible": True,
-                    "is_dimensional_mapping_target_eligible": False,
                 },
                 {
                     "attribute_id": 3003,
                     "is_model_input_eligible": False,
-                    "is_dimensional_source_eligible": False,
-                    "is_logical_mapping_target_eligible": False,
-                    "is_dimensional_mapping_target_eligible": True,
                 },
             ]
         raise AssertionError(f"Unexpected physical Scope query: {normalized}")
@@ -135,12 +117,8 @@ async def test_load_physical_scope_uses_placement_keys_and_new_eligibility_flags
 
     source = ("tenant-a", "erp", "foreign-catalog", "source", "orders")
     silver = ("gds", "gds", "lakehouse", "silver", "orders")
-    gold = ("gds", "gds", "lakehouse", "gold", "sales")
     assert scope.model_tenant_code == "TENANT-A"
     assert scope.model_input_objects == frozenset({source, silver})
-    assert scope.dimensional_source_objects == frozenset({silver})
-    assert scope.logical_mapping_target_objects == frozenset({silver})
-    assert scope.dimensional_mapping_target_objects == frozenset({gold})
     assert scope.model_input_attributes == frozenset({(*source, "order_id"), (*silver, "orderid")})
     assert scope.other_model_names == frozenset({"existingmodel"})
     assert scope.active_system_codes == frozenset({"erp", "crm"})
@@ -192,14 +170,15 @@ async def test_locked_change_set_loads_one_neutral_physical_scope(
 
 def test_code_generation_target_context_uses_one_server_derived_digest() -> None:
     context = CodeGenerationTargetContext(
-        object_key=("gds", "gds", "lakehouse", "silver", "orders"),
         modeled_entity_type="logical_entity",
+        modeled_entity_schema_name="silver",
         modeled_entity_name="Orders",
         source_system_codes=frozenset({"erp"}),
         code_input_digest="a" * 64,
     )
     generated = SimpleNamespace(
         modeled_entity_type="logical_entity",
+        modeled_entity_schema_name="silver",
         modeled_entity_name="Orders",
         source_system_codes=("ERP",),
         artifact_name="Orders.sql",

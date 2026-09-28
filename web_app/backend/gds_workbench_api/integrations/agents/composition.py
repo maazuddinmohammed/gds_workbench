@@ -41,6 +41,8 @@ from gds_workbench_api.integrations.agents.fake_shared import (
     analysis_selected_attributes,
     code_generation_target_refs,
     conceptual_source_objects,
+    dimensional_logical_sources,
+    modeled_output_schema,
     named_tool_items,
     original_context,
     tool_assisted_conceptual_sources,
@@ -256,6 +258,7 @@ class LocalFakeAgentAdapter:
                         **{f"from_{name}": value for name, value in source.items()},
                         **{f"to_{name}": value for name, value in target.items()},
                         "relationship_kind": "reference",
+                        "inferred_cardinality": "unknown",
                         "relationship_confidence": "medium",
                         "relationship_basis": (
                             "Selected Attribute metadata supports this candidate."
@@ -265,18 +268,23 @@ class LocalFakeAgentAdapter:
             candidate = cast(JsonValue, {"relationships": relationships})
         elif request.workflow == "dimensional" and request.stage == "candidate_authoring":
             if request.execution_mode == "tool_assisted":
-                source_objects, source_attributes, tool_call_count = tool_assisted_logical_sources(
-                    request
+                selected_entities, tool_call_count = named_tool_items(
+                    request, "get_selected_logical_entities"
+                )
+                source_entities, source_attributes = dimensional_logical_sources(
+                    cast(JsonValue, selected_entities)
                 )
             elif request.execution_mode == "one_shot":
-                source_objects = conceptual_source_objects(request.context)
-                source_attributes = analysis_selected_attributes(request.context)
+                source_entities, source_attributes = dimensional_logical_sources(
+                    original_context(request.context).get("selected_logical_entities")
+                )
             else:
                 raise InvalidRequestError(
                     "The local fake does not support this agent execution path."
                 )
             candidate = fake_dimensional_candidate(
-                source_objects=source_objects,
+                schema_name=modeled_output_schema(request.context, "dimensional"),
+                source_entities=source_entities,
                 source_attributes=source_attributes,
             )
         elif request.workflow == "logical" and request.stage == "candidate_authoring":
@@ -292,6 +300,7 @@ class LocalFakeAgentAdapter:
                     "The local fake does not support this agent execution path."
                 )
             candidate = fake_logical_candidate(
+                schema_name=modeled_output_schema(request.context, "logical"),
                 source_objects=source_objects,
                 source_attributes=source_attributes,
             )

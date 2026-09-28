@@ -187,14 +187,14 @@ CREATE TABLE application.workflow_run (
     ),
     CONSTRAINT ck_workflow_run_modeled_entity_type CHECK (
         (
-            model_workflow IN ('mapping', 'code_generation')
+            model_workflow IN ('dimensional', 'mapping', 'code_generation')
             AND modeled_entity_type IS NOT NULL
             AND modeled_entity_type IN (
                 'logical_entity', 'dimensional_entity'
             )
         ) OR (model_workflow = 'validation' AND (modeled_entity_type IS NULL
             OR modeled_entity_type IN ('logical_entity', 'dimensional_entity'))) OR (
-            model_workflow NOT IN ('mapping', 'code_generation', 'validation')
+            model_workflow NOT IN ('dimensional', 'mapping', 'code_generation', 'validation')
             AND modeled_entity_type IS NULL
         )
     ),
@@ -465,12 +465,48 @@ CREATE TABLE application.workflow_run_system_selection (
     )
 );
 
+CREATE TABLE application.workflow_run_entity_selection (
+    workflow_run_entity_selection_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    workflow_run_id BIGINT NOT NULL,
+    model_id BIGINT NOT NULL,
+    modeled_entity_type VARCHAR(30) NOT NULL,
+    modeled_entity_id BIGINT NOT NULL,
+    modeled_entity_schema_name VARCHAR(400) NOT NULL,
+    modeled_entity_name VARCHAR(255) NOT NULL,
+    selection_order INTEGER NOT NULL,
+    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    CONSTRAINT fk_workflow_run_entity_selection_run FOREIGN KEY (workflow_run_id,model_id)
+        REFERENCES application.workflow_run (workflow_run_id,model_id) ON DELETE NO ACTION,
+    -- Frozen identity intentionally has no FK to a deletable live Entity.
+    CONSTRAINT uq_workflow_run_entity_selection_entity UNIQUE (workflow_run_id,modeled_entity_type,modeled_entity_id),
+    CONSTRAINT uq_workflow_run_entity_selection_witness UNIQUE (workflow_run_entity_selection_id,workflow_run_id,model_id),
+    CONSTRAINT uq_workflow_run_entity_selection_order UNIQUE (workflow_run_id,selection_order),
+    CONSTRAINT ck_workflow_run_entity_selection_identity CHECK (
+        modeled_entity_type IN ('logical_entity','dimensional_entity') AND modeled_entity_id > 0
+        AND reference.is_nonblank(modeled_entity_schema_name) AND reference.is_nonblank(modeled_entity_name)
+        AND selection_order > 0
+    )
+);
+CREATE FUNCTION application.guard_workflow_run_entity_selection()
+RETURNS TRIGGER LANGUAGE plpgsql SET search_path = pg_catalog
+AS $guard_workflow_run_entity_selection$
+BEGIN
+    RAISE EXCEPTION 'Workflow Run Entity selections are immutable';
+END;
+$guard_workflow_run_entity_selection$;
+CREATE TRIGGER guard_workflow_run_entity_selection
+BEFORE UPDATE OR DELETE ON application.workflow_run_entity_selection
+FOR EACH ROW EXECUTE FUNCTION application.guard_workflow_run_entity_selection();
+
 CREATE TABLE application.workflow_run_mapping_target_selection (
     workflow_run_mapping_target_selection_id BIGINT GENERATED ALWAYS AS IDENTITY
         PRIMARY KEY,
     workflow_run_id BIGINT NOT NULL,
     model_id BIGINT NOT NULL,
-    object_id BIGINT NOT NULL,
+    workflow_run_entity_selection_id BIGINT NOT NULL,
     source_system_id BIGINT NOT NULL,
     selection_order INTEGER NOT NULL,
     selected_attribute_ids BIGINT[],
@@ -483,16 +519,17 @@ CREATE TABLE application.workflow_run_mapping_target_selection (
         model_id
     ) REFERENCES application.workflow_run (workflow_run_id, model_id)
         ON DELETE NO ACTION,
-    -- A run selection is immutable historical evidence. Live bindings may be
-    -- deleted later; target registration remains the durable physical identity.
-    CONSTRAINT fk_workflow_run_mapping_target_selection_object FOREIGN KEY (object_id)
-        REFERENCES core.object (object_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_workflow_run_mapping_target_selection_entity FOREIGN KEY (
+        workflow_run_entity_selection_id, workflow_run_id, model_id
+    ) REFERENCES application.workflow_run_entity_selection (
+        workflow_run_entity_selection_id, workflow_run_id, model_id
+    ) ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_mapping_target_selection_system FOREIGN KEY (
         source_system_id
     ) REFERENCES core.system (system_id) ON DELETE NO ACTION,
     CONSTRAINT uq_workflow_run_mapping_target_selection_pair UNIQUE (
         workflow_run_id,
-        object_id,
+        workflow_run_entity_selection_id,
         source_system_id
     ),
     CONSTRAINT uq_workflow_run_mapping_target_selection_order UNIQUE (
@@ -853,24 +890,6 @@ ALTER TABLE workflow.dimensional_relationship
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
 
-ALTER TABLE workflow.model_object_binding
-    ADD CONSTRAINT fk_model_object_binding_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
-    ON DELETE NO ACTION;
-
-ALTER TABLE workflow.model_attribute_binding
-    ADD CONSTRAINT fk_model_attribute_binding_workflow_run
-    FOREIGN KEY (workflow_run_id)
-    REFERENCES application.workflow_run (workflow_run_id)
-    ON DELETE NO ACTION;
-
-ALTER TABLE workflow.mapping_source_system_dependency
-    ADD CONSTRAINT fk_mapping_source_system_dependency_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
-    ON DELETE NO ACTION;
-
 ALTER TABLE workflow.mapping_object
     ADD CONSTRAINT fk_mapping_object_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
@@ -1180,7 +1199,8 @@ CREATE FUNCTION application.create_workflow_run(
     p_sql_generation_guide_version_id BIGINT DEFAULT NULL,
     p_metadata_enrichment_description_targets JSONB DEFAULT NULL,
     p_mapping_targets JSONB DEFAULT NULL,
-    p_code_generation_file_layout VARCHAR(30) DEFAULT NULL
+    p_code_generation_file_layout VARCHAR(30) DEFAULT NULL,
+    p_selected_entity_ids BIGINT[] DEFAULT NULL
 )
 RETURNS TABLE (
     created BOOLEAN,
@@ -1205,6 +1225,7 @@ SET search_path = pg_catalog
 AS $create_workflow_run$
 DECLARE
     v_model RECORD;
+    v_entity_workflow BOOLEAN := p_model_workflow IN ('dimensional','mapping','code_generation');
     v_source_tenant_id BIGINT;
     v_source_access RECORD;
     v_decision RECORD;
@@ -1250,6 +1271,24 @@ DECLARE
     v_request_digest CHAR(64);
     v_prompt_snapshot_count INTEGER := 0;
 BEGIN
+    IF v_entity_workflow THEN
+        IF p_selected_object_ids IS NULL OR cardinality(p_selected_object_ids) <> 0
+           OR p_selected_entity_ids IS NULL THEN
+            RAISE EXCEPTION 'Entity workflows require Entity selection and no physical Object selection';
+        END IF;
+        IF p_model_workflow = 'dimensional' THEN
+            IF p_modeled_entity_type IS NOT NULL AND p_modeled_entity_type <> 'logical_entity' THEN
+                RAISE EXCEPTION 'Dimensional authoring requires Logical source Entities';
+            END IF;
+            p_modeled_entity_type := 'logical_entity';
+        ELSIF p_modeled_entity_type IS NULL OR p_modeled_entity_type NOT IN ('logical_entity','dimensional_entity') THEN
+            RAISE EXCEPTION 'An Entity layer is required';
+        END IF;
+        -- Share bounded selection validation while persisting separate typed evidence.
+        p_selected_object_ids := p_selected_entity_ids;
+    ELSIF p_selected_entity_ids IS NOT NULL AND cardinality(p_selected_entity_ids) <> 0 THEN
+        RAISE EXCEPTION 'Entity selection is unavailable for this workflow';
+    END IF;
     IF p_correlation_id IS NULL THEN
         RAISE EXCEPTION 'Workflow Run correlation ID is required';
     END IF;
@@ -1427,9 +1466,7 @@ BEGIN
     END IF;
     v_modeled_entity_type := p_modeled_entity_type;
     IF p_model_workflow = 'mapping' THEN
-        IF p_modeled_entity_type IS NOT NULL THEN
-            RAISE EXCEPTION 'Mapping route is inferred by the server';
-        END IF;
+
         IF p_mapping_operation IS NULL OR p_mapping_operation NOT IN ('build', 'extend', 'generate')
            OR p_mapping_coverage_mode IS DISTINCT FROM 'selected_targets'
            OR (p_mapping_targets IS NOT NULL AND (p_mapping_source_system_id IS NOT NULL
@@ -1441,7 +1478,7 @@ BEGIN
             RAISE EXCEPTION 'Mapping requires explicit target and source System selections';
         END IF;
         v_mapping_targets := coalesce(p_mapping_targets, jsonb_build_array(jsonb_build_object(
-            'object_id', v_selected_object_ids[1], 'source_system_id', p_mapping_source_system_id,
+            'modeled_entity_id', v_selected_object_ids[1], 'source_system_id', p_mapping_source_system_id,
             'selected_attribute_ids', NULL
         )));
         IF jsonb_typeof(v_mapping_targets) <> 'array' OR jsonb_array_length(v_mapping_targets) = 0 THEN
@@ -1450,17 +1487,17 @@ BEGIN
         IF EXISTS (
             SELECT 1 FROM jsonb_array_elements(v_mapping_targets) AS target
              WHERE jsonb_typeof(target) <> 'object'
-                OR (target->>'object_id')::BIGINT IS NULL OR (target->>'object_id')::BIGINT <= 0
+                OR (target->>'modeled_entity_id')::BIGINT IS NULL OR (target->>'modeled_entity_id')::BIGINT <= 0
                 OR (target->>'source_system_id')::BIGINT IS NULL OR (target->>'source_system_id')::BIGINT <= 0
-                OR (target - ARRAY['object_id', 'source_system_id', 'selected_attribute_ids']) <> '{}'::JSONB
+                OR (target - ARRAY['modeled_entity_id', 'source_system_id', 'selected_attribute_ids']) <> '{}'::JSONB
                 OR (p_mapping_targets IS NOT NULL
                     AND jsonb_typeof(target->'selected_attribute_ids') IS DISTINCT FROM 'array')
                 OR (target->'selected_attribute_ids' IS NOT NULL
                     AND jsonb_typeof(target->'selected_attribute_ids') NOT IN ('array', 'null'))
         ) OR (SELECT count(*) FROM jsonb_array_elements(v_mapping_targets)) <>
-             (SELECT count(DISTINCT (target->>'object_id', target->>'source_system_id'))
+             (SELECT count(DISTINCT (target->>'modeled_entity_id', target->>'source_system_id'))
                 FROM jsonb_array_elements(v_mapping_targets) AS target)
-          OR ARRAY(SELECT DISTINCT (target->>'object_id')::BIGINT FROM jsonb_array_elements(v_mapping_targets) AS target ORDER BY 1)
+          OR ARRAY(SELECT DISTINCT (target->>'modeled_entity_id')::BIGINT FROM jsonb_array_elements(v_mapping_targets) AS target ORDER BY 1)
              IS DISTINCT FROM v_selected_object_ids THEN
             RAISE EXCEPTION 'Mapping selections must be unique and match the selected Objects';
         END IF;
@@ -1484,6 +1521,8 @@ BEGIN
         END IF;
     ELSIF p_model_workflow = 'validation' AND (p_modeled_entity_type IS NULL
         OR p_modeled_entity_type IN ('logical_entity', 'dimensional_entity')) THEN
+        NULL;
+    ELSIF p_model_workflow = 'dimensional' AND p_modeled_entity_type = 'logical_entity' THEN
         NULL;
     ELSIF p_modeled_entity_type IS NOT NULL THEN
         RAISE EXCEPTION
@@ -1808,7 +1847,7 @@ BEGIN
     IF p_model_workflow = 'code_generation' THEN
         IF p_code_generation_coverage_mode = 'all_eligible_targets' THEN
             SELECT coalesce(
-                       array_agg(context.object_id ORDER BY context.object_id),
+                       array_agg(context.modeled_entity_id ORDER BY context.modeled_entity_id),
                        ARRAY[]::BIGINT[]
                    ),
                    count(*)::INTEGER
@@ -1838,7 +1877,7 @@ BEGIN
                        p_model_id,
                        p_modeled_entity_type
                    ) AS context
-             WHERE context.object_id = ANY(v_selected_object_ids);
+             WHERE context.modeled_entity_id = ANY(v_selected_object_ids);
             IF v_eligible_scope_count <> v_selected_scope_count THEN
                 RAISE EXCEPTION
                     'Selected Code Generation target lacks complete applied SQL Mapping';
@@ -1851,7 +1890,7 @@ BEGIN
                 SELECT 1 FROM workflow.list_code_generation_target_context(
                     p_model_id, p_modeled_entity_type) AS context
                 CROSS JOIN LATERAL jsonb_array_elements(context.source_context->'source_systems') AS source(document)
-                WHERE context.object_id = ANY(v_selected_object_ids)
+                WHERE context.modeled_entity_id = ANY(v_selected_object_ids)
                   AND lower(btrim(source.document->>'system_code')) = requested.code
              )
         ) THEN
@@ -1901,123 +1940,40 @@ BEGIN
 
     IF p_model_workflow = 'mapping' THEN
       FOR v_mapping_target IN SELECT value FROM jsonb_array_elements(v_mapping_targets) LOOP
-        v_mapping_object_id := (v_mapping_target->>'object_id')::BIGINT;
+        v_mapping_object_id := (v_mapping_target->>'modeled_entity_id')::BIGINT;
         v_mapping_system_id := (v_mapping_target->>'source_system_id')::BIGINT;
-        SELECT count(*)::INTEGER,
-               count(DISTINCT binding.modeled_entity_type)::INTEGER,
-               count(*) FILTER (
-                   WHERE binding.model_object_binding_status <> 'active'
-                      OR NOT EXISTS (
-                          SELECT 1 FROM workflow.list_model_input_sources(binding.model_id) AS input
-                           WHERE input.source_system_id = v_mapping_system_id
-                      )
-                      OR NOT EXISTS (
-                          SELECT 1
-                            FROM core.system AS source_system
-                           WHERE source_system.system_id =
-                                 v_mapping_system_id
-                             AND source_system.is_active
-                      )
-                      OR (
-                          binding.modeled_entity_type = 'logical_entity'
-                          AND NOT EXISTS (
-                              SELECT 1
-                                FROM workflow.logical_entity AS entity
-                               WHERE entity.logical_entity_id =
-                                     binding.logical_entity_id
-                                 AND entity.model_id = binding.model_id
-                                 AND entity.logical_entity_status = 'active'
-                          )
-                      )
-                      OR (
-                          binding.modeled_entity_type = 'dimensional_entity'
-                          AND NOT EXISTS (
-                              SELECT 1
-                                FROM workflow.dimensional_entity AS entity
-                               WHERE entity.dimensional_entity_id =
-                                     binding.dimensional_entity_id
-                                 AND entity.model_id = binding.model_id
-                                 AND entity.dimensional_entity_status = 'active'
-                          )
-                      )
-                      OR EXISTS (
-                          SELECT 1
-                            FROM workflow.mapping_object AS mapping
-                           WHERE mapping.model_object_binding_id =
-                                 binding.model_object_binding_id
-                             AND mapping.source_system_id =
-                                 v_mapping_system_id
-                             AND mapping.object_mapping_is_locked
-                      )
-               )::INTEGER,
-               min(binding.modeled_entity_type)
-          INTO v_mapping_header_count,
-               v_mapping_header_layer_count,
-               v_mapping_invalid_header_count,
-               v_modeled_entity_type
-          FROM workflow.model_object_binding AS binding
-         WHERE binding.model_id = p_model_id
-           AND binding.object_id = v_mapping_object_id;
-
-        IF v_mapping_header_count = 0 THEN
-            RAISE EXCEPTION
-                'Selected Mapping target has no preregistered header';
+        IF NOT EXISTS (
+            SELECT 1 FROM workflow.modeled_entity AS entity
+             WHERE entity.model_id = p_model_id AND entity.modeled_entity_type = p_modeled_entity_type
+               AND entity.modeled_entity_id = v_mapping_object_id AND entity.status = 'active' AND NOT entity.is_locked
+        ) OR NOT EXISTS (
+            SELECT 1 FROM workflow.list_model_input_sources(p_model_id) AS input
+            JOIN core.system AS system ON system.system_id = input.source_system_id AND system.is_active
+             WHERE input.source_system_id = v_mapping_system_id
+        ) OR EXISTS (
+            SELECT 1 FROM workflow.mapping_object AS mapping
+             WHERE mapping.model_id = p_model_id AND mapping.modeled_entity_type = p_modeled_entity_type
+               AND coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id) = v_mapping_object_id
+               AND mapping.source_system_id = v_mapping_system_id AND mapping.object_mapping_is_locked
+        ) THEN
+            RAISE EXCEPTION 'Selected Mapping Entity or System is unavailable or locked';
         END IF;
-        IF v_mapping_header_layer_count <> 1 THEN
-            RAISE EXCEPTION
-                'Selected Mapping target contains mixed modeled layers';
-        END IF;
-        IF v_mapping_invalid_header_count <> 0 THEN
-            RAISE EXCEPTION
-                'Selected Mapping target contains an unavailable or locked header';
-        END IF;
-
-        SELECT zone.zone_code
-          INTO v_mapping_zone_code
-          FROM workflow.model_object_binding AS binding
-          JOIN core.object AS object
-            ON object.object_id = binding.object_id
-           AND object.is_active
-          JOIN reference.zone AS zone
-            ON zone.zone_id = object.zone_id
-           AND zone.is_active
-         WHERE binding.model_id = p_model_id
-           AND binding.object_id = v_mapping_object_id
-           AND binding.model_object_binding_status = 'active';
-        IF NOT FOUND THEN
-            RAISE EXCEPTION 'Selected Mapping target is unavailable';
-        END IF;
-
-        IF v_modeled_entity_type = 'logical_entity'
-           AND v_mapping_zone_code = 'silver' THEN
-            v_mapping_route := 'logical_to_silver';
-        ELSIF v_modeled_entity_type = 'dimensional_entity'
-              AND v_mapping_zone_code = 'gold' THEN
-            v_mapping_route := 'dimensional_to_gold';
-        ELSE
-            RAISE EXCEPTION
-                'Selected Mapping target has a mixed or wrong-zone route';
-        END IF;
-        IF v_previous_mapping_route IS NOT NULL AND v_previous_mapping_route <> v_mapping_route THEN
-            RAISE EXCEPTION 'Select Mapping targets from one modeled layer';
-        END IF;
-        v_previous_mapping_route := v_mapping_route;
+        v_mapping_route := CASE p_modeled_entity_type WHEN 'logical_entity' THEN 'logical_to_silver' ELSE 'dimensional_to_gold' END;
         IF jsonb_typeof(v_mapping_target->'selected_attribute_ids') = 'array' THEN
             IF EXISTS (
                 SELECT 1 FROM jsonb_array_elements_text(v_mapping_target->'selected_attribute_ids') AS selected(id)
-                 WHERE selected.id::BIGINT <= 0 OR NOT EXISTS (
-                     SELECT 1 FROM workflow.model_attribute_binding AS attribute
-                     JOIN workflow.model_object_binding AS binding USING (model_object_binding_id)
+                 WHERE selected.id !~ '^[1-9][0-9]{0,17}$' OR NOT EXISTS (
+                     SELECT 1 FROM workflow.modeled_attribute AS attribute
                      LEFT JOIN workflow.mapping_object AS object_mapping
-                       ON object_mapping.model_object_binding_id = binding.model_object_binding_id
+                       ON object_mapping.model_id = attribute.model_id AND object_mapping.modeled_entity_type = attribute.modeled_entity_type
+                      AND coalesce(object_mapping.logical_entity_id,object_mapping.dimensional_entity_id) = attribute.modeled_entity_id
                       AND object_mapping.source_system_id = v_mapping_system_id
                      LEFT JOIN workflow.mapping_attribute AS mapping
                        ON mapping.mapping_object_id = object_mapping.mapping_object_id
-                      AND mapping.model_attribute_binding_id = attribute.model_attribute_binding_id
-                     WHERE binding.model_id = p_model_id AND binding.object_id = v_mapping_object_id
-                       AND attribute.attribute_id = selected.id::BIGINT
-                       AND attribute.model_attribute_binding_status = 'active'
-                       AND NOT coalesce(mapping.attribute_mapping_is_locked, FALSE)
+                      AND coalesce(mapping.logical_attribute_id,mapping.dimensional_attribute_id) = attribute.modeled_attribute_id
+                     WHERE attribute.model_id = p_model_id AND attribute.modeled_entity_type = p_modeled_entity_type
+                       AND attribute.modeled_entity_id = v_mapping_object_id AND attribute.modeled_attribute_id = selected.id::BIGINT
+                       AND attribute.status = 'active' AND NOT attribute.is_locked AND NOT coalesce(mapping.attribute_mapping_is_locked,FALSE)
                  )
             ) OR (SELECT count(*) FROM jsonb_array_elements_text(v_mapping_target->'selected_attribute_ids')) <>
                  (SELECT count(DISTINCT id) FROM jsonb_array_elements_text(v_mapping_target->'selected_attribute_ids') AS selected(id)) THEN
@@ -2026,7 +1982,6 @@ BEGIN
         END IF;
       END LOOP;
     END IF;
-
 
     -- Source metadata can span Tenants, while the Run remains Model-Tenant owned.
     FOR v_source_tenant_id IN
@@ -2043,7 +1998,7 @@ BEGIN
         END IF;
     END LOOP;
 
-    IF p_model_workflow <> 'validation' THEN
+    IF p_model_workflow <> 'validation' AND NOT v_entity_workflow THEN
         SELECT count(*)::INTEGER
           INTO v_eligible_scope_count
           FROM workflow.list_model_object_eligibility(p_model_id) AS eligible
@@ -2062,26 +2017,28 @@ BEGIN
                               AND scope.object_id = eligible.object_id
                               AND scope.is_active
                        )
-                   WHEN p_model_workflow = 'dimensional' THEN
-                       eligible.is_dimensional_source_eligible
-                   WHEN p_model_workflow = 'mapping'
-                        AND v_modeled_entity_type = 'logical_entity' THEN
-                       eligible.is_logical_mapping_target_eligible
-                   WHEN p_model_workflow = 'mapping'
-                        AND v_modeled_entity_type = 'dimensional_entity' THEN
-                       eligible.is_dimensional_mapping_target_eligible
-                   WHEN p_model_workflow = 'code_generation'
-                        AND p_modeled_entity_type = 'logical_entity' THEN
-                       eligible.is_logical_mapping_target_eligible
-                   WHEN p_model_workflow = 'code_generation'
-                        AND p_modeled_entity_type = 'dimensional_entity' THEN
-                       eligible.is_dimensional_mapping_target_eligible
                    ELSE FALSE
                END;
         IF v_eligible_scope_count <> v_selected_scope_count THEN
             RAISE EXCEPTION
                 'Selected Scope contains an unavailable or ineligible Object';
         END IF;
+    END IF;
+
+    IF v_entity_workflow THEN
+        SELECT count(*)::INTEGER INTO v_eligible_scope_count FROM workflow.modeled_entity AS entity
+         WHERE entity.model_id = p_model_id AND entity.modeled_entity_type = p_modeled_entity_type
+           AND entity.modeled_entity_id = ANY(v_selected_object_ids) AND entity.status = 'active';
+        IF v_eligible_scope_count <> v_selected_scope_count THEN
+            RAISE EXCEPTION 'Selected Scope contains an unavailable Entity';
+        END IF;
+        SELECT encode(sha256(convert_to(jsonb_build_object(
+            'entities', jsonb_agg(jsonb_build_object('modeled_entity_type',entity.modeled_entity_type,
+                'modeled_entity_id',entity.modeled_entity_id,'modeled_entity_schema_name',entity.modeled_entity_schema_name,
+                'modeled_entity_name',entity.modeled_entity_name) ORDER BY entity.modeled_entity_id),
+            'mapping_targets',v_mapping_targets)::TEXT,'UTF8')),'hex') INTO v_selected_scope_digest
+          FROM workflow.modeled_entity AS entity WHERE entity.model_id = p_model_id
+           AND entity.modeled_entity_type = p_modeled_entity_type AND entity.modeled_entity_id = ANY(v_selected_object_ids);
     END IF;
 
     IF v_requested_batch_id IS NOT NULL THEN
@@ -2254,6 +2211,15 @@ BEGIN
           FROM unnest(v_selected_system_ids, v_selected_system_codes)
                WITH ORDINALITY
                AS selected(system_id, system_code, selection_order);
+    ELSIF v_entity_workflow THEN
+        INSERT INTO application.workflow_run_entity_selection (
+            workflow_run_id,model_id,modeled_entity_type,modeled_entity_id,
+            modeled_entity_schema_name,modeled_entity_name,selection_order
+        ) SELECT v_created.workflow_run_id,v_created.model_id,entity.modeled_entity_type,entity.modeled_entity_id,
+                 entity.modeled_entity_schema_name,entity.modeled_entity_name,selected.selection_order::INTEGER
+            FROM unnest(v_selected_object_ids) WITH ORDINALITY AS selected(entity_id,selection_order)
+            JOIN workflow.modeled_entity AS entity ON entity.model_id = p_model_id
+             AND entity.modeled_entity_type = p_modeled_entity_type AND entity.modeled_entity_id = selected.entity_id;
     ELSE
         INSERT INTO application.workflow_run_object_selection (
             workflow_run_id,
@@ -2271,14 +2237,14 @@ BEGIN
 
     IF p_model_workflow = 'mapping' THEN
         INSERT INTO application.workflow_run_mapping_target_selection (
-            workflow_run_id, model_id, object_id, source_system_id, selection_order, selected_attribute_ids
-        ) SELECT v_created.workflow_run_id, v_created.model_id,
-                 (target->>'object_id')::BIGINT, (target->>'source_system_id')::BIGINT,
-                 position::INTEGER,
+            workflow_run_id,model_id,workflow_run_entity_selection_id,source_system_id,selection_order,selected_attribute_ids
+        ) SELECT v_created.workflow_run_id,v_created.model_id,frozen.workflow_run_entity_selection_id,
+                 (target->>'source_system_id')::BIGINT,position::INTEGER,
                  CASE WHEN jsonb_typeof(target->'selected_attribute_ids') = 'array'
-                      THEN ARRAY(SELECT id::BIGINT FROM jsonb_array_elements_text(target->'selected_attribute_ids') AS attributes(id))
-                      ELSE NULL END
-            FROM jsonb_array_elements(v_mapping_targets) WITH ORDINALITY AS selected(target, position);
+                      THEN ARRAY(SELECT id::BIGINT FROM jsonb_array_elements_text(target->'selected_attribute_ids') AS attributes(id)) ELSE NULL END
+            FROM jsonb_array_elements(v_mapping_targets) WITH ORDINALITY AS selected(target,position)
+            JOIN application.workflow_run_entity_selection AS frozen ON frozen.workflow_run_id = v_created.workflow_run_id
+             AND frozen.modeled_entity_type = p_modeled_entity_type AND frozen.modeled_entity_id = (target->>'modeled_entity_id')::BIGINT;
     END IF;
 
     IF v_is_agentic THEN
@@ -2335,7 +2301,8 @@ REVOKE ALL ON FUNCTION application.create_workflow_run(
     BIGINT,
     JSONB,
     JSONB,
-    VARCHAR
+    VARCHAR,
+    BIGINT[]
 ) FROM PUBLIC;
 
 CREATE FUNCTION application.lock_authoring_workflow_run(

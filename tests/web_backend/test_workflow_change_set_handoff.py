@@ -79,7 +79,6 @@ def _change_set_row(*, status: str = "active") -> dict[str, Any]:
         "conceptual_document": {"conceptual_object": _change().records},
         "logical_document": {},
         "dimensional_document": {},
-        "model_binding_document": {},
         "mapping_document": {},
         "code_generation_document": {},
         "validation_document": {},

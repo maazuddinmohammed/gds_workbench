@@ -7375,6 +7375,23 @@ var require_core3 = __commonJS({
           return normalize(area, field, record2[field]);
         });
       }
+      function isEntityOwnedModelCatalog2(catalog) {
+        if (!Array.isArray(catalog?.sections)) return false;
+        for (const section of catalog.sections) {
+          if (section?.name === "model_binding" || !Array.isArray(section?.datasets)) return false;
+          for (const dataset of section.datasets) {
+            if (["model_object_binding", "model_attribute_binding", "mapping_dependency"].includes(dataset?.name)) return false;
+            let required2 = [];
+            if (["mapping_object", "mapping_attribute", "generated_code", "generated_code_source_system"].includes(dataset?.name)) required2 = ["modeled_entity_schema_name"];
+            for (const layer of ["logical", "dimensional"]) {
+              if ([`${layer}_entity`, `${layer}_attribute`].includes(dataset?.name)) required2 = [`${layer}_entity_schema_name`];
+              if (dataset?.name === `${layer}_relationship`) required2 = [`from_${layer}_entity_schema_name`, `to_${layer}_entity_schema_name`];
+            }
+            if (required2.some((field) => !Array.isArray(dataset.canonical_key) || !dataset.canonical_key.includes(field))) return false;
+          }
+        }
+        return true;
+      }
       function overlay(area, definition, baseline, pending) {
         const records = new Map(
           baseline.map((record2) => [stableStringify2(key(area, definition, record2)), record2])
@@ -7420,7 +7437,7 @@ var require_core3 = __commonJS({
           };
         });
       }
-      return { active, key, normalize, overlay, reviewActions, stableStringify: stableStringify2 };
+      return { active, isEntityOwnedModelCatalog: isEntityOwnedModelCatalog2, key, normalize, overlay, reviewActions, stableStringify: stableStringify2 };
     });
   }
 });
@@ -19009,6 +19026,7 @@ var unicodeLower = unicode.lower;
 // src/stage-contract.ts
 var import_core8 = __toESM(require_core3(), 1);
 var stableStringify = import_core8.default.stableStringify;
+var isEntityOwnedModelCatalog = import_core8.default.isEntityOwnedModelCatalog;
 var SHA256 = /^[0-9a-f]{64}$/;
 var UUID2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 var MAX_MANIFEST_BYTES = 128 * 1024;
@@ -19058,9 +19076,6 @@ var ALLOWED_DATASETS = {
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",
-    "model_object_binding",
-    "model_attribute_binding",
-    "mapping_dependency",
     "mapping_object",
     "mapping_attribute",
     "generated_code",
@@ -19329,7 +19344,7 @@ async function readRequest(input, workspaceRoots2, backend) {
     } catch {
       fail2("SNAPSHOT_MISMATCH", "An input Snapshot is invalid.");
     }
-    if (sha256(bytes) !== binding.manifest_sha256 || !isObject4(inputManifest) || inputManifest.snapshot_id !== binding.snapshot_id || inputManifest.snapshot_kind !== binding.area || binding.area === "model" && (inputManifest.model_revision !== binding.model_revision || !isObject4(state.model) || inputManifest.model_id !== state.model.id || inputManifest.model_name !== state.model.name) || binding.area === "metadata" && normalizedTenantCode(inputManifest.tenant_code) !== normalizedTenantCode(inputOwner.code)) {
+    if (sha256(bytes) !== binding.manifest_sha256 || !isObject4(inputManifest) || inputManifest.snapshot_id !== binding.snapshot_id || inputManifest.snapshot_kind !== binding.area || binding.area === "model" && (inputManifest.schema_version !== "2.0" || inputManifest.model_revision !== binding.model_revision || !isObject4(state.model) || inputManifest.model_id !== state.model.id || inputManifest.model_name !== state.model.name) || binding.area === "metadata" && normalizedTenantCode(inputManifest.tenant_code) !== normalizedTenantCode(inputOwner.code)) {
       fail2("SNAPSHOT_MISMATCH", "An input Snapshot changed after acknowledgement.");
     }
     if (binding.area === request.area && binding.owner_tenant_id === request.owner.id && binding.manifest_path === request.snapshot.manifest_path && binding.snapshot_id === request.snapshot.snapshot_id && binding.manifest_sha256 === request.snapshot.manifest_sha256 && (request.area !== "model" || binding.model_revision === request.target.model_revision)) primaryInput = true;
@@ -19411,7 +19426,7 @@ async function verifySnapshotBinding(request, session) {
   } catch {
     fail2("SNAPSHOT_MISMATCH", "The bound Snapshot manifest is invalid.");
   }
-  if (!isObject4(manifest) || manifest.snapshot_kind !== request.area || manifest.snapshot_id !== request.snapshot.snapshot_id) {
+  if (!isObject4(manifest) || manifest.snapshot_kind !== request.area || request.area === "model" && manifest.schema_version !== "2.0" || manifest.snapshot_id !== request.snapshot.snapshot_id) {
     fail2("SNAPSHOT_MISMATCH", "The Stage request does not match its bound Snapshot.");
   }
   if (!isObject4(manifest.catalog) || manifest.catalog.path !== "catalog.json" || typeof manifest.catalog.sha256 !== "string" || !SHA256.test(manifest.catalog.sha256) || !Array.isArray(manifest.members)) {
@@ -19431,9 +19446,10 @@ async function verifySnapshotBinding(request, session) {
   } catch {
     fail2("SNAPSHOT_MISMATCH", "The bound Snapshot catalog is invalid.");
   }
-  if (!isObject4(catalog) || catalog.snapshot_kind !== request.area || !Array.isArray(catalog.sections)) {
+  if (!isObject4(catalog) || catalog.snapshot_kind !== request.area || request.area === "model" && catalog.schema_version !== "2.0" || !Array.isArray(catalog.sections)) {
     fail2("SNAPSHOT_MISMATCH", "The bound Snapshot catalog identity is invalid.");
   }
+  if (request.area === "model" && !isEntityOwnedModelCatalog(catalog)) fail2("SNAPSHOT_MISMATCH", "Legacy Model Snapshot contract; fetch a new Entity-owned Model Snapshot.");
   const catalogDatasets = /* @__PURE__ */ new Map();
   for (const section of catalog.sections) {
     if (!isObject4(section) || !Array.isArray(section.datasets)) {

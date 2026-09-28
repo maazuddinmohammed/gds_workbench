@@ -12,10 +12,9 @@ from gds_etl_workbench.application.model_read import ModelReadContext
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.domain.modeling_records import (
     GeneratedCodeRecord,
-    MappingDependencyRecord,
     MappingObjectRecord,
-    ModelAttributeBindingRecord,
-    ModelObjectBindingRecord,
+    LogicalEntityRecord,
+    LogicalAttributeRecord,
     ObjectSupportRecord,
 )
 from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
@@ -48,9 +47,16 @@ def _plan(
             "model_revision": 7,
             "model_workflow": model_workflow,
             "workflow_execution_mode": execution_mode,
-            "modeled_entity_type": None,
+            "modeled_entity_type": "logical_entity"
+            if model_workflow == "dimensional"
+            else None,
             "selected_scope_digest": "a" * 64,
-            "selected_object_ids": selected_object_ids,
+            "selected_object_ids": ()
+            if model_workflow == "dimensional"
+            else selected_object_ids,
+            "selected_entity_ids": selected_object_ids
+            if model_workflow == "dimensional"
+            else (),
             "selection": AgentRunSelection(
                 sdk_code="openai_agents_sdk",
                 provider_code="microsoft_foundry",
@@ -150,6 +156,12 @@ def _snapshot() -> ModelSnapshot:
                 "details": {
                     "model_name": "Customer Model",
                     "model_description": None,
+                    "logical_schemas": [
+                        {"schema_name": "silver_sales", "description": None}
+                    ],
+                    "dimensional_schemas": [
+                        {"schema_name": "gold_sales", "description": None}
+                    ],
                     "silver_model_naming_instructions": None,
                     "silver_model_audit_columns_template": None,
                     "gold_model_naming_instructions": None,
@@ -250,8 +262,7 @@ def _snapshot() -> ModelSnapshot:
                 "attributes": (),
                 "relationships": (),
             },
-            "model_binding": {"objects": (), "attributes": ()},
-            "mapping": {"dependencies": (), "objects": (), "attributes": ()},
+            "mapping": {"objects": (), "attributes": ()},
         },
         strict=False,
     )
@@ -273,30 +284,40 @@ def _snapshot_with_large_assertion(text: str) -> ModelSnapshot:
 
 def _dimensional_snapshot() -> ModelSnapshot:
     snapshot = _snapshot()
-    silver_binding = ModelObjectBindingRecord.model_validate(
-        {
-            **_object_key("silver_customers"),
-            "object_schema": "silver_sales",
-            "modeled_entity_type": "logical_entity",
-            "modeled_entity_name": "Customer",
-            "model_object_binding_status": "active",
-            "model_object_binding_is_locked": False,
-        },
-        strict=False,
+    entity = LogicalEntityRecord(
+        logical_entity_schema_name="silver_sales",
+        logical_entity_name="Customer",
+        logical_entity_definition="Customer",
+        logical_entity_type="core",
+        logical_entity_type_detail=None,
+        logical_entity_grain="One customer",
+        logical_entity_dependency_order=0,
+        logical_entity_confidence="high",
+        logical_entity_status="active",
+        logical_entity_is_locked=False,
+        submodels=(),
+        sources=(),
     )
-    dependency = MappingDependencyRecord.model_validate(
-        {
-            "modeled_entity_type": "logical_entity",
-            "source_system_code": "ERP",
-            "source_system_dependency_order": 0,
-            "mapping_source_system_dependency_status": "active",
-            "mapping_source_system_dependency_is_locked": False,
-        },
-        strict=False,
+    attribute = LogicalAttributeRecord(
+        logical_entity_schema_name="silver_sales",
+        logical_entity_name="Customer",
+        logical_attribute_name="CustomerID",
+        logical_attribute_definition="Customer ID",
+        logical_attribute_data_type="bigint",
+        logical_attribute_is_nullable=False,
+        logical_attribute_is_primary_key=True,
+        logical_attribute_is_natural_key=True,
+        logical_attribute_is_surrogate_key=False,
+        logical_attribute_ordinal_position=1,
+        logical_attribute_is_audit_column=False,
+        logical_attribute_status="active",
+        logical_attribute_is_locked=False,
+        sources=(),
     )
     mapping = MappingObjectRecord.model_validate(
         {
             "modeled_entity_type": "logical_entity",
+            "modeled_entity_schema_name": "silver_sales",
             "modeled_entity_name": "Customer",
             "source_system_code": "ERP",
             "output_template_code": None,
@@ -309,23 +330,11 @@ def _dimensional_snapshot() -> ModelSnapshot:
     )
     return snapshot.model_copy(
         update={
-            "model_binding": snapshot.model_binding.model_copy(
-                update={
-                    "objects": (silver_binding,),
-                    "attributes": (
-                        ModelAttributeBindingRecord(
-                            modeled_entity_type="logical_entity",
-                            modeled_entity_name="Customer",
-                            modeled_attribute_name="CustomerID",
-                            attribute_name="customer_id",
-                            model_attribute_binding_status="active",
-                            model_attribute_binding_is_locked=False,
-                        ),
-                    ),
-                }
+            "logical": snapshot.logical.model_copy(
+                update={"entities": (entity,), "attributes": (attribute,)}
             ),
             "mapping": snapshot.mapping.model_copy(
-                update={"dependencies": (dependency,), "objects": (mapping,)}
+                update={"objects": (mapping,)}
             ),
         }
     )
@@ -343,12 +352,6 @@ async def _load_physical_scope(
         attributes=frozenset(),
         model_input_objects=frozenset(),
         model_input_attributes=frozenset(),
-        dimensional_source_objects=frozenset(),
-        dimensional_source_attributes=frozenset(),
-        logical_mapping_target_objects=frozenset(),
-        logical_mapping_target_attributes=frozenset(),
-        dimensional_mapping_target_objects=frozenset(),
-        dimensional_mapping_target_attributes=frozenset(),
     )
 
 
@@ -445,103 +448,41 @@ class ContextTransaction:
 class DimensionalContextTransaction(ContextTransaction):
     def __init__(self, *, object_is_eligible: bool = True) -> None:
         self.object_is_eligible = object_is_eligible
-        self.object_query_filtered = False
-        self.attribute_query_filtered = False
+        self.entity_query_filtered = False
 
     async def fetch_all(
-        self,
-        query: LiteralString,
-        parameters: tuple[Any, ...] = (),
+        self, query: LiteralString, parameters: tuple[Any, ...] = ()
     ) -> list[dict[str, Any]]:
-        if "source_zone_description" in query:
-            assert parameters == ([701], 7)
+        if "workflow_run_entity_selection" in query:
+            assert parameters == (1048, 18)
+            self.entity_query_filtered = (
+                "entity.logical_entity_status = 'active'" in query
+            )
+            return (
+                [
+                    {
+                        "selection_order": 1,
+                        "modeled_entity_id": 701,
+                        "modeled_entity_schema_name": "silver_sales",
+                        "modeled_entity_name": "Customer",
+                    }
+                ]
+                if self.object_is_eligible
+                else []
+            )
+        if "owner.gds_connection_id" in query:
+            assert parameters == (18, 7)
             return [
                 {
-                    "object_id": 701,
-                    "zone_description": "Silver",
-                    "tenant_code": None,
-                    "source_object_name": None,
+                    "tenant_code": "GDS",
+                    "system_code": "GDS",
+                    "connection_code": "PRIMARY",
+                    "zone_code": "gold",
+                    "zone_description": None,
                 }
             ]
-        if "profile.updated_time AS profiled_at" in query:
-            assert parameters == (18, [701])
-            return []
-        compact_query = " ".join(query.split())
-        dimensional_filter = (
-            "WHERE %s <> 'dimensional' OR eligibility.is_dimensional_source_eligible"
-        )
-        if "attribute_ordinal_position" not in query:
-            self.object_query_filtered = dimensional_filter in compact_query
-            expected_parameters = ([701], 18, "dimensional")
-            if self.object_query_filtered:
-                assert parameters == expected_parameters
-                if not self.object_is_eligible:
-                    return []
-            else:
-                assert parameters == expected_parameters[:2]
-            return [
-                {
-                    "selection_order": 1,
-                    "object_id": 701,
-                    **_object_key("silver_customers"),
-                    "source_tenant_code": "SOURCE",
-                    "object_schema": "silver_sales",
-                    "fc_object_schema": None,
-                    "fc_object_name": None,
-                    "object_transformation": None,
-                    "object_description": "Mapped Silver customer Object.",
-                    "batch_attribute_name": None,
-                    "object_type_code": "table",
-                    "zone_code": "silver",
-                    "is_locked": False,
-                    "is_active": True,
-                }
-            ]
-
-        self.attribute_query_filtered = (
-            dimensional_filter in compact_query
-            and compact_query.index(dimensional_filter)
-            < compact_query.index("LIMIT %s")
-        )
-        expected_parameters = ([701], 18, "dimensional", 2)
-        if self.attribute_query_filtered:
-            assert parameters == expected_parameters
-        else:
-            assert parameters == (expected_parameters[0], expected_parameters[1], 2)
-        common = {
-            "selection_order": 1,
-            "object_id": 701,
-            **_object_key("silver_customers"),
-            "object_schema": "silver_sales",
-            "fc_attribute_name": None,
-            "attribute_description": None,
-            "attribute_data_type": "bigint",
-            "attribute_inferred_data_type": None,
-            "is_locked": False,
-            "attribute_nullability": False,
-            "attribute_custom_code": None,
-            "is_surrogate_key": False,
-            "is_natural_key": False,
-            "is_meta_data": False,
-            "is_masking_required": False,
-            "is_purge": False,
-            "is_active": True,
-        }
-        mapped = {
-            **common,
-            "attribute_id": 801,
-            "attribute_name": "customer_id",
-            "attribute_ordinal_position": 1,
-            "is_mapped": True,
-        }
-        unmapped = {
-            **common,
-            "attribute_id": 802,
-            "attribute_name": "unmapped_note",
-            "attribute_ordinal_position": 2,
-            "is_mapped": False,
-        }
-        return [mapped] if self.attribute_query_filtered else [mapped, unmapped]
+        assert [] in parameters
+        return []
 
 
 class LogicalContextTransaction(ContextTransaction):
@@ -566,23 +507,9 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
     execution_mode: Literal["one_shot", "tool_assisted"],
 ) -> None:
     snapshot = _dimensional_snapshot()
-    bindings = snapshot.model_binding.objects
     snapshot = snapshot.model_copy(
         update={
             "model_tenant_code": "PRIVATE_CATALOG_TENANT",
-            "model_binding": snapshot.model_binding.model_copy(
-                update={
-                    "objects": (
-                        *bindings,
-                        bindings[0].model_copy(
-                            update={
-                                "modeled_entity_name": "Customer History",
-                                "object_name": "history",
-                            }
-                        ),
-                    )
-                }
-            ),
             "mapping": snapshot.mapping.model_copy(
                 update={
                     "objects": (
@@ -602,6 +529,7 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
                         GeneratedCodeRecord(
                             generated_code_is_locked=False,
                             modeled_entity_type="logical_entity",
+                            modeled_entity_schema_name="silver_sales",
                             modeled_entity_name="Customer",
                             artifact_name="customers.sql",
                             artifact_type="sql_file",
@@ -620,12 +548,6 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
         attributes=frozenset(),
         model_input_objects=frozenset(),
         model_input_attributes=frozenset(),
-        dimensional_source_objects=frozenset(),
-        dimensional_source_attributes=frozenset(),
-        logical_mapping_target_objects=frozenset(),
-        logical_mapping_target_attributes=frozenset(),
-        dimensional_mapping_target_objects=frozenset(),
-        dimensional_mapping_target_attributes=frozenset(),
     )
     transaction = (
         LogicalContextTransaction()
@@ -686,36 +608,13 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
     assert "PRIVATE_CODE_BODY" not in provider_text + repr(result)
     if model_workflow == "logical":
         assert {item.dataset for item in result.context.read_only_dependencies} == {
-            "model_object_binding",
-            "model_attribute_binding",
-            "mapping_dependency",
+
             "mapping_object",
             "generated_code",
         }
         if execution_mode == "tool_assisted":
             catalog = result.tool_catalog
             assert catalog is not None
-            first = catalog.invoke(
-                "get_agent_context_dataset",
-                {
-                    "dataset": "read_only_model_object_binding",
-                    "offset": 0,
-                    "limit": 1,
-                },
-            )
-            assert isinstance(first, dict)
-            assert first["next_offset"] == 1
-            second = catalog.invoke(
-                "get_agent_context_dataset",
-                {
-                    "dataset": "read_only_model_object_binding",
-                    "offset": 1,
-                    "limit": 1,
-                },
-            )
-            assert isinstance(second, dict)
-            assert second["next_offset"] is None
-            assert first["items"] != second["items"]
             code = catalog.invoke(
                 "get_agent_context_dataset",
                 {
@@ -827,7 +726,8 @@ async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseli
     assert "model_id" not in result.embedded_context
     # batch_id identifies the profiled source batch, not an internal database row.
     assert not {
-        key for key in _json_keys(result.embedded_context)
+        key
+        for key in _json_keys(result.embedded_context)
         if key.endswith("_id") and key != "batch_id"
     }
     assert "sensitive physical description" not in repr(result)
@@ -835,25 +735,12 @@ async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseli
 
 
 @pytest.mark.asyncio
-async def test_dimensional_context_keeps_only_eligible_mapped_silver_attributes() -> (
+async def test_dimensional_context_reads_active_logical_attributes_without_registration() -> (
     None
 ):
     transaction = DimensionalContextTransaction()
     snapshot = _dimensional_snapshot()
     physical_scope: PhysicalModelCatalog | None = None
-    bound = snapshot.model_binding.objects[0].model_copy(
-        update={
-            "modeled_entity_type": "dimensional_entity",
-            "modeled_entity_name": "Customer Dimension",
-        }
-    )
-    snapshot = snapshot.model_copy(
-        update={
-            "model_binding": snapshot.model_binding.model_copy(
-                update={"objects": (*snapshot.model_binding.objects, bound)}
-            )
-        }
-    )
     scope_loaded = False
 
     async def load_dimensional_snapshot(*_: object) -> ModelSnapshot:
@@ -884,24 +771,23 @@ async def test_dimensional_context_keeps_only_eligible_mapped_silver_attributes(
         plan=_plan(model_workflow="dimensional", selected_object_ids=(701,)),
     )
 
-    assert transaction.object_query_filtered is True
-    assert transaction.attribute_query_filtered is True
-    assert result.context.selected_objects[0].object.zone_code == "silver"
+    assert transaction.entity_query_filtered is True
+    assert result.context.selected_objects == ()
+    assert result.context.gds_context[0]["zone_code"] == "gold"
+    assert (
+        result.context.selected_logical_entities[0].entity.logical_entity_name
+        == "Customer"
+    )
     assert [
-        attribute.attribute_name
-        for attribute in result.context.selected_objects[0].attributes
-    ] == ["customer_id"]
-    assert result.context.selected_objects[0].attributes[0].is_mapped is True
+        attribute.logical_attribute_name
+        for attribute in result.context.selected_logical_entities[0].attributes
+    ] == ["CustomerID"]
     assert (
         scope_loaded
         and result.snapshot is snapshot
         and result.physical_scope is physical_scope
     )
-    assert [
-        (item.dataset, item.record) for item in result.context.read_only_dependencies
-    ] == [
-        ("model_object_binding", bound.model_dump(mode="json")),
-    ]
+    assert result.context.read_only_dependencies == ()
 
 
 @pytest.mark.asyncio
@@ -930,7 +816,7 @@ async def test_dimensional_context_rejects_an_ineligible_selected_object() -> No
         )
 
     assert captured.value.code == "agent_context_unavailable"
-    assert transaction.object_query_filtered is True
+    assert transaction.entity_query_filtered is True
 
 
 @pytest.mark.asyncio
@@ -1471,3 +1357,37 @@ async def test_projected_inputs_keep_actual_keys_profiles_and_scoped_relationshi
     # The saved endpoint outside this run's selection cannot enter the agent's result context.
     assert values["object_relationship_context"][0]["outgoing_relationships"] == []
     assert "read_only_dependencies" not in values
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("workflow", ["logical", "dimensional"])
+async def test_authoring_requires_configured_output_schemas(workflow: Any) -> None:
+    snapshot = _dimensional_snapshot()
+    details = snapshot.model_input_scope.details.model_copy(
+        update={f"{workflow}_schemas": ()}
+    )
+    snapshot = snapshot.model_copy(
+        update={
+            "model_input_scope": snapshot.model_input_scope.model_copy(
+                update={"details": details}
+            )
+        }
+    )
+
+    async def load_snapshot(*_: object) -> ModelSnapshot:
+        return snapshot
+
+    with pytest.raises(WorkbenchError, match="revision-fenced"):
+        await PostgresAgentContextRepository(
+            physical_scope_loader=_load_physical_scope,
+            snapshot_loader=load_snapshot,
+        ).load(
+            DimensionalContextTransaction()
+            if workflow == "dimensional"
+            else LogicalContextTransaction(),
+            tenant_id=7,
+            plan=_plan(
+                model_workflow=workflow,
+                selected_object_ids=(701,) if workflow == "dimensional" else (501,),
+            ),
+        )

@@ -59,7 +59,7 @@ def test_edit_definition_preserves_all_other_fields(dataset: EditableDataset) ->
 @pytest.mark.parametrize(
     "changes",
     [
-        {"logical_entity_name": "Renamed"},
+        {"logical_entity_schema_name": "silver", "logical_entity_name": "Renamed"},
         {"logical_entity_is_locked": False},
         {"logical_entity_status": "inactive"},
         {"sources": []},

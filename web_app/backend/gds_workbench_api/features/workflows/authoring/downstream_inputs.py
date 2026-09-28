@@ -48,7 +48,12 @@ def downstream_reader_specs(workflow: str) -> ReaderSpecs:
             "get_current_code": (
                 "current_code",
                 "artifact_keys",
-                ("modeled_entity_type", "modeled_entity_name", "artifact_name"),
+                (
+                    "modeled_entity_type",
+                    "modeled_entity_schema_name",
+                    "modeled_entity_name",
+                    "artifact_name",
+                ),
             ),
             "get_applied_groups": ("applied_groups", "group_names", ("validation_group_name",)),
             "get_applied_checks": ("applied_checks", "group_names", ("validation_group_name",)),
@@ -77,7 +82,33 @@ class DownstreamContextReaders(FrozenContextReaders):
         rows = self._values.get(variable)
         if selection in (None, []):
             return rows
-        if selector in {"source_object_keys", "target_object_keys", "group_names"}:
+        if selector == "source_keys":
+            if not isinstance(rows, list):
+                self._invalid()
+
+            def mixed_key(value: dict[str, Any]) -> tuple[Any, ...]:
+                modeled = "entity_schema_name" in value
+                return (
+                    "modeled" if modeled else "physical",
+                    *natural_key(
+                        value,
+                        ("entity_type", "entity_schema_name", "entity_name")
+                        if modeled
+                        else OBJECT_FIELDS,
+                    ),
+                )
+
+            wanted = {mixed_key(item) for item in selection}
+            source_rows = cast(list[dict[str, Any]], rows)
+            if not wanted <= {mixed_key(row["object"]) for row in source_rows}:
+                self._invalid()
+            return [row for row in source_rows if mixed_key(row["object"]) in wanted]
+        if selector in {
+            "source_object_keys",
+            "source_entity_keys",
+            "target_object_keys",
+            "group_names",
+        }:
             if not isinstance(rows, list):
                 self._invalid()
             rows = cast(list[dict[str, Any]], rows)
@@ -89,7 +120,7 @@ class DownstreamContextReaders(FrozenContextReaders):
             def key(row: dict[str, Any]) -> tuple[Any, ...]:
                 value = (
                     row["object"]
-                    if selector == "source_object_keys"
+                    if selector in {"source_object_keys", "source_entity_keys"}
                     else row["context"]["target_metadata"]
                     if selector == "target_object_keys"
                     else row
@@ -112,6 +143,18 @@ def build_downstream_readers(
     max_cumulative_result_bytes: int | None,
 ) -> DownstreamContextReaders:
     specs = downstream_reader_specs(workflow)
+    sources = values.get("source_evidence", [])
+    if workflow == "mapping" and sources:
+        has_modeled = any("entity_schema_name" in row.get("object", {}) for row in sources)
+        has_physical = any("object_schema" in row.get("object", {}) for row in sources)
+        if has_modeled:
+            specs["get_mapping_sources"] = (
+                "source_evidence",
+                "source_keys" if has_physical else "source_entity_keys",
+                OBJECT_FIELDS
+                if has_physical
+                else ("entity_type", "entity_schema_name", "entity_name"),
+            )
     tool_values = deepcopy(values)
     for variable, _, _ in specs.values():
         if isinstance(tool_values.get(variable), dict):
@@ -137,10 +180,6 @@ def project_downstream_inputs(workflow: str, context: dict[str, Any]) -> dict[st
                 row["attribute_id"]: row["attribute_name"]
                 for row in header["modeled_entity"]["attributes"]
             }
-            target_attributes = {
-                row["attribute_id"]: row["attribute_name"]
-                for row in context["target"]["attributes"]
-            }
             templates = {
                 row["output_template_id"]: row for row in context["output_templates"]["definitions"]
             }
@@ -150,9 +189,6 @@ def project_downstream_inputs(workflow: str, context: dict[str, Any]) -> dict[st
             ):
                 projected["modeled_attribute_name"] = entity_attributes[
                     original["modeled_attribute_id"]
-                ]
-                projected["target_attribute_name"] = target_attributes[
-                    original["target_attribute_id"]
                 ]
             readiness = _without_internal_fields(context["readiness"])
             for original_header, projected_header in zip(
@@ -200,6 +236,7 @@ def project_downstream_inputs(workflow: str, context: dict[str, Any]) -> dict[st
             targets = [
                 {
                     "modeled_entity_type": row["modeled_entity_type"],
+                    "modeled_entity_schema_name": row["modeled_entity_schema_name"],
                     "modeled_entity_name": row["modeled_entity_name"],
                     "context": _sql_inputs(row["context"]),
                 }

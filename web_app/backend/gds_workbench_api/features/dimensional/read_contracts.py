@@ -14,8 +14,6 @@ from gds_workbench_api.features.logical import (
     ModeledFilters,
     ModeledListQuery,
     ModeledStatus,
-    PhysicalAttributeReference,
-    PhysicalObjectReference,
 )
 
 MAX_DETAIL_ROWS = 2000
@@ -27,6 +25,7 @@ DimensionalFilters = ModeledFilters
 class DimensionalObjectSummary(ContractModel):
     dimensional_entity_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
+    dimensional_entity_schema_name: str = Field(min_length=1, max_length=400)
     dimensional_entity_name: str = Field(min_length=1, max_length=255)
     dimensional_entity_type: Literal["fact", "dimension", "bridge"]
     dimensional_fact_type: (
@@ -75,9 +74,20 @@ class DimensionalObjectSourceBase(ContractModel):
     updated_at: datetime
 
 
-class DimensionalPhysicalObjectSource(DimensionalObjectSourceBase):
-    support_source_type: Literal["object"]
-    source_object: PhysicalObjectReference
+class LogicalEntityReference(ContractModel):
+    logical_entity_id: int = Field(gt=0)
+    logical_entity_schema_name: str = Field(min_length=1, max_length=400)
+    logical_entity_name: str = Field(min_length=1, max_length=255)
+
+
+class LogicalAttributeReference(LogicalEntityReference):
+    logical_attribute_id: int = Field(gt=0)
+    logical_attribute_name: str = Field(min_length=1, max_length=255)
+
+
+class DimensionalLogicalEntitySource(DimensionalObjectSourceBase):
+    support_source_type: Literal["logical_entity"]
+    source_logical_entity: LogicalEntityReference
 
 
 class DimensionalAssertionSource(DimensionalObjectSourceBase):
@@ -86,7 +96,7 @@ class DimensionalAssertionSource(DimensionalObjectSourceBase):
 
 
 type DimensionalObjectSource = Annotated[
-    DimensionalPhysicalObjectSource | DimensionalAssertionSource,
+    DimensionalLogicalEntitySource | DimensionalAssertionSource,
     Field(discriminator="support_source_type"),
 ]
 
@@ -107,6 +117,7 @@ class DimensionalAttributeSummary(ContractModel):
     dimensional_attribute_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
     dimensional_entity_id: int = Field(gt=0)
+    dimensional_entity_schema_name: str = Field(min_length=1, max_length=400)
     dimensional_entity_name: str = Field(min_length=1, max_length=255)
     dimensional_attribute_name: str = Field(min_length=1, max_length=255)
     dimensional_attribute_data_type: str = Field(min_length=1, max_length=100)
@@ -174,10 +185,10 @@ class DimensionalAttributeSourceBase(ContractModel):
     updated_at: datetime
 
 
-class DimensionalAttributePhysicalSource(DimensionalAttributeSourceBase):
+class DimensionalAttributeLogicalSource(DimensionalAttributeSourceBase):
     dimensional_entity_source_mapping_id: int = Field(gt=0)
-    support_source_type: Literal["attribute"]
-    source_attribute: PhysicalAttributeReference
+    support_source_type: Literal["logical_attribute"]
+    source_logical_attribute: LogicalAttributeReference
 
 
 class DimensionalAttributeAssertionSource(DimensionalAttributeSourceBase):
@@ -186,7 +197,7 @@ class DimensionalAttributeAssertionSource(DimensionalAttributeSourceBase):
 
 
 type DimensionalAttributeSource = Annotated[
-    DimensionalAttributePhysicalSource | DimensionalAttributeAssertionSource,
+    DimensionalAttributeLogicalSource | DimensionalAttributeAssertionSource,
     Field(discriminator="support_source_type"),
 ]
 
@@ -209,10 +220,12 @@ class DimensionalRelationshipSummary(ContractModel):
     dimensional_relationship_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
     from_dimensional_entity_id: int = Field(gt=0)
+    from_dimensional_entity_schema_name: str = Field(min_length=1, max_length=400)
     from_dimensional_entity_name: str = Field(min_length=1, max_length=255)
     from_dimensional_attribute_id: int = Field(gt=0)
     from_dimensional_attribute_name: str = Field(min_length=1, max_length=255)
     to_dimensional_entity_id: int = Field(gt=0)
+    to_dimensional_entity_schema_name: str = Field(min_length=1, max_length=400)
     to_dimensional_entity_name: str = Field(min_length=1, max_length=255)
     to_dimensional_attribute_id: int = Field(gt=0)
     to_dimensional_attribute_name: str = Field(min_length=1, max_length=255)

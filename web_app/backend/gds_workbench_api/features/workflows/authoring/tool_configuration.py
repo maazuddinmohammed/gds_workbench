@@ -2,59 +2,12 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from pydantic import JsonValue
 
+from .agent_execution import AgentToolName as AgentToolName
 from .agent_execution import LocalAgentToolCatalog, LocalAgentToolDefinition
-
-type AgentToolName = Literal[
-    "get_agent_context_manifest",
-    "get_agent_context_dataset",
-    "get_mapping_context_manifest",
-    "get_mapping_context_dataset",
-    "get_source_context",
-    "get_gds_context",
-    "get_objects",
-    "get_object_details",
-    "get_object_relationships",
-    "get_modeling_assertions",
-    "get_logical_bindings",
-    "list_conceptual_objects",
-    "get_conceptual_objects",
-    "list_conceptual_relationships",
-    "get_conceptual_relationships",
-    "list_logical_submodels",
-    "get_logical_submodels",
-    "list_logical_entities",
-    "get_logical_entities",
-    "list_logical_attributes",
-    "get_logical_attributes",
-    "list_logical_relationships",
-    "get_logical_relationships",
-    "list_dimensional_submodels",
-    "get_dimensional_submodels",
-    "list_dimensional_entities",
-    "get_dimensional_entities",
-    "list_dimensional_attributes",
-    "get_dimensional_attributes",
-    "list_dimensional_relationships",
-    "get_dimensional_relationships",
-    "get_mapping_target",
-    "get_mapping_sources",
-    "get_existing_mapping",
-    "get_mapping_support",
-    "get_code_target",
-    "get_code_sources",
-    "get_code_source_systems",
-    "get_object_transformations",
-    "get_attribute_transformations",
-    "get_mapping_evidence",
-    "get_current_code",
-    "get_applied_groups",
-    "get_applied_checks",
-]
 
 
 @dataclass(frozen=True, slots=True)

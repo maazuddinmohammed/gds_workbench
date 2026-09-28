@@ -30,7 +30,6 @@ Show these workflow choices when no workflow is selected. Guided and Grill Me ar
 | Dimensional / Gold build — Guided | [Dimensional Guided](../atlas-dimensional-build-guided/SKILL.md). |
 | Dimensional / Gold build — Grill Me | [Dimensional Grill Me](../atlas-dimensional-build-grill-me/SKILL.md). |
 | Target registration — Silver/Gold metadata and optional DDL | [Target registration](../atlas-target-registration/SKILL.md). |
-| Entity binding — match Entities/Attributes to registered targets | [Entity Binding](../atlas-entity-binding/SKILL.md). |
 | Mapping — transformation instructions | [Mapping](../atlas-mapping/SKILL.md). |
 | Code generation — transformation code from Mapping | [Code Generation](../atlas-code-generation/SKILL.md); [first release](../../references/release-scope.md) generates SQL and preserves existing Python. |
 | Validation — technical/functional checks | [Validation](../atlas-validation/SKILL.md). |
@@ -39,7 +38,7 @@ Show these workflow choices when no workflow is selected. Guided and Grill Me ar
 
 If a request says only Logical or Gold build, resolve [Guided versus Grill Me](../../references/working-method.md#build-workflow-routing). A named mode already supplies the selection. Treat “drill me” as a conversational alias for Grill Me; keep the displayed name Grill Me and use the same dedicated skill. State the selected operation and mode together, such as “Logical build — Guided”, never only “Build” or “Guided”.
 
-For registration, Binding, Mapping, Code or Validation, resolve Logical/Silver versus Dimensional/Gold from the request/context; ask only if ambiguous. Several requested workflows can form one journey, but run each under its own prerequisites and completion boundary. Naming a later workflow does not approve Apply or execution.
+For registration, Mapping, Code or Validation, resolve Logical/Silver versus Dimensional/Gold from the request/context; ask only if ambiguous. Several requested workflows can form one journey, but run each under its own prerequisites and completion boundary. Naming a later workflow does not approve Apply or execution.
 
 ## Prepare and continue
 

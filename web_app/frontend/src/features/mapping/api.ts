@@ -1,7 +1,6 @@
 import type { ModelRecordReviewApi } from "../model_record_review/api";
 import type { HttpRequest } from "../../core/http";
 import type { JsonObject, ReviewStatus } from "../../shared/contracts";
-import type { MetadataApi } from "../metadata/api";
 import type { ModelsApi } from "../models/api";
 import type { WorkflowsApi } from "../workflows/api";
 
@@ -43,78 +42,25 @@ export interface MappingSourceSystem {
   system_name: string;
 }
 
-export interface MappingPhysicalObject {
-  object_id: number;
-  tenant_id: number;
-  tenant_code: string;
-  tenant_name: string;
-  system_id: number;
-  system_code: string;
-  system_name: string;
-  connection_id: number;
-  connection_code: string;
-  object_schema: string;
-  object_name: string;
-  zone_code: string;
-}
-
 export interface MappingModeledEntity {
   entity_type: MappingEntityType;
   entity_id: number;
+  entity_schema_name: string;
   entity_name: string;
-}
-
-export interface MappingPhysicalAttribute {
-  object: MappingPhysicalObject;
-  attribute_id: number;
-  attribute_name: string;
-  attribute_ordinal_position: number;
-  attribute_data_type: string;
 }
 
 export interface MappingModeledAttribute {
   entity: MappingModeledEntity;
   attribute_id: number;
   attribute_name: string;
+  ordinal_position: number;
+  data_type: string;
 }
 
-export interface MappingDependency {
-  mapping_source_system_dependency_id: number;
-  workflow_run_id: number | null;
-  entity_type: MappingEntityType;
-  source_system: MappingSourceSystem;
-  dependency_order: number;
-  status: MappingStatus;
-  is_locked: boolean;
-  updated_at: string;
-}
-
-export interface MappingDependencyPage {
-  model_id: number;
-  model_revision: number;
-  items: MappingDependency[];
-  next_cursor: string | null;
-}
-
-export interface MappingTarget {
-  object_id: number;
-  connection_id: number;
-  system_id: number;
-  system_code: string;
-  system_name: string;
-  source_tenant_id: number;
-  source_tenant_code: string;
-  source_tenant_name: string;
-  object_schema: string;
-  object_name: string;
-  zone_code: "silver" | "gold";
-}
-
-export interface MappingGenerationTarget extends MappingTarget {
+export interface MappingGenerationTarget extends MappingModeledEntity {
   source_system: MappingSourceSystem;
   entity_name: string;
   mapping_object_id: number | null;
-  dependency_order: number;
   object_order: number;
   is_locked: boolean;
   has_sources: boolean;
@@ -125,18 +71,10 @@ export interface MappingGenerationPage {
   model_id: number; model_revision: number; items: MappingGenerationTarget[]; next_cursor: string | null;
 }
 
-export interface MappingTargetPage {
-  model_id: number;
-  model_revision: number;
-  items: MappingTarget[];
-  next_cursor: string | null;
-}
-
 export interface MappingObject {
   mapping_object_id: number;
   workflow_run_id: number | null;
-  target: MappingPhysicalObject;
-  source: MappingModeledEntity;
+  target: MappingModeledEntity;
   source_system: MappingSourceSystem;
   dependency_order: number;
   status: MappingStatus;
@@ -170,8 +108,7 @@ export interface MappingAttribute {
   mapping_attribute_id: number;
   workflow_run_id: number | null;
   mapping_object_id: number;
-  target: MappingPhysicalAttribute;
-  source: MappingModeledAttribute;
+  target: MappingModeledAttribute;
   source_system: MappingSourceSystem;
   status: MappingStatus;
   is_locked: boolean;
@@ -199,30 +136,8 @@ export interface MappingAttributeDetail extends MappingAttribute {
   created_at: string;
 }
 
-export interface SaveMappingDependencyCommand {
-  expected_model_revision: number;
-  entity_type: MappingEntityType;
-  source_system_code: string;
-  dependency_order: number;
-}
-
 export interface MappingTransport {
   listMappingGenerationTargets: (tenantId: number, modelId: number, entityType: MappingEntityType, pageSize?: number, cursor?: string) => Promise<MappingGenerationPage>;
-  saveMappingDependency: (tenantId: number, modelId: number, command: SaveMappingDependencyCommand, idempotencyKey: string) => Promise<{ model_revision: number }>;
-  listMappingTargets: (
-    tenantId: number,
-    modelId: number,
-    entityType: MappingEntityType,
-    pageSize?: number,
-    cursor?: string,
-  ) => Promise<MappingTargetPage>;
-  listMappingDependencies: (
-    tenantId: number,
-    modelId: number,
-    filters?: MappingFilters,
-    pageSize?: number,
-    cursor?: string,
-  ) => Promise<MappingDependencyPage>;
   listMappingObjects: (
     tenantId: number,
     modelId: number,
@@ -256,7 +171,6 @@ export interface MappingTransport {
 }
 
 export type MappingApi = MappingTransport & ModelRecordReviewApi
-  & Pick<MetadataApi, "listMetadataRows">
   & Pick<ModelsApi, "listModels">
   & Pick<
     WorkflowsApi,
@@ -272,10 +186,6 @@ export type MappingApi = MappingTransport & ModelRecordReviewApi
 
 export function createMappingApi(request: HttpRequest): MappingTransport {
   return {
-    saveMappingDependency: (tenantId, modelId, command, idempotencyKey) => request(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/change-sets/mapping/dependencies`,
-      { method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify(command) },
-    ),
     listMappingGenerationTargets: (tenantId, modelId, entityType, pageSize = 200, cursor) => {
       const query = new URLSearchParams({
         entity_type: entityType,
@@ -286,20 +196,6 @@ export function createMappingApi(request: HttpRequest): MappingTransport {
         `/api/v1/tenants/${tenantId}/models/${modelId}/mapping/generation-targets?${query}`,
       );
     },
-    listMappingTargets: (tenantId, modelId, entityType, pageSize = 200, cursor) => {
-      const query = new URLSearchParams({
-        entity_type: entityType,
-        page_size: String(pageSize),
-      });
-      if (cursor) query.set("cursor", cursor);
-      return request<MappingTargetPage>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/mapping/targets?${query}`,
-      );
-    },
-    listMappingDependencies: (tenantId, modelId, filters = {}, pageSize = 200, cursor) =>
-      request<MappingDependencyPage>(
-        mappingCollectionPath(tenantId, modelId, "dependencies", filters, pageSize, cursor),
-      ),
     listMappingObjects: (tenantId, modelId, filters = {}, pageSize = 200, cursor) =>
       request<MappingObjectPage>(
         mappingCollectionPath(tenantId, modelId, "objects", filters, pageSize, cursor),
@@ -331,9 +227,6 @@ export function createMappingApi(request: HttpRequest): MappingTransport {
 }
 
 export const mappingQueryKeys = {
-  dependencies: (tenantId: number, modelId: number, filters: unknown) => (
-    ["mapping-dependencies", tenantId, modelId, filters] as const
-  ),
   objects: (tenantId: number, modelId: number, filters: unknown) => (
     ["mapping-objects", tenantId, modelId, filters] as const
   ),
@@ -421,7 +314,7 @@ export async function loadMappingGenerationTargets(
 function mappingCollectionPath(
   tenantId: number,
   modelId: number,
-  collection: "dependencies" | "objects" | "attributes",
+  collection: "objects" | "attributes",
   filters: MappingFilters,
   pageSize: number,
   cursor: string | undefined,

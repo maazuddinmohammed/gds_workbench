@@ -1,5 +1,10 @@
 # Workflow evidence and prompt variables
 
+**Contract update — 27 September 2026.** Entity-owned Mapping/Code and Logical-sourced Dimensional replace the historical Binding and physical target contracts.
+Earlier physical target, Binding, and reader examples below are retained as design
+history where superseded. Use [ADR 012](adr/012-entity-owned-mapping-and-code.md)
+and [current domain contracts](../CONTEXT.md) for implemented ownership and scope.
+
 Current position, 2026-09-07: implementation is authorized for all confirmed
 workflow configurations. Separate Object/Attribute enrichment prompts, Analysis,
 Conceptual, Logical, Dimensional, Mapping, Code Generation, and Validation now
@@ -175,8 +180,11 @@ Latest validation clarification: keep simple per-workflow lists. Object and
 Attribute Enrichment check natural-key existence in the initial authorized
 scope/index, duplicates, and locks. Analysis checks both complete endpoint keys
 and their parent Objects against that index, duplicates, locks, and actual
-Pydantic/database value rules. Reuse these recurring checks. Do not invent a
-cardinality field: none exists in the Analysis contract.
+Pydantic/database value rules. Reuse these recurring checks. The original
+September 7 contract had no Analysis cardinality field. The September 27
+follow-up adds explicit `inferred_cardinality`, with reasoning in
+`relationship_basis`, independently of measured validation. See the current
+[validation contract](workflow-validation-design.md#analysis--one-shot-and-tool-assisted).
 
 Interview cadence: the user requested multiple questions together to speed up
 the discussion. Batch related decisions rather than enforcing one question per

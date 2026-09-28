@@ -19,7 +19,6 @@ def test_logical_workbook_preserves_the_applied_design(
         layer=layer,
         expected_model_revision=3,
         entity_ids=[10],
-        object_schema="silver",
         object_type_code="table",
     )
     placement = TargetPlacement(
@@ -31,6 +30,7 @@ def test_logical_workbook_preserves_the_applied_design(
     entities = [
         {
             "entity_id": 10,
+            "entity_schema_name": f"{zone}_custom",
             "entity_name": "Customer",
             "definition": "=A literal business definition",
         }
@@ -64,6 +64,7 @@ def test_logical_workbook_preserves_the_applied_design(
     assert target["tenant_code"] == "platform"
     assert target["object_description"] == "=A literal business definition"
     assert target["zone_code"] == zone
+    assert target["object_schema"] == f"{zone}_custom"
     assert column["attribute_data_type"] == "DECIMAL(20,0)"
     assert column["attribute_inferred_data_type"] is None
     assert column["attribute_nullability"] is False

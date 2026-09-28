@@ -29,10 +29,7 @@ from gds_etl_workbench.domain.snapshots.model import model_snapshot_records
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.model_test_fixtures import (
-    SILVER_ORDER,
     complete_model_graph,
-    physical_attribute,
-    physical_object,
 )
 from tests.mcp.test_database_model_change_set_round_trip import (
     _replace_codes,  # pyright: ignore[reportPrivateUsage]
@@ -57,8 +54,8 @@ async def test_locked_nested_evidence_survives_physical_deactivation(
     )
     graph["dimensional_entity"][0]["sources"] = [
         {
-            "support_source_type": "object",
-            "source_object": physical_object(SILVER_ORDER),
+            "support_source_type": "logical_entity",
+            "source_logical_entity": {"logical_entity_schema_name": "silver", "logical_entity_name": "Order"},
             "source_role": "transaction",
             "source_order": 1,
             "rationale": "Applied Logical mapping contribution.",
@@ -68,8 +65,8 @@ async def test_locked_nested_evidence_survives_physical_deactivation(
     ]
     graph["dimensional_attribute"][0]["sources"] = [
         {
-            "support_source_type": "attribute",
-            "source_attribute": physical_attribute(SILVER_ORDER, "OrderID"),
+            "support_source_type": "logical_attribute",
+            "source_logical_attribute": {"logical_entity_schema_name": "silver", "logical_entity_name": "Order", "logical_attribute_name": "OrderID"},
             "source_order": 1,
             "rationale": "Applied Logical mapping contribution.",
             "status": "active",
@@ -108,7 +105,7 @@ async def test_locked_nested_evidence_survives_physical_deactivation(
             )
             assert authored.valid
             await ModelMaterializer(transaction, model_id, "a" * 64).apply(authored.records)
-            # Silver evidence depends on the previously applied Logical Binding/Mapping.
+            # Dimensional evidence references the applied Logical definition.
             applied = await build_model_snapshot(transaction, model)
             physical = await load_model_physical_scope(transaction, model)
             dimensional = validate_future_graph(
@@ -224,9 +221,9 @@ async def test_locked_nested_evidence_survives_physical_deactivation(
         async with database.read_transaction() as transaction:
             reowned = await build_model_snapshot(transaction, model)
             foreign_scope = await load_model_physical_scope(transaction, model)
-        assert not validate_future_graph(
+        assert validate_future_graph(
             snapshot=retained, staged_documents={}, physical_scope=foreign_scope
-        ).valid
+        ).valid is (source_layer == "silver")
         layer = reowned.logical if source_layer == "source" else reowned.dimensional
         reowned_entity = next(
             entity

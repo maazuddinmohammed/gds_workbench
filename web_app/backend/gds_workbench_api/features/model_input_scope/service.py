@@ -53,9 +53,6 @@ SELECT model_input_scope.model_input_scope_id,
        object.batch_attribute_name,
        attribute_count.attribute_count,
        eligible_object.is_model_input_eligible,
-       eligible_object.is_dimensional_source_eligible,
-       eligible_object.is_logical_mapping_target_eligible,
-       eligible_object.is_dimensional_mapping_target_eligible,
        model_input_scope.created_time AS created_at,
        model_input_scope.updated_time AS updated_at
   FROM model.model AS target_model
@@ -120,9 +117,6 @@ SELECT model_input_scope.model_input_scope_id,
        attribute_count.attribute_count,
        attribute_count.total_attribute_count,
        eligible_object.is_model_input_eligible,
-       eligible_object.is_dimensional_source_eligible,
-       eligible_object.is_logical_mapping_target_eligible,
-       eligible_object.is_dimensional_mapping_target_eligible,
        model_input_scope.created_time AS created_at,
        model_input_scope.updated_time AS updated_at
   FROM model.model AS target_model

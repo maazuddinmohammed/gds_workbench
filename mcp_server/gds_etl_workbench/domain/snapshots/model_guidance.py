@@ -17,6 +17,7 @@ _COMMON_RULES = (
 
 _DATASET_RULES: dict[str, tuple[str, ...]] = {
     "model_details": (
+        "Configure logical_schemas and dimensional_schemas before generating each layer.",
         "Treat Model policy as authoritative when it differs from default naming guidance.",
     ),
     "model_input_scope": (
@@ -38,8 +39,11 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
         "For Bronze, query the physical Object schema, Object name, and Attribute name.",
     ),
     "analysis_result": (
+        "Set inferred_cardinality from business evidence, or unknown; explain it in "
+        "relationship_basis. Validation counts are separate observed evidence, "
+        "not a replacement for the inference.",
         (
-            "Record tested grain, identity, functional-dependency, and relationship findings; "
+            "Record inferred or measured grain, identity, dependency, and relationship findings; "
             "keep unsupported or inconclusive findings explicit."
         ),
     ),
@@ -63,6 +67,7 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
     ),
     "logical_submodel": ("Group the normalized operational model by coherent business area.",),
     "logical_entity": (
+        "Choose logical_entity_schema_name from Model logical_schemas using its description.",
         (
             "Build a normalized operational Entity with a clear grain, supported identity, "
             "and complete in-scope coverage."
@@ -87,6 +92,8 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
     ),
     "dimensional_submodel": ("Group Facts and Dimensions around a coherent business process.",),
     "dimensional_entity": (
+        "Choose dimensional_entity_schema_name from Model dimensional_schemas.",
+        "Use schema-qualified Logical Entities and Attributes as sources.",
         (
             "Follow the Kimball sequence: select the business process, declare fact grain, "
             "identify Dimensions, then identify Facts."
@@ -106,23 +113,8 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
     "dimensional_relationship": (
         "Reference existing Dimensional Entities and Attributes and preserve the declared grain.",
     ),
-    "model_object_binding": (
-        "Bind each modeled Entity to exactly one already-registered Silver or Gold Object.",
-        "Logical bindings target Silver; Dimensional bindings target Gold.",
-        (
-            "The target Object source Tenant must equal the Model Tenant even though its "
-            "physical Connection belongs to GDS."
-        ),
-    ),
-    "model_attribute_binding": (
-        "Bind every modeled Attribute exactly once to an Attribute of its parent bound Object.",
-        "Do not omit audit, technical, or constant-valued Attributes.",
-    ),
-    "mapping_dependency": (
-        "Record source-System dependency order used by Mapping and Code Generation.",
-    ),
     "mapping_object": (
-        "Author one target-oriented Mapping per bound target Entity and source System.",
+        "Author one target-oriented Mapping per schema-qualified Entity and source System.",
         "Store the complete transformation in mapping_transformation_document.",
         (
             "An Output Template is advisory; without one, use the plugin standard JSON "
@@ -130,10 +122,7 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
         ),
     ),
     "mapping_attribute": (
-        (
-            "Describe how one bound target Attribute is populated for one "
-            "target/source-System Mapping."
-        ),
+        ("Describe how one modeled Attribute is populated for one target/source-System Mapping."),
         (
             "The transformation document is flexible JSON and may describe direct, "
             "derived, or constant logic."
@@ -171,6 +160,9 @@ _FIELD_GUIDANCE: dict[str, str] = {
     "object_name": "Use the registered physical Object name.",
     "attribute_name": "Use the registered physical target Attribute name.",
     "modeled_entity_type": "Use logical_entity or dimensional_entity to select the modeled layer.",
+    "logical_entity_schema_name": "Use an exact schema configured in Model logical_schemas.",
+    "dimensional_entity_schema_name": "Use a schema from Model dimensional_schemas.",
+    "modeled_entity_schema_name": "Use the exact schema of the Logical or Dimensional Entity.",
     "modeled_entity_name": "Use the exact current Logical or Dimensional Entity name.",
     "modeled_attribute_name": (
         "Use the exact current modeled Attribute name under the named Entity."
@@ -192,7 +184,6 @@ _FIELD_GUIDANCE: dict[str, str] = {
         "Store the complete file content. The server derives content and input digests."
     ),
     "object_dependency_order": "Use zero or a positive execution dependency order.",
-    "source_system_dependency_order": "Use zero or a positive source-System dependency order.",
     "is_active": (
         "Use true for current records and false only for an intentional inactive replacement."
     ),

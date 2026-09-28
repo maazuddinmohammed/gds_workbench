@@ -293,7 +293,7 @@ def test_current_architecture_counts_match_checked_in_contracts() -> None:
     database_architecture = DATABASE_ARCHITECTURE.read_text(encoding="utf-8")
     mcp_architecture = MCP_ARCHITECTURE.read_text(encoding="utf-8")
 
-    assert "There are 100 tables" in database_architecture
+    assert "There are 101 tables" in database_architecture
     assert "defines three non-login, non-superuser group roles" in database_architecture
     assert "`ChangeSetsFeature` draft-expiry worker" not in database_architecture
     assert "post-lock PostgreSQL wall-clock" in database_architecture

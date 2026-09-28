@@ -76,9 +76,9 @@ function MappingObjectDetailView({
       <DetailHeader
         tenantId={tenantId}
         modelId={modelId}
-        layer={detail.source.entity_type === "logical_entity" ? "logical" : "dimensional"}
+        layer={detail.target.entity_type === "logical_entity" ? "logical" : "dimensional"}
         eyebrow={`Object Mapping ${detail.mapping_object_id}`}
-        title={`${detail.target.object_schema}.${detail.target.object_name}`}
+        title={`${detail.target.entity_schema_name}.${detail.target.entity_name}`}
         status={detail.status}
         locked={detail.is_locked}
         headingRef={heading}
@@ -86,17 +86,12 @@ function MappingObjectDetailView({
       <section className="detail-section detail-primary" aria-labelledby="mapping-object-context">
         <header><h2 id="mapping-object-context">Mapping context</h2></header>
         <div className="endpoint-comparison">
-          <section><small>Modeled source</small><h3>{detail.source.entity_name}</h3><span>{humanize(detail.source.entity_type)}</span></section>
-          <span aria-hidden="true">→</span>
-          <section><small>Target Object</small><h3>{detail.target.object_schema}.{detail.target.object_name}</h3><span>{detail.target.zone_code}</span></section>
+          <section><small>Entity</small><h3>{detail.target.entity_schema_name}.{detail.target.entity_name}</h3><span>{humanize(detail.target.entity_type)}</span></section>
         </div>
-        <details className="support-record-details"><summary>Connection and template details</summary>
+        <details className="support-record-details"><summary>Source and template details</summary>
         <dl className="detail-fact-grid">
-          <Fact label="Target Tenant" value={detail.target.tenant_code} />
-          <Fact label="Target System" value={detail.target.system_code} />
-          <Fact label="Connection" value={detail.target.connection_code} />
           <Fact label="Source System" value={detail.source_system.system_code} />
-          <Fact label="Dependency order" value={String(detail.dependency_order)} />
+          <Fact label="Entity order" value={String(detail.dependency_order)} />
         </dl>
         <OutputTemplate template={detail.output_template} />
         </details>
@@ -129,7 +124,7 @@ function MappingAttributeDetailView({
         modelId={modelId}
         parentObjectId={detail.parent_object_mapping.mapping_object_id}
         eyebrow={`Attribute Mapping ${detail.mapping_attribute_id}`}
-        title={`${target.object.object_schema}.${target.object.object_name}.${target.attribute_name}`}
+        title={`${target.entity.entity_schema_name}.${target.entity.entity_name}.${target.attribute_name}`}
         status={detail.status}
         locked={detail.is_locked}
         headingRef={heading}
@@ -137,17 +132,12 @@ function MappingAttributeDetailView({
       <section className="detail-section detail-primary" aria-labelledby="mapping-attribute-context">
         <header><h2 id="mapping-attribute-context">Mapping context</h2></header>
         <div className="endpoint-comparison">
-          <section><small>Modeled source</small><h3>{detail.source.entity.entity_name}.{detail.source.attribute_name}</h3><span>{humanize(detail.source.entity.entity_type)}</span></section>
-          <span aria-hidden="true">→</span>
-          <section><small>Target Attribute</small><h3>{target.object.object_schema}.{target.object.object_name}.{target.attribute_name}</h3><span>{target.attribute_data_type} · {target.object.zone_code}</span></section>
+          <section><small>Attribute</small><h3>{target.entity.entity_schema_name}.{target.entity.entity_name}.{target.attribute_name}</h3><span>{target.data_type}</span></section>
         </div>
-        <details className="support-record-details"><summary>Connection and template details</summary>
+        <details className="support-record-details"><summary>Source and template details</summary>
         <dl className="detail-fact-grid">
-          <Fact label="Target Tenant" value={target.object.tenant_code} />
-          <Fact label="Target System" value={target.object.system_code} />
-          <Fact label="Connection" value={target.object.connection_code} />
           <Fact label="Source System" value={detail.source_system.system_code} />
-          <Fact label="Ordinal" value={String(target.attribute_ordinal_position)} />
+          <Fact label="Ordinal" value={String(target.ordinal_position)} />
         </dl>
         <OutputTemplate template={detail.output_template} />
         </details>
@@ -162,7 +152,7 @@ function MappingAttributeDetailView({
               Object Mapping {detail.parent_object_mapping.mapping_object_id}
             </Link>
           </dd></div>
-          <Fact label="Dependency order" value={String(detail.parent_object_mapping.dependency_order)} />
+          <Fact label="Entity order" value={String(detail.parent_object_mapping.dependency_order)} />
           <Fact label="Status" value={humanize(detail.parent_object_mapping.status)} />
           <Fact label="Lock" value={detail.parent_object_mapping.is_locked ? "Locked" : "Open"} />
         </dl>
@@ -203,7 +193,7 @@ function DetailHeader({
             : "/tenants/$tenantId/mapping/models/$modelId"}
           params={{ tenantId: String(tenantId), modelId: String(modelId),
             ...(parentObjectId ? { mappingObjectId: String(parentObjectId) } : {}) }}
-          search={parentObjectId ? {} : { view: "objects", layer }}
+          search={parentObjectId ? {} : { layer }}
         >
           ← {parentObjectId ? "Back to Object Mapping" : "Back to Object mappings"}
         </Link>

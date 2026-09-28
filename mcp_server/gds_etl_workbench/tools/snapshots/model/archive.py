@@ -39,7 +39,6 @@ _SECTION_DESCRIPTIONS = {
     "conceptual": "Applied conceptual Objects and Relationships.",
     "logical": "Applied logical Submodels, Entities, Attributes, and Relationships.",
     "dimensional": "Applied dimensional Submodels, Entities, Attributes, and Relationships.",
-    "model_binding": "Applied Entity-to-Object and Attribute-to-Attribute Bindings.",
     "mapping": "Applied source-to-target Mapping and dependency records.",
     "code_generation": (
         "Applied complete Code Artifacts and their contributing source Systems; Apply "

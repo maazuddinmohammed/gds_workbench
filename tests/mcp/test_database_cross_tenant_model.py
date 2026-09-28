@@ -61,12 +61,9 @@ async def test_cross_tenant_scope_requires_source_access_and_keeps_target_owners
                 physical_scope=permitted,
             )
             assert result.valid
-            # Read permission for another Tenant's inputs never makes its targets ours.
-            assert permitted.logical_mapping_target_objects == owned.logical_mapping_target_objects
-            assert (
-                permitted.dimensional_mapping_target_objects
-                == owned.dimensional_mapping_target_objects
-            )
+            # Additional input read permission does not change the Model owner.
+            assert permitted.model_tenant_code == owned.model_tenant_code
+            assert permitted.model_input_objects > owned.model_input_objects
             await ModelMaterializer(
                 transaction, model_id, "a" * 64, readable_source_tenant_ids=(owner_id, source_id)
             ).apply(result.records)

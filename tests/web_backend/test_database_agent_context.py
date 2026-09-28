@@ -124,8 +124,8 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
         object_id = _required_int(foundation, "object_id")
         model = connection.execute(
             """
-            INSERT INTO model.model (tenant_id, model_name)
-            VALUES (%s, %s)
+            INSERT INTO model.model (tenant_id, model_name, logical_schemas, dimensional_schemas)
+            VALUES (%s, %s, '[{"schema_name":"silver","description":null}]', '[{"schema_name":"gold","description":null}]')
             RETURNING model_id, model_revision
             """,
             (tenant_id, f"Agent Context {uuid4().hex}"),
@@ -163,7 +163,9 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
         )
 
     stages = installed_stages[(workflow, mode)]
-    plan = _plan(model_id=model_id, model_revision=model_revision, object_id=object_id).model_copy(
+    plan = _plan(
+        model_id=model_id, model_revision=model_revision, object_id=object_id
+    ).model_copy(
         update={
             "model_workflow": workflow,
             "workflow_execution_mode": mode,
@@ -212,12 +214,18 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
             precomputed_values=catalog.prompt_values if catalog else None,
         )
         prefix = f"workflow.{workflow}.common.{stage.stage_code}.inputs."
-        groups = cast(list[dict[str, Any]], values[prefix + "object_relationship_context"])
+        groups = cast(
+            list[dict[str, Any]], values[prefix + "object_relationship_context"]
+        )
         for direction in ("incoming_relationships", "outgoing_relationships"):
             assert len(groups[0][direction]) == 1
             assert groups[0][direction][0]["analysis_result_is_locked"] is True
-            assert not any(name.startswith("validation_") for name in groups[0][direction][0])
-        attribute_groups = cast(list[dict[str, Any]], values[prefix + "object_attribute_context"])
+            assert not any(
+                name.startswith("validation_") for name in groups[0][direction][0]
+            )
+        attribute_groups = cast(
+            list[dict[str, Any]], values[prefix + "object_attribute_context"]
+        )
         assert attribute_groups[0]["attributes"][0]["profile"]["avg_data_length"] == 3.5
         assert values[prefix + "source_context"] and values[prefix + "gds_context"]
         assert values[prefix + "ingestion_mapping"]

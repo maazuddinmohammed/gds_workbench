@@ -38,7 +38,7 @@ When querying, prepare bounded self-contained aggregate queries and expected-out
 
 ## Determine cardinality and meaning
 
-7. **Infer the business cardinality; distinguish measurements when present.** Describe cardinality from the referencing Object to the referenced Object. Names, grain and business roles can establish a useful intended relationship without counting data. Label it inferred. If measurements are used, describe observed multiplicity separately and count business occurrences rather than repeated load rows.
+7. **Infer the business cardinality; distinguish measurements when present.** Set `inferred_cardinality` from the from endpoint to the to endpoint: `one_to_one`, `one_to_many`, `many_to_one`, `many_to_many` or `unknown`. Names, grain and business roles can establish a useful intended relationship without counting data. Explain the choice in `relationship_basis`; use `unknown` if multiplicity is unresolved. If measurements are used, describe observed multiplicity separately and count business occurrences rather than repeated load rows.
 
 | Evidence | Permitted conclusion |
 |---|---|
@@ -60,7 +60,7 @@ Declared Databricks PK/FK/unique constraints can support intended relationships 
 
 ## Save findings and review coverage
 
-9. **Keep the same output shape.** Use the shared Analysis record guide's existing 26 fields. For unmeasured inference, put the relationship, inferred cardinality and reasoning in relationship_basis, choose appropriate confidence and leave all nine validation_* fields null. No new inference/cardinality fields are added. Record physical Attribute pairs only; keep composite tuples, domain suggestions and other unrepresentable findings in task evidence. Lifecycle status remains separate from the conclusion.
+9. **Save the inference separately from measurements.** Use the shared Analysis record guide's 27 fields. Explicitly populate `inferred_cardinality`, explain the relationship and cardinality in `relationship_basis`, and choose appropriate confidence. For unmeasured inference, leave all nine `validation_*` fields null. Preserve measured counts when present; a disagreement with inferred cardinality is a review warning, not permission to overwrite either. Record physical Attribute pairs only; keep composite tuples, domain suggestions and other unrepresentable findings in task evidence. Lifecycle status remains separate from the conclusion.
 10. **Review coverage and hand off.** Confirm both discovery passes covered scoped Objects, including string classifications, differently named references, role links and hierarchies. Keep meaningful unresolved candidates visible; explain isolated Objects without inventing links. Validate record structure locally through the Model authoring guide; this does not require SQL relationship tests. Preserve locks/unrelated edits and follow the shared Change Set lifecycle when ready.
 
 SQL's directional validation verdict and the overall business conclusion remain distinct. A failed lookup on an incomplete parent batch does not by itself disprove the business relationship. A successful lookup does not establish meaning, required participation or future cardinality. Unsupported measurements must affect the conclusion or its limitations rather than being attached and ignored.
@@ -87,7 +87,7 @@ These checks and the procedure are a design synthesis from the cited definitions
 
 ## Analysis to modeled relationships
 
-Analysis has no dedicated cardinality field: put direction and inferred cardinality in `relationship_basis`, leaving unmeasured validation fields null. Later Conceptual/Logical records use their own explicit cardinality field. A category label can be a valid reference key; use `relationship_kind="reference"` for ordinary lookups and describe its category/domain semantics. Matching low-cardinality strings alone do not establish shared meaning or uniqueness.
+Analysis stores `inferred_cardinality` independently of validation, with its reasoning in `relationship_basis`. Leave unmeasured validation fields null. Later Conceptual/Logical records assess cardinality for their own modeled grains. A category label can be a valid reference key; use `relationship_kind="reference"` for ordinary lookups and describe its category/domain semantics. Matching low-cardinality strings alone do not establish shared meaning or uniqueness.
 
 Analysis findings do not create Logical FKs. During Logical design, map relevant supported associations to the actual modeled grains and keys, then author explicit relationships under the [relationship and graph review](logical-design.md#relationship-and-graph-review). Do not mechanically copy every physical edge or infer a join from matching names alone. Review isolated Entities and disconnected components with the user before completing model work; intentional separation remains valid.
 

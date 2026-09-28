@@ -278,7 +278,7 @@ class MappingWorkflow:
                             stage="mapping.mapping_authoring",
                             status="running",
                             message=(
-                                f"Target Object {preparation.plan.pair.target_object_id}, "
+                                f"Target Object {preparation.plan.pair.modeled_entity_id}, "
                                 f"Source System {preparation.plan.pair.source_system_id}: "
                                 + (
                                     "No applicable source found; no Mapping created."
@@ -312,7 +312,7 @@ class MappingWorkflow:
                             stage="mapping.mapping_authoring",
                             status="warning",
                             message=(
-                                f"Target Object {preparation.plan.pair.target_object_id}, "
+                                f"Target Object {preparation.plan.pair.modeled_entity_id}, "
                                 f"Source System {preparation.plan.pair.source_system_id}: "
                                 f"{safe.message}"
                             )[:2000],
@@ -513,7 +513,7 @@ def _validate_plan(
         or mapping_plan.model_revision != expected_model_revision
         or plan.correlation_id != mapping_plan.correlation_id
         or plan.modeled_entity_type != mapping_plan.modeled_entity_type
-        or plan.selected_object_ids != (mapping_plan.pair.target_object_id,)
+        or plan.selected_entity_ids != (mapping_plan.pair.modeled_entity_id,)
         or tuple(stage.stage_code for stage in plan.stages) != expected_stages
     ):
         raise InvalidRequestError("The frozen Mapping execution plan is invalid.")

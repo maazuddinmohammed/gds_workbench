@@ -15,8 +15,8 @@ Static, local-only browser app. Open `index.html` through the Atlas launcher; se
 | `validation/run.js` | Shared browser/CLI validation assembly and explicit check coverage. |
 | `validation/common.js` | Published schema validation, canonical keys, duplicate keys, record protection and declared uniqueness. |
 | `validation/metadata.js` | Metadata references, Tenant ownership and Object/Attribute locks. |
-| `validation/model.js` | Applied scope, graph references, nested protection, bindings, mapping coverage, code/validation contracts. |
-| `validation/model-policy.js` | New-table key/audit/name conventions; membership, lineage, type compatibility, Mapping documents and retarget guard. |
+| `validation/model.js` | Applied scope, graph references, nested protection, Entity-owned Mapping coverage and Code/Validation contracts. |
+| `validation/model-policy.js` | Entity schema/key/audit/name conventions; membership, lineage, type compatibility and Mapping documents. |
 | `validation/sql.js` | Finite transformation statement/projection checks and governed validation-query shape. No SQL is executed. |
 | `model-quality.js` | Bound decision evidence, honest inference/measurement distinction and coverage warnings. |
 

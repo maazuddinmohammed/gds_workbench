@@ -68,10 +68,6 @@ DECLARE
     v_dimensional_order_amount_id BIGINT;
     v_dimensional_customer_source_id BIGINT;
     v_dimensional_order_source_id BIGINT;
-    v_logical_customer_binding_id BIGINT;
-    v_logical_order_binding_id BIGINT;
-    v_dimensional_customer_binding_id BIGINT;
-    v_dimensional_order_binding_id BIGINT;
     v_mapping_object_id BIGINT;
     v_validation_group_id BIGINT;
     v_principal_id BIGINT;
@@ -280,12 +276,14 @@ BEGIN
      WHERE object_id = v_gold_order_id AND attribute_name = 'order_amount';
 
     INSERT INTO model.model (
-        tenant_id, model_name, model_description,
+        tenant_id, model_name, model_description, logical_schemas, dimensional_schemas,
         silver_model_naming_instructions, gold_model_naming_instructions
     ) VALUES (
         v_tenant_id,
         'Customer Orders 360',
         'Review model connecting customer identities, orders, conformed Silver outputs, and a Gold sales mart.',
+        '[{"schema_name":"silver_demo","description":"Conformed entities"}]',
+        '[{"schema_name":"gold_demo","description":"Sales mart"}]',
         'Use snake_case names and preserve stable business identifiers.',
         'Use dim_ and fact_ prefixes with explicit grain.'
     ) RETURNING model_id INTO v_model_id;
@@ -428,20 +426,20 @@ BEGIN
     ) RETURNING logical_submodel_id INTO v_logical_submodel_id;
 
     INSERT INTO workflow.logical_entity (
-        model_id, logical_entity_name, logical_entity_definition,
+        model_id, logical_entity_schema_name, logical_entity_name, logical_entity_definition,
         logical_entity_type, logical_entity_grain,
         logical_entity_dependency_order, logical_entity_confidence
     ) VALUES (
-        v_model_id, 'Customer', 'A conformed durable customer identity.',
+        v_model_id, 'silver_demo', 'Customer', 'A conformed durable customer identity.',
         'core', 'One Customer', 0, 'high'
     ) RETURNING logical_entity_id INTO v_logical_customer_id;
 
     INSERT INTO workflow.logical_entity (
-        model_id, logical_entity_name, logical_entity_definition,
+        model_id, logical_entity_schema_name, logical_entity_name, logical_entity_definition,
         logical_entity_type, logical_entity_grain,
         logical_entity_dependency_order, logical_entity_confidence
     ) VALUES (
-        v_model_id, 'Order', 'A conformed commercial order.',
+        v_model_id, 'silver_demo', 'Order', 'A conformed commercial order.',
         'transaction', 'One submitted Order', 1, 'high'
     ) RETURNING logical_entity_id INTO v_logical_order_id;
 
@@ -557,27 +555,6 @@ BEGIN
         'Many Orders may reference one Customer.'
     );
 
-    INSERT INTO workflow.model_object_binding (
-        model_id, object_id, modeled_entity_type, logical_entity_id
-    ) VALUES (
-        v_model_id, v_silver_customer_id, 'logical_entity', v_logical_customer_id
-    ) RETURNING model_object_binding_id INTO v_logical_customer_binding_id;
-    INSERT INTO workflow.model_object_binding (
-        model_id, object_id, modeled_entity_type, logical_entity_id
-    ) VALUES (
-        v_model_id, v_silver_order_id, 'logical_entity', v_logical_order_id
-    ) RETURNING model_object_binding_id INTO v_logical_order_binding_id;
-
-    INSERT INTO workflow.model_attribute_binding (
-        model_object_binding_id, logical_attribute_id, attribute_id
-    ) VALUES
-        (v_logical_customer_binding_id, v_logical_customer_key_id, v_silver_customer_key_id),
-        (v_logical_customer_binding_id, v_logical_customer_name_id, v_silver_customer_name_id),
-        (v_logical_order_binding_id, v_logical_order_key_id, v_silver_order_key_id),
-        (v_logical_order_binding_id, v_logical_order_customer_id, v_silver_order_customer_id),
-        (v_logical_order_binding_id, v_logical_order_date_id, v_silver_order_date_id),
-        (v_logical_order_binding_id, v_logical_order_amount_id, v_silver_order_amount_id);
-
     INSERT INTO workflow.dimensional_submodel (
         model_id, dimensional_submodel_name, dimensional_submodel_definition
     ) VALUES (
@@ -585,20 +562,20 @@ BEGIN
     ) RETURNING dimensional_submodel_id INTO v_dimensional_submodel_id;
 
     INSERT INTO workflow.dimensional_entity (
-        model_id, dimensional_entity_name, dimensional_entity_definition,
+        model_id, dimensional_entity_schema_name, dimensional_entity_name, dimensional_entity_definition,
         dimensional_entity_type, dimensional_entity_dependency_order,
         dimensional_entity_confidence
     ) VALUES (
-        v_model_id, 'Dim Customer', 'Conformed Customer descriptors.',
+        v_model_id, 'gold_demo', 'Dim Customer', 'Conformed Customer descriptors.',
         'dimension', 0, 'high'
     ) RETURNING dimensional_entity_id INTO v_dimensional_customer_id;
     INSERT INTO workflow.dimensional_entity (
-        model_id, dimensional_entity_name, dimensional_entity_definition,
+        model_id, dimensional_entity_schema_name, dimensional_entity_name, dimensional_entity_definition,
         dimensional_entity_type, dimensional_fact_type,
         dimensional_entity_grain_definition, dimensional_entity_dependency_order,
         dimensional_entity_confidence
     ) VALUES (
-        v_model_id, 'Fact Order', 'Submitted Order activity and amount.',
+        v_model_id, 'gold_demo', 'Fact Order', 'Submitted Order activity and amount.',
         'fact', 'transaction', 'One row per submitted Order', 1, 'high'
     ) RETURNING dimensional_entity_id INTO v_dimensional_order_id;
 
@@ -676,46 +653,46 @@ BEGIN
     ) RETURNING dimensional_attribute_id INTO v_dimensional_order_amount_id;
 
     INSERT INTO workflow.dimensional_entity_source_mapping (
-        model_id, dimensional_entity_id, support_source_type, source_object_id,
+        model_id, dimensional_entity_id, support_source_type, source_logical_entity_id,
         dimensional_entity_source_role, dimensional_entity_source_mapping_order,
         dimensional_entity_source_mapping_rationale
     ) VALUES (
-        v_model_id, v_dimensional_customer_id, 'object', v_silver_customer_id,
+        v_model_id, v_dimensional_customer_id, 'logical_entity', v_logical_customer_id,
         'dimension source', 1, 'Silver Customer supplies conformed descriptors.'
     ) RETURNING dimensional_entity_source_mapping_id INTO v_dimensional_customer_source_id;
     INSERT INTO workflow.dimensional_entity_source_mapping (
-        model_id, dimensional_entity_id, support_source_type, source_object_id,
+        model_id, dimensional_entity_id, support_source_type, source_logical_entity_id,
         dimensional_entity_source_role, dimensional_entity_source_mapping_order,
         dimensional_entity_source_mapping_rationale
     ) VALUES (
-        v_model_id, v_dimensional_order_id, 'object', v_silver_order_id,
+        v_model_id, v_dimensional_order_id, 'logical_entity', v_logical_order_id,
         'fact source', 1, 'Silver Order supplies the transaction grain and measure.'
     ) RETURNING dimensional_entity_source_mapping_id INTO v_dimensional_order_source_id;
 
     INSERT INTO workflow.dimensional_attribute_source_mapping (
         model_id, dimensional_entity_source_mapping_id, dimensional_entity_id,
-        dimensional_attribute_id, support_source_type, source_object_id,
-        source_attribute_id, dimensional_attribute_source_mapping_order,
+        dimensional_attribute_id, support_source_type, source_logical_entity_id,
+        source_logical_attribute_id, dimensional_attribute_source_mapping_order,
         dimensional_attribute_source_mapping_rationale
     ) VALUES
         (v_model_id, v_dimensional_customer_source_id, v_dimensional_customer_id,
-         v_dimensional_customer_key_id, 'attribute', v_silver_customer_id,
-         v_silver_customer_key_id, 1, 'Promote the governed Customer identifier.'),
+         v_dimensional_customer_key_id, 'logical_attribute', v_logical_customer_id,
+         v_logical_customer_key_id, 1, 'Promote the governed Customer identifier.'),
         (v_model_id, v_dimensional_customer_source_id, v_dimensional_customer_id,
-         v_dimensional_customer_name_id, 'attribute', v_silver_customer_id,
-         v_silver_customer_name_id, 2, 'Carry the current Customer name.'),
+         v_dimensional_customer_name_id, 'logical_attribute', v_logical_customer_id,
+         v_logical_customer_name_id, 2, 'Carry the current Customer name.'),
         (v_model_id, v_dimensional_order_source_id, v_dimensional_order_id,
-         v_dimensional_order_key_id, 'attribute', v_silver_order_id,
-         v_silver_order_key_id, 1, 'Carry the degenerate Order identifier.'),
+         v_dimensional_order_key_id, 'logical_attribute', v_logical_order_id,
+         v_logical_order_key_id, 1, 'Carry the degenerate Order identifier.'),
         (v_model_id, v_dimensional_order_source_id, v_dimensional_order_id,
-         v_dimensional_order_customer_id, 'attribute', v_silver_order_id,
-         v_silver_order_customer_id, 2, 'Resolve the Customer dimension key.'),
+         v_dimensional_order_customer_id, 'logical_attribute', v_logical_order_id,
+         v_logical_order_customer_id, 2, 'Resolve the Customer dimension key.'),
         (v_model_id, v_dimensional_order_source_id, v_dimensional_order_id,
-         v_dimensional_order_date_id, 'attribute', v_silver_order_id,
-         v_silver_order_date_id, 3, 'Carry the activity date.'),
+         v_dimensional_order_date_id, 'logical_attribute', v_logical_order_id,
+         v_logical_order_date_id, 3, 'Carry the activity date.'),
         (v_model_id, v_dimensional_order_source_id, v_dimensional_order_id,
-         v_dimensional_order_amount_id, 'attribute', v_silver_order_id,
-         v_silver_order_amount_id, 4, 'Carry the additive Order amount.');
+         v_dimensional_order_amount_id, 'logical_attribute', v_logical_order_id,
+         v_logical_order_amount_id, 4, 'Carry the additive Order amount.');
 
     INSERT INTO workflow.dimensional_relationship (
         model_id, dimensional_relationship_name, dimensional_relationship_definition,
@@ -736,85 +713,50 @@ BEGIN
         'Conformed Customer key mapping.', 'Many Order facts per Customer member.'
     );
 
-    INSERT INTO workflow.model_object_binding (
-        model_id, object_id, modeled_entity_type, dimensional_entity_id
-    ) VALUES (
-        v_model_id, v_gold_customer_id, 'dimensional_entity', v_dimensional_customer_id
-    ) RETURNING model_object_binding_id INTO v_dimensional_customer_binding_id;
-    INSERT INTO workflow.model_object_binding (
-        model_id, object_id, modeled_entity_type, dimensional_entity_id
-    ) VALUES (
-        v_model_id, v_gold_order_id, 'dimensional_entity', v_dimensional_order_id
-    ) RETURNING model_object_binding_id INTO v_dimensional_order_binding_id;
-
-    INSERT INTO workflow.model_attribute_binding (
-        model_object_binding_id, dimensional_attribute_id, attribute_id
-    ) VALUES
-        (v_dimensional_customer_binding_id, v_dimensional_customer_key_id, v_gold_customer_key_id),
-        (v_dimensional_customer_binding_id, v_dimensional_customer_name_id, v_gold_customer_name_id),
-        (v_dimensional_order_binding_id, v_dimensional_order_key_id, v_gold_order_key_id),
-        (v_dimensional_order_binding_id, v_dimensional_order_customer_id, v_gold_order_customer_id),
-        (v_dimensional_order_binding_id, v_dimensional_order_date_id, v_gold_order_date_id),
-        (v_dimensional_order_binding_id, v_dimensional_order_amount_id, v_gold_order_amount_id);
-
-    INSERT INTO workflow.mapping_source_system_dependency (
-        model_id, modeled_entity_type, source_system_id, source_system_dependency_order
-    ) VALUES
-        (v_model_id, 'logical_entity', v_system_id, 0),
-        (v_model_id, 'dimensional_entity', v_system_id, 0);
-
     FOR v_mapping_object_id IN
         INSERT INTO workflow.mapping_object (
-            model_id, model_object_binding_id, source_system_id,
-            object_dependency_order, mapping_transformation_document
+            model_id,modeled_entity_type,logical_entity_id,dimensional_entity_id,source_system_id,
+            object_dependency_order,mapping_transformation_document
         ) VALUES
-            (v_model_id, v_logical_customer_binding_id, v_system_id, 0,
-             '{"source_objects":["bronze_demo.customer"],"steps":["Standardize identifiers","Select current descriptive values"]}'),
-            (v_model_id, v_logical_order_binding_id, v_system_id, 1,
-             '{"source_objects":["bronze_demo.orders"],"steps":["Validate order grain","Normalize monetary values"]}'),
-            (v_model_id, v_dimensional_customer_binding_id, v_system_id, 0,
-             '{"source_objects":["silver_demo.customer"],"steps":["Generate durable Customer key","Apply overwrite policy"]}'),
-            (v_model_id, v_dimensional_order_binding_id, v_system_id, 1,
-             '{"source_objects":["silver_demo.orders","gold_demo.dim_customer"],"steps":["Resolve Customer key","Publish Order measure"]}')
+            (v_model_id,'logical_entity',v_logical_customer_id,NULL,v_system_id,0,
+             '{"source_objects":[],"steps":["Standardize identifiers","Select current descriptive values"]}'),
+            (v_model_id,'logical_entity',v_logical_order_id,NULL,v_system_id,1,
+             '{"source_objects":[],"steps":["Validate order grain","Normalize monetary values"]}'),
+            (v_model_id,'dimensional_entity',NULL,v_dimensional_customer_id,v_system_id,0,
+             '{"source_logical_entities":[{"logical_entity_schema_name":"silver_demo","logical_entity_name":"Customer"}],"steps":["Apply overwrite policy"]}'),
+            (v_model_id,'dimensional_entity',NULL,v_dimensional_order_id,v_system_id,1,
+             '{"source_logical_entities":[{"logical_entity_schema_name":"silver_demo","logical_entity_name":"Order"}],"steps":["Resolve Customer key","Publish Order measure"]}')
         RETURNING mapping_object_id
     LOOP
         INSERT INTO workflow.mapping_attribute (
-            mapping_object_id, model_attribute_binding_id,
-            attribute_mapping_transformation_document
-        )
-        SELECT v_mapping_object_id,
-               binding.model_attribute_binding_id,
-               jsonb_build_object(
-                   'transformation', 'Direct governed projection',
-                   'target_attribute_id', binding.attribute_id
-               )
-          FROM workflow.mapping_object AS mapping
-          JOIN workflow.model_attribute_binding AS binding
-            ON binding.model_object_binding_id = mapping.model_object_binding_id
-         WHERE mapping.mapping_object_id = v_mapping_object_id;
+            mapping_object_id,model_id,modeled_entity_type,logical_entity_id,dimensional_entity_id,
+            logical_attribute_id,dimensional_attribute_id,attribute_mapping_transformation_document
+        ) SELECT mapping.mapping_object_id,mapping.model_id,mapping.modeled_entity_type,
+                 mapping.logical_entity_id,mapping.dimensional_entity_id,
+                 CASE mapping.modeled_entity_type WHEN 'logical_entity' THEN attribute.modeled_attribute_id END,
+                 CASE mapping.modeled_entity_type WHEN 'dimensional_entity' THEN attribute.modeled_attribute_id END,
+                 jsonb_build_object('transformation','Direct governed projection','target_attribute_name',attribute.attribute_name)
+            FROM workflow.mapping_object AS mapping
+            JOIN workflow.modeled_attribute AS attribute ON attribute.model_id = mapping.model_id
+             AND attribute.modeled_entity_type = mapping.modeled_entity_type
+             AND attribute.modeled_entity_id = coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id)
+           WHERE mapping.mapping_object_id = v_mapping_object_id;
     END LOOP;
 
     INSERT INTO workflow.generated_code (
-        model_object_binding_id, artifact_name, artifact_type,
-        generated_code_content, code_input_digest
+        model_id,modeled_entity_type,logical_entity_id,dimensional_entity_id,
+        artifact_name,artifact_type,generated_code_content,code_input_digest
     ) VALUES
-        (v_logical_customer_binding_id, 'silver_customer.sql', 'sql_file',
-         E'CREATE OR REPLACE TABLE silver_demo.customer AS\nSELECT customer_id, customer_name\nFROM bronze_demo.customer;', repeat('d', 64)),
-        (v_logical_order_binding_id, 'silver_orders.sql', 'sql_file',
-         E'CREATE OR REPLACE TABLE silver_demo.orders AS\nSELECT order_id, customer_id, order_date, order_amount\nFROM bronze_demo.orders;', repeat('e', 64)),
-        (v_dimensional_customer_binding_id, 'dim_customer.sql', 'sql_file',
-         E'CREATE OR REPLACE TABLE gold_demo.dim_customer AS\nSELECT customer_id, customer_name\nFROM silver_demo.customer;', repeat('f', 64)),
-        (v_dimensional_order_binding_id, 'fact_order.sql', 'sql_file',
-         E'CREATE OR REPLACE TABLE gold_demo.fact_order AS\nSELECT order_id, customer_id, order_date, order_amount\nFROM silver_demo.orders;', repeat('1', 64));
-
-    INSERT INTO workflow.generated_code_source_system (
-        generated_code_id, source_system_id
-    )
-    SELECT generated.generated_code_id, v_system_id
-      FROM workflow.generated_code AS generated
-      JOIN workflow.model_object_binding AS binding
-        ON binding.model_object_binding_id = generated.model_object_binding_id
-     WHERE binding.model_id = v_model_id;
+        (v_model_id,'logical_entity',v_logical_customer_id,NULL,'silver_customer.sql','sql_file',
+         E'SELECT customer_id AS `Customer ID`, customer_name AS `Customer Name`\nFROM bronze_demo.customer',repeat('d',64)),
+        (v_model_id,'logical_entity',v_logical_order_id,NULL,'silver_orders.sql','sql_file',
+         E'SELECT order_id AS `Order ID`, customer_id AS `Customer ID`, order_date AS `Order Date`, order_amount AS `Order Amount`\nFROM bronze_demo.orders',repeat('e',64)),
+        (v_model_id,'dimensional_entity',NULL,v_dimensional_customer_id,'dim_customer.sql','sql_file',
+         E'SELECT `Customer ID`, `Customer Name`\nFROM silver_demo.Customer',repeat('f',64)),
+        (v_model_id,'dimensional_entity',NULL,v_dimensional_order_id,'fact_order.sql','sql_file',
+         E'SELECT `Order ID`, `Customer ID`, `Order Date`, `Order Amount`\nFROM silver_demo.Order',repeat('1',64));
+    INSERT INTO workflow.generated_code_source_system (generated_code_id,source_system_id)
+    SELECT generated_code_id,v_system_id FROM workflow.generated_code WHERE model_id = v_model_id;
 
     INSERT INTO workflow.validation_group (
         model_id, tenant_id, system_id, validation_group_name,

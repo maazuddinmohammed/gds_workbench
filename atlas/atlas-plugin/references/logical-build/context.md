@@ -10,6 +10,8 @@ Shared entry for Guided and Grill Me. This page owns input readiness; each skill
 6. Read [record-state rules](../record-state.md) before authoring. Identify protected and inactive records; locked active inputs may still be read and used.
 7. At a new build, show effective [naming](../model/naming.md) and [key/audit policy](../model/keys-and-audit.md). Reuse approved choices; ask only about missing or conflicting settings. Missing audit types/nullability need the actual Model template, not guesses.
 
+Entity schemas must come from the Model's configured `logical_schemas`. Resolve an empty or conflicting configuration before generation. Use [Entity ownership](../model/entity-ownership.md) for schema-qualified identities.
+
 ## Switching workflows
 
 When the user switches between Guided and Grill Me, preserve session context, snapshots, evidence and pending records. Update the selected workflow in the existing task context. Load only the destination skill. Guided assesses its phases using the existing-result rules; switching alone never discards work or triggers a redo, Stage or Apply.

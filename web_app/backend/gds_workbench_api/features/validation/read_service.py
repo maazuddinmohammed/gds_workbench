@@ -73,9 +73,9 @@ WITH target_model AS MATERIALIZED (
 SELECT source_system.system_id,
        source_system.system_code,
        source_system.system_name,
-       count(DISTINCT (context.modeled_entity_type, context.object_id))::INTEGER
+       count(DISTINCT (context.modeled_entity_type, context.modeled_entity_id))::INTEGER
            AS mapping_target_count,
-       count(DISTINCT (context.modeled_entity_type, context.object_id)) FILTER (
+       count(DISTINCT (context.modeled_entity_type, context.modeled_entity_id)) FILTER (
            WHERE EXISTS (
                SELECT 1
                  FROM workflow.generated_code AS generated
@@ -83,10 +83,10 @@ SELECT source_system.system_id,
                    ON assignment.generated_code_id = generated.generated_code_id
                   AND assignment.source_system_id = context.source_system_id
                   AND assignment.generated_code_source_system_status = 'active'
-                WHERE generated.model_object_binding_id = (
-                          context.source_context -> 'object_mappings' -> 0
-                          ->> 'model_object_binding_id'
-                      )::BIGINT
+                WHERE generated.model_id = context.model_id
+                  AND generated.modeled_entity_type = context.modeled_entity_type
+                  AND coalesce(generated.logical_entity_id, generated.dimensional_entity_id) =
+                      context.modeled_entity_id
                   AND generated.generated_code_status = 'active'
                   AND generated.code_input_digest = context.code_input_digest
            )
@@ -267,8 +267,9 @@ WITH target_model AS MATERIALIZED (
           NULL
       ) AS context
 )
-SELECT context.object_id,
+SELECT context.modeled_entity_id,
        context.modeled_entity_type,
+       context.modeled_entity_schema_name,
        context.modeled_entity_name,
        context.source_context -> 'target' ->> 'tenant_code' AS tenant_code,
        context.source_context -> 'target' ->> 'system_code' AS system_code,
@@ -293,6 +294,7 @@ SELECT context.object_id,
                  jsonb_agg(
                      jsonb_build_object(
                          'modeled_entity_type', context.modeled_entity_type,
+                         'modeled_entity_schema_name', context.modeled_entity_schema_name,
                          'modeled_entity_name', context.modeled_entity_name,
                          'artifact_name', artifact.artifact_name,
                          'artifact_type', artifact.artifact_type,
@@ -320,10 +322,10 @@ SELECT context.object_id,
                ON system.system_id = source.source_system_id
             WHERE source.generated_code_id = artifact.generated_code_id
        ) AS assignment
-       WHERE artifact.model_object_binding_id = (
-                 context.source_context -> 'object_mappings' -> 0
-                 ->> 'model_object_binding_id'
-             )::BIGINT
+       WHERE artifact.model_id = context.model_id
+                  AND artifact.modeled_entity_type = context.modeled_entity_type
+                  AND coalesce(artifact.logical_entity_id, artifact.dimensional_entity_id) =
+                      context.modeled_entity_id
          AND artifact.generated_code_status = 'active'
          AND artifact.code_input_digest = context.code_input_digest
   ) AS generated
@@ -337,7 +339,7 @@ SELECT context.object_id,
               (source_system.document ->> 'source_system_id')::BIGINT
    )
  ORDER BY context.modeled_entity_type,
-          context.object_id
+          context.modeled_entity_id
  LIMIT 50001
 """
 
@@ -484,7 +486,10 @@ def _assemble_ledger_groups(
     ):
         raise InvalidRequestError("The Validation ledger exceeds its bounded size.")
     digest_contexts, generated_code = _ledger_digest_context(context_rows)
-    target_keys = [(target.object_key, target.modeled_entity_type) for target in digest_contexts]
+    target_keys = [
+        (target.modeled_entity_schema_name, target.modeled_entity_name, target.modeled_entity_type)
+        for target in digest_contexts
+    ]
     if len(target_keys) != len(set(target_keys)):
         raise InvalidRequestError("The current Validation context is ambiguous.")
 
@@ -581,6 +586,7 @@ def _positive_int(row: dict[str, Any], key: str) -> int:
 @dataclass(frozen=True, slots=True)
 class _GeneratedCodeDigestRecord:
     modeled_entity_type: str
+    modeled_entity_schema_name: str
     modeled_entity_name: str
     artifact_name: str
     artifact_type: str
@@ -599,16 +605,10 @@ def _ledger_digest_context(
     generated: list[_GeneratedCodeDigestRecord] = []
     for row in rows:
         modeled_entity_type = _required_text(row, "modeled_entity_type", maximum=30)
+        modeled_entity_schema_name = _required_text(row, "modeled_entity_schema_name", maximum=400)
         modeled_entity_name = _required_text(row, "modeled_entity_name", maximum=255)
         if modeled_entity_type not in {"logical_entity", "dimensional_entity"}:
             raise InvalidRequestError("The current Validation context is invalid.")
-        object_key = (
-            _required_text(row, "tenant_code", maximum=100),
-            _required_text(row, "system_code", maximum=100),
-            _required_text(row, "connection_code", maximum=100),
-            _required_text(row, "object_schema", maximum=400),
-            _required_text(row, "object_name", maximum=400),
-        )
         raw_sources = row.get("source_system_codes")
         if not isinstance(raw_sources, list):
             raise InvalidRequestError("The current Validation context is invalid.")
@@ -625,14 +625,8 @@ def _ledger_digest_context(
             raise InvalidRequestError("The current Validation context is ambiguous.")
         contexts.append(
             CodeGenerationTargetContext(
-                object_key=(
-                    normalize_model_key_value(object_key[0]),
-                    normalize_model_key_value(object_key[1]),
-                    normalize_model_key_value(object_key[2]),
-                    normalize_model_key_value(object_key[3]),
-                    normalize_model_key_value(object_key[4]),
-                ),
                 modeled_entity_type=modeled_entity_type,
+                modeled_entity_schema_name=modeled_entity_schema_name,
                 modeled_entity_name=modeled_entity_name,
                 source_system_codes=source_codes,
                 code_input_digest=_required_digest(row, "code_input_digest"),
@@ -660,6 +654,11 @@ def _ledger_digest_context(
                         value,
                         "modeled_entity_type",
                         maximum=30,
+                    ),
+                    modeled_entity_schema_name=_required_mapping_text(
+                        value,
+                        "modeled_entity_schema_name",
+                        maximum=400,
                     ),
                     modeled_entity_name=_required_mapping_text(
                         value,

@@ -142,7 +142,6 @@ def test_logical_manifest_contains_actual_applied_and_downstream_datasets() -> N
     assert {
         "logical_entity",
         "logical_attribute",
-        "read_only_model_object_binding",
         "read_only_mapping_object",
         "read_only_generated_code",
     } <= datasets

@@ -90,24 +90,9 @@ from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from psycopg.types.json import Jsonb
 
 from gds_workbench_api.features.assertions.authoring import SaveAssertionRequest, prepare_assertion
-from gds_workbench_api.features.mapping.dependencies import (
-    SaveMappingDependencyRequest,
-    prepare_mapping_dependency,
-)
 from gds_workbench_api.features.model_change_sets.input_scope import (
     AddInputScopeRequest,
     prepare_input_scope_addition,
-)
-from gds_workbench_api.features.model_targets.binding import (
-    load_generated_bindings,
-    load_model_binding,
-)
-from gds_workbench_api.features.model_targets.contracts import (
-    ApplyModelBindingRequest,
-    GeneratedBindingsPreview,
-    GenerateModelBindingsRequest,
-    ModelBindingPreview,
-    PreviewModelBindingRequest,
 )
 from gds_workbench_api.features.models import ModelNotFoundError, ModelRevisionConflictError
 
@@ -173,7 +158,7 @@ class DatabaseModelChangeSetService:
         entity_type: str | None = None,
     ) -> ModelRecordHistoryPage:
         # Model SHARE fence keeps numeric identity pages stable. Include inactive
-        # owned history even when a Binding/Mapping is no longer eligible to run.
+        # owned history even when a Entity Mapping is no longer eligible to run.
         async with self._database.write_transaction() as transaction:
             _, model, _ = await self._authorize_model(
                 transaction,
@@ -218,99 +203,6 @@ class DatabaseModelChangeSetService:
             items=tuple(items),
             next_page=page + 1 if page * 200 < len(rows) else None,
         )
-
-    async def bind_registered_target(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        command: PreviewModelBindingRequest
-        | ApplyModelBindingRequest
-        | GenerateModelBindingsRequest,
-        idempotency_key: UUID | None = None,
-    ) -> ModelBindingPreview | GeneratedBindingsPreview | ReviewModelRecordsResult:
-        """Preview or atomically apply only the explicitly approved Object/Attribute Bindings."""
-        applying = isinstance(command, ApplyModelBindingRequest) or (
-            isinstance(command, GenerateModelBindingsRequest) and idempotency_key is not None
-        )
-        if applying and idempotency_key is None:
-            raise InvalidRequestError("An idempotency key is required to apply Bindings.")
-        request_digest = hashlib.sha256(
-            json.dumps(
-                {"operation": "bind_registered_target", **command.model_dump(mode="json")},
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode()
-        ).hexdigest()
-        async with self._database.write_transaction() as transaction:
-            repository, model, principal_id = await self._authorize_record_review(
-                transaction, principal, tenant_id=tenant_id, model_id=model_id
-            )
-            if applying and idempotency_key is not None:
-                replay = await repository.replay_review(
-                    model_id=model_id, principal_id=principal_id, correlation_id=idempotency_key
-                )
-                if replay is not None:
-                    metadata = replay["event_metadata"]
-                    if metadata.get("request_digest") != request_digest:
-                        raise WorkbenchError("review_conflict", "This review key was already used.")
-                    return ReviewModelRecordsResult(
-                        model_id=model_id,
-                        model_change_set_id=replay["model_change_set_id"],
-                        model_revision=metadata["model_revision"],
-                        action_count=replay["action_count"],
-                    )
-            if model["model_revision"] != command.expected_model_revision:
-                raise ModelRevisionConflictError()
-            if await repository.has_running_tenant_workflow(tenant_id=tenant_id):
-                raise TenantWorkflowConflictError()
-            context = ModelReadContext(
-                model_id=model_id,
-                tenant_id=tenant_id,
-                model_name=model["model_name"],
-                model_revision=model["model_revision"],
-                readable_source_tenant_ids=model["readable_source_tenant_ids"],
-            )
-            prepared = (
-                await load_generated_bindings(transaction, context, command)
-                if isinstance(command, GenerateModelBindingsRequest)
-                else await load_model_binding(transaction, context, command)
-            )
-            if not applying:
-                return prepared.preview
-            if (
-                not isinstance(command, (ApplyModelBindingRequest, GenerateModelBindingsRequest))
-                or command.expected_plan_digest != prepared.preview.plan_digest
-            ):
-                raise WorkbenchError("review_conflict", "The Binding changed. Refresh its preview.")
-            if not prepared.preview.can_apply or prepared.validation.candidate_digest is None:
-                raise WorkbenchError(
-                    "review_conflict", "Correct the Binding issues before applying."
-                )
-            authorization = await self._authorizer.authorize_tenant(
-                transaction,
-                principal,
-                tenant_id=tenant_id,
-                policy=ToolPolicy.TENANT_MODEL_WRITE,
-                model_id=model_id,
-            )
-            if authorization.principal.principal_id != principal_id:
-                raise AuthorizationDeniedError()
-            assert idempotency_key is not None
-            return await self._apply_validated_review(
-                transaction,
-                repository,
-                prepared.validation,
-                model_id=model_id,
-                principal_id=principal_id,
-                idempotency_key=idempotency_key,
-                expected_model_revision=command.expected_model_revision,
-                request_digest=request_digest,
-                section="model_binding",
-                outcome="bindings_applied",
-                layer=command.layer,
-            )
 
     async def add_input_scope(
         self,
@@ -378,71 +270,6 @@ class DatabaseModelChangeSetService:
                 section="model_input_scope",
                 outcome="scope_added",
                 scope_addition=(principal, tenant_id, command.object_ids),
-            )
-
-    async def save_mapping_dependency(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        command: SaveMappingDependencyRequest,
-        idempotency_key: UUID,
-    ) -> ReviewModelRecordsResult:
-        request_digest = hashlib.sha256(
-            json.dumps(
-                {"operation": "save_mapping_dependency", **command.model_dump()},
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode()
-        ).hexdigest()
-        async with self._database.write_transaction() as transaction:
-            repository, model, principal_id = await self._authorize_record_review(
-                transaction, principal, tenant_id=tenant_id, model_id=model_id
-            )
-            replay = await repository.replay_review(
-                model_id=model_id, principal_id=principal_id, correlation_id=idempotency_key
-            )
-            if replay is not None:
-                metadata = replay["event_metadata"]
-                if metadata.get("request_digest") != request_digest:
-                    raise WorkbenchError("review_conflict", "This review key was already used.")
-                return ReviewModelRecordsResult(
-                    model_id=model_id,
-                    model_change_set_id=replay["model_change_set_id"],
-                    model_revision=metadata["model_revision"],
-                    action_count=replay["action_count"],
-                )
-            if model["model_revision"] != command.expected_model_revision:
-                raise ModelRevisionConflictError()
-            if await repository.has_running_tenant_workflow(tenant_id=tenant_id):
-                raise TenantWorkflowConflictError()
-            context = ModelReadContext(
-                model_id=model_id,
-                tenant_id=tenant_id,
-                model_name=model["model_name"],
-                model_revision=model["model_revision"],
-                readable_source_tenant_ids=model["readable_source_tenant_ids"],
-            )
-            validation = await prepare_mapping_dependency(transaction, context, command)
-            await self._authorizer.authorize_tenant(
-                transaction,
-                principal,
-                tenant_id=tenant_id,
-                policy=ToolPolicy.TENANT_MODEL_WRITE,
-                model_id=model_id,
-            )
-            return await self._apply_validated_review(
-                transaction,
-                repository,
-                validation,
-                model_id=model_id,
-                principal_id=principal_id,
-                idempotency_key=idempotency_key,
-                expected_model_revision=command.expected_model_revision,
-                request_digest=request_digest,
-                section="mapping",
-                outcome="dependency_saved",
             )
 
     async def save_assertion(
@@ -610,7 +437,7 @@ class DatabaseModelChangeSetService:
         scope_addition: tuple[RequestPrincipal, int, list[int]] | None = None,
         layer: str | None = None,
     ) -> ReviewModelRecordsResult:
-        """Persist a validated Binding or Scope command within its authorization transaction."""
+        """Persist a validated Scope command within its authorization transaction."""
         change_set_id = uuid4()
         row = await repository.create(
             change_set_id=change_set_id,

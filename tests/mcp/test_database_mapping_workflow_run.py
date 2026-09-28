@@ -8,7 +8,9 @@ import pytest
 from psycopg.errors import RaiseException
 
 from tests.mcp.database_test_support import require_row
-from tests.mcp.test_database_mapping_output_template_seed import seed_mapping_output_templates
+from tests.mcp.test_database_mapping_output_template_seed import (
+    seed_mapping_output_templates,
+)
 from tests.mcp.test_database_workflow_run_lifecycle import (
     WorkflowContext,
     seed_workflow_context,
@@ -22,9 +24,9 @@ if TYPE_CHECKING:
 @dataclass(frozen=True, slots=True)
 class MappingRunContext:
     workflow: WorkflowContext
-    target_object_id: int
+    modeled_entity_id: int
     source_system_id: int
-    model_object_binding_id: int
+    modeled_entity_type: str
 
 
 CREATE_MAPPING_RUN_SQL = """
@@ -35,10 +37,11 @@ CREATE_MAPPING_RUN_SQL = """
           'one_shot'::VARCHAR,
           NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR,
           NULL::INTEGER, NULL::INTEGER,
-          %s::BIGINT[], ARRAY[]::VARCHAR[], NULL::VARCHAR, NULL::VARCHAR,
+          ARRAY[]::BIGINT[], ARRAY[]::VARCHAR[], %s::VARCHAR, NULL::VARCHAR,
           %s::UUID, '{}'::JSONB,
           %s::VARCHAR, 'selected_targets'::VARCHAR,
-          %s::BIGINT, %s::BIGINT, %s::BIGINT
+          %s::BIGINT, %s::BIGINT, %s::BIGINT,
+          p_selected_entity_ids => %s::BIGINT[]
       )
 """
 
@@ -57,12 +60,13 @@ def _parameters(
         workflow.entra_object_id,
         workflow.model_id,
         workflow.model_revision,
-        [context.target_object_id],
+        context.modeled_entity_type,
         correlation_id,
         operation,
         context.source_system_id,
         object_template_id,
         attribute_template_id,
+        [context.modeled_entity_id],
     )
 
 
@@ -245,25 +249,6 @@ def _seed_mapping_context(
                     (zone_code, zone_code.title()),
                 ).fetchone()
             )
-        target_object_id = require_row(
-            connection.execute(
-                """
-                INSERT INTO core.object (
-                    connection_id, source_tenant_id, object_schema, object_name,
-                    object_type_id, zone_id
-                ) VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING object_id
-                """,
-                (
-                    physical["connection_id"],
-                    physical["source_tenant_id"],
-                    f"silver_{suffix}",
-                    f"mapping_target_{suffix}",
-                    physical["object_type_id"],
-                    zone["zone_id"],
-                ),
-            ).fetchone()
-        )["object_id"]
         dimensional_entity_id: int | None = None
         if dimensional:
             dimensional_entity_id = require_row(
@@ -271,8 +256,8 @@ def _seed_mapping_context(
                     """
                     INSERT INTO workflow.dimensional_entity (
                         model_id, dimensional_entity_name, dimensional_entity_definition,
-                        dimensional_entity_type, dimensional_entity_grain_definition
-                    ) VALUES (%s, %s, 'Mapping Entity.', 'dimension', 'One row')
+                        dimensional_entity_type, dimensional_entity_grain_definition, dimensional_entity_schema_name
+                    ) VALUES (%s, %s, 'Mapping Entity.', 'dimension', 'One row', 'gold')
                     RETURNING dimensional_entity_id
                     """,
                     (workflow.model_id, f"MappingEntity{suffix}"),
@@ -283,46 +268,22 @@ def _seed_mapping_context(
                 """
                 INSERT INTO workflow.logical_entity (
                     model_id, logical_entity_name, logical_entity_definition,
-                    logical_entity_type, logical_entity_grain
-                ) VALUES (%s, %s, 'Mapping Entity.', 'core', 'One row')
+                    logical_entity_type, logical_entity_grain, logical_entity_schema_name
+                ) VALUES (%s, %s, 'Mapping Entity.', 'core', 'One row', 'silver')
                 RETURNING logical_entity_id
                 """,
                 (workflow.model_id, f"MappingEntity{suffix}"),
             ).fetchone()
         )["logical_entity_id"]
-        binding_id = require_row(
-            connection.execute(
-                """
-                INSERT INTO workflow.model_object_binding (
-                    model_id, object_id, modeled_entity_type,
-                    logical_entity_id, dimensional_entity_id
-                ) VALUES (%s, %s, %s, %s, %s)
-                RETURNING model_object_binding_id
-                """,
-                (
-                    workflow.model_id,
-                    target_object_id,
-                    entity_type,
-                    None if dimensional else entity_id,
-                    dimensional_entity_id if dimensional else None,
-                ),
-            ).fetchone()
-        )["model_object_binding_id"]
-        connection.execute(
-            """
-            INSERT INTO workflow.mapping_source_system_dependency (
-                model_id, modeled_entity_type, source_system_id
-            ) VALUES (%s, %s, %s)
-            """,
-            (workflow.model_id, entity_type, physical["system_id"]),
-        )
         _seed_mapping_prompt(connection, workflow)
 
     return MappingRunContext(
         workflow=workflow,
-        target_object_id=target_object_id,
+        modeled_entity_id=dimensional_entity_id
+        if dimensional_entity_id is not None
+        else entity_id,
         source_system_id=physical["system_id"],
-        model_object_binding_id=binding_id,
+        modeled_entity_type=entity_type,
     )
 
 
@@ -366,17 +327,11 @@ def _seed_output_template(
     return template["output_template_id"], digest
 
 
-def test_mapping_run_freezes_binding_route_and_target_pair(
+def test_mapping_run_freezes_entity_route_and_target_pair(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = _seed_mapping_context(postgres_database)
     with postgres_database.connect_owner() as connection:
-        connection.execute(
-            """UPDATE workflow.mapping_source_system_dependency
-               SET mapping_source_system_dependency_status = 'inactive'
-               WHERE model_id = %s""",
-            (context.workflow.model_id,),
-        )
         created = require_row(
             connection.execute(
                 CREATE_MAPPING_RUN_SQL,
@@ -397,9 +352,10 @@ def test_mapping_run_freezes_binding_route_and_target_pair(
         pair = require_row(
             connection.execute(
                 """
-                SELECT object_id, source_system_id, selection_order
-                  FROM application.workflow_run_mapping_target_selection
-                 WHERE workflow_run_id = %s
+                SELECT entity.modeled_entity_id, target.source_system_id, target.selection_order
+                  FROM application.workflow_run_mapping_target_selection AS target
+                  JOIN application.workflow_run_entity_selection AS entity USING (workflow_run_entity_selection_id)
+                 WHERE target.workflow_run_id = %s
                 """,
                 (created["workflow_run_id"],),
             ).fetchone()
@@ -412,7 +368,7 @@ def test_mapping_run_freezes_binding_route_and_target_pair(
         "mapping_route": "logical_to_silver",
     }
     assert pair == {
-        "object_id": context.target_object_id,
+        "modeled_entity_id": context.modeled_entity_id,
         "source_system_id": context.source_system_id,
         "selection_order": 1,
     }
@@ -424,7 +380,9 @@ def test_mapping_run_freezes_independent_advisory_templates(
     context = _seed_mapping_context(postgres_database)
     with postgres_database.connect_owner() as connection:
         object_template = _seed_output_template(connection, context, "mapping_object")
-        attribute_template = _seed_output_template(connection, context, "mapping_attribute")
+        attribute_template = _seed_output_template(
+            connection, context, "mapping_attribute"
+        )
         created = require_row(
             connection.execute(
                 CREATE_MAPPING_RUN_SQL,
@@ -490,8 +448,8 @@ def test_mapping_run_replay_is_exact(
         )
 
 
-@pytest.mark.parametrize("invalid_state", ("inactive", "locked", "wrong_zone"))
-def test_mapping_run_rejects_invalid_binding_atomically(
+@pytest.mark.parametrize("invalid_state", ("inactive", "locked", "wrong_model"))
+def test_mapping_run_rejects_invalid_entity_atomically(
     postgres_database: DisposablePostgres,
     invalid_state: str,
 ) -> None:
@@ -500,43 +458,35 @@ def test_mapping_run_rejects_invalid_binding_atomically(
         if invalid_state == "inactive":
             connection.execute(
                 """
-                UPDATE workflow.model_object_binding
-                   SET model_object_binding_status = 'inactive'
-                 WHERE model_object_binding_id = %s
+                UPDATE workflow.logical_entity
+                   SET logical_entity_status = 'inactive'
+                 WHERE logical_entity_id = %s
                 """,
-                (context.model_object_binding_id,),
+                (context.modeled_entity_id,),
             )
-            message = "unavailable or locked header"
+            message = "unavailable or locked"
         elif invalid_state == "locked":
             connection.execute(
                 """
                 INSERT INTO workflow.mapping_object (
-                    model_id, model_object_binding_id, source_system_id, object_mapping_is_locked
-                ) VALUES (%s, %s, %s, TRUE)
+                    model_id, logical_entity_id, source_system_id, object_mapping_is_locked, modeled_entity_type
+                ) VALUES (%s, %s, %s, TRUE, 'logical_entity')
                 """,
-                (context.workflow.model_id, context.model_object_binding_id,
-                 context.source_system_id),
+                (
+                    context.workflow.model_id,
+                    context.modeled_entity_id,
+                    context.source_system_id,
+                ),
             )
-            message = "unavailable or locked header"
+            message = "unavailable or locked"
         else:
-            gold_zone = connection.execute(
-                "SELECT zone_id FROM reference.zone WHERE lower(btrim(zone_code)) = 'gold'"
-            ).fetchone()
-            if gold_zone is None:
-                gold_zone = require_row(
-                    connection.execute(
-                        """
-                        INSERT INTO reference.zone (zone_code, zone_name)
-                        VALUES ('gold', 'Gold')
-                        RETURNING zone_id
-                        """
-                    ).fetchone()
-                )
-            connection.execute(
-                "UPDATE core.object SET zone_id = %s WHERE object_id = %s",
-                (gold_zone["zone_id"], context.target_object_id),
+            context = MappingRunContext(
+                workflow=context.workflow,
+                modeled_entity_id=9223372036854775807,
+                source_system_id=context.source_system_id,
+                modeled_entity_type="logical_entity",
             )
-            message = "mixed or wrong-zone route"
+            message = "unavailable or locked"
 
     correlation_id = uuid4()
     with (

@@ -130,8 +130,7 @@ textarea:focus-visible {
 
 .prompt-ledger-header h2,
 .prompt-detail-variables h2,
-.prompt-history-panel h2,
-.prompt-assignment-gap h2 {
+.prompt-history-panel h2 {
   margin: 0.25rem 0 0;
   font-size: 1.12rem;
   letter-spacing: -0.025em;
@@ -643,7 +642,6 @@ textarea:focus-visible {
   border-top: 0;
 }
 
-.prompt-assignment-gap,
 .global-default-gap {
   display: flex;
   align-items: center;
@@ -655,7 +653,6 @@ textarea:focus-visible {
   border-bottom: 1px solid var(--line);
 }
 
-.prompt-assignment-gap p:last-child,
 .global-default-gap span {
   margin: 0.3rem 0 0;
   color: var(--muted);
@@ -801,7 +798,6 @@ textarea:focus-visible {
   .prompt-detail-actions,
   .model-prompts-commandbar > div:last-child,
   .prompt-editor-actions,
-  .prompt-assignment-gap,
   .global-default-gap,
   .model-prompts-context {
     align-items: stretch;
@@ -812,7 +808,6 @@ textarea:focus-visible {
   .prompt-detail-actions .button,
   .model-prompts-commandbar .button,
   .prompt-editor-actions .button,
-  .prompt-assignment-gap .button,
   .global-default-gap .button {
     width: 100%;
   }
@@ -932,15 +927,6 @@ textarea:focus-visible {
 .prompt-input-shape > p {
   color: var(--muted);
   font-size: 0.7rem;
-}
-
-
-.prompt-tool-options strong {
-  overflow-wrap: anywhere;
-}
-
-.prompt-body-editor .prompt-tool-options label small {
-  text-align: left;
 }
 
 .prompt-detail-commandbar { min-height: auto; align-items: start; gap: 1.25rem; }

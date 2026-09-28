@@ -16,7 +16,7 @@ from gds_workbench_api.prompt_rendering import (
     PromptVariableDefinition,
 )
 
-from .tool_configuration import AgentToolName
+from .agent_execution import AgentToolName
 
 type ModelWorkflow = Literal[
     "analysis",
@@ -144,6 +144,17 @@ SELECT selection.object_id,
           selection.workflow_run_object_selection_id
 """
 
+_RUN_ENTITY_SELECTION_SQL: LiteralString = """
+SELECT selection.modeled_entity_id, selection.selection_order
+ FROM application.workflow_run_entity_selection AS selection
+ JOIN application.workflow_run AS run ON run.workflow_run_id = selection.workflow_run_id AND
+     run.model_id = selection.model_id
+ JOIN model.model AS target_model ON target_model.model_id = run.model_id
+ WHERE target_model.tenant_id = %s AND selection.model_id = %s AND selection.workflow_run_id = %s
+  AND target_model.is_active AND run.workflow_run_state = 'running'
+ ORDER BY selection.selection_order
+"""
+
 _RUN_SYSTEM_SELECTION_SQL: LiteralString = """
 SELECT selection.system_code,
        selection.selection_order
@@ -220,6 +231,7 @@ class AgentRunPlan(BaseModel):
     )
     selected_scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     selected_object_ids: tuple[int, ...]
+    selected_entity_ids: tuple[int, ...] = ()
     selected_system_codes: tuple[str, ...] = ()
     selection: AgentRunSelection
     stages: tuple[FrozenAgentStage, ...] = Field(min_length=1, max_length=100)
@@ -241,6 +253,14 @@ class AgentRunPlan(BaseModel):
                 raise ValueError("Code Generation plan snapshot is incomplete")
         elif any(value is not None for value in code_generation_snapshot):
             raise ValueError("Code Generation plan snapshot is unavailable")
+        entity_workflow = self.model_workflow in {"dimensional", "mapping", "code_generation"}
+        selected_ids = self.selected_entity_ids if entity_workflow else self.selected_object_ids
+        if (entity_workflow and self.selected_object_ids) or (
+            not entity_workflow and self.selected_entity_ids
+        ):
+            raise ValueError("Run selections do not match the workflow")
+        if len(self.selected_entity_ids) != len(set(self.selected_entity_ids)):
+            raise ValueError("Selected Entities must be unique")
         if len(self.selected_object_ids) != len(set(self.selected_object_ids)):
             raise ValueError("Selected Objects must be unique")
         normalized_system_codes = [value.strip().casefold() for value in self.selected_system_codes]
@@ -253,7 +273,7 @@ class AgentRunPlan(BaseModel):
                 raise ValueError("Validation requires only an explicit System selection")
         elif (
             self.selected_system_codes and self.model_workflow != "code_generation"
-        ) or not self.selected_object_ids:
+        ) or not selected_ids:
             raise ValueError("Only Validation may use a System selection")
         stage_ids = [stage.workflow_stage_id for stage in self.stages]
         stage_orders = [stage.stage_order for stage in self.stages]
@@ -286,7 +306,12 @@ class PostgresAgentRunPlanRepository:
     ) -> AgentRunPlan:
         parameters = (tenant_id, model_id, workflow_run_id)
         rows = await transaction.fetch_all(_RUN_PLAN_SQL, parameters)
-        selection_rows = await transaction.fetch_all(_RUN_SELECTION_SQL, parameters)
+        entity_workflow = bool(
+            rows and rows[0].get("model_workflow") in {"dimensional", "mapping", "code_generation"}
+        )
+        selection_rows = await transaction.fetch_all(
+            _RUN_ENTITY_SELECTION_SQL if entity_workflow else _RUN_SELECTION_SQL, parameters
+        )
         system_selection_rows = (
             await transaction.fetch_all(_RUN_SYSTEM_SELECTION_SQL, parameters)
             if rows and rows[0].get("model_workflow") == "validation"
@@ -328,7 +353,14 @@ def _assemble_plan(
     for expected_order, row in enumerate(selection_rows, start=1):
         if _required_int(row, "selection_order") != expected_order:
             raise AgentRunPlanUnavailableError()
-        selected_object_ids.append(_required_int(row, "object_id"))
+        selected_object_ids.append(
+            _required_int(
+                row,
+                "modeled_entity_id"
+                if model_workflow in {"dimensional", "mapping", "code_generation"}
+                else "object_id",
+            )
+        )
     if model_workflow != "validation" and (
         len(selected_object_ids) != selected_scope_count
         or len(selected_object_ids) != len(set(selected_object_ids))
@@ -504,7 +536,12 @@ def _assemble_plan(
             "sql_generation_guide_digest",
         ),
         selected_scope_digest=_required_str(first, "selected_scope_digest"),
-        selected_object_ids=tuple(selected_object_ids),
+        selected_object_ids=()
+        if model_workflow in {"dimensional", "mapping", "code_generation"}
+        else tuple(selected_object_ids),
+        selected_entity_ids=tuple(selected_object_ids)
+        if model_workflow in {"dimensional", "mapping", "code_generation"}
+        else (),
         selected_system_codes=tuple(first.get("code_generation_system_codes") or ())
         if model_workflow == "code_generation"
         else tuple(selected_system_codes),

@@ -51,6 +51,7 @@ LogicalFilters = LogicalEntityFilters
 class LogicalEntitySummary(ContractModel):
     logical_entity_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
+    logical_entity_schema_name: str = Field(min_length=1, max_length=400)
     logical_entity_name: str = Field(min_length=1, max_length=255)
     logical_entity_type: Literal[
         "core",
@@ -157,6 +158,7 @@ class LogicalAttributeSummary(ContractModel):
     logical_attribute_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
     logical_entity_id: int = Field(gt=0)
+    logical_entity_schema_name: str = Field(min_length=1, max_length=400)
     logical_entity_name: str = Field(min_length=1, max_length=255)
     logical_attribute_name: str = Field(min_length=1, max_length=255)
     logical_attribute_data_type: str = Field(min_length=1, max_length=100)
@@ -220,10 +222,12 @@ class LogicalRelationshipSummary(ContractModel):
     logical_relationship_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
     from_logical_entity_id: int = Field(gt=0)
+    from_logical_entity_schema_name: str = Field(min_length=1, max_length=400)
     from_logical_entity_name: str = Field(min_length=1, max_length=255)
     from_logical_attribute_id: int = Field(gt=0)
     from_logical_attribute_name: str = Field(min_length=1, max_length=255)
     to_logical_entity_id: int = Field(gt=0)
+    to_logical_entity_schema_name: str = Field(min_length=1, max_length=400)
     to_logical_entity_name: str = Field(min_length=1, max_length=255)
     to_logical_attribute_id: int = Field(gt=0)
     to_logical_attribute_name: str = Field(min_length=1, max_length=255)
@@ -270,6 +274,7 @@ class LogicalSubmodelEntityMembership(ContractModel):
     logical_entity_submodel_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
     logical_entity_id: int = Field(gt=0)
+    logical_entity_schema_name: str = Field(min_length=1, max_length=400)
     logical_entity_name: str = Field(min_length=1, max_length=255)
     logical_entity_type: Literal[
         "core",

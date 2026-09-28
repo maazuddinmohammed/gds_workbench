@@ -147,6 +147,7 @@ def test_native_new_model_policy_rejects_unsupported_layout(
         json.dumps(
             [
                 {
+                    "logical_entity_schema_name": "silver",
                     "logical_entity_name": "bad_name",
                     "logical_entity_status": "active",
                     "logical_entity_type": "master",

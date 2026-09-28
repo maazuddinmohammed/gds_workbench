@@ -303,10 +303,22 @@ function Read-SnapshotRoot([string]$SnapshotRoot, [string]$Session, $State, $Own
     if ($manifest.snapshot_kind -ne $area -or $catalog.snapshot_kind -ne $area) {
         Fail "Snapshot kind must match $area."
     }
+    if ($area -ceq 'model' -and ((Get-Property $manifest 'schema_version') -cne '2.0' -or (Get-Property $catalog 'schema_version') -cne '2.0')) { Fail 'Model Snapshot schema version 2.0 is required.' }
     $datasets = New-Object System.Collections.ArrayList
     $names = @{}
     foreach ($section in @($catalog.sections)) {
+        if ($area -ceq 'model' -and (Get-Property $section 'name') -ceq 'model_binding') { Fail 'Legacy Model Snapshot contract; fetch a new Entity-owned Model Snapshot.' }
         foreach ($dataset in @($section.datasets)) {
+            if ($area -ceq 'model') {
+                if (@('model_object_binding', 'model_attribute_binding', 'mapping_dependency') -ccontains $dataset.name) { Fail 'Legacy Model Snapshot contract; fetch a new Entity-owned Model Snapshot.' }
+                $required = @()
+                if (@('mapping_object', 'mapping_attribute', 'generated_code', 'generated_code_source_system') -ccontains $dataset.name) { $required = @('modeled_entity_schema_name') }
+                foreach ($layer in @('logical', 'dimensional')) {
+                    if (@(($layer + '_entity'), ($layer + '_attribute')) -ccontains $dataset.name) { $required = @($layer + '_entity_schema_name') }
+                    if ($dataset.name -ceq ($layer + '_relationship')) { $required = @(('from_' + $layer + '_entity_schema_name'), ('to_' + $layer + '_entity_schema_name')) }
+                }
+                foreach ($field in $required) { if (@($dataset.canonical_key) -cnotcontains $field) { Fail 'Legacy Model Snapshot contract; fetch a new Entity-owned Model Snapshot.' } }
+            }
             if ([string]::IsNullOrWhiteSpace([string]$dataset.name) -or $names.ContainsKey([string]$dataset.name)) {
                 Fail 'Snapshot catalog contains an invalid or duplicate dataset.'
             }

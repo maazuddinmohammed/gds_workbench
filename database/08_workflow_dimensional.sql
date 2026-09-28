@@ -41,6 +41,7 @@ CREATE TABLE workflow.dimensional_entity (
     model_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     workflow_run_id BIGINT,
+    dimensional_entity_schema_name VARCHAR(400) NOT NULL,
     dimensional_entity_name VARCHAR(255) NOT NULL,
     dimensional_entity_definition TEXT NOT NULL,
     dimensional_entity_type VARCHAR(20) NOT NULL,
@@ -58,6 +59,9 @@ CREATE TABLE workflow.dimensional_entity (
         REFERENCES model.model (model_id) ON DELETE NO ACTION,
     CONSTRAINT uq_dimensional_entity_id_model
         UNIQUE (dimensional_entity_id, model_id),
+    CONSTRAINT ck_dimensional_entity_schema_name CHECK (
+        reference.is_nonblank(dimensional_entity_schema_name)
+    ),
     CONSTRAINT ck_dimensional_entity_name CHECK (
         reference.is_nonblank(dimensional_entity_name)
     ),
@@ -107,6 +111,7 @@ CREATE TABLE workflow.dimensional_entity (
 CREATE UNIQUE INDEX ux_dimensional_entity_effective_name
     ON workflow.dimensional_entity (
         model_id,
+        lower(btrim(dimensional_entity_schema_name)),
         lower(btrim(dimensional_entity_name))
     ) WHERE dimensional_entity_status = 'active';
 
@@ -263,7 +268,7 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
     workflow_run_id BIGINT,
     dimensional_entity_id BIGINT NOT NULL,
     support_source_type VARCHAR(20) NOT NULL,
-    source_object_id BIGINT,
+    source_logical_entity_id BIGINT,
     modeling_assertion_record_id BIGINT,
     dimensional_entity_source_role VARCHAR(255) NOT NULL,
     dimensional_entity_source_mapping_order INTEGER,
@@ -281,6 +286,9 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
         model_id
     ) REFERENCES workflow.dimensional_entity (dimensional_entity_id, model_id)
         ON DELETE NO ACTION,
+    CONSTRAINT fk_dimensional_entity_source_logical FOREIGN KEY (
+        source_logical_entity_id, model_id
+    ) REFERENCES workflow.logical_entity (logical_entity_id, model_id) ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_entity_source_assertion_record FOREIGN KEY (
         modeling_assertion_record_id,
         model_id
@@ -291,18 +299,18 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
     CONSTRAINT uq_dimensional_entity_source_witness UNIQUE (
         dimensional_entity_source_mapping_id,
         dimensional_entity_id,
-        source_object_id,
+        source_logical_entity_id,
         model_id
     ),
     CONSTRAINT ck_dimensional_entity_source_typed_source CHECK (
         (
-            support_source_type = 'object'
-            AND source_object_id IS NOT NULL
+            support_source_type = 'logical_entity'
+            AND source_logical_entity_id IS NOT NULL
             AND modeling_assertion_record_id IS NULL
         ) OR (
             support_source_type = 'assertion'
             AND modeling_assertion_record_id IS NOT NULL
-            AND source_object_id IS NULL
+            AND source_logical_entity_id IS NULL
         )
     ),
     CONSTRAINT ck_dimensional_entity_source_role CHECK (
@@ -322,12 +330,12 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
     )
 );
 
-CREATE UNIQUE INDEX ux_dimensional_entity_source_object_effective
+CREATE UNIQUE INDEX ux_dimensional_entity_source_logical_entity_effective
     ON workflow.dimensional_entity_source_mapping (
         model_id,
         dimensional_entity_id,
-        source_object_id
-    ) WHERE support_source_type = 'object'
+        source_logical_entity_id
+    ) WHERE support_source_type = 'logical_entity'
         AND dimensional_entity_source_mapping_status = 'active';
 CREATE UNIQUE INDEX ux_dimensional_entity_source_assertion_effective
     ON workflow.dimensional_entity_source_mapping (
@@ -346,8 +354,8 @@ CREATE TABLE workflow.dimensional_attribute_source_mapping (
     dimensional_entity_id BIGINT NOT NULL,
     dimensional_attribute_id BIGINT NOT NULL,
     support_source_type VARCHAR(20) NOT NULL,
-    source_object_id BIGINT,
-    source_attribute_id BIGINT,
+    source_logical_entity_id BIGINT,
+    source_logical_attribute_id BIGINT,
     modeling_assertion_record_id BIGINT,
     dimensional_attribute_source_mapping_order INTEGER,
     dimensional_attribute_source_mapping_rationale TEXT NOT NULL,
@@ -362,12 +370,12 @@ CREATE TABLE workflow.dimensional_attribute_source_mapping (
     CONSTRAINT fk_dimensional_attribute_source_parent FOREIGN KEY (
         dimensional_entity_source_mapping_id,
         dimensional_entity_id,
-        source_object_id,
+        source_logical_entity_id,
         model_id
     ) REFERENCES workflow.dimensional_entity_source_mapping (
         dimensional_entity_source_mapping_id,
         dimensional_entity_id,
-        source_object_id,
+        source_logical_entity_id,
         model_id
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_attribute_source_attribute FOREIGN KEY (
@@ -379,10 +387,11 @@ CREATE TABLE workflow.dimensional_attribute_source_mapping (
         dimensional_entity_id,
         model_id
     ) ON DELETE NO ACTION,
-    CONSTRAINT fk_dimensional_attribute_source_physical FOREIGN KEY (
-        source_attribute_id,
-        source_object_id
-    ) REFERENCES core.attribute (attribute_id, object_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_dimensional_attribute_source_logical FOREIGN KEY (
+        source_logical_attribute_id, source_logical_entity_id, model_id
+    ) REFERENCES workflow.logical_attribute (
+        logical_attribute_id, logical_entity_id, model_id
+    ) ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_attribute_source_assertion_record FOREIGN KEY (
         modeling_assertion_record_id,
         model_id
@@ -392,17 +401,17 @@ CREATE TABLE workflow.dimensional_attribute_source_mapping (
     ) ON DELETE NO ACTION,
     CONSTRAINT ck_dimensional_attribute_source_typed_source CHECK (
         (
-            support_source_type = 'attribute'
+            support_source_type = 'logical_attribute'
             AND dimensional_entity_source_mapping_id IS NOT NULL
-            AND source_object_id IS NOT NULL
-            AND source_attribute_id IS NOT NULL
+            AND source_logical_entity_id IS NOT NULL
+            AND source_logical_attribute_id IS NOT NULL
             AND modeling_assertion_record_id IS NULL
         ) OR (
             support_source_type = 'assertion'
             AND modeling_assertion_record_id IS NOT NULL
             AND dimensional_entity_source_mapping_id IS NULL
-            AND source_object_id IS NULL
-            AND source_attribute_id IS NULL
+            AND source_logical_entity_id IS NULL
+            AND source_logical_attribute_id IS NULL
         )
     ),
     CONSTRAINT ck_dimensional_attribute_source_order CHECK (
@@ -419,13 +428,13 @@ CREATE TABLE workflow.dimensional_attribute_source_mapping (
     )
 );
 
-CREATE UNIQUE INDEX ux_dimensional_attribute_source_physical_effective
+CREATE UNIQUE INDEX ux_dimensional_attribute_source_logical_attribute_effective
     ON workflow.dimensional_attribute_source_mapping (
         model_id,
         dimensional_entity_source_mapping_id,
         dimensional_attribute_id,
-        source_attribute_id
-    ) WHERE support_source_type = 'attribute'
+        source_logical_attribute_id
+    ) WHERE support_source_type = 'logical_attribute'
         AND dimensional_attribute_source_mapping_status = 'active';
 CREATE UNIQUE INDEX ux_dimensional_attribute_source_assertion_effective
     ON workflow.dimensional_attribute_source_mapping (
@@ -549,20 +558,20 @@ CREATE INDEX ix_dimensional_entity_status_order ON workflow.dimensional_entity (
 CREATE INDEX ix_dimensional_entity_submodel_entity ON workflow.dimensional_entity_submodel (model_id, dimensional_entity_id);
 CREATE INDEX ix_dimensional_entity_submodel_submodel ON workflow.dimensional_entity_submodel (model_id, dimensional_submodel_id);
 CREATE INDEX ix_dimensional_attribute_entity_status ON workflow.dimensional_attribute (model_id, dimensional_entity_id, dimensional_attribute_status);
-CREATE INDEX ix_dimensional_entity_source_object
-    ON workflow.dimensional_entity_source_mapping (model_id, source_object_id)
-    WHERE support_source_type = 'object';
+CREATE INDEX ix_dimensional_entity_source_logical_entity
+    ON workflow.dimensional_entity_source_mapping (model_id, source_logical_entity_id)
+    WHERE support_source_type = 'logical_entity';
 CREATE INDEX ix_dimensional_entity_source_assertion
     ON workflow.dimensional_entity_source_mapping (
         model_id,
         modeling_assertion_record_id
     ) WHERE support_source_type = 'assertion';
-CREATE INDEX ix_dimensional_attribute_source_physical
+CREATE INDEX ix_dimensional_attribute_source_logical_attribute
     ON workflow.dimensional_attribute_source_mapping (
         model_id,
-        source_object_id,
-        source_attribute_id
-    ) WHERE support_source_type = 'attribute';
+        source_logical_entity_id,
+        source_logical_attribute_id
+    ) WHERE support_source_type = 'logical_attribute';
 CREATE INDEX ix_dimensional_attribute_source_assertion
     ON workflow.dimensional_attribute_source_mapping (
         model_id,
@@ -571,3 +580,118 @@ CREATE INDEX ix_dimensional_attribute_source_assertion
 CREATE INDEX ix_dimensional_attribute_source_target ON workflow.dimensional_attribute_source_mapping (model_id, dimensional_attribute_id);
 CREATE INDEX ix_dimensional_relationship_from ON workflow.dimensional_relationship (model_id, dimensional_relationship_from_entity_id, dimensional_relationship_from_attribute_id);
 CREATE INDEX ix_dimensional_relationship_to ON workflow.dimensional_relationship (model_id, dimensional_relationship_to_entity_id, dimensional_relationship_to_attribute_id);
+
+-- Serialize schema membership and configuration changes through the Model row.
+-- Revision increments remain owned by governed Model commands and Apply.
+CREATE FUNCTION workflow.guard_entity_schema_membership()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = pg_catalog
+AS $guard_entity_schema_membership$
+DECLARE
+    schemas JSONB;
+    schema_name TEXT;
+BEGIN
+    IF TG_TABLE_NAME = 'logical_entity' THEN
+        SELECT target.logical_schemas INTO schemas
+          FROM model.model AS target WHERE target.model_id = NEW.model_id
+          FOR UPDATE;
+        schema_name := NEW.logical_entity_schema_name;
+    ELSE
+        SELECT target.dimensional_schemas INTO schemas
+          FROM model.model AS target WHERE target.model_id = NEW.model_id
+          FOR UPDATE;
+        schema_name := NEW.dimensional_entity_schema_name;
+    END IF;
+    IF schemas IS NULL OR NOT EXISTS (
+        SELECT 1 FROM jsonb_array_elements(schemas) AS configured(value)
+         WHERE lower(btrim(configured.value ->> 'schema_name')) = lower(btrim(schema_name))
+    ) THEN
+        RAISE EXCEPTION 'Entity schema is not configured on its Model';
+    END IF;
+    RETURN NEW;
+END;
+$guard_entity_schema_membership$;
+
+CREATE TRIGGER guard_entity_schema_membership
+BEFORE INSERT OR UPDATE OF model_id, logical_entity_schema_name ON workflow.logical_entity
+FOR EACH ROW EXECUTE FUNCTION workflow.guard_entity_schema_membership();
+CREATE TRIGGER guard_entity_schema_membership
+BEFORE INSERT OR UPDATE OF model_id, dimensional_entity_schema_name ON workflow.dimensional_entity
+FOR EACH ROW EXECUTE FUNCTION workflow.guard_entity_schema_membership();
+
+CREATE FUNCTION model.guard_schema_list_references()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = pg_catalog
+AS $guard_schema_list_references$
+BEGIN
+    IF NOT model.valid_schema_list(NEW.logical_schemas)
+       OR NOT model.valid_schema_list(NEW.dimensional_schemas) THEN
+        RAISE EXCEPTION 'Model schema lists are invalid';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM workflow.logical_entity AS entity
+         WHERE entity.model_id = NEW.model_id
+           AND NOT EXISTS (
+               SELECT 1 FROM jsonb_array_elements(NEW.logical_schemas) AS configured(value)
+                WHERE lower(btrim(configured.value ->> 'schema_name')) =
+                      lower(btrim(entity.logical_entity_schema_name))
+           )
+    ) OR EXISTS (
+        SELECT 1 FROM workflow.dimensional_entity AS entity
+         WHERE entity.model_id = NEW.model_id
+           AND NOT EXISTS (
+               SELECT 1 FROM jsonb_array_elements(NEW.dimensional_schemas) AS configured(value)
+                WHERE lower(btrim(configured.value ->> 'schema_name')) =
+                      lower(btrim(entity.dimensional_entity_schema_name))
+           )
+    ) THEN
+        RAISE EXCEPTION 'A referenced Model schema cannot be removed or renamed';
+    END IF;
+    RETURN NEW;
+END;
+$guard_schema_list_references$;
+
+CREATE TRIGGER guard_schema_list_references
+BEFORE UPDATE OF logical_schemas, dimensional_schemas ON model.model
+FOR EACH ROW EXECUTE FUNCTION model.guard_schema_list_references();
+
+-- Read boundary for modeled layers; all writes retain typed table foreign keys.
+CREATE VIEW workflow.modeled_entity AS
+SELECT model_id, 'logical_entity'::VARCHAR(30) AS modeled_entity_type,
+       logical_entity_id AS modeled_entity_id,
+       logical_entity_schema_name AS modeled_entity_schema_name,
+       logical_entity_name AS modeled_entity_name,
+       logical_entity_definition AS definition, logical_entity_type::TEXT AS classification,
+       logical_entity_grain AS grain, logical_entity_dependency_order AS dependency_order,
+       logical_entity_status AS status, logical_entity_is_locked AS is_locked
+  FROM workflow.logical_entity
+UNION ALL
+SELECT model_id, 'dimensional_entity'::VARCHAR(30), dimensional_entity_id,
+       dimensional_entity_schema_name, dimensional_entity_name,
+       dimensional_entity_definition, dimensional_entity_type::TEXT,
+       dimensional_entity_grain_definition, dimensional_entity_dependency_order,
+       dimensional_entity_status, dimensional_entity_is_locked
+  FROM workflow.dimensional_entity;
+
+CREATE VIEW workflow.modeled_attribute AS
+SELECT model_id, 'logical_entity'::VARCHAR(30) AS modeled_entity_type,
+       logical_entity_id AS modeled_entity_id, logical_attribute_id AS modeled_attribute_id,
+       logical_attribute_name AS modeled_attribute_name,
+       logical_attribute_name AS attribute_name, logical_attribute_definition AS definition,
+       logical_attribute_data_type AS data_type, logical_attribute_is_nullable AS is_nullable,
+       logical_attribute_ordinal_position AS ordinal_position,
+       logical_attribute_is_natural_key AS is_natural_key,
+       logical_attribute_is_surrogate_key AS is_surrogate_key,
+       logical_attribute_is_audit_column AS is_audit_column,
+       logical_attribute_status AS status, logical_attribute_is_locked AS is_locked
+  FROM workflow.logical_attribute
+UNION ALL
+SELECT model_id, 'dimensional_entity'::VARCHAR(30), dimensional_entity_id,
+       dimensional_attribute_id, dimensional_attribute_name, dimensional_attribute_name, dimensional_attribute_definition,
+       dimensional_attribute_data_type, dimensional_attribute_is_nullable,
+       dimensional_attribute_ordinal_position, dimensional_attribute_key_role = 'business',
+       dimensional_attribute_key_role = 'surrogate', dimensional_attribute_is_audit_column,
+       dimensional_attribute_status, dimensional_attribute_is_locked
+  FROM workflow.dimensional_attribute;

@@ -15,15 +15,13 @@
   "use strict";
 
   const GROUP_FIELDS = new Map([
-    ["model_object_binding", ["modeled_entity_type", "modeled_entity_name"]],
-    ["model_attribute_binding", ["modeled_entity_type", "modeled_entity_name"]],
     [
       "mapping_object",
-      ["modeled_entity_type", "modeled_entity_name", "source_system_code"],
+      ["modeled_entity_type", "modeled_entity_schema_name", "modeled_entity_name", "source_system_code"],
     ],
     [
       "mapping_attribute",
-      ["modeled_entity_type", "modeled_entity_name", "source_system_code"],
+      ["modeled_entity_type", "modeled_entity_schema_name", "modeled_entity_name", "source_system_code"],
     ],
   ]);
 
@@ -46,10 +44,10 @@
       );
       const key = core.stableStringify(normalized);
       if (!groups.has(key)) {
-        const entity = `${entityTypeLabel(values[0])} ${values[1] ?? "unspecified"}`;
+        const entity = `${entityTypeLabel(values[0])} ${values[1] ?? "unspecified"}.${values[2] ?? "unspecified"}`;
         const suffix = fields.includes("source_system_code")
-          ? `source System ${values[2] ?? "unspecified"}`
-          : "Model Binding";
+          ? `source System ${values[3] ?? "unspecified"}`
+          : "Entity";
         groups.set(key, {
           label: `${entity} · ${suffix}`,
           records: [],

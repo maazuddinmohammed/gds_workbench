@@ -52,6 +52,24 @@
     });
   }
 
+  function isEntityOwnedModelCatalog(catalog) {
+    if (!Array.isArray(catalog?.sections)) return false;
+    for (const section of catalog.sections) {
+      if (section?.name === "model_binding" || !Array.isArray(section?.datasets)) return false;
+      for (const dataset of section.datasets) {
+        if (["model_object_binding", "model_attribute_binding", "mapping_dependency"].includes(dataset?.name)) return false;
+        let required = [];
+        if (["mapping_object", "mapping_attribute", "generated_code", "generated_code_source_system"].includes(dataset?.name)) required = ["modeled_entity_schema_name"];
+        for (const layer of ["logical", "dimensional"]) {
+          if ([`${layer}_entity`, `${layer}_attribute`].includes(dataset?.name)) required = [`${layer}_entity_schema_name`];
+          if (dataset?.name === `${layer}_relationship`) required = [`from_${layer}_entity_schema_name`, `to_${layer}_entity_schema_name`];
+        }
+        if (required.some(field => !Array.isArray(dataset.canonical_key) || !dataset.canonical_key.includes(field))) return false;
+      }
+    }
+    return true;
+  }
+
   function overlay(area, definition, baseline, pending) {
     const records = new Map(
       baseline.map((record) => [stableStringify(key(area, definition, record)), record]),
@@ -100,5 +118,5 @@
     });
   }
 
-  return { active, key, normalize, overlay, reviewActions, stableStringify };
+  return { active, isEntityOwnedModelCatalog, key, normalize, overlay, reviewActions, stableStringify };
 });

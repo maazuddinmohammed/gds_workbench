@@ -40,7 +40,7 @@ test("Model keys use Unicode casefold", () => {
   assert.equal(core.normalize("model", "model_name", "ΟΣ"), "οσ");
 });
 
-test("review distinguishes deactivation and groups Mapping by natural-key Binding and System", () => {
+test("review distinguishes deactivation and groups Mapping by schema-qualified Entity and System", () => {
   const definition = { name: "source_object", canonical_key: ["object_name"] };
   const baseline = [{ object_name: "Customer", is_active: true }];
   assert.deepEqual(core.reviewActions("metadata", definition, baseline, []), []);
@@ -56,19 +56,19 @@ test("review distinguishes deactivation and groups Mapping by natural-key Bindin
     [
       {
         modeled_entity_type: "logical_entity",
-        modeled_entity_name: "Customer",
+        modeled_entity_schema_name: "silver", modeled_entity_name: "Customer",
         modeled_attribute_name: "CustomerID",
         source_system_code: "CRM",
       },
       {
         modeled_entity_type: "logical_entity",
-        modeled_entity_name: "Customer",
+        modeled_entity_schema_name: "silver", modeled_entity_name: "Customer",
         modeled_attribute_name: "CustomerName",
         source_system_code: "CRM",
       },
       {
         modeled_entity_type: "dimensional_entity",
-        modeled_entity_name: "DimCustomer",
+        modeled_entity_schema_name: "silver", modeled_entity_name: "DimCustomer",
         modeled_attribute_name: "CustomerKey",
         source_system_code: "ERP",
       },
@@ -77,33 +77,20 @@ test("review distinguishes deactivation and groups Mapping by natural-key Bindin
   assert.deepEqual(
     groups.map((group) => [group.label, group.records.length]),
     [
-      ["Dimensional Entity DimCustomer · source System ERP", 1],
-      ["Logical Entity Customer · source System CRM", 2],
+      ["Dimensional Entity silver.DimCustomer · source System ERP", 1],
+      ["Logical Entity silver.Customer · source System CRM", 2],
     ],
   );
 });
 
-test("review groups Model Attribute Bindings by their natural-key Entity", () => {
-  const groups = model.reviewGroups(
-    { name: "model_attribute_binding" },
-    [
-      {
-        modeled_entity_type: "logical_entity",
-        modeled_entity_name: "Customer",
-        modeled_attribute_name: "CustomerID",
-      },
-      {
-        modeled_entity_type: "logical_entity",
-        modeled_entity_name: "Customer",
-        modeled_attribute_name: "CustomerName",
-      },
-    ],
-  );
-
-  assert.deepEqual(
-    groups.map((group) => [group.label, group.records.length]),
-    [["Logical Entity Customer · Model Binding", 2]],
-  );
+test("review separates equally named Entities in distinct schemas", () => {
+  const groups = model.reviewGroups({ name: "mapping_attribute" }, [
+    { modeled_entity_type: "logical_entity", modeled_entity_schema_name: "sales", modeled_entity_name: "Customer", source_system_code: "CRM" },
+    { modeled_entity_type: "logical_entity", modeled_entity_schema_name: "billing", modeled_entity_name: "Customer", source_system_code: "CRM" },
+  ]);
+  assert.equal(groups.length, 2);
+  assert.match(groups[0].label, /billing.Customer/);
+  assert.match(groups[1].label, /sales.Customer/);
 });
 
 test("JSON Schema validation remains generic", () => {
@@ -506,11 +493,11 @@ test("metadata Attribute locks use normalized full keys across zone datasets", (
 test("model validation follows current schema references across Model datasets", () => {
   const datasets = new Map([
     [
-      "model_object_binding",
+      "logical_entity",
       {
-        definition: { name: "model_object_binding", record_type: "model_object_binding" },
-        schema: { "x-gds-record-type": "model_object_binding" },
-        records: [{ model_object_binding_id: 3, is_active: true }],
+        definition: { name: "logical_entity", record_type: "logical_entity" },
+        schema: { "x-gds-record-type": "logical_entity" },
+        records: [{ logical_entity_schema_name: "silver_a", is_active: true }],
       },
     ],
     [
@@ -521,16 +508,16 @@ test("model validation follows current schema references across Model datasets",
           "x-gds-record-type": "mapping_object",
           "x-gds-references": [
             {
-              columns: ["model_object_binding_id"],
-              target_record_type: "model_object_binding",
-              target_columns: ["model_object_binding_id"],
+              columns: ["logical_entity_schema_name"],
+              target_record_type: "logical_entity",
+              target_columns: ["logical_entity_schema_name"],
               nullable: false,
             },
           ],
         },
         records: [
-          { model_object_binding_id: 3, is_active: true },
-          { model_object_binding_id: 4, is_active: true },
+          { logical_entity_schema_name: "silver_a", is_active: true },
+          { logical_entity_schema_name: "silver_b", is_active: true },
         ],
       },
     ],
@@ -545,9 +532,9 @@ test("model validation follows current schema references across Model datasets",
 test("model validation can resolve declared references into Metadata", () => {
   const metadata = new Map([
     [
-      "silver_object",
+      "bronze_object",
       {
-        definition: { name: "silver_object", record_type: "object" },
+        definition: { name: "bronze_object", record_type: "object" },
         schema: { "x-gds-record-type": "object" },
         records: [{ object_id: 101, is_active: true }],
       },
@@ -555,11 +542,11 @@ test("model validation can resolve declared references into Metadata", () => {
   ]);
   const datasets = new Map([
     [
-      "model_object_binding",
+      "model_input_scope",
       {
-        definition: { name: "model_object_binding" },
+        definition: { name: "model_input_scope" },
         schema: {
-          "x-gds-record-type": "model_object_binding",
+          "x-gds-record-type": "model_input_scope",
           "x-gds-references": [
             {
               columns: ["object_id"],
@@ -638,7 +625,7 @@ function modelDataset(name, records, baseline = records, pending = []) {
   };
 }
 
-test("full local Model validation checks physical scope and active Binding conflicts", () => {
+test("full local Model validation preserves Model ownership without registered targets", () => {
   const target = {
     tenant_code: "GDS", system_code: "GDS", connection_code: "DEV",
     source_tenant_code: "TENANT_A", object_schema: "silver", object_name: "Customer",
@@ -655,27 +642,19 @@ test("full local Model validation checks physical scope and active Binding confl
     }],
   ]);
   const entities = ["Customer", "Party"].map((name) => ({
-    logical_entity_name: name, logical_entity_status: "active", submodels: [], sources: [],
-  }));
-  const bindings = entities.map((entity) => ({
-    tenant_code: target.tenant_code, system_code: target.system_code,
-    connection_code: target.connection_code, object_schema: target.object_schema,
-    object_name: target.object_name, modeled_entity_type: "logical_entity",
-    modeled_entity_name: entity.logical_entity_name,
-    model_object_binding_status: "active",
+    logical_entity_schema_name: "silver", logical_entity_name: name, logical_entity_status: "active", submodels: [], sources: [],
   }));
   const graph = new Map([
     ["model_details", modelDataset("model_details", [{ model_name: "Customer Model" }])],
     ["model_input_scope", modelDataset("model_input_scope", [])],
     ["logical_entity", modelDataset("logical_entity", entities)],
-    ["model_object_binding", modelDataset("model_object_binding", bindings)],
   ]);
 
   const issues = modelValidation.validateGraph(graph, metadata, {
     tenantCode: "TENANT_A",
     model: { other_active_model_names: [] },
   });
-  assert.ok(issues.some((item) => item.code === "binding_target_conflict"));
+  assert.deepEqual(issues, []);
 
   graph.get("model_details").records[0].model_name = "Existing";
   const conflict = modelValidation.validateGraph(graph, metadata, {
@@ -809,7 +788,7 @@ test("Model physical-scope validation covers every backend rule family", () => {
     ["dimensional_entity", modelDataset("dimensional_entity", [{ sources: [{
       support_source_type: "object", source_object: missingObject,
     }] }])],
-    ["mapping_dependency", modelDataset("mapping_dependency", [{
+    ["mapping_object", modelDataset("mapping_object", [{
       source_system_code: "MISSING",
     }])],
     ["validation_group", modelDataset("validation_group", [{
@@ -840,7 +819,7 @@ test("Model physical-scope validation covers every backend rule family", () => {
   for (const dataset of [
     "model_input_scope", "profiling_profile", "analysis_result",
     "modeling_assertion_document", "conceptual_object", "logical_entity",
-    "logical_attribute", "dimensional_entity", "mapping_dependency",
+    "logical_attribute", "mapping_object",
     "validation_group", "validation_check",
   ]) assert.ok(issues.some((item) => item.dataset === dataset), dataset);
 });
@@ -865,38 +844,30 @@ test("Model future-graph references cover every backend relationship family", ()
     }])],
     ["logical_submodel", modelDataset("logical_submodel", [])],
     ["logical_entity", modelDataset("logical_entity", [{
-      logical_entity_name: "Entity", submodels: [{ submodel_name: "Missing" }],
+      logical_entity_schema_name: "silver", logical_entity_name: "Entity", submodels: [{ submodel_name: "Missing" }],
       sources: [assertionSource],
     }])],
     ["logical_attribute", modelDataset("logical_attribute", [{
-      logical_entity_name: "MissingEntity", logical_attribute_name: "Attribute", sources: [],
+      logical_entity_schema_name: "silver", logical_entity_name: "MissingEntity", logical_attribute_name: "Attribute", sources: [],
     }])],
     ["logical_relationship", modelDataset("logical_relationship", [{
-      from_logical_entity_name: "Entity", from_logical_attribute_name: "MissingA",
-      to_logical_entity_name: "Entity", to_logical_attribute_name: "MissingB",
+      from_logical_entity_schema_name: "silver", from_logical_entity_name: "Entity", from_logical_attribute_name: "MissingA",
+      to_logical_entity_schema_name: "silver", to_logical_entity_name: "Entity", to_logical_attribute_name: "MissingB",
     }])],
-    ["model_object_binding", modelDataset("model_object_binding", [{
-      modeled_entity_type: "logical_entity", modeled_entity_name: "MissingEntity",
-    }])],
-    ["model_attribute_binding", modelDataset("model_attribute_binding", [{
-      modeled_entity_type: "logical_entity", modeled_entity_name: "AnotherMissing",
-      modeled_attribute_name: "MissingAttribute",
-    }])],
-    ["mapping_dependency", modelDataset("mapping_dependency", [])],
     ["mapping_object", modelDataset("mapping_object", [{
-      modeled_entity_type: "logical_entity", modeled_entity_name: "NoBinding",
+      modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "NoBinding",
       source_system_code: "CRM",
     }])],
     ["mapping_attribute", modelDataset("mapping_attribute", [{
-      modeled_entity_type: "logical_entity", modeled_entity_name: "NoBinding",
+      modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "NoBinding",
       modeled_attribute_name: "Missing", source_system_code: "CRM",
     }])],
     ["generated_code", modelDataset("generated_code", [{
-      modeled_entity_type: "logical_entity", modeled_entity_name: "NoBinding",
+      modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "NoBinding",
       artifact_name: "code.sql",
     }])],
     ["generated_code_source_system", modelDataset("generated_code_source_system", [{
-      modeled_entity_type: "logical_entity", modeled_entity_name: "NoBinding",
+      modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "NoBinding",
       artifact_name: "missing.sql",
     }])],
     ["validation_group", modelDataset("validation_group", [])],
@@ -909,42 +880,33 @@ test("Model future-graph references cover every backend relationship family", ()
   for (const dataset of [
     "modeling_assertion_record", "conceptual_object", "conceptual_relationship",
     "logical_entity", "logical_attribute", "logical_relationship",
-    "model_object_binding", "model_attribute_binding", "mapping_object",
+    "mapping_object",
     "mapping_attribute", "generated_code", "generated_code_source_system",
     "validation_check",
   ]) assert.ok(issues.some((item) => item.dataset === dataset), dataset);
   assert.ok(issues.some((item) => item.code === "assertion_layer_invalid") === false);
 });
 
-test("Model active dependencies cover Binding, Mapping, Code, and Validation", () => {
+test("Model active dependencies cover Entity, Mapping, Code, and Validation", () => {
   const graph = new Map([
     ["logical_entity", modelDataset("logical_entity", [])],
     ["logical_attribute", modelDataset("logical_attribute", [])],
-    ["model_object_binding", modelDataset("model_object_binding", [{
-      modeled_entity_type: "logical_entity", modeled_entity_name: "Entity",
-      model_object_binding_status: "active",
-    }])],
-    ["model_attribute_binding", modelDataset("model_attribute_binding", [{
-      modeled_entity_type: "logical_entity", modeled_entity_name: "Entity",
-      modeled_attribute_name: "Attribute", model_attribute_binding_status: "active",
-    }])],
-    ["mapping_dependency", modelDataset("mapping_dependency", [])],
     ["mapping_object", modelDataset("mapping_object", [{
-      modeled_entity_type: "logical_entity", modeled_entity_name: "Entity",
+      modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "Entity",
       source_system_code: "CRM", object_mapping_status: "active",
       mapping_transformation_document: null,
     }])],
     ["mapping_attribute", modelDataset("mapping_attribute", [{
-      modeled_entity_type: "logical_entity", modeled_entity_name: "Entity",
+      modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "Entity",
       modeled_attribute_name: "Attribute", source_system_code: "CRM",
       attribute_mapping_status: "active", attribute_mapping_transformation_document: null,
     }])],
     ["generated_code", modelDataset("generated_code", [{
-      modeled_entity_type: "logical_entity", modeled_entity_name: "NoBinding",
+      modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "NoBinding",
       artifact_name: "code.sql", generated_code_status: "active",
     }])],
     ["generated_code_source_system", modelDataset("generated_code_source_system", [{
-      modeled_entity_type: "logical_entity", modeled_entity_name: "NoBinding",
+      modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "NoBinding",
       artifact_name: "code.sql", source_system_code: "CRM",
       generated_code_source_system_status: "active",
     }])],
@@ -959,10 +921,10 @@ test("Model active dependencies cover Binding, Mapping, Code, and Validation", (
   ]);
 
   const issues = modelValidation.validateActiveDependencies(graph);
-  assert.ok(issues.length >= 8);
+  assert.ok(issues.length >= 6);
   assert.ok(issues.every((item) => item.code === "active_dependency_invalid"));
   for (const dataset of [
-    "model_object_binding", "model_attribute_binding", "mapping_object",
+    "mapping_object",
     "mapping_attribute", "generated_code", "generated_code_source_system",
     "validation_group", "validation_check",
   ]) assert.ok(issues.some((item) => item.dataset === dataset), dataset);
@@ -997,63 +959,18 @@ test("physical history only permits typed lifecycle changes, never JSON payload 
     { ...original, logical_entity_status: "inactive" }, original), false);
 });
 
-test("historical bindings retain inactive physical Attributes without enabling new authoring", () => {
-  const target = { tenant_code: "GDS", system_code: "GDS", connection_code: "DEV",
-    source_tenant_code: "TENANT_A", object_schema: "silver", object_name: "Customer",
-    zone_code: "silver", is_active: true };
-  const attr = { ...target, attribute_name: "ID", is_active: false };
-  const binding = { ...target, modeled_entity_type: "logical_entity", modeled_entity_name: "Customer",
-    model_object_binding_status: "active", model_object_binding_is_locked: false };
-  const attrBinding = { modeled_entity_type: "logical_entity", modeled_entity_name: "Customer",
-    modeled_attribute_name: "ID", attribute_name: "ID", model_attribute_binding_status: "active",
-    model_attribute_binding_is_locked: false };
-  const dataset = (name, records, keys, baseline = structuredClone(records)) => ({
-    ...modelDataset(name, records, baseline), definition: { name, record_type: name, canonical_key: keys },
-  });
+test("Dimensional source identity requires the exact Logical schema and active design", () => {
+  const source = { logical_entity_schema_name: "sales", logical_entity_name: "Customer" };
   const graph = new Map([
-    ["model_details", dataset("model_details", [{ model_name: "History" }], [])],
-    ["model_input_scope", dataset("model_input_scope", [], [])],
-    ["logical_entity", dataset("logical_entity", [{ logical_entity_name: "Customer",
-      logical_entity_status: "active", sources: [] }], ["logical_entity_name"])],
-    ["logical_attribute", dataset("logical_attribute", [{ logical_entity_name: "Customer",
-      logical_attribute_name: "ID", logical_attribute_status: "active", sources: [] }],
-    ["logical_entity_name", "logical_attribute_name"])],
-    ["model_object_binding", dataset("model_object_binding", [binding],
-      ["modeled_entity_type", "modeled_entity_name"])],
-    ["model_attribute_binding", dataset("model_attribute_binding", [attrBinding],
-      ["modeled_entity_type", "modeled_entity_name", "modeled_attribute_name"])],
+    ["logical_entity", modelDataset("logical_entity", [{ ...source, logical_entity_status: "active" }])],
+    ["dimensional_entity", modelDataset("dimensional_entity", [{ dimensional_entity_schema_name: "gold", dimensional_entity_name: "DimCustomer", dimensional_entity_status: "active", sources: [{ support_source_type: "logical_entity", source_logical_entity: source, status: "active" }] }])],
   ]);
-  const metadata = new Map([
-    ["object", modelDataset("object", [target])], ["attribute", modelDataset("attribute", [attr])],
-    ["system", modelDataset("system", [{ system_code: "GDS", is_active: true }])],
-  ]);
-  const validate = () => modelValidation.validatePhysicalScope(graph,
-    modelValidation.buildPhysicalCatalog(graph, metadata, { tenantCode: "TENANT_A" }));
-  assert.deepEqual(validate(), []);
-
-  const rebound = { ...target, object_name: "OtherCustomer" };
-  metadata.get("object").records.push(rebound);
-  metadata.get("attribute").records.push({ ...attr, object_name: "OtherCustomer" });
-  binding.object_name = "OtherCustomer";
-  assert.ok(validate().some((issue) => issue.dataset === "model_attribute_binding" &&
-    issue.code === "model_input_reference_invalid"));
-  binding.object_name = "Customer";
-
-  target.is_active = false;
-  assert.deepEqual(validate(), []);
-  const mapping = { modeled_entity_type: "logical_entity", modeled_entity_name: "Customer",
-    source_system_code: "GDS", object_mapping_status: "active", mapping_transformation_document: {} };
-  graph.set("mapping_object", dataset("mapping_object", [mapping],
-    ["modeled_entity_type", "modeled_entity_name", "source_system_code"], []));
-  assert.ok(validate().some((issue) => issue.dataset === "mapping_object" &&
-    issue.field === "model_object_binding"));
-  graph.get("mapping_object").baseline = [structuredClone(mapping)];
-  const dimensional = { dimensional_entity_name: "DimCustomer", dimensional_entity_status: "inactive",
-    sources: [{ support_source_type: "object", source_object: target }] };
-  graph.set("dimensional_entity", dataset("dimensional_entity", [dimensional],
-    ["dimensional_entity_name"], []));
-  assert.ok(validate().some((issue) => issue.dataset === "dimensional_entity" &&
-    issue.code === "model_input_reference_invalid"));
+  assert.deepEqual(modelValidation.validateBackendReferences(graph), []);
+  graph.get("logical_entity").records[0].logical_entity_schema_name = "billing";
+  assert.ok(modelValidation.validateBackendReferences(graph).some(issue => issue.code === "reference_not_found"));
+  graph.get("logical_entity").records[0].logical_entity_schema_name = "sales";
+  graph.get("logical_entity").records[0].logical_entity_status = "inactive";
+  assert.ok(modelValidation.validateBackendReferences(graph).some(issue => issue.code === "active_dependency_invalid"));
 });
 
 for (const [dataset, lockField] of [
@@ -1078,14 +995,11 @@ for (const [dataset, lockField] of [
 }
 
 test("new Mapping systems leave prior Code stale; Code authoring still needs exact coverage", () => {
-  const entity = { modeled_entity_type: "logical_entity", modeled_entity_name: "Customer" };
+  const entity = { modeled_entity_type: "logical_entity", modeled_entity_schema_name: "silver", modeled_entity_name: "Customer" };
   const artifact = { ...entity, artifact_name: "customer.sql", generated_code_status: "active" };
   const graph = new Map([
-    ["logical_entity", modelDataset("logical_entity", [{logical_entity_name: "Customer", logical_entity_status: "active"}])],
-    ["logical_attribute", modelDataset("logical_attribute", [{logical_entity_name: "Customer", logical_attribute_name: "ID", logical_attribute_status: "active"}])],
-    ["model_object_binding", modelDataset("model_object_binding", [{...entity, model_object_binding_status: "active"}])],
-    ["model_attribute_binding", modelDataset("model_attribute_binding", [{...entity, modeled_attribute_name: "ID", model_attribute_binding_status: "active"}])],
-    ["mapping_dependency", modelDataset("mapping_dependency", ["ERP", "CRM"].map((source_system_code) => ({...entity, source_system_code, mapping_source_system_dependency_status: "active"})))],
+    ["logical_entity", modelDataset("logical_entity", [{logical_entity_schema_name: "silver", logical_entity_name: "Customer", logical_entity_status: "active"}])],
+    ["logical_attribute", modelDataset("logical_attribute", [{logical_entity_schema_name: "silver", logical_entity_name: "Customer", logical_attribute_name: "ID", logical_attribute_status: "active"}])],
     ["mapping_object", modelDataset("mapping_object", ["ERP", "CRM"].map((source_system_code) => ({...entity, source_system_code, object_mapping_status: "active", mapping_transformation_document: {kind: "direct"}})))],
     ["mapping_attribute", modelDataset("mapping_attribute", ["ERP", "CRM"].map((source_system_code) => ({...entity, source_system_code, modeled_attribute_name: "ID", attribute_mapping_status: "active", attribute_mapping_transformation_document: {kind: "direct"}})))],
     ["generated_code", modelDataset("generated_code", [artifact])],

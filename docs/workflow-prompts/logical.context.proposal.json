@@ -1,83 +1,1793 @@
 {
   "workflow": "logical",
   "stage": "candidate_authoring",
+  "status": "implemented runtime contract",
   "modes": [
     "one_shot",
     "tool_assisted"
   ],
-  "status": "implemented_contract",
-  "scope": "Approved on 2026-09-07: twenty-one Logical-local variables, both complete prompt pairs, defaults, eighteen optional readers, selectors, and paging. read_only_dependencies stays excluded; backend checks remain. Continue Dimensional design.",
-  "selection": "All variables are workflow-local and optional for template authors. Availability does not imply inclusion. Do not include compact and full copies of the same records by default. Variables have no tool-call inputs or page envelopes.",
-  "applied_logical_rule": "All eight Logical values project one frozen authorized applied Logical section. [] is known empty; null is unavailable. Retain saved lifecycle and locks. Do not filter out Assertion-only records or history merely because they have no direct physical support. These input records are not generated output.",
-  "preserved_output": {
-    "submodels": [],
-    "entities": [],
-    "attributes": [],
-    "relationships": []
-  },
-  "schema_origin": "Exact existing Pydantic ID-free Logical records; compact forms project existing natural-key fields. No database columns or runtime code changed.",
+  "source": "web_app/backend/gds_workbench_api/features/workflows/authoring",
+  "selection": "Selected authorized Source/Bronze Objects supply evidence. Output Entity identities include a configured Logical schema. Mapping and Code belong to modeled Entities.",
   "variables": {
     "source_context": {
       "description": "Unique contributing source Connections and business context.",
-      "shape_reference": "conceptual.context.proposal.json#/variables/source_context",
-      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/source_context_entry"
+        },
+        "$defs": {
+          "source_context_entry": {
+            "type": "object",
+            "properties": {
+              "tenant_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "tenant_description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "system_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "system_description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "system_type_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "system_type_description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "connection_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "connection_description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "connection_type_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "connection_type_description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "zone_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "zone_description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "tenant_code",
+              "tenant_description",
+              "system_code",
+              "system_description",
+              "system_type_code",
+              "system_type_description",
+              "connection_code",
+              "connection_description",
+              "connection_type_code",
+              "connection_type_description",
+              "zone_code",
+              "zone_description"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "example": [
+        {
+          "tenant_code": "ACME",
+          "tenant_description": "Wholesale distribution business.",
+          "system_code": "ERP",
+          "system_description": "Manages sales orders and billing.",
+          "system_type_code": "ERP",
+          "system_type_description": "Systems for managing core business operations.",
+          "connection_code": "ERP_SOURCE",
+          "connection_description": null,
+          "connection_type_code": "SQL_SERVER",
+          "connection_type_description": "Connection to a Microsoft SQL Server database.",
+          "zone_code": "source",
+          "zone_description": "Originating source data."
+        }
+      ]
     },
     "gds_context": {
-      "description": "Unique GDS Connection/zone placements for the selected Objects; empty for Source-only scope.",
-      "shape_reference": "conceptual.context.proposal.json#/variables/gds_context",
-      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+      "description": "GDS Connection/zone placements for selected physical inputs or the Model-assigned placement of modeled Entity outputs.",
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/gds_context_entry"
+        },
+        "$defs": {
+          "gds_context_entry": {
+            "type": "object",
+            "properties": {
+              "tenant_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "system_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "connection_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "zone_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "zone_description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "tenant_code",
+              "system_code",
+              "connection_code",
+              "zone_code",
+              "zone_description"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "example": [
+        {
+          "tenant_code": "GDS",
+          "system_code": "WAREHOUSE",
+          "connection_code": "MAIN",
+          "zone_code": "bronze",
+          "zone_description": "Stores ingested source data."
+        }
+      ]
     },
     "object_context": {
       "description": "Selected physical Objects with current saved descriptions.",
-      "shape_reference": "conceptual.context.proposal.json#/variables/object_context",
-      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/object_context_entry"
+        },
+        "$defs": {
+          "object_context_entry": {
+            "type": "object",
+            "properties": {
+              "tenant_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "system_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "connection_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "object_schema": {
+                "type": "string",
+                "minLength": 1
+              },
+              "object_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "object_description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "zone_code": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "tenant_code",
+              "system_code",
+              "connection_code",
+              "object_schema",
+              "object_name",
+              "object_description",
+              "zone_code"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "example": [
+        {
+          "tenant_code": "GDS",
+          "system_code": "WAREHOUSE",
+          "connection_code": "MAIN",
+          "object_schema": "bronze",
+          "object_name": "Orders",
+          "object_description": "Sales orders; one row represents one order.",
+          "zone_code": "bronze"
+        },
+        {
+          "tenant_code": "GDS",
+          "system_code": "WAREHOUSE",
+          "connection_code": "MAIN",
+          "object_schema": "bronze",
+          "object_name": "Customers",
+          "object_description": "ERP customer accounts; one row per customer account.",
+          "zone_code": "bronze"
+        }
+      ]
     },
     "object_attribute_context": {
       "description": "Eligible Attributes grouped by physical Object, with current saved descriptions, types, flags, and Profiles.",
-      "shape_reference": "conceptual.context.proposal.json#/variables/object_attribute_context",
-      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/object_attribute_context_entry"
+        },
+        "$defs": {
+          "object_attribute_context_entry": {
+            "type": "object",
+            "properties": {
+              "tenant_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "system_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "connection_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "object_schema": {
+                "type": "string",
+                "minLength": 1
+              },
+              "object_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "attributes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "attribute_name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "attribute_description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "attribute_data_type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "attribute_inferred_data_type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "attribute_nullability": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "is_natural_key": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "is_surrogate_key": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "is_masking_required": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "is_meta_data": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "profile": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "profiled_at": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "row_scope": {
+                              "enum": [
+                                "all_rows",
+                                "batch",
+                                null
+                              ]
+                            },
+                            "batch_attribute_name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "batch_id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "row_count": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "non_null_count": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "null_count": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "blank_count": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "distinct_count": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "min_data_length": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "max_data_length": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "avg_data_length": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "percent_populated": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            "percent_duplicates": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            "percent_null": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            "percent_blank": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            "percent_distinct": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "minimum": 0,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "profiled_at",
+                            "row_scope",
+                            "batch_attribute_name",
+                            "batch_id",
+                            "row_count",
+                            "non_null_count",
+                            "null_count",
+                            "blank_count",
+                            "distinct_count",
+                            "min_data_length",
+                            "max_data_length",
+                            "avg_data_length",
+                            "percent_populated",
+                            "percent_duplicates",
+                            "percent_null",
+                            "percent_blank",
+                            "percent_distinct"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "attribute_name",
+                    "attribute_description",
+                    "attribute_data_type",
+                    "attribute_inferred_data_type",
+                    "attribute_nullability",
+                    "is_natural_key",
+                    "is_surrogate_key",
+                    "is_masking_required",
+                    "is_meta_data",
+                    "profile"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "selected_attribute_names": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "required": [
+              "tenant_code",
+              "system_code",
+              "connection_code",
+              "object_schema",
+              "object_name",
+              "attributes",
+              "selected_attribute_names"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "example": [
+        {
+          "tenant_code": "GDS",
+          "system_code": "WAREHOUSE",
+          "connection_code": "MAIN",
+          "object_schema": "bronze",
+          "object_name": "Orders",
+          "attributes": [
+            {
+              "attribute_name": "order_id",
+              "attribute_description": "Stable identifier of one order within this ERP source.",
+              "attribute_data_type": "BIGINT",
+              "attribute_inferred_data_type": "BIGINT",
+              "attribute_nullability": false,
+              "is_natural_key": true,
+              "is_surrogate_key": false,
+              "is_masking_required": false,
+              "is_meta_data": false,
+              "profile": null
+            },
+            {
+              "attribute_name": "customer_id",
+              "attribute_description": "ERP customer account that placed this order.",
+              "attribute_data_type": "BIGINT",
+              "attribute_inferred_data_type": "BIGINT",
+              "attribute_nullability": false,
+              "is_natural_key": false,
+              "is_surrogate_key": false,
+              "is_masking_required": false,
+              "is_meta_data": false,
+              "profile": null
+            }
+          ],
+          "selected_attribute_names": [
+            "order_id",
+            "customer_id"
+          ]
+        },
+        {
+          "tenant_code": "GDS",
+          "system_code": "WAREHOUSE",
+          "connection_code": "MAIN",
+          "object_schema": "bronze",
+          "object_name": "Customers",
+          "attributes": [
+            {
+              "attribute_name": "customer_id",
+              "attribute_description": "Business identifier of this ERP customer account.",
+              "attribute_data_type": "BIGINT",
+              "attribute_inferred_data_type": "BIGINT",
+              "attribute_nullability": false,
+              "is_natural_key": true,
+              "is_surrogate_key": false,
+              "is_masking_required": false,
+              "is_meta_data": false,
+              "profile": null
+            }
+          ],
+          "selected_attribute_names": [
+            "customer_id"
+          ]
+        }
+      ]
     },
     "ingestion_mapping": {
       "description": "Registered Object-only source-to-selected-target links.",
-      "shape_reference": "conceptual.context.proposal.json#/variables/ingestion_mapping",
-      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ingestion_mapping_entry"
+        },
+        "$defs": {
+          "ingestion_mapping_entry": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "object",
+                "properties": {
+                  "tenant_code": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "system_code": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "connection_code": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "object_schema": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "object_name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "object_description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "tenant_code",
+                  "system_code",
+                  "connection_code",
+                  "object_schema",
+                  "object_name",
+                  "object_description"
+                ],
+                "additionalProperties": false
+              },
+              "target": {
+                "type": "object",
+                "properties": {
+                  "tenant_code": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "system_code": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "connection_code": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "object_schema": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "object_name": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "tenant_code",
+                  "system_code",
+                  "connection_code",
+                  "object_schema",
+                  "object_name"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "source",
+              "target"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "example": [
+        {
+          "source": {
+            "tenant_code": "ACME",
+            "system_code": "ERP",
+            "connection_code": "ERP_SOURCE",
+            "object_schema": "sales",
+            "object_name": "SalesOrder",
+            "object_description": "Sales orders created in ERP; one row per order."
+          },
+          "target": {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Orders"
+          }
+        },
+        {
+          "source": {
+            "tenant_code": "ACME",
+            "system_code": "ERP",
+            "connection_code": "ERP_SOURCE",
+            "object_schema": "sales",
+            "object_name": "Customer",
+            "object_description": "ERP customer accounts; one row per customer account."
+          },
+          "target": {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Customers"
+          }
+        }
+      ]
     },
     "object_relationship_context": {
       "description": "Existing applied relationships grouped by each scoped physical Object. Incoming matches the to-Object; outgoing matches the from-Object. Include groups with empty arrays. Each relationship retains all 17 approved endpoint/kind/confidence/basis/status/lock fields and excludes validation fields.",
-      "shape_reference": "conceptual.context.proposal.json#/variables/object_relationship_context",
-      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/object_relationship_context_entry"
+        },
+        "$defs": {
+          "object_relationship_context_entry": {
+            "type": "object",
+            "properties": {
+              "tenant_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "system_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "connection_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "object_schema": {
+                "type": "string",
+                "minLength": 1
+              },
+              "object_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "incoming_relationships": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/applied_relationships_entry"
+                }
+              },
+              "outgoing_relationships": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/applied_relationships_entry"
+                }
+              }
+            },
+            "required": [
+              "tenant_code",
+              "system_code",
+              "connection_code",
+              "object_schema",
+              "object_name",
+              "incoming_relationships",
+              "outgoing_relationships"
+            ],
+            "additionalProperties": false
+          },
+          "applied_relationships_entry": {
+            "type": "object",
+            "properties": {
+              "from_tenant_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "from_system_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "from_connection_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "from_object_schema": {
+                "type": "string",
+                "minLength": 1
+              },
+              "from_object_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "from_attribute_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "to_tenant_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "to_system_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "to_connection_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "to_object_schema": {
+                "type": "string",
+                "minLength": 1
+              },
+              "to_object_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "to_attribute_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "relationship_kind": {
+                "type": "string",
+                "minLength": 1
+              },
+              "relationship_confidence": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "relationship_basis": {
+                "type": "string",
+                "minLength": 1
+              },
+              "analysis_result_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ]
+              },
+              "analysis_result_is_locked": {
+                "type": "boolean"
+              },
+              "inferred_cardinality": {
+                "enum": [
+                  "one_to_one",
+                  "one_to_many",
+                  "many_to_one",
+                  "many_to_many",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "from_tenant_code",
+              "from_system_code",
+              "from_connection_code",
+              "from_object_schema",
+              "from_object_name",
+              "from_attribute_name",
+              "to_tenant_code",
+              "to_system_code",
+              "to_connection_code",
+              "to_object_schema",
+              "to_object_name",
+              "to_attribute_name",
+              "relationship_kind",
+              "relationship_confidence",
+              "relationship_basis",
+              "analysis_result_status",
+              "analysis_result_is_locked",
+              "inferred_cardinality"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "example": [
+        {
+          "tenant_code": "GDS",
+          "system_code": "WAREHOUSE",
+          "connection_code": "MAIN",
+          "object_schema": "bronze",
+          "object_name": "Orders",
+          "incoming_relationships": [],
+          "outgoing_relationships": []
+        },
+        {
+          "tenant_code": "GDS",
+          "system_code": "WAREHOUSE",
+          "connection_code": "MAIN",
+          "object_schema": "bronze",
+          "object_name": "Customers",
+          "incoming_relationships": [],
+          "outgoing_relationships": []
+        }
+      ]
     },
     "modeling_assertions": {
       "description": "Active assertions from active documents in authorized Model/System scope, available automatically to all downstream workflows. Determine relevance from the statement and task, not legacy layer flags. record_type is a free-text classification of facts, definitions, relationships, conventions, constraints or requirements. text is the statement; details.notes adds context, examples and exceptions. Other details may contain formula, grain, dimensions, date_basis, exclusions, history or acceptance_criteria; missing details are unspecified. document_name and source_location identify provenance. confidence is evidence confidence, not priority. Keys link model support to assertions; they are not physical lineage or proof of source data.",
-      "shape_reference": "conceptual.context.proposal.json#/variables/modeling_assertions",
-      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file. Select Logical-applicable active Assertion Records from active Documents."
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/modeling_assertions_entry"
+        },
+        "$defs": {
+          "modeling_assertions_entry": {
+            "type": "object",
+            "properties": {
+              "modeling_assertion_record_key": {
+                "type": "string",
+                "minLength": 1
+              },
+              "modeling_assertion_document_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "modeling_assertion_record_type": {
+                "type": "string",
+                "minLength": 1
+              },
+              "modeling_assertion_text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "modeling_assertion_details": {
+                "type": "object"
+              },
+              "modeling_assertion_source_location": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "modeling_assertion_confidence": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  null
+                ]
+              }
+            },
+            "required": [
+              "modeling_assertion_record_key",
+              "modeling_assertion_document_name",
+              "modeling_assertion_record_type",
+              "modeling_assertion_text",
+              "modeling_assertion_details",
+              "modeling_assertion_source_location",
+              "modeling_assertion_confidence"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "example": [
+        {
+          "modeling_assertion_record_key": "order_customer_reference",
+          "modeling_assertion_document_name": "ERP relationship notes",
+          "modeling_assertion_record_type": "relationship",
+          "modeling_assertion_text": "Within this ERP source, Orders.order_id identifies one order. Each order belongs to exactly one customer identified by Customers.customer_id through Orders.customer_id; one customer may have many orders. Customer IDs are stable within this source.",
+          "modeling_assertion_details": {},
+          "modeling_assertion_source_location": {
+            "section": "Orders and customers"
+          },
+          "modeling_assertion_confidence": "high"
+        }
+      ]
     },
     "conceptual_object_list": {
       "description": "Compact directory of all existing eligible Conceptual record identities in the frozen Model. Natural-key fields only; no descriptions, types, supports, status, or locks. Use the corresponding detail variable or reader to interpret a record. [] means known empty; null means the applied Conceptual section is unavailable.",
-      "shape_reference": "conceptual.context.proposal.json#/variables/conceptual_object_list",
-      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+      "schema": {
+        "$defs": {
+          "ConceptualObjectKey": {
+            "type": "object",
+            "properties": {
+              "conceptual_object_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Conceptual Object Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "conceptual_object_name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ConceptualObjectKey"
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "example": []
     },
     "conceptual_objects": {
       "description": "Existing Conceptual objects, retaining all existing record fields and nested Object/Assertion supports, confidence, lifecycle status, and locks. Known empty is []; null means the applied section is unavailable.",
-      "shape_reference": "conceptual.context.proposal.json#/variables/conceptual_objects",
-      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+      "schema": {
+        "$defs": {
+          "AssertionRecordKey": {
+            "additionalProperties": false,
+            "properties": {
+              "modeling_assertion_record_key": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
+                "title": "Modeling Assertion Record Key",
+                "type": "string"
+              }
+            },
+            "required": [
+              "modeling_assertion_record_key"
+            ],
+            "title": "AssertionRecordKey",
+            "type": "object"
+          },
+          "AssertionSupportRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "support_source_type": {
+                "const": "assertion",
+                "title": "Support Source Type",
+                "type": "string"
+              },
+              "assertion_record": {
+                "$ref": "#/$defs/AssertionRecordKey"
+              },
+              "support_role": {
+                "anyOf": [
+                  {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Support Role"
+              },
+              "support_reason": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Support Reason",
+                "type": "string"
+              },
+              "support_reason_detail": {
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Support Reason Detail"
+              },
+              "support_confidence": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "title": "Support Confidence",
+                "type": "string"
+              },
+              "support_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Support Status",
+                "type": "string"
+              },
+              "support_is_locked": {
+                "title": "Support Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "support_source_type",
+              "assertion_record",
+              "support_role",
+              "support_reason",
+              "support_reason_detail",
+              "support_confidence",
+              "support_status",
+              "support_is_locked"
+            ],
+            "title": "AssertionSupportRecord",
+            "type": "object"
+          },
+          "ConceptualObjectRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "conceptual_object_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Conceptual Object Name",
+                "type": "string"
+              },
+              "conceptual_object_definition": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Conceptual Object Definition",
+                "type": "string"
+              },
+              "conceptual_object_type": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Conceptual Object Type",
+                "type": "string"
+              },
+              "conceptual_object_grain": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Conceptual Object Grain",
+                "type": "string"
+              },
+              "conceptual_object_aliases": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Conceptual Object Aliases",
+                "type": "array"
+              },
+              "conceptual_object_confidence": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "title": "Conceptual Object Confidence",
+                "type": "string"
+              },
+              "conceptual_object_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Conceptual Object Status",
+                "type": "string"
+              },
+              "conceptual_object_is_locked": {
+                "title": "Conceptual Object Is Locked",
+                "type": "boolean"
+              },
+              "supports": {
+                "items": {
+                  "$ref": "#/$defs/SupportRecord"
+                },
+                "title": "Supports",
+                "type": "array"
+              }
+            },
+            "required": [
+              "conceptual_object_name",
+              "conceptual_object_definition",
+              "conceptual_object_type",
+              "conceptual_object_grain",
+              "conceptual_object_aliases",
+              "conceptual_object_confidence",
+              "conceptual_object_status",
+              "conceptual_object_is_locked",
+              "supports"
+            ],
+            "title": "ConceptualObjectRecord",
+            "type": "object"
+          },
+          "ObjectSupportRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "support_source_type": {
+                "const": "object",
+                "title": "Support Source Type",
+                "type": "string"
+              },
+              "source_object": {
+                "$ref": "#/$defs/PhysicalObjectKey"
+              },
+              "support_role": {
+                "anyOf": [
+                  {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Support Role"
+              },
+              "support_reason": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Support Reason",
+                "type": "string"
+              },
+              "support_reason_detail": {
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Support Reason Detail"
+              },
+              "support_confidence": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "title": "Support Confidence",
+                "type": "string"
+              },
+              "support_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Support Status",
+                "type": "string"
+              },
+              "support_is_locked": {
+                "title": "Support Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "support_source_type",
+              "source_object",
+              "support_role",
+              "support_reason",
+              "support_reason_detail",
+              "support_confidence",
+              "support_status",
+              "support_is_locked"
+            ],
+            "title": "ObjectSupportRecord",
+            "type": "object"
+          },
+          "PhysicalObjectKey": {
+            "additionalProperties": false,
+            "properties": {
+              "tenant_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Tenant Code",
+                "type": "string"
+              },
+              "system_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "System Code",
+                "type": "string"
+              },
+              "connection_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Connection Code",
+                "type": "string"
+              },
+              "object_schema": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Object Schema",
+                "type": "string"
+              },
+              "object_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Object Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "tenant_code",
+              "system_code",
+              "connection_code",
+              "object_schema",
+              "object_name"
+            ],
+            "title": "PhysicalObjectKey",
+            "type": "object"
+          },
+          "SupportRecord": {
+            "discriminator": {
+              "mapping": {
+                "assertion": "#/$defs/AssertionSupportRecord",
+                "object": "#/$defs/ObjectSupportRecord"
+              },
+              "propertyName": "support_source_type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ObjectSupportRecord"
+              },
+              {
+                "$ref": "#/$defs/AssertionSupportRecord"
+              }
+            ]
+          }
+        },
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/ConceptualObjectRecord"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "example": []
     },
     "conceptual_relationship_list": {
       "description": "Compact directory of all existing eligible Conceptual record identities in the frozen Model. Natural-key fields only; no descriptions, types, supports, status, or locks. Use the corresponding detail variable or reader to interpret a record. [] means known empty; null means the applied Conceptual section is unavailable.",
-      "shape_reference": "conceptual.context.proposal.json#/variables/conceptual_relationship_list",
-      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+      "schema": {
+        "$defs": {
+          "ConceptualRelationshipKey": {
+            "type": "object",
+            "properties": {
+              "from_conceptual_object_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "From Conceptual Object Name",
+                "type": "string"
+              },
+              "to_conceptual_object_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "To Conceptual Object Name",
+                "type": "string"
+              },
+              "conceptual_relationship_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Conceptual Relationship Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "from_conceptual_object_name",
+              "to_conceptual_object_name",
+              "conceptual_relationship_name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ConceptualRelationshipKey"
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "example": []
     },
     "conceptual_relationships": {
       "description": "Existing Conceptual relationships, retaining all existing record fields and nested Object/Assertion supports, confidence, lifecycle status, and locks. Known empty is []; null means the applied section is unavailable.",
-      "shape_reference": "conceptual.context.proposal.json#/variables/conceptual_relationships",
-      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+      "schema": {
+        "$defs": {
+          "AssertionRecordKey": {
+            "additionalProperties": false,
+            "properties": {
+              "modeling_assertion_record_key": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
+                "title": "Modeling Assertion Record Key",
+                "type": "string"
+              }
+            },
+            "required": [
+              "modeling_assertion_record_key"
+            ],
+            "title": "AssertionRecordKey",
+            "type": "object"
+          },
+          "AssertionSupportRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "support_source_type": {
+                "const": "assertion",
+                "title": "Support Source Type",
+                "type": "string"
+              },
+              "assertion_record": {
+                "$ref": "#/$defs/AssertionRecordKey"
+              },
+              "support_role": {
+                "anyOf": [
+                  {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Support Role"
+              },
+              "support_reason": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Support Reason",
+                "type": "string"
+              },
+              "support_reason_detail": {
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Support Reason Detail"
+              },
+              "support_confidence": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "title": "Support Confidence",
+                "type": "string"
+              },
+              "support_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Support Status",
+                "type": "string"
+              },
+              "support_is_locked": {
+                "title": "Support Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "support_source_type",
+              "assertion_record",
+              "support_role",
+              "support_reason",
+              "support_reason_detail",
+              "support_confidence",
+              "support_status",
+              "support_is_locked"
+            ],
+            "title": "AssertionSupportRecord",
+            "type": "object"
+          },
+          "ConceptualRelationshipRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "from_conceptual_object_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "From Conceptual Object Name",
+                "type": "string"
+              },
+              "to_conceptual_object_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "To Conceptual Object Name",
+                "type": "string"
+              },
+              "conceptual_relationship_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Conceptual Relationship Name",
+                "type": "string"
+              },
+              "conceptual_relationship_type": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Conceptual Relationship Type",
+                "type": "string"
+              },
+              "conceptual_relationship_definition": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Conceptual Relationship Definition",
+                "type": "string"
+              },
+              "conceptual_relationship_cardinality": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "one_to_one",
+                      "one_to_many",
+                      "many_to_one",
+                      "many_to_many"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "const": "unknown",
+                    "type": "string"
+                  }
+                ],
+                "title": "Conceptual Relationship Cardinality"
+              },
+              "conceptual_relationship_basis": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Conceptual Relationship Basis",
+                "type": "string"
+              },
+              "conceptual_relationship_cardinality_basis": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Conceptual Relationship Cardinality Basis",
+                "type": "string"
+              },
+              "conceptual_relationship_confidence": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "title": "Conceptual Relationship Confidence",
+                "type": "string"
+              },
+              "conceptual_relationship_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Conceptual Relationship Status",
+                "type": "string"
+              },
+              "conceptual_relationship_is_locked": {
+                "title": "Conceptual Relationship Is Locked",
+                "type": "boolean"
+              },
+              "supports": {
+                "items": {
+                  "$ref": "#/$defs/SupportRecord"
+                },
+                "title": "Supports",
+                "type": "array"
+              }
+            },
+            "required": [
+              "from_conceptual_object_name",
+              "to_conceptual_object_name",
+              "conceptual_relationship_name",
+              "conceptual_relationship_type",
+              "conceptual_relationship_definition",
+              "conceptual_relationship_cardinality",
+              "conceptual_relationship_basis",
+              "conceptual_relationship_cardinality_basis",
+              "conceptual_relationship_confidence",
+              "conceptual_relationship_status",
+              "conceptual_relationship_is_locked",
+              "supports"
+            ],
+            "title": "ConceptualRelationshipRecord",
+            "type": "object"
+          },
+          "ObjectSupportRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "support_source_type": {
+                "const": "object",
+                "title": "Support Source Type",
+                "type": "string"
+              },
+              "source_object": {
+                "$ref": "#/$defs/PhysicalObjectKey"
+              },
+              "support_role": {
+                "anyOf": [
+                  {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Support Role"
+              },
+              "support_reason": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Support Reason",
+                "type": "string"
+              },
+              "support_reason_detail": {
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Support Reason Detail"
+              },
+              "support_confidence": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "title": "Support Confidence",
+                "type": "string"
+              },
+              "support_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Support Status",
+                "type": "string"
+              },
+              "support_is_locked": {
+                "title": "Support Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "support_source_type",
+              "source_object",
+              "support_role",
+              "support_reason",
+              "support_reason_detail",
+              "support_confidence",
+              "support_status",
+              "support_is_locked"
+            ],
+            "title": "ObjectSupportRecord",
+            "type": "object"
+          },
+          "PhysicalObjectKey": {
+            "additionalProperties": false,
+            "properties": {
+              "tenant_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Tenant Code",
+                "type": "string"
+              },
+              "system_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "System Code",
+                "type": "string"
+              },
+              "connection_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Connection Code",
+                "type": "string"
+              },
+              "object_schema": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Object Schema",
+                "type": "string"
+              },
+              "object_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Object Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "tenant_code",
+              "system_code",
+              "connection_code",
+              "object_schema",
+              "object_name"
+            ],
+            "title": "PhysicalObjectKey",
+            "type": "object"
+          },
+          "SupportRecord": {
+            "discriminator": {
+              "mapping": {
+                "assertion": "#/$defs/AssertionSupportRecord",
+                "object": "#/$defs/ObjectSupportRecord"
+              },
+              "propertyName": "support_source_type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ObjectSupportRecord"
+              },
+              {
+                "$ref": "#/$defs/AssertionSupportRecord"
+              }
+            ]
+          }
+        },
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/ConceptualRelationshipRecord"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "example": []
     },
     "logical_submodel_list": {
       "description": "Compact existing Logical submodel identities only. All authorized applied records, including inactive/deprecated history; obtain details to interpret status, meaning, and locks.",
-      "natural_key": [
-        "logical_submodel_name"
-      ],
-      "value_schema": {
+      "schema": {
         "anyOf": [
           {
             "type": "array",
@@ -102,14 +1812,16 @@
             "type": "null"
           }
         ]
-      }
+      },
+      "example": [
+        {
+          "logical_submodel_name": "Sales"
+        }
+      ]
     },
     "logical_submodels": {
       "description": "Complete existing LogicalSubmodelRecord entries without added or removed fields. Exact nominal keys; current saved statuses and locks.",
-      "natural_key": [
-        "logical_submodel_name"
-      ],
-      "value_schema": {
+      "schema": {
         "$defs": {
           "LogicalSubmodelRecord": {
             "additionalProperties": false,
@@ -163,14 +1875,18 @@
           }
         ]
       },
-      "record_source": "../../mcp_server/gds_etl_workbench/domain/modeling_records.py#LogicalSubmodelRecord"
+      "example": [
+        {
+          "logical_submodel_name": "Sales",
+          "logical_submodel_definition": "Customer and order management.",
+          "logical_submodel_status": "active",
+          "logical_submodel_is_locked": false
+        }
+      ]
     },
     "logical_entity_list": {
       "description": "Compact existing Logical entity identities only. All authorized applied records, including inactive/deprecated history; obtain details to interpret status, meaning, and locks.",
-      "natural_key": [
-        "logical_entity_name"
-      ],
-      "value_schema": {
+      "schema": {
         "anyOf": [
           {
             "type": "array",
@@ -183,10 +1899,17 @@
                   "pattern": "\\S",
                   "title": "Logical Entity Name",
                   "type": "string"
+                },
+                "logical_entity_schema_name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 400,
+                  "pattern": "\\S"
                 }
               },
               "required": [
-                "logical_entity_name"
+                "logical_entity_name",
+                "logical_entity_schema_name"
               ],
               "additionalProperties": false
             }
@@ -195,14 +1918,21 @@
             "type": "null"
           }
         ]
-      }
+      },
+      "example": [
+        {
+          "logical_entity_name": "Customer",
+          "logical_entity_schema_name": "silver"
+        },
+        {
+          "logical_entity_name": "Order",
+          "logical_entity_schema_name": "silver"
+        }
+      ]
     },
     "logical_entities": {
       "description": "Complete existing LogicalEntityRecord entries without added or removed fields. Exact nominal keys; current saved statuses and locks.",
-      "natural_key": [
-        "logical_entity_name"
-      ],
-      "value_schema": {
+      "schema": {
         "$defs": {
           "AssertionRecordKey": {
             "additionalProperties": false,
@@ -278,6 +2008,13 @@
           "LogicalEntityRecord": {
             "additionalProperties": false,
             "properties": {
+              "logical_entity_schema_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Logical Entity Schema Name",
+                "type": "string"
+              },
               "logical_entity_name": {
                 "maxLength": 255,
                 "minLength": 1,
@@ -369,6 +2106,7 @@
               }
             },
             "required": [
+              "logical_entity_schema_name",
               "logical_entity_name",
               "logical_entity_definition",
               "logical_entity_type",
@@ -549,15 +2287,92 @@
           }
         ]
       },
-      "record_source": "../../mcp_server/gds_etl_workbench/domain/modeling_records.py#LogicalEntityRecord"
+      "example": [
+        {
+          "logical_entity_name": "Customer",
+          "logical_entity_definition": "A recorded business customer.",
+          "logical_entity_type": "core",
+          "logical_entity_type_detail": null,
+          "logical_entity_grain": "One row per customer.",
+          "logical_entity_dependency_order": 0,
+          "logical_entity_confidence": "high",
+          "logical_entity_status": "active",
+          "logical_entity_is_locked": true,
+          "submodels": [
+            {
+              "submodel_name": "Sales",
+              "membership_status": "active",
+              "membership_is_locked": false
+            }
+          ],
+          "sources": [
+            {
+              "support_source_type": "object",
+              "source_object": {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Customers"
+              },
+              "source_order": 1,
+              "rationale": "Registered physical source for this Entity.",
+              "status": "active",
+              "is_locked": false
+            }
+          ],
+          "logical_entity_schema_name": "silver"
+        },
+        {
+          "logical_entity_name": "Order",
+          "logical_entity_definition": "A recorded business order.",
+          "logical_entity_type": "transaction",
+          "logical_entity_type_detail": null,
+          "logical_entity_grain": "One row per order.",
+          "logical_entity_dependency_order": 1,
+          "logical_entity_confidence": "high",
+          "logical_entity_status": "active",
+          "logical_entity_is_locked": false,
+          "submodels": [
+            {
+              "submodel_name": "Sales",
+              "membership_status": "active",
+              "membership_is_locked": false
+            }
+          ],
+          "sources": [
+            {
+              "support_source_type": "object",
+              "source_object": {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Orders"
+              },
+              "source_order": 1,
+              "rationale": "Registered physical source for this Entity.",
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "support_source_type": "assertion",
+              "assertion_record": {
+                "modeling_assertion_record_key": "order_customer_reference"
+              },
+              "source_order": 2,
+              "rationale": "Approved rule defines each Order as belonging to one Customer.",
+              "status": "active",
+              "is_locked": false
+            }
+          ],
+          "logical_entity_schema_name": "silver"
+        }
+      ]
     },
     "logical_attribute_list": {
       "description": "Compact existing Logical attribute identities only. All authorized applied records, including inactive/deprecated history; obtain details to interpret status, meaning, and locks.",
-      "natural_key": [
-        "logical_entity_name",
-        "logical_attribute_name"
-      ],
-      "value_schema": {
+      "schema": {
         "anyOf": [
           {
             "type": "array",
@@ -577,11 +2392,18 @@
                   "pattern": "\\S",
                   "title": "Logical Attribute Name",
                   "type": "string"
+                },
+                "logical_entity_schema_name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 400,
+                  "pattern": "\\S"
                 }
               },
               "required": [
                 "logical_entity_name",
-                "logical_attribute_name"
+                "logical_attribute_name",
+                "logical_entity_schema_name"
               ],
               "additionalProperties": false
             }
@@ -590,15 +2412,28 @@
             "type": "null"
           }
         ]
-      }
+      },
+      "example": [
+        {
+          "logical_entity_name": "Customer",
+          "logical_attribute_name": "CustomerId",
+          "logical_entity_schema_name": "silver"
+        },
+        {
+          "logical_entity_name": "Order",
+          "logical_attribute_name": "OrderId",
+          "logical_entity_schema_name": "silver"
+        },
+        {
+          "logical_entity_name": "Order",
+          "logical_attribute_name": "CustomerId",
+          "logical_entity_schema_name": "silver"
+        }
+      ]
     },
     "logical_attributes": {
       "description": "Complete existing LogicalAttributeRecord entries without added or removed fields. Exact nominal keys; current saved statuses and locks.",
-      "natural_key": [
-        "logical_entity_name",
-        "logical_attribute_name"
-      ],
-      "value_schema": {
+      "schema": {
         "$defs": {
           "AssertionRecordKey": {
             "additionalProperties": false,
@@ -745,6 +2580,13 @@
           "LogicalAttributeRecord": {
             "additionalProperties": false,
             "properties": {
+              "logical_entity_schema_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Logical Entity Schema Name",
+                "type": "string"
+              },
               "logical_entity_name": {
                 "maxLength": 255,
                 "minLength": 1,
@@ -819,6 +2661,7 @@
               }
             },
             "required": [
+              "logical_entity_schema_name",
               "logical_entity_name",
               "logical_attribute_name",
               "logical_attribute_definition",
@@ -906,18 +2749,118 @@
           }
         ]
       },
-      "record_source": "../../mcp_server/gds_etl_workbench/domain/modeling_records.py#LogicalAttributeRecord"
+      "example": [
+        {
+          "logical_entity_name": "Customer",
+          "logical_attribute_name": "CustomerId",
+          "logical_attribute_definition": "CustomerId recorded for this Customer.",
+          "logical_attribute_data_type": "bigint",
+          "logical_attribute_is_nullable": false,
+          "logical_attribute_is_primary_key": true,
+          "logical_attribute_is_natural_key": true,
+          "logical_attribute_is_surrogate_key": false,
+          "logical_attribute_ordinal_position": 1,
+          "logical_attribute_is_audit_column": false,
+          "logical_attribute_status": "active",
+          "logical_attribute_is_locked": true,
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Customers",
+                "attribute_name": "customer_id"
+              },
+              "source_order": 1,
+              "rationale": "Recorded source for this Attribute.",
+              "status": "active",
+              "is_locked": false
+            }
+          ],
+          "logical_entity_schema_name": "silver"
+        },
+        {
+          "logical_entity_name": "Order",
+          "logical_attribute_name": "OrderId",
+          "logical_attribute_definition": "OrderId recorded for this Order.",
+          "logical_attribute_data_type": "bigint",
+          "logical_attribute_is_nullable": false,
+          "logical_attribute_is_primary_key": true,
+          "logical_attribute_is_natural_key": true,
+          "logical_attribute_is_surrogate_key": false,
+          "logical_attribute_ordinal_position": 1,
+          "logical_attribute_is_audit_column": false,
+          "logical_attribute_status": "active",
+          "logical_attribute_is_locked": false,
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Orders",
+                "attribute_name": "order_id"
+              },
+              "source_order": 1,
+              "rationale": "Recorded source for this Attribute.",
+              "status": "active",
+              "is_locked": false
+            }
+          ],
+          "logical_entity_schema_name": "silver"
+        },
+        {
+          "logical_entity_name": "Order",
+          "logical_attribute_name": "CustomerId",
+          "logical_attribute_definition": "CustomerId recorded for this Order.",
+          "logical_attribute_data_type": "bigint",
+          "logical_attribute_is_nullable": false,
+          "logical_attribute_is_primary_key": false,
+          "logical_attribute_is_natural_key": false,
+          "logical_attribute_is_surrogate_key": false,
+          "logical_attribute_ordinal_position": 2,
+          "logical_attribute_is_audit_column": false,
+          "logical_attribute_status": "active",
+          "logical_attribute_is_locked": false,
+          "sources": [
+            {
+              "support_source_type": "attribute",
+              "source_attribute": {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Orders",
+                "attribute_name": "customer_id"
+              },
+              "source_order": 1,
+              "rationale": "Recorded source for this Attribute.",
+              "status": "active",
+              "is_locked": false
+            },
+            {
+              "support_source_type": "assertion",
+              "assertion_record": {
+                "modeling_assertion_record_key": "order_customer_reference"
+              },
+              "source_order": 2,
+              "rationale": "Approved rule defines each Order as belonging to one Customer.",
+              "status": "active",
+              "is_locked": false
+            }
+          ],
+          "logical_entity_schema_name": "silver"
+        }
+      ]
     },
     "logical_relationship_list": {
       "description": "Compact existing Logical relationship identities only. All authorized applied records, including inactive/deprecated history; obtain details to interpret status, meaning, and locks.",
-      "natural_key": [
-        "from_logical_entity_name",
-        "from_logical_attribute_name",
-        "to_logical_entity_name",
-        "to_logical_attribute_name",
-        "logical_relationship_name"
-      ],
-      "value_schema": {
+      "schema": {
         "anyOf": [
           {
             "type": "array",
@@ -958,6 +2901,18 @@
                   "pattern": "\\S",
                   "title": "Logical Relationship Name",
                   "type": "string"
+                },
+                "from_logical_entity_schema_name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 400,
+                  "pattern": "\\S"
+                },
+                "to_logical_entity_schema_name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 400,
+                  "pattern": "\\S"
                 }
               },
               "required": [
@@ -965,7 +2920,9 @@
                 "from_logical_attribute_name",
                 "to_logical_entity_name",
                 "to_logical_attribute_name",
-                "logical_relationship_name"
+                "logical_relationship_name",
+                "from_logical_entity_schema_name",
+                "to_logical_entity_schema_name"
               ],
               "additionalProperties": false
             }
@@ -974,22 +2931,40 @@
             "type": "null"
           }
         ]
-      }
+      },
+      "example": [
+        {
+          "from_logical_entity_name": "Order",
+          "from_logical_attribute_name": "CustomerId",
+          "to_logical_entity_name": "Customer",
+          "to_logical_attribute_name": "CustomerId",
+          "logical_relationship_name": "OrderCustomer",
+          "from_logical_entity_schema_name": "silver",
+          "to_logical_entity_schema_name": "silver"
+        }
+      ]
     },
     "logical_relationships": {
       "description": "Complete existing LogicalRelationshipRecord entries without added or removed fields. Exact nominal keys; current saved statuses and locks.",
-      "natural_key": [
-        "from_logical_entity_name",
-        "from_logical_attribute_name",
-        "to_logical_entity_name",
-        "to_logical_attribute_name",
-        "logical_relationship_name"
-      ],
-      "value_schema": {
+      "schema": {
         "$defs": {
           "LogicalRelationshipRecord": {
             "additionalProperties": false,
             "properties": {
+              "from_logical_entity_schema_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "From Logical Entity Schema Name",
+                "type": "string"
+              },
+              "to_logical_entity_schema_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "To Logical Entity Schema Name",
+                "type": "string"
+              },
               "logical_relationship_name": {
                 "maxLength": 255,
                 "minLength": 1,
@@ -1077,6 +3052,8 @@
               }
             },
             "required": [
+              "from_logical_entity_schema_name",
+              "to_logical_entity_schema_name",
               "logical_relationship_name",
               "logical_relationship_definition",
               "from_logical_entity_name",
@@ -1106,22 +3083,38 @@
           }
         ]
       },
-      "record_source": "../../mcp_server/gds_etl_workbench/domain/modeling_records.py#LogicalRelationshipRecord"
+      "example": [
+        {
+          "logical_relationship_name": "OrderCustomer",
+          "logical_relationship_definition": "An Order belongs to one Customer; a Customer may have many Orders.",
+          "from_logical_entity_name": "Order",
+          "from_logical_attribute_name": "CustomerId",
+          "to_logical_entity_name": "Customer",
+          "to_logical_attribute_name": "CustomerId",
+          "logical_relationship_cardinality": "many_to_one",
+          "logical_relationship_confidence": "high",
+          "logical_relationship_basis": "The saved business rule identifies the Order customer reference.",
+          "logical_relationship_cardinality_basis": "The rule requires one Customer per Order and permits many Orders per Customer.",
+          "logical_relationship_status": "active",
+          "logical_relationship_is_locked": false,
+          "from_logical_entity_schema_name": "silver",
+          "to_logical_entity_schema_name": "silver"
+        }
+      ]
     },
     "naming_instructions": {
       "description": "Effective Logical naming guidance. Use the saved Silver Model override when present, otherwise the existing Logical default. Advisory guidance; preserve saved identities. This is resolved before rendering and remains a Logical-local variable.",
-      "source": "model_details.silver_model_naming_instructions through effective_naming_instructions(logical, override)",
-      "value_schema": {
+      "schema": {
         "maxLength": 32768,
         "minLength": 1,
         "pattern": "\\S",
         "type": "string"
-      }
+      },
+      "example": "Use PascalCase for Logical entity, attribute, and relationship names. Identifier Attribute names end with ID, with both I and D uppercase."
     },
     "audit_columns": {
       "description": "Exact configured Silver audit-column template: schema_version and columns with semantic_name, data_type, nullable, definition. Null means no configured template. Preserve the existing deterministic backend projection and lock/conflict checks. The complete model includes required audit Attributes; do not invent physical sources for configured audit columns.",
-      "source": "model_details.silver_model_audit_columns_template, validated with LogicalAuditPolicy",
-      "value_schema": {
+      "schema": {
         "$defs": {
           "LogicalAuditPolicy": {
             "additionalProperties": false,
@@ -1208,15 +3201,74 @@
             "type": "null"
           }
         ]
+      },
+      "example": {
+        "schema_version": "1.0",
+        "columns": [
+          {
+            "semantic_name": "CreatedAt",
+            "data_type": "timestamp",
+            "nullable": false,
+            "definition": "Time the target row was created."
+          },
+          {
+            "semantic_name": "UpdatedAt",
+            "data_type": "timestamp",
+            "nullable": true,
+            "definition": "Time the target row was last updated."
+          }
+        ]
       }
+    },
+    "schemas": {
+      "description": "Configured logical schema names and placement descriptions. Assign every Entity to one listed schema.",
+      "schema": {
+        "$defs": {
+          "ModelSchemaDefinition": {
+            "additionalProperties": false,
+            "properties": {
+              "schema_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Schema Name",
+                "type": "string"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Description"
+              }
+            },
+            "required": [
+              "schema_name",
+              "description"
+            ],
+            "title": "ModelSchemaDefinition",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/ModelSchemaDefinition"
+        },
+        "type": "array"
+      },
+      "example": [
+        {
+          "schema_name": "silver",
+          "description": "Logical model schema."
+        }
+      ]
     }
   },
-  "examples_file": "logical.result-variables.example.json",
-  "open_items": [],
-  "excluded_inputs": [
-    "read_only_dependencies"
-  ],
-  "dependency_decision": "User excluded read-only dependency context from the Logical prompt-variable and reader design. Do not reintroduce it through a hidden append or substitute variable/tool. Preserve existing backend dependency validation and bounded correction. This is a design change only; existing runtime context delivery is not changed here.",
-  "settings_example_file": "logical.settings-and-dependencies.example.json",
-  "settings_example_note": "Legacy filename retained for existing review links; the example now contains only approved naming_instructions and audit_columns."
+  "output_schema_source": "web_app/backend/gds_workbench_api/features/logical/candidate.py:LogicalCandidateValidator.output_schema"
 }

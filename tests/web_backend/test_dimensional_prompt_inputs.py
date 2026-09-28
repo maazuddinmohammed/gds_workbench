@@ -24,14 +24,14 @@ from tests.web_backend.test_dimensional_executor import _context_bundle, _plan
 
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
-def test_dimensional_inputs_match_real_history_policy_and_dataset_shapes(mode: Any) -> None:
+def test_dimensional_inputs_match_real_history_policy_and_dataset_shapes(
+    mode: Any,
+) -> None:
     names = (
         (
             "model_brief",
-            "selected_metadata",
-            "profile_evidence",
+            "selected_logical_entities",
             "modeling_assertions",
-            "analysis_evidence",
             "applied_logical",
             "applied_dimensional",
             "applied_mapping",
@@ -75,7 +75,10 @@ def test_dimensional_inputs_match_real_history_policy_and_dataset_shapes(mode: A
         update={
             "variables": tuple(
                 PromptVariableDefinition(
-                    name=name, resolver_key=prefix + name, data_type="json", is_required=False
+                    name=name,
+                    resolver_key=prefix + name,
+                    data_type="json",
+                    is_required=False,
                 )
                 for name in names
             )
@@ -98,21 +101,28 @@ def test_dimensional_inputs_match_real_history_policy_and_dataset_shapes(mode: A
         assert validator.is_valid(values[prefix + name])
         assert validator.is_valid(contract.example)
     if mode == "one_shot":
-        assert values[prefix + "selected_metadata"] == [
-            item.model_dump(mode="json") for item in base.selected_objects
+        assert values[prefix + "selected_logical_entities"] == [
+            item.model_dump(mode="json") for item in base.selected_logical_entities
         ]
-        assert all(item.object.zone_code == "silver" for item in base.selected_objects)
-        assert values[prefix + "applied_dimensional"] == snapshot.dimensional.model_dump(
+        assert all(
+            item.entity.logical_entity_schema_name == "silver_nwa"
+            for item in base.selected_logical_entities
+        )
+        assert values[
+            prefix + "applied_dimensional"
+        ] == snapshot.dimensional.model_dump(mode="json")
+        assert values[prefix + "applied_mapping"] == snapshot.mapping.model_dump(
             mode="json"
         )
-        assert values[prefix + "applied_mapping"] == snapshot.mapping.model_dump(mode="json")
         assert values[prefix + "gold_technical_policy"] == (
             base.model_details.gold_model_technical_columns_template
         )
         broken = cast(dict[str, Any], deepcopy(context))
         broken["model_details"]["gold_model_technical_columns_template"] = None
         with pytest.raises(InvalidRequestError):
-            project_prompt_input_values(plan=plan, stage=stage, context=broken, resolver_values={})
+            project_prompt_input_values(
+                plan=plan, stage=stage, context=broken, resolver_values={}
+            )
     else:
         datasets = {
             item["dataset"]

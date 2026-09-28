@@ -18,6 +18,7 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.cursor import CursorCodec
 from gds_etl_workbench.domain.authorization import ToolPolicy
 from gds_etl_workbench.domain.errors import WorkbenchError
+from gds_etl_workbench.domain.modeling_records import ModelSchemaDefinition
 from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation
 
 _TOOL_NAME = "list_models"
@@ -29,6 +30,8 @@ SELECT model.model_id,
        model.model_name,
        left(model.model_description, 2000) AS model_description,
        model.model_revision,
+       model.logical_schemas,
+       model.dimensional_schemas,
        model.silver_model_naming_instructions,
        model.silver_model_audit_columns_template,
        model.gold_model_naming_instructions,
@@ -57,6 +60,8 @@ class ModelDetails(ContractModel):
     model_name: str = Field(min_length=1, max_length=255)
     model_description: str | None = Field(default=None, max_length=2000)
     model_revision: int = Field(gt=0)
+    logical_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
+    dimensional_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
     silver_model_naming_instructions: str | None = Field(default=None, max_length=32768)
     silver_model_audit_columns_template: dict[str, JsonValue] | None
     gold_model_naming_instructions: str | None = Field(default=None, max_length=32768)

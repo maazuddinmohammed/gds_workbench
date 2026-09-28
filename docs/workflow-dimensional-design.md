@@ -1,5 +1,10 @@
 # Dimensional — workflow design
 
+**Contract update — 27 September 2026.** Dimensional now selects applied Logical Entities and Attributes by schema-qualified keys.
+Earlier physical target, Binding, and reader examples below are retained as design
+history where superseded. Use [ADR 012](adr/012-entity-owned-mapping-and-code.md)
+and [current domain contracts](../CONTEXT.md) for implemented ownership and scope.
+
 Current implementation status, 2026-09-07: the user authorized implementation of
 all confirmed decisions. The configs/readers and prompt editor are implemented;
 [verification](workflow-implementation-verification.md) records the local checks.

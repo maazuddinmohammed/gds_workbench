@@ -67,7 +67,7 @@ CREATE_CODE_GENERATION_WORKFLOW_RUN_SQL = """
           NULL::VARCHAR,
           NULL::INTEGER,
           NULL::INTEGER,
-          %s::BIGINT[],
+          ARRAY[]::BIGINT[],
           ARRAY[]::VARCHAR[],
           'logical_entity'::VARCHAR,
           NULL::VARCHAR,
@@ -79,7 +79,8 @@ CREATE_CODE_GENERATION_WORKFLOW_RUN_SQL = """
           NULL::BIGINT,
           NULL::BIGINT,
           %s::VARCHAR,
-          %s::BIGINT
+          %s::BIGINT,
+          p_selected_entity_ids => %s::BIGINT[]
       )
 """
 
@@ -182,7 +183,7 @@ def seed_workflow_context(
                 """
             INSERT INTO model.model (
                 tenant_id,
-                model_name,
+                model_name, logical_schemas, dimensional_schemas,
                 default_agent_sdk_code,
                 default_agent_provider_code,
                 default_agent_model_code,
@@ -192,6 +193,8 @@ def seed_workflow_context(
             ) VALUES (
                 %s,
                 %s,
+                '[{"schema_name":"silver","description":null}]',
+                '[{"schema_name":"gold","description":null}]',
                 'openai_agents_sdk',
                 'microsoft_foundry',
                 'default-model',
@@ -830,8 +833,8 @@ def _seed_code_generation_target(
                 logical_entity_name,
                 logical_entity_definition,
                 logical_entity_type,
-                logical_entity_grain
-            ) VALUES (%s, %s, %s, 'core', %s)
+                logical_entity_grain, logical_entity_schema_name
+            ) VALUES (%s, %s, %s, 'core', %s, 'silver')
             RETURNING logical_entity_id
             """,
                 (
@@ -842,48 +845,35 @@ def _seed_code_generation_target(
                 ),
             ).fetchone()
         )["logical_entity_id"]
-        model_object_binding_id = require_row(
-            connection.execute(
-                """
-                INSERT INTO workflow.model_object_binding (
-                    model_id, object_id, modeled_entity_type, logical_entity_id
-                ) VALUES (%s, %s, 'logical_entity', %s)
-                RETURNING model_object_binding_id
-                """,
-                (context.model_id, object_id, logical_entity_id),
-            ).fetchone()
-        )["model_object_binding_id"]
         connection.execute(
-            """
-            INSERT INTO workflow.mapping_source_system_dependency (
-                model_id,
-                modeled_entity_type,
-                source_system_id
-            ) VALUES (%s, 'logical_entity', %s)
-            ON CONFLICT (model_id, modeled_entity_type, source_system_id)
-            DO NOTHING
-            """,
-            (context.model_id, source_system_id),
+            "UPDATE core.connection SET is_global_data_store = TRUE WHERE connection_id = "
+            "(SELECT connection_id FROM core.object WHERE object_id = %s)",
+            (object_id,),
+        )
+        connection.execute(
+            "UPDATE core.tenant SET gds_connection_id = "
+            "(SELECT connection_id FROM core.object WHERE object_id = %s) WHERE tenant_id = %s",
+            (object_id, context.tenant_id),
         )
         connection.execute(
             """
             INSERT INTO workflow.mapping_object (
                 model_id,
-                model_object_binding_id,
+                logical_entity_id, modeled_entity_type,
                 source_system_id,
                 mapping_transformation_document
             ) VALUES (
-                %s, %s, %s,
+                %s, %s, 'logical_entity', %s,
                 '{"schema_version":"1.0","transformation_kind":"direct"}'::JSONB
             )
             """,
             (
                 context.model_id,
-                model_object_binding_id,
+                logical_entity_id,
                 source_system_id,
             ),
         )
-    return object_id
+    return logical_entity_id
 
 
 def _seed_validation_prompt(
@@ -1035,13 +1025,10 @@ def _seed_validation_systems(
                        source_system.system_code,
                        source_system.system_type_id
                   FROM workflow.mapping_object AS mapping
-                  JOIN workflow.model_object_binding AS binding
-                    ON binding.model_object_binding_id =
-                       mapping.model_object_binding_id
                   JOIN core.system AS source_system
                     ON source_system.system_id = mapping.source_system_id
                  WHERE mapping.model_id = %s
-                   AND binding.object_id = %s
+                   AND mapping.logical_entity_id = %s
                 """,
                 (context.model_id, first_target_id),
             ).fetchone()
@@ -1065,26 +1052,10 @@ def _seed_validation_systems(
         )
         connection.execute(
             """
-            INSERT INTO workflow.mapping_source_system_dependency (
-                model_id,
-                modeled_entity_type,
-                source_system_id,
-                source_system_dependency_order
-            ) VALUES (%s, 'logical_entity', %s, 1)
-            """,
-            (context.model_id, second["system_id"]),
-        )
-        connection.execute(
-            """
             UPDATE workflow.mapping_object
                SET source_system_id = %s
              WHERE model_id = %s
-               AND model_object_binding_id = (
-                   SELECT model_object_binding_id
-                     FROM workflow.model_object_binding
-                    WHERE model_id = %s
-                      AND object_id = %s
-               )
+               AND model_id = %s AND logical_entity_id = %s
             """,
             (
                 second["system_id"],
@@ -1374,10 +1345,10 @@ def _code_generation_parameters(
         context.entra_object_id,
         context.model_id,
         context.model_revision,
-        object_ids,
         correlation_id,
         coverage_mode,
         guide_version_id,
+        object_ids,
     )
 
 
@@ -1681,8 +1652,8 @@ def test_create_code_generation_run_freezes_selected_targets_revision_and_guide(
         )
         selection = connection.execute(
             """
-            SELECT object_id, selection_order
-              FROM application.workflow_run_object_selection
+            SELECT modeled_entity_id, selection_order
+              FROM application.workflow_run_entity_selection
              WHERE workflow_run_id = %s
             """,
             (created["workflow_run_id"],),
@@ -1694,7 +1665,7 @@ def test_create_code_generation_run_freezes_selected_targets_revision_and_guide(
     assert created["sql_generation_guide_id"] == guide_id
     assert created["sql_generation_guide_version_id"] == guide_version_id
     assert created["sql_generation_guide_digest"] == guide_digest
-    assert selection == [{"object_id": target_id, "selection_order": 1}]
+    assert selection == [{"modeled_entity_id": target_id, "selection_order": 1}]
 
 
 def test_create_code_generation_run_rejects_a_null_coverage_mode(
@@ -1755,8 +1726,8 @@ def test_create_code_generation_run_derives_all_eligible_targets_only_from_empty
         )
         selections = connection.execute(
             """
-            SELECT object_id, selection_order
-              FROM application.workflow_run_object_selection
+            SELECT modeled_entity_id, selection_order
+              FROM application.workflow_run_entity_selection
              WHERE workflow_run_id = %s
              ORDER BY selection_order
             """,
@@ -1765,7 +1736,7 @@ def test_create_code_generation_run_derives_all_eligible_targets_only_from_empty
 
     assert created["selected_scope_count"] == 2
     assert selections == [
-        {"object_id": object_id, "selection_order": position}
+        {"modeled_entity_id": object_id, "selection_order": position}
         for position, object_id in enumerate(target_ids, start=1)
     ]
 
@@ -2014,7 +1985,7 @@ def test_create_workflow_run_rejects_workflow_incompatible_options(
                 workflow="mapping",
                 modeled_entity_type=None,
             ),
-            "explicit target and source System selections",
+            "Entity workflows require Entity selection",
         ),
         (
             create_workflow_run_parameters(
@@ -3589,8 +3560,8 @@ def test_code_generation_delivery_options_are_frozen_and_replay_fenced(
     sql = CREATE_CODE_GENERATION_WORKFLOW_RUN_SQL.replace(
         "ARRAY[]::VARCHAR[],", "%s::VARCHAR[],"
     ).replace(
-        "%s::BIGINT\n      )",
-        "%s::BIGINT, p_code_generation_file_layout => %s::VARCHAR\n      )",
+        "p_selected_entity_ids => %s::BIGINT[]\n      )",
+        "p_selected_entity_ids => %s::BIGINT[], p_code_generation_file_layout => %s::VARCHAR\n      )",
     )
     with postgres_database.connect_owner() as connection:
         code = require_row(
@@ -3612,7 +3583,7 @@ def test_code_generation_delivery_options_are_frozen_and_replay_fenced(
                 guide_version_id=guide_id,
             )
         )
-        values.insert(5, [code])
+        values.insert(4, [code])
         values.append("per_system")
         created = require_row(connection.execute(sql, values).fetchone())
         stored = require_row(
@@ -3636,13 +3607,16 @@ def test_code_generation_delivery_options_are_frozen_and_replay_fenced(
             connection.transaction(),
         ):
             connection.execute(sql, [*values[:-1], "combined"])
-        with pytest.raises(ObjectNotInPrerequisiteState, match="immutable"), connection.transaction():
+        with (
+            pytest.raises(ObjectNotInPrerequisiteState, match="immutable"),
+            connection.transaction(),
+        ):
             connection.execute(
                 "UPDATE application.workflow_run SET code_generation_file_layout = 'combined' WHERE workflow_run_id = %s",
                 (created["workflow_run_id"],),
             )
-        values[5] = ["unregistered_system"]
-        values[6] = uuid4()
+        values[4] = ["unregistered_system"]
+        values[5] = uuid4()
         with (
             pytest.raises(RaiseException, match="System is unavailable"),
             connection.transaction(),

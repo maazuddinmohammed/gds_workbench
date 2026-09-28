@@ -2,12 +2,57 @@
 
 CREATE SCHEMA model;
 
+-- Schema lists are Model-owned authoring configuration, not physical registrations.
+CREATE FUNCTION model.valid_schema_list(value JSONB)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+IMMUTABLE
+PARALLEL SAFE
+SET search_path = pg_catalog
+AS $valid_schema_list$
+DECLARE
+    item JSONB;
+    names TEXT[] := ARRAY[]::TEXT[];
+    normalized_name TEXT;
+BEGIN
+    IF value IS NULL OR jsonb_typeof(value) <> 'array'
+       OR octet_length(value::TEXT) > 262144 THEN
+        RETURN FALSE;
+    END IF;
+    IF jsonb_array_length(value) > 100 THEN
+        RETURN FALSE;
+    END IF;
+    FOR item IN SELECT element FROM jsonb_array_elements(value) AS entry(element) LOOP
+        IF jsonb_typeof(item) <> 'object'
+           OR NOT (item ? 'schema_name' AND item ? 'description')
+           OR item - ARRAY['schema_name', 'description'] <> '{}'::JSONB
+           OR jsonb_typeof(item -> 'schema_name') IS DISTINCT FROM 'string'
+           OR jsonb_typeof(item -> 'description') NOT IN ('string', 'null')
+           OR length(btrim(item ->> 'schema_name')) = 0
+           OR length(item ->> 'schema_name') > 400
+           OR (jsonb_typeof(item -> 'description') = 'string'
+               AND (length(btrim(item ->> 'description')) = 0
+                    OR length(item ->> 'description') > 2000)) THEN
+            RETURN FALSE;
+        END IF;
+        normalized_name := lower(btrim(item ->> 'schema_name'));
+        IF normalized_name = ANY(names) THEN
+            RETURN FALSE;
+        END IF;
+        names := array_append(names, normalized_name);
+    END LOOP;
+    RETURN TRUE;
+END;
+$valid_schema_list$;
+
 CREATE TABLE model.model (
     model_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
     model_name VARCHAR(255) NOT NULL,
     model_description VARCHAR(2000),
     model_revision BIGINT NOT NULL DEFAULT 1,
+    logical_schemas JSONB NOT NULL DEFAULT '[]'::JSONB,
+    dimensional_schemas JSONB NOT NULL DEFAULT '[]'::JSONB,
     silver_model_naming_instructions TEXT,
     silver_model_audit_columns_template JSONB,
     gold_model_naming_instructions TEXT,
@@ -33,6 +78,8 @@ CREATE TABLE model.model (
         OR reference.is_nonblank(model_description)
     ),
     CONSTRAINT ck_model_revision CHECK (model_revision > 0),
+    CONSTRAINT ck_model_logical_schemas CHECK (model.valid_schema_list(logical_schemas)),
+    CONSTRAINT ck_model_dimensional_schemas CHECK (model.valid_schema_list(dimensional_schemas)),
     CONSTRAINT ck_model_silver_naming_instructions CHECK (
         silver_model_naming_instructions IS NULL
         OR (

@@ -14,6 +14,7 @@ from gds_workbench_api.integrations.agents.fake_shared import (
 
 def fake_logical_candidate(
     *,
+    schema_name: str,
     source_objects: tuple[dict[str, JsonValue], ...],
     source_attributes: tuple[dict[str, JsonValue], ...],
 ) -> JsonValue:
@@ -39,6 +40,7 @@ def fake_logical_candidate(
         entity_name = f"Logical Entity {position}"
         entities.append(
             {
+                "logical_entity_schema_name": schema_name,
                 "logical_entity_name": entity_name,
                 "logical_entity_definition": "A locally generated Logical entity candidate.",
                 "logical_entity_type": "core",
@@ -67,6 +69,7 @@ def fake_logical_candidate(
         ):
             attributes.append(
                 {
+                    "logical_entity_schema_name": schema_name,
                     "logical_entity_name": entity_name,
                     "logical_attribute_name": f"Logical Attribute {ordinal}",
                     "logical_attribute_definition": (

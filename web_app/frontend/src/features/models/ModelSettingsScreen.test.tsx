@@ -1,0 +1,167 @@
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { createMemoryHistory } from "@tanstack/react-router";
+import { describe, expect, it, vi } from "vitest";
+
+import { createApiClient } from "../../api";
+import { createWorkbenchRouter, WorkbenchApp } from "../../app";
+import type { TenantHomeRecord, TenantRole } from "../tenants/api";
+import type { ModelDetail } from "./api";
+
+const model: ModelDetail = {
+  model_id: 18, tenant_id: 7, model_name: "Customer", model_description: "Customer domain", model_revision: 8,
+  model_input_scope_object_count: 2, logical_schemas: [{ schema_name: "silver", description: "Shared entities" }],
+  dimensional_schemas: [{ schema_name: "gold", description: null }],
+  silver_model_naming_instructions: "Use snake case", silver_model_audit_columns_template: { columns: ["created_at"] },
+  gold_model_naming_instructions: "Use business names", gold_model_technical_columns_template: { columns: ["is_current"] },
+  gold_model_audit_columns_template: { columns: ["updated_at"] },
+  default_agent_sdk_code: "openai_agents_sdk", default_agent_provider_code: "microsoft_foundry",
+  default_agent_model_code: "foundry-primary", default_reasoning_effort_code: "medium",
+  default_max_turns: 11, default_validation_retry_count: 2, is_active: true, updated_at: "2026-09-27T00:00:00Z",
+};
+const home: TenantHomeRecord = {
+  tenant: { tenant_id: 7, tenant_code: "DATA", tenant_name: "Data", tenant_description: null, tenant_visibility: "private", effective_role: "architect" },
+  lock: { is_locked: true, owner_display_name: "Architect", owned_by_current_principal: true, purpose: "Model settings", acquired_at: "2026-09-27T00:00:00Z", expires_at: "2026-09-27T01:00:00Z" },
+  lock_actions: { can_acquire: false, can_renew: true, can_release: true, can_override: false }, systems: [],
+};
+const endpoint = "/api/v1/tenants/7/models/18";
+function response(value: unknown, status = 200) { return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } }); }
+function setup(options: { role?: TenantRole; ownedLock?: boolean; active?: boolean; failSave?: string; failSaveOnce?: boolean; failRefresh?: boolean; laterRevision?: number } = {}) {
+  let current = { ...model, is_active: options.active ?? true };
+  let didSave = false;
+  let saveAttempts = 0;
+  let failRefresh = options.failRefresh ?? false;
+  const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+    const url = String(input);
+    if (url === "/api/v1/session") return response({ display_name: "Architect", email: null, actor_kind: "human", is_super_admin: false, last_tenant_id: 7 });
+    if (url.endsWith("/home")) return response({ ...home, tenant: { ...home.tenant, effective_role: options.role ?? "architect" }, lock: { ...home.lock, owned_by_current_principal: options.ownedLock ?? true } });
+    if (url === endpoint && init?.method === "PUT") {
+      saveAttempts += 1;
+      if (options.failSave && (!options.failSaveOnce || saveAttempts === 1)) return response({ error: { code: options.failSave, message: "sensitive untrusted detail" } }, 409);
+      const { expected_model_revision: _, ...command } = JSON.parse(String(init.body));
+      current = { ...current, ...command, model_revision: model.model_revision + 1 };
+      didSave = true;
+      return response({ model_id: 18, tenant_id: 7, model_revision: current.model_revision, is_active: true, updated_at: current.updated_at });
+    }
+    if (url === endpoint) {
+      if (didSave && failRefresh) return response({ error: { code: "dependency_unavailable" } }, 503);
+      return response(didSave && options.laterRevision ? { ...current, model_revision: options.laterRevision } : current);
+    }
+    if (url.endsWith("/overview")) return response({ model_id: 18, model_revision: current.model_revision, items: [] });
+    if (url.endsWith("/prompts/models/18/assignments")) return response({ model_id: 18, items: [] });
+    return response({ error: { code: "not_found" } }, 404);
+  });
+  const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/settings"] }) });
+  render(<WorkbenchApp router={router} />);
+  return { fetcher, router, allowRefresh: () => { failRefresh = false; } };
+}
+
+describe("Model Settings", () => {
+  it("saves schema changes with the original revision and preserves every unopened setting", async () => {
+    const { fetcher, router } = setup();
+    const user = userEvent.setup();
+    expect(await screen.findByRole("heading", { name: "Definition" })).toHaveFocus();
+    const navigation = screen.getByRole("navigation", { name: "Model settings pages" });
+    expect(within(navigation).getByRole("link", { name: "Prompts" })).toHaveAttribute("href", "/tenants/7/models/18/settings/prompts");
+    await user.click(screen.getByText("Logical schemas", { exact: true }));
+    const section = within(screen.getByText("Logical schemas", { exact: true }).closest("details")!);
+    await user.click(section.getByRole("button", { name: "Add schema" }));
+    await user.type(section.getAllByRole("textbox", { name: "Schema name" })[1]!, " silver_sales ");
+    await user.type(section.getAllByRole("textbox", { name: "Description" })[1]!, "Sales entities");
+    await user.dblClick(screen.getByRole("button", { name: "Save settings" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("saved at revision 9");
+    await screen.findByText("Editing revision 9.");
+    const writes = fetcher.mock.calls.filter(([, init]) => init?.method === "PUT");
+    expect(writes).toHaveLength(1);
+    const { model_id: _id, tenant_id: _tenant, model_revision: _revision, model_input_scope_object_count: _scope, is_active: _active, updated_at: _updated, ...definition } = model;
+    expect(JSON.parse(String(writes[0]?.[1]?.body))).toEqual({ ...definition, logical_schemas: [...model.logical_schemas, { schema_name: "silver_sales", description: "Sales entities" }], expected_model_revision: 8 });
+    expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/agent-capabilities"))).toBe(false);
+    await user.click(within(navigation).getByRole("link", { name: "Prompts" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/tenants/7/models/18/settings/prompts"));
+    expect(await screen.findByRole("link", { name: "Definition" })).toHaveAttribute("href", "/tenants/7/models/18/settings");
+  });
+
+  it.each([
+    ["viewer", true, true, "Architect permission required"],
+    ["developer", true, true, "Architect permission required"],
+    ["architect", false, true, "Tenant Lock required"],
+    ["super_admin", true, false, "Archived Models are read-only"],
+  ] as const)("keeps unavailable settings read-only: %s / lock %s / active %s", async (role, ownedLock, active, reason) => {
+    const { fetcher } = setup({ role, ownedLock, active });
+    await screen.findByRole("heading", { name: "Definition" });
+    expect(screen.getByRole("button", { name: "Save settings" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: /Model name/ })).toBeDisabled();
+    expect(screen.getByText(new RegExp(reason))).toBeVisible();
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
+  });
+
+  it("preserves edits after a revision conflict and requires an explicit discard before refresh", async () => {
+    const { fetcher } = setup({ failSave: "model_revision_conflict" });
+    const user = userEvent.setup();
+    const name = await screen.findByRole("textbox", { name: /Model name/ });
+    await user.clear(name);
+    await user.type(name, "Keep my changes");
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The Model changed. Your edits are preserved.");
+    expect(name).toHaveValue("Keep my changes");
+    expect(screen.queryByText("sensitive untrusted detail")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Refresh saved settings" }));
+    expect(name).toHaveValue("Keep my changes");
+    await user.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(name).toHaveValue("Keep my changes");
+    await user.click(screen.getByRole("button", { name: "Refresh saved settings" }));
+    await user.click(screen.getByRole("button", { name: "Discard edits and refresh" }));
+    await waitFor(() => expect(screen.getByRole("textbox", { name: /Model name/ })).toHaveValue("Customer"));
+    expect(fetcher.mock.calls.filter(([, init]) => init?.method === "PUT")).toHaveLength(1);
+  });
+
+  it("explains a referenced schema conflict and preserves edits for correction without refreshing", async () => {
+    const { fetcher } = setup({ failSave: "model_schema_conflict", failSaveOnce: true });
+    const user = userEvent.setup();
+    const name = await screen.findByRole("textbox", { name: /Model name/ });
+    await user.clear(name);
+    await user.type(name, "Updated customer model");
+    await user.click(screen.getByText("Logical schemas", { exact: true }));
+    const schemas = within(screen.getByText("Logical schemas", { exact: true }).closest("details")!);
+    await user.click(schemas.getByRole("button", { name: "Remove schema" }));
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("An existing Entity still uses a removed or renamed schema, including inactive Entities. Restore its schema name before saving.");
+    expect(name).toHaveValue("Updated customer model");
+    expect(schemas.queryByRole("textbox", { name: "Schema name" })).not.toBeInTheDocument();
+    expect(screen.queryByText("sensitive untrusted detail")).not.toBeInTheDocument();
+    await user.click(schemas.getByRole("button", { name: "Add schema" }));
+    await user.type(schemas.getByRole("textbox", { name: "Schema name" }), "silver");
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("saved at revision 9");
+    const writes = fetcher.mock.calls.filter(([, init]) => init?.method === "PUT").map(([, init]) => JSON.parse(String(init?.body)));
+    expect(writes).toHaveLength(2);
+    expect(writes[0]).toMatchObject({ model_name: "Updated customer model", expected_model_revision: 8, logical_schemas: [] });
+    expect(writes[1]).toMatchObject({ model_name: "Updated customer model", expected_model_revision: 8, logical_schemas: [{ schema_name: "silver", description: null }] });
+  });
+
+  it("keeps a confirmed save distinct from refresh failure and accepts a newer revision on retry", async () => {
+    const { allowRefresh } = setup({ failRefresh: true, laterRevision: 10 });
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "Definition" });
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("saved at revision 9");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Saved settings could not be loaded.");
+    expect(screen.getByRole("button", { name: "Save settings" })).toBeDisabled();
+    allowRefresh();
+    await user.click(screen.getByRole("button", { name: "Refresh saved settings" }));
+    await screen.findByText("Editing revision 10.");
+    expect(screen.getByRole("button", { name: "Save settings" })).toBeEnabled();
+  });
+
+  it("can explicitly clear agent defaults without fetching replacement model choices", async () => {
+    const { fetcher } = setup();
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "Definition" });
+    await user.click(screen.getByText("Agent defaults", { exact: true }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Agent model" }), "");
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    await screen.findByRole("status");
+    const write = fetcher.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({ default_agent_sdk_code: null, default_agent_provider_code: null, default_agent_model_code: null, default_reasoning_effort_code: null, default_max_turns: null, default_validation_retry_count: null });
+  });
+});

@@ -30,9 +30,9 @@ def _seed_code_validation_scope(
             connection.execute(
                 cast(
                     LiteralString,
-                    (DATABASE_ROOT / "seed" / "01_metadata_snapshot_demo.sql").read_text(
-                        encoding="utf-8"
-                    ),
+                    (
+                        DATABASE_ROOT / "seed" / "01_metadata_snapshot_demo.sql"
+                    ).read_text(encoding="utf-8"),
                 )
             )
 
@@ -61,8 +61,8 @@ def _seed_code_validation_scope(
         model_id = require_row(
             connection.execute(
                 """
-                INSERT INTO model.model (tenant_id, model_name)
-                VALUES (%s, %s)
+                INSERT INTO model.model (tenant_id, model_name, logical_schemas)
+                VALUES (%s, %s, '[{"schema_name":"silver","description":null}]')
                 RETURNING model_id
                 """,
                 (seed["tenant_id"], f"Code Validation {uuid4().hex}"),
@@ -73,24 +73,13 @@ def _seed_code_validation_scope(
                 """
                 INSERT INTO workflow.logical_entity (
                     model_id, logical_entity_name, logical_entity_definition,
-                    logical_entity_type, logical_entity_grain
-                ) VALUES (%s, 'Customer', 'Customer.', 'core', 'One customer')
+                    logical_entity_type, logical_entity_grain, logical_entity_schema_name
+                ) VALUES (%s, 'Customer', 'Customer.', 'core', 'One customer', 'silver')
                 RETURNING logical_entity_id
                 """,
                 (model_id,),
             ).fetchone()
         )["logical_entity_id"]
-        model_object_binding_id = require_row(
-            connection.execute(
-                """
-                INSERT INTO workflow.model_object_binding (
-                    model_id, object_id, modeled_entity_type, logical_entity_id
-                ) VALUES (%s, %s, 'logical_entity', %s)
-                RETURNING model_object_binding_id
-                """,
-                (model_id, seed["object_id"], logical_entity_id),
-            ).fetchone()
-        )["model_object_binding_id"]
 
     return {
         "model_id": model_id,
@@ -98,7 +87,7 @@ def _seed_code_validation_scope(
         "object_id": seed["object_id"],
         "system_id": seed["system_id"],
         "system_type_id": seed["system_type_id"],
-        "model_object_binding_id": model_object_binding_id,
+        "logical_entity_id": logical_entity_id,
     }
 
 
@@ -140,7 +129,7 @@ def _insert_check(
     )
 
 
-def test_generated_code_enforces_binding_identity_and_derives_content_digest(
+def test_generated_code_enforces_entity_identity_and_derives_content_digest(
     postgres_database: DisposablePostgres,
 ) -> None:
     scope = _seed_code_validation_scope(postgres_database)
@@ -152,16 +141,17 @@ def test_generated_code_enforces_binding_identity_and_derives_content_digest(
             connection.execute(
                 """
                 INSERT INTO workflow.generated_code (
-                    model_object_binding_id,
+                    model_id, modeled_entity_type, logical_entity_id,
                     artifact_name,
                     artifact_type,
                     generated_code_content,
                     code_input_digest
-                ) VALUES (%s, 'Customer.sql', 'sql_file', %s, %s)
+                ) VALUES (%s, 'logical_entity', %s, 'Customer.sql', 'sql_file', %s, %s)
                 RETURNING generated_code_status, generated_code_digest
                 """,
                 (
-                    scope["model_object_binding_id"],
+                    scope["model_id"],
+                    scope["logical_entity_id"],
                     large_content,
                     "a" * 64,
                 ),
@@ -176,17 +166,20 @@ def test_generated_code_enforces_binding_identity_and_derives_content_digest(
             ("customer.SQL", "b" * 64),
             ("Customer-2.sql", "not-a-digest"),
         ):
-            expected_error = UniqueViolation if artifact_name == "customer.SQL" else CheckViolation
+            expected_error = (
+                UniqueViolation if artifact_name == "customer.SQL" else CheckViolation
+            )
             with pytest.raises(expected_error), connection.transaction():
                 connection.execute(
                     """
                     INSERT INTO workflow.generated_code (
-                        model_object_binding_id, artifact_name, artifact_type,
+                        model_id, modeled_entity_type, logical_entity_id, artifact_name, artifact_type,
                         generated_code_content, code_input_digest
-                    ) VALUES (%s, %s, 'sql_file', 'SELECT 2', %s)
+                    ) VALUES (%s, 'logical_entity', %s, %s, 'sql_file', 'SELECT 2', %s)
                     """,
                     (
-                        scope["model_object_binding_id"],
+                        scope["model_id"],
+                        scope["logical_entity_id"],
                         artifact_name,
                         input_digest,
                     ),
@@ -196,11 +189,11 @@ def test_generated_code_enforces_binding_identity_and_derives_content_digest(
             connection.execute(
                 """
                 INSERT INTO workflow.generated_code (
-                    model_object_binding_id, artifact_name, artifact_type,
+                    model_id, modeled_entity_type, logical_entity_id, artifact_name, artifact_type,
                     generated_code_content, code_input_digest
-                ) VALUES (-1, 'Unknown.sql', 'sql_file', 'SELECT 4', %s)
+                ) VALUES (%s, 'logical_entity', -1, 'Unknown.sql', 'sql_file', 'SELECT 4', %s)
                 """,
-                ("c" * 64,),
+                (scope["model_id"], "c" * 64),
             )
 
 
@@ -355,7 +348,7 @@ def test_validation_check_rejects_ambiguous_assertion_shapes(
             ).fetchone()
         )["validation_group_id"]
 
-        invalid_cases = (
+        invalid_cases: tuple[tuple[str, str, str | None, str, object, object], ...] = (
             ("execution operand", "executes_successfully", None, "literal", 1, None),
             ("boolean type", "is_true", "integer", "none", None, None),
             ("missing equality", "equal", "integer", "none", None, None),

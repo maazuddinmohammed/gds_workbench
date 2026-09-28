@@ -21,7 +21,7 @@ import { MetadataEnrichmentResults } from "./MetadataEnrichmentResults";
 
 const model: ModelDetail = {
   model_id: 18, tenant_id: 7, model_name: "Customer 360", model_description: null,
-  model_revision: 18, model_input_scope_object_count: 2, silver_model_naming_instructions: null,
+  model_revision: 18, model_input_scope_object_count: 2, logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null, gold_model_naming_instructions: null,
   gold_model_technical_columns_template: null, gold_model_audit_columns_template: null,
   default_agent_sdk_code: "sdk", default_agent_provider_code: "provider",
@@ -39,7 +39,7 @@ const capabilities: AgentCapabilities = {
 };
 const scope = (id: number, zone: "source" | "bronze" = "source") => ({
   object_id: id, object_schema: "crm", source_tenant_id: 7, is_locked: false, review_revision: "a".repeat(64), system_id: 9, system_code: "CRM", source_tenant_code: "SHARED",
-  object_name: `customer_${id}`, zone_code: zone, is_dimensional_source_eligible: false,
+  object_name: `customer_${id}`, zone_code: zone,
 });
 const run: WorkflowRunDetail = {
   token_usage: {
@@ -294,7 +294,6 @@ describe("current metadata enrichment workspace", () => {
       source_tenant_code: "NWA", source_tenant_name: "Northwind", object_schema: "crm", object_name: "customers",
       zone_code: "source", object_description: "Customer accounts.", description_truncated: false, is_locked: false,
       review_revision: revision, batch_attribute_name: null, attribute_count: 1, total_attribute_count: 1, is_model_input_eligible: true,
-      is_dimensional_source_eligible: false, is_logical_mapping_target_eligible: false, is_dimensional_mapping_target_eligible: false,
       created_at: "2026-09-05T12:00:00Z", updated_at: "2026-09-05T12:00:00Z",
       attributes: [{ attribute_id: 81, review_revision: revision, attribute_name: "customer_id", attribute_ordinal_position: 1,
         attribute_description: "Customer identifier.", attribute_data_type: "STRING", attribute_inferred_data_type: "BIGINT",
@@ -453,7 +452,6 @@ describe("bulk Attribute enrichment selection", () => {
       ...scope(id), model_input_scope_id: id, connection_id: 1, system_name: "Customer system",
       source_tenant_name: "Northwind", batch_attribute_name: null, attribute_count: attributeCount,
       total_attribute_count: attributeCount, is_model_input_eligible: true,
-      is_logical_mapping_target_eligible: false, is_dimensional_mapping_target_eligible: false,
       created_at: "2026-09-05T12:00:00Z", updated_at: "2026-09-05T12:00:00Z",
       attributes: Array.from({ length: attributeCount }, (_, index) => ({
         attribute_id: id * 10000 + index, attribute_name: `field_${index}`, attribute_ordinal_position: index + 1,

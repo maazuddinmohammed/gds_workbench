@@ -59,20 +59,36 @@
       changes.set(dataset, (state.pending || []).filter((record) =>
         core.stableStringify(baseline.get(key(dataset, record))) !== core.stableStringify(record)));
     }
+    for (const analysis of rowList("analysis_result").filter(active)) {
+      if (!["one_to_one", "one_to_many", "many_to_one", "many_to_many"].includes(analysis.inferred_cardinality)) continue;
+      const counts = COUNTS.map((name) => analysis[`validation_${name}_count`]);
+      const [sourceCount, sourceDistinct, targetCount, targetDistinct, missing, unused, duplicates] = counts;
+      if (!/^\d+\.\d+\.\d+$/.test(analysis.validation_policy_version || "") ||
+          !counts.every((count) => Number.isSafeInteger(count) && count >= 0) ||
+          sourceCount <= 0 || targetCount <= 0 || sourceDistinct <= 0 || targetDistinct <= 0 ||
+          sourceDistinct > sourceCount || targetDistinct > targetCount || missing > sourceDistinct || unused > targetDistinct ||
+          sourceDistinct - missing !== targetDistinct - unused || duplicates !== targetCount - targetDistinct ||
+          analysis.validation_result !== (missing === 0 && duplicates === 0 ? "supported" : "unsupported")) continue;
+      const observed = `${sourceCount > sourceDistinct ? "many" : "one"}_to_${targetCount > targetDistinct ? "many" : "one"}`;
+      if (analysis.inferred_cardinality !== observed) issue(warnings, "analysis_inferred_cardinality_mismatch", "analysis_result",
+        keyObject("analysis_result", analysis), "Inferred cardinality differs from measured endpoint uniqueness. Review population scope and grain; preserve both conclusions.");
+    }
+    const logicalIdentity = (record, prefix = "") => tuple([record?.[`${prefix}logical_entity_schema_name`], record?.[`${prefix}logical_entity_name`]]);
+    const modeledIdentity = (dataset, record, prefix = "") => dataset.startsWith("logical") ? logicalIdentity(record, prefix) : normalize(record?.[`${prefix}conceptual_object_name`]);
     const entities = rowList("logical_entity").filter(active);
     const concepts = rowList("conceptual_object").filter(active);
     const attributes = rowList("logical_attribute").filter(active);
     const logical = rowList("logical_relationship").filter(active);
     const conceptual = rowList("conceptual_relationship").filter(active);
-    const entityNames = new Map(entities.map((record) => [normalize(record.logical_entity_name), record]));
+    const entityNames = new Map(entities.map((record) => [logicalIdentity(record), record]));
     const conceptNames = new Map(concepts.map((record) => [normalize(record.conceptual_object_name), record]));
-    const attributesByEntity = new Map(entities.map((record) => [normalize(record.logical_entity_name), []]));
+    const attributesByEntity = new Map(entities.map((record) => [logicalIdentity(record), []]));
     const attributeIndex = new Map();
     for (const record of attributes) {
-      attributesByEntity.get(normalize(record.logical_entity_name))?.push(record);
-      attributeIndex.set(tuple([record.logical_entity_name, record.logical_attribute_name]), record);
+      attributesByEntity.get(logicalIdentity(record))?.push(record);
+      attributeIndex.set(tuple([record.logical_entity_schema_name, record.logical_entity_name, record.logical_attribute_name]), record);
     }
-    const entityAttributes = (name) => attributesByEntity.get(normalize(name)) || [];
+    const entityAttributes = (record, prefix = "") => attributesByEntity.get(logicalIdentity(record, prefix)) || [];
     const supports = (record) => new Set((record?.sources || record?.supports || [])
       .filter((source) => active(source) && source.support_source_type === "object")
       .map((source) => physical(source.source_object)));
@@ -81,9 +97,9 @@
       .map((source) => physical(source.source_attribute, true)));
     const endpointLineage = (relationship, endpoint) => {
       const entity = relationship[`${endpoint}_logical_entity_name`];
-      const attribute = attributeIndex.get(tuple([entity, relationship[`${endpoint}_logical_attribute_name`]]));
+      const attribute = attributeIndex.get(tuple([relationship[`${endpoint}_logical_entity_schema_name`], entity, relationship[`${endpoint}_logical_attribute_name`]]));
       if (attribute?.logical_attribute_is_surrogate_key) {
-        return new Set(entityAttributes(entity).filter((item) => item.logical_attribute_is_natural_key)
+        return new Set(entityAttributes(relationship, `${endpoint}_`).filter((item) => item.logical_attribute_is_natural_key)
           .flatMap((item) => [...lineage(item)]));
       }
       return lineage(attribute);
@@ -106,13 +122,12 @@
       affected[dataset].add(key(dataset, record));
       const conceptualLayer = dataset === "conceptual_relationship";
       const entityDataset = conceptualLayer ? "conceptual_object" : "logical_entity";
-      const field = conceptualLayer ? "conceptual_object_name" : "logical_entity_name";
-      for (const endpoint of ["from", "to"]) affected[entityDataset].add(normalize(record[`${endpoint}_${field}`]));
+      for (const endpoint of ["from", "to"]) affected[entityDataset].add(modeledIdentity(dataset, record, `${endpoint}_`));
     };
     for (const dataset of ENTITY_DATASETS) for (const record of changes.get(dataset) || [])
-      affected[dataset].add(normalize(record[dataset === "logical_entity" ? "logical_entity_name" : "conceptual_object_name"]));
+      affected[dataset].add(modeledIdentity(dataset, record));
     for (const record of changes.get("logical_attribute") || [])
-      affected.logical_entity.add(normalize(record.logical_entity_name));
+      affected.logical_entity.add(logicalIdentity(record));
     for (const dataset of RELATIONSHIP_DATASETS) for (const record of changes.get(dataset) || [])
       affectRelationship(dataset, record);
     const changedEvidence = new Set(["analysis_result", "modeling_assertion_record", "modeling_assertion_document"]
@@ -129,29 +144,26 @@
     const affectedEntitySeeds = { conceptual_object: new Set(affected.conceptual_object), logical_entity: new Set(affected.logical_entity) };
     for (const dataset of RELATIONSHIP_DATASETS) for (const record of rowList(dataset).filter(active)) {
       const entityDataset = dataset === "logical_relationship" ? "logical_entity" : "conceptual_object";
-      const field = dataset === "logical_relationship" ? "logical_entity_name" : "conceptual_object_name";
       const cited = Array.isArray(decisions?.relationships) && decisions.relationships.find((entry) => {
         try { return entry.dataset === dataset && key(dataset, entry.key) === key(dataset, record); }
         catch { return false; }
       });
-      if (["from", "to"].some((endpoint) => affectedEntitySeeds[entityDataset].has(normalize(record[`${endpoint}_${field}`]))) ||
+      if (["from", "to"].some((endpoint) => affectedEntitySeeds[entityDataset].has(modeledIdentity(dataset, record, `${endpoint}_`))) ||
           (changes.get("analysis_result") || []).some((analysis) => analysisAlignment(dataset, record, analysis)) ||
           referencesChanged(cited)) affectRelationship(dataset, record);
     }
     for (const entry of Array.isArray(decisions?.entities) ? decisions.entities : []) {
       if (ENTITY_DATASETS.includes(entry?.dataset) && referencesChanged(entry)) {
-        const field = entry.dataset === "logical_entity" ? "logical_entity_name" : "conceptual_object_name";
-        affected[entry.dataset].add(normalize(entry.key?.[field]));
+        affected[entry.dataset].add(modeledIdentity(entry.dataset, entry.key));
       }
     }
     const template = { schema_version: "1.0", entities: [], relationships: [] };
     for (const dataset of ENTITY_DATASETS) for (const record of rowList(dataset).filter(active)) {
-      const name = record[dataset === "logical_entity" ? "logical_entity_name" : "conceptual_object_name"];
-      if (!affected[dataset].has(normalize(name))) continue;
+      if (!affected[dataset].has(modeledIdentity(dataset, record))) continue;
       template.entities.push({ dataset, key: keyObject(dataset, record), ...(dataset === "logical_entity" ? {
-        identity_attributes: entityAttributes(name).filter((attribute) => attribute.logical_attribute_is_natural_key)
+        identity_attributes: entityAttributes(record).filter((attribute) => attribute.logical_attribute_is_natural_key)
           .map((attribute) => attribute.logical_attribute_name),
-        identity_mode: entityAttributes(name).some((attribute) => attribute.logical_attribute_is_natural_key) ? "natural" : "append_only",
+        identity_mode: entityAttributes(record).some((attribute) => attribute.logical_attribute_is_natural_key) ? "natural" : "append_only",
       } : {}), decision: "", evidence: [] });
     }
     for (const dataset of RELATIONSHIP_DATASETS) for (const record of rowList(dataset).filter(active))
@@ -160,10 +172,10 @@
       });
     const required = template.entities.length > 0 || template.relationships.length > 0;
 
-    const adjacency = new Map(entities.map((record) => [normalize(record.logical_entity_name), new Set()]));
+    const adjacency = new Map(entities.map((record) => [logicalIdentity(record), new Set()]));
     let selfEdges = 0, crossEdges = 0;
     for (const relationship of logical) {
-      const from = normalize(relationship.from_logical_entity_name), to = normalize(relationship.to_logical_entity_name);
+      const from = logicalIdentity(relationship, "from_"), to = logicalIdentity(relationship, "to_");
       if (from === to) selfEdges += 1;
       else {
         crossEdges += 1;
@@ -179,7 +191,8 @@
         const next = queue.pop();
         if (visited.has(next) || !adjacency.has(next)) continue;
         visited.add(next);
-        component.push(entityNames.get(next).logical_entity_name);
+        const member = entityNames.get(next);
+        component.push(`${member.logical_entity_schema_name}.${member.logical_entity_name}`);
         for (const neighbor of adjacency.get(next)) queue.push(neighbor);
       }
       components.push(component.sort());
@@ -188,10 +201,10 @@
     const singleSource = business.filter((record) => lineage(record).size === 1).length;
     const singleObject = entities.filter((record) => supports(record).size === 1).length;
     const sourceObjects = new Set([...entities, ...concepts].flatMap((record) => [...supports(record)]));
-    const isolatedEntities = entities.filter((record) => adjacency.get(normalize(record.logical_entity_name)).size === 0)
-      .map((record) => record.logical_entity_name);
-    const entitiesWithoutNaturalKey = entities.filter((record) => !entityAttributes(record.logical_entity_name)
-      .some((attribute) => attribute.logical_attribute_is_natural_key)).map((record) => record.logical_entity_name);
+    const isolatedEntities = entities.filter((record) => adjacency.get(logicalIdentity(record)).size === 0)
+      .map((record) => `${record.logical_entity_schema_name}.${record.logical_entity_name}`);
+    const entitiesWithoutNaturalKey = entities.filter((record) => !entityAttributes(record)
+      .some((attribute) => attribute.logical_attribute_is_natural_key)).map((record) => `${record.logical_entity_schema_name}.${record.logical_entity_name}`);
     const componentExamples = [];
     let remainingComponentNames = 200;
     for (const component of components) {
@@ -242,10 +255,10 @@
       const to = supports(conceptNames.get(normalize(relationship.to_conceptual_object_name)));
       if (!from.size || !to.size) continue;
       const hasEdge = logical.some((edge) => [
-        [edge.from_logical_entity_name, edge.to_logical_entity_name],
-        [edge.to_logical_entity_name, edge.from_logical_entity_name],
-      ].some(([left, right]) => [...supports(entityNames.get(normalize(left)))].some((source) => from.has(source)) &&
-        [...supports(entityNames.get(normalize(right)))].some((source) => to.has(source))));
+        [logicalIdentity(edge, "from_"), logicalIdentity(edge, "to_")],
+        [logicalIdentity(edge, "to_"), logicalIdentity(edge, "from_")],
+      ].some(([left, right]) => [...supports(entityNames.get(left))].some((source) => from.has(source)) &&
+        [...supports(entityNames.get(right))].some((source) => to.has(source))));
       if (!hasEdge) issue(warnings, "possible_missing_logical_relationship", "conceptual_relationship", keyObject("conceptual_relationship", relationship),
         "Support-overlap heuristic found no Logical counterpart. Confirm whether this business relationship is implemented, deferred or rejected.");
     }
@@ -336,8 +349,8 @@
             if (section === "relationships" && supported) {
               if (dataset === "logical_relationship") compositeAnalysis = ["from", "to"].some((endpoint) => {
                 const name = record[`${endpoint}_logical_entity_name`];
-                const endpointAttribute = attributeIndex.get(tuple([name, record[`${endpoint}_logical_attribute_name`]]));
-                return endpointAttribute?.logical_attribute_is_surrogate_key && entityAttributes(name)
+                const endpointAttribute = attributeIndex.get(tuple([record[`${endpoint}_logical_entity_schema_name`], name, record[`${endpoint}_logical_attribute_name`]]));
+                return endpointAttribute?.logical_attribute_is_surrogate_key && entityAttributes(record, `${endpoint}_`)
                   .filter((attribute) => attribute.logical_attribute_is_natural_key).length > 1;
               });
               const cardinality = record[`${dataset}_cardinality`];
@@ -357,7 +370,7 @@
         if (compositeAnalysis && !assertionEvidence && !noteEvidence) issue(errors, "analysis_composite_identity", dataset, entry.key,
           "Individual-Attribute Analysis cannot prove lookup of a composite natural identity. Cite an applicable business Assertion or retained business decision note for the complete lookup; do not treat component counts as tuple proof.");
         if (dataset === "logical_entity") {
-          const natural = entityAttributes(record.logical_entity_name).filter((attribute) => attribute.logical_attribute_is_natural_key)
+          const natural = entityAttributes(record).filter((attribute) => attribute.logical_attribute_is_natural_key)
             .map((attribute) => normalize(attribute.logical_attribute_name)).sort();
           const declared = Array.isArray(entry.identity_attributes) && entry.identity_attributes.every((name) => typeof name === "string" && name.trim())
             ? entry.identity_attributes.map(normalize).sort() : null;

@@ -93,8 +93,8 @@ export function CodeGenerationScreen({
   const toggleTarget = (target: CodeGenerationTarget, isSelected: boolean) => {
     setSelectedTargets((current) => {
       const next = new Map(current);
-      if (isSelected) next.set(target.target.object_id, target);
-      else next.delete(target.target.object_id);
+      if (isSelected) next.set(target.target.entity_id, target);
+      else next.delete(target.target.entity_id);
       return next;
     });
   };
@@ -102,8 +102,8 @@ export function CodeGenerationScreen({
     setSelectedTargets((current) => {
       const next = new Map(current);
       for (const target of targets) {
-        if (isSelected) next.set(target.target.object_id, target);
-        else next.delete(target.target.object_id);
+        if (isSelected) next.set(target.target.entity_id, target);
+        else next.delete(target.target.entity_id);
       }
       return next;
     });

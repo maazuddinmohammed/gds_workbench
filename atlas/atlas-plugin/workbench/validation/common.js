@@ -78,6 +78,12 @@
     if (source?.support_source_type === "assertion") {
       return ["assertion", normalized(source.assertion_record?.modeling_assertion_record_key)];
     }
+    if (["logical_entity", "logical_attribute"].includes(source?.support_source_type)) {
+      const logical = source.source_logical_entity || source.source_logical_attribute;
+      const fields = ["logical_entity_schema_name", "logical_entity_name"];
+      if (source.support_source_type === "logical_attribute") fields.push("logical_attribute_name");
+      return [source.support_source_type, ...fields.map(field => normalized(logical?.[field]))];
+    }
     const physical = source?.source_object || source?.source_attribute;
     if (!physical) return [source?.support_source_type, null];
     const fields = ["tenant_code", "system_code", "connection_code", "object_schema", "object_name"];
@@ -191,8 +197,8 @@
     ].map((field) => value[field]);
     const validateRelationship = (layer) => {
       if (sameNormalized(
-        [value[`from_${layer}_entity_name`], value[`from_${layer}_attribute_name`]],
-        [value[`to_${layer}_entity_name`], value[`to_${layer}_attribute_name`]],
+        [value[`from_${layer}_entity_schema_name`], value[`from_${layer}_entity_name`], value[`from_${layer}_attribute_name`]],
+        [value[`to_${layer}_entity_schema_name`], value[`to_${layer}_entity_name`], value[`to_${layer}_attribute_name`]],
       )) add(`${layer} Relationship endpoints must be different`);
     };
 
@@ -217,6 +223,11 @@
       }
       for (const field of ["silver_model_audit_columns_template", "gold_model_technical_columns_template", "gold_model_audit_columns_template"]) {
         if (value[field] !== null && jsonBytes(value[field]) > 262144) add(`${field} exceeds 262,144 JSON bytes`);
+      }
+      for (const field of ["logical_schemas", "dimensional_schemas"]) {
+        const schemas = value[field] || [];
+        if (!uniqueNormalized(schemas.map(item => item.schema_name))) add(`${field} schema names must be unique`);
+        if (jsonBytes(schemas) > 262144) add(`${field} exceeds 262,144 JSON bytes`);
       }
     } else if (rule === "profiling_profile") {
       if (value.non_null_count + value.null_count !== value.row_count) add("Profile non-null and null counts must equal row count");

@@ -17,7 +17,6 @@ from gds_etl_workbench.domain.modeling_records import (
     DimensionalAttributeRecord,
     DimensionalEntityRecord,
     ModelingRecord,
-    ModelObjectBindingRecord,
     normalize_model_key_value,
 )
 from gds_etl_workbench.domain.snapshots.model import DATASETS_BY_NAME, ModelChangeSetDataset
@@ -34,9 +33,6 @@ type ModelReviewDataset = Literal[
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",
-    "model_object_binding",
-    "model_attribute_binding",
-    "mapping_dependency",
     "mapping_object",
     "mapping_attribute",
     "generated_code",
@@ -76,21 +72,6 @@ REVIEW_FIELDS: dict[ModelReviewDataset, tuple[str, str, str]] = {
             ("relationship", "relationships"),
         )
     },
-    "model_object_binding": (
-        "model_object_binding_is_locked",
-        "model_object_binding_status",
-        "objects",
-    ),
-    "model_attribute_binding": (
-        "model_attribute_binding_is_locked",
-        "model_attribute_binding_status",
-        "attributes",
-    ),
-    "mapping_dependency": (
-        "mapping_source_system_dependency_is_locked",
-        "mapping_source_system_dependency_status",
-        "dependencies",
-    ),
     "mapping_object": ("object_mapping_is_locked", "object_mapping_status", "objects"),
     "mapping_attribute": ("attribute_mapping_is_locked", "attribute_mapping_status", "attributes"),
     "generated_code": ("generated_code_is_locked", "generated_code_status", "artifacts"),
@@ -191,6 +172,7 @@ def plan_model_record_review(
                 link(
                     identity,
                     cast(ModelReviewDataset, record_layer + "_entity"),
+                    v[record_layer + "_entity_schema_name"],
                     v[record_layer + "_entity_name"],
                 )
             elif name in {"logical_relationship", "dimensional_relationship"}:
@@ -199,36 +181,32 @@ def plan_model_record_review(
                     link(
                         identity,
                         cast(ModelReviewDataset, record_layer + "_attribute"),
+                        v[f"{side}_{record_layer}_entity_schema_name"],
                         v[f"{side}_{record_layer}_entity_name"],
                         v[f"{side}_{record_layer}_attribute_name"],
                     )
             elif name in {
-                "model_object_binding",
-                "model_attribute_binding",
                 "mapping_object",
                 "mapping_attribute",
                 "generated_code",
                 "generated_code_source_system",
             }:
-                entity = (v["modeled_entity_type"], v["modeled_entity_name"])
+                entity = (
+                    v["modeled_entity_type"],
+                    v["modeled_entity_schema_name"],
+                    v["modeled_entity_name"],
+                )
                 record_layer = str(entity[0]).split("_")[0]
-                if name == "model_object_binding":
-                    link(identity, cast(ModelReviewDataset, entity[0]), entity[1])
-                elif name == "model_attribute_binding":
-                    link(identity, "model_object_binding", *entity)
+                if name in {"mapping_object", "generated_code"}:
+                    link(identity, cast(ModelReviewDataset, entity[0]), *entity[1:])
+                elif name == "mapping_attribute":
+                    link(identity, "mapping_object", *entity, v["source_system_code"])
                     link(
                         identity,
                         cast(ModelReviewDataset, record_layer + "_attribute"),
-                        entity[1],
+                        *entity[1:],
                         v["modeled_attribute_name"],
                     )
-                elif name == "mapping_object":
-                    link(identity, "model_object_binding", *entity)
-                elif name == "mapping_attribute":
-                    link(identity, "mapping_object", *entity, v["source_system_code"])
-                    link(identity, "model_attribute_binding", *entity, v["modeled_attribute_name"])
-                elif name == "generated_code":
-                    link(identity, "model_object_binding", *entity)
                 else:
                     link(identity, "generated_code", *entity, v["artifact_name"])
                     link(identity, "mapping_object", *entity, v["source_system_code"])
@@ -241,21 +219,7 @@ def plan_model_record_review(
                     v["validation_group_name"],
                 )
 
-        # Persisted Silver lineage is the only ownership evidence across layers.
-        # Never infer Conceptual -> Logical ownership from similar names.
-        physical_fields = (
-            "tenant_code",
-            "system_code",
-            "connection_code",
-            "object_schema",
-            "object_name",
-        )
-        logical_targets = {
-            tuple(normalize_model_key_value(getattr(row, field)) for field in physical_fields): row
-            for row in records.values()
-            if isinstance(row, ModelObjectBindingRecord)
-            and row.modeled_entity_type == "logical_entity"
-        }
+        # Cross-layer dependencies follow explicit Logical design lineage.
         for identity, row in records.items():
             if not isinstance(row, (DimensionalEntityRecord, DimensionalAttributeRecord)):
                 continue
@@ -264,62 +228,40 @@ def plan_model_record_review(
                     source.status != "active" and action != "delete"
                 ) or source.support_source_type == "assertion":
                     continue
-                physical = (
-                    source.source_attribute
-                    if source.support_source_type == "attribute"
-                    else source.source_object
-                )
-                target = logical_targets.get(
-                    tuple(
-                        normalize_model_key_value(getattr(physical, field))
-                        for field in physical_fields
-                    )
-                )
-                if target is not None:
+                if source.support_source_type == "logical_entity":
+                    key = source.source_logical_entity
                     link(
                         identity,
-                        "model_object_binding",
                         "logical_entity",
-                        target.modeled_entity_name,
+                        key.logical_entity_schema_name,
+                        key.logical_entity_name,
+                    )
+                elif source.support_source_type == "logical_attribute":
+                    key = source.source_logical_attribute
+                    link(
+                        identity,
+                        "logical_attribute",
+                        key.logical_entity_schema_name,
+                        key.logical_entity_name,
+                        key.logical_attribute_name,
                     )
 
-        # Coverage is bidirectional for active bindings/mappings. Retiring one
-        # covered child retires its complete parent; reactivation restores only
-        # historical rows for currently active (or selected) modeled Attributes.
+        # Mapping covers each active modeled Attribute for every source System.
         for identity, row in records.items():
             name, _ = identity
             v = row.model_dump()
-            if name == "model_attribute_binding":
-                entity = (v["modeled_entity_type"], v["modeled_entity_name"])
-                attr = keys.get(
+            if name == "mapping_attribute":
+                entity = (
+                    v["modeled_entity_type"],
+                    v["modeled_entity_schema_name"],
+                    v["modeled_entity_name"],
+                )
+                attribute = keys.get(
                     (
                         cast(ModelReviewDataset, str(entity[0]).split("_")[0] + "_attribute"),
                         tuple(
                             normalize_model_key_value(x)
-                            for x in (entity[1], v["modeled_attribute_name"])
-                        ),
-                    )
-                )
-                binding = keys.get(
-                    ("model_object_binding", tuple(normalize_model_key_value(x) for x in entity))
-                )
-                if (
-                    binding is not None
-                    and attr is not None
-                    and (
-                        review_lifecycle(records[attr], attr[0])[1] == "active"
-                        or action in {"reactivate", "delete"}
-                    )
-                ):
-                    link(binding, "model_attribute_binding", *entity, v["modeled_attribute_name"])
-            elif name == "mapping_attribute":
-                entity = (v["modeled_entity_type"], v["modeled_entity_name"])
-                binding = keys.get(
-                    (
-                        "model_attribute_binding",
-                        tuple(
-                            normalize_model_key_value(x)
-                            for x in (*entity, v["modeled_attribute_name"])
+                            for x in (*entity[1:], v["modeled_attribute_name"])
                         ),
                     )
                 )
@@ -332,10 +274,10 @@ def plan_model_record_review(
                     )
                 )
                 if (
-                    binding is not None
+                    attribute is not None
                     and header is not None
                     and (
-                        review_lifecycle(records[binding], binding[0])[1] == "active"
+                        review_lifecycle(records[attribute], attribute[0])[1] == "active"
                         or action in {"reactivate", "delete"}
                     )
                 ):
@@ -352,7 +294,12 @@ def plan_model_record_review(
                         "generated_code",
                         tuple(
                             normalize_model_key_value(v[f])
-                            for f in ("modeled_entity_type", "modeled_entity_name", "artifact_name")
+                            for f in (
+                                "modeled_entity_type",
+                                "modeled_entity_schema_name",
+                                "modeled_entity_name",
+                                "artifact_name",
+                            )
                         ),
                     )
                 )
@@ -361,6 +308,7 @@ def plan_model_record_review(
                         code,
                         "generated_code_source_system",
                         v["modeled_entity_type"],
+                        v["modeled_entity_schema_name"],
                         v["modeled_entity_name"],
                         v["artifact_name"],
                         v["source_system_code"],
@@ -377,7 +325,7 @@ def plan_model_record_review(
                 ].add(key)
             elif key[0] == "validation_group":
                 active_groups[normalize_model_key_value(row.model_dump()["system_code"])].add(key)
-        code_by_entity: dict[tuple[str, str], set[RecordIdentity]] = defaultdict(set)
+        code_by_entity: dict[tuple[str, ...], set[RecordIdentity]] = defaultdict(set)
         for key, row in records.items():
             if key[0] == "generated_code" and (
                 action == "delete" or review_lifecycle(row, key[0])[1] == "active"
@@ -386,6 +334,7 @@ def plan_model_record_review(
                 code_by_entity[
                     (
                         value["modeled_entity_type"],
+                        normalize_model_key_value(value["modeled_entity_schema_name"]),
                         normalize_model_key_value(value["modeled_entity_name"]),
                     )
                 ].add(key)
@@ -409,6 +358,7 @@ def plan_model_record_review(
                 value = records[identity].model_dump()
                 entity = (
                     value["modeled_entity_type"],
+                    normalize_model_key_value(value["modeled_entity_schema_name"]),
                     normalize_model_key_value(value["modeled_entity_name"]),
                 )
                 for key in code_by_entity[entity] - required.keys():

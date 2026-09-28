@@ -55,7 +55,7 @@ export function DimensionalObjectsLedger({
       header: "Dimensional Object",
       cell: ({ row }) => (
         <span className="endpoint-cell">
-          <strong>{row.original.dimensional_entity_name}</strong>
+          <strong>{row.original.dimensional_entity_schema_name}.{row.original.dimensional_entity_name}</strong>
           <span>{humanize(row.original.dimensional_entity_type)}</span>
         </span>
       ),
@@ -395,7 +395,7 @@ export function DimensionalRelationshipsLedger({
       header: "From",
       cell: ({ row }) => (
         <span className="endpoint-cell">
-          <strong>{row.original.from_dimensional_entity_name}</strong>
+          <strong>{row.original.from_dimensional_entity_schema_name}.{row.original.from_dimensional_entity_name}</strong>
           <span>{row.original.from_dimensional_attribute_name}</span>
         </span>
       ),
@@ -405,7 +405,7 @@ export function DimensionalRelationshipsLedger({
       header: "To",
       cell: ({ row }) => (
         <span className="endpoint-cell">
-          <strong>{row.original.to_dimensional_entity_name}</strong>
+          <strong>{row.original.to_dimensional_entity_schema_name}.{row.original.to_dimensional_entity_name}</strong>
           <span>{row.original.to_dimensional_attribute_name}</span>
         </span>
       ),

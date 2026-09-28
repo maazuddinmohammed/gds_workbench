@@ -451,7 +451,7 @@ const modelPayload = {
   model_description: "Cross-system customer domain",
   model_revision: 18,
   model_input_scope_object_count: 25,
-  silver_model_naming_instructions: null,
+  logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
   gold_model_technical_columns_template: null,
@@ -572,9 +572,6 @@ const conceptualScopeObjectPayload = {
   batch_attribute_name: "batch_id",
   attribute_count: 14,
   is_model_input_eligible: true,
-  is_dimensional_source_eligible: false,
-  is_logical_mapping_target_eligible: false,
-  is_dimensional_mapping_target_eligible: false,
   created_at: "2026-08-24T14:00:00Z",
   updated_at: "2026-08-24T14:00:00Z",
 };

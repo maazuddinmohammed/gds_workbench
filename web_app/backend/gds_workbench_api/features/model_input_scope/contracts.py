@@ -63,9 +63,6 @@ class ModelInputScopeObject(BaseModel):
     batch_attribute_name: str | None = Field(default=None, max_length=400)
     attribute_count: int = Field(ge=0)
     is_model_input_eligible: bool
-    is_dimensional_source_eligible: bool
-    is_logical_mapping_target_eligible: bool
-    is_dimensional_mapping_target_eligible: bool
     created_at: datetime
     updated_at: datetime
 

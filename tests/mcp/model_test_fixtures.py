@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from gds_etl_workbench.application.change_sets.model_validation import PhysicalModelCatalog
+from gds_etl_workbench.application.change_sets.model_validation import (
+    PhysicalModelCatalog,
+)
 from gds_etl_workbench.domain.snapshots.model import (
     ModelChangeSetDataset,
     ModelSnapshot,
@@ -94,6 +96,7 @@ def complete_model_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]
                 "to_object_name": SOURCE_CUSTOMERS[4],
                 "to_attribute_name": "customer_id",
                 "relationship_kind": "foreign_key_candidate",
+                "inferred_cardinality": "many_to_one",
                 "relationship_confidence": "high",
                 "relationship_basis": "Values overlap.",
                 "validation_policy_version": "1.0.0",
@@ -199,52 +202,10 @@ def complete_model_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]
             ),
         ],
         "dimensional_relationship": [dimensional_relationship()],
-        "model_object_binding": [
-            object_binding("logical_entity", "Order", SILVER_ORDER),
-            object_binding("logical_entity", "Customer", SILVER_CUSTOMER),
-            object_binding("dimensional_entity", "SalesFact", GOLD_SALES_FACT),
-            object_binding("dimensional_entity", "CustomerDimension", GOLD_CUSTOMER),
-        ],
-        "model_attribute_binding": [
-            attribute_binding("logical_entity", "Order", "OrderID", "OrderID"),
-            attribute_binding("logical_entity", "Order", "CustomerID", "CustomerID"),
-            attribute_binding(
-                "logical_entity",
-                "Customer",
-                "CustomerID",
-                "CustomerID",
-            ),
-            attribute_binding(
-                "dimensional_entity",
-                "SalesFact",
-                "SalesKey",
-                "SalesKey",
-            ),
-            attribute_binding(
-                "dimensional_entity",
-                "SalesFact",
-                "CustomerKey",
-                "CustomerKey",
-            ),
-            attribute_binding(
-                "dimensional_entity",
-                "CustomerDimension",
-                "CustomerKey",
-                "CustomerKey",
-            ),
-        ],
-        "mapping_dependency": [
-            {
-                "modeled_entity_type": "logical_entity",
-                "source_system_code": "ERP",
-                "source_system_dependency_order": 0,
-                "mapping_source_system_dependency_status": "active",
-                "mapping_source_system_dependency_is_locked": False,
-            }
-        ],
         "mapping_object": [
             {
                 "modeled_entity_type": "logical_entity",
+                "modeled_entity_schema_name": "silver",
                 "modeled_entity_name": "Order",
                 "source_system_code": "ERP",
                 "output_template_code": None,
@@ -265,6 +226,7 @@ def complete_model_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]
             {
                 "generated_code_is_locked": False,
                 "modeled_entity_type": "logical_entity",
+                "modeled_entity_schema_name": "silver",
                 "modeled_entity_name": "Order",
                 "artifact_name": "Order.sql",
                 "artifact_type": "sql_file",
@@ -276,6 +238,7 @@ def complete_model_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]
             {
                 "generated_code_source_system_is_locked": False,
                 "modeled_entity_type": "logical_entity",
+                "modeled_entity_schema_name": "silver",
                 "modeled_entity_name": "Order",
                 "artifact_name": "Order.sql",
                 "source_system_code": "ERP",
@@ -301,6 +264,8 @@ def model_details(model_name: str = "SalesModel") -> dict[str, object]:
     return {
         "model_name": model_name,
         "model_description": "Sales model.",
+        "logical_schemas": [{"schema_name": "silver", "description": None}],
+        "dimensional_schemas": [{"schema_name": "gold", "description": None}],
         "silver_model_naming_instructions": "Use PascalCase and an ID suffix.",
         "silver_model_audit_columns_template": None,
         "gold_model_naming_instructions": "Use PascalCase and a Key suffix.",
@@ -374,6 +339,7 @@ def logical_entity(
     source: dict[str, object],
 ) -> dict[str, object]:
     return {
+        "logical_entity_schema_name": "silver",
         "logical_entity_name": name,
         "logical_entity_definition": f"Normalized {name} entity.",
         "logical_entity_type": entity_type,
@@ -413,6 +379,7 @@ def logical_attribute(
     natural: bool = False,
 ) -> dict[str, object]:
     return {
+        "logical_entity_schema_name": "silver",
         "logical_entity_name": entity,
         "logical_attribute_name": name,
         "logical_attribute_definition": f"{name} attribute.",
@@ -442,8 +409,10 @@ def logical_relationship() -> dict[str, object]:
     return {
         "logical_relationship_name": "OrderCustomer",
         "logical_relationship_definition": "Order references Customer.",
+        "from_logical_entity_schema_name": "silver",
         "from_logical_entity_name": "Order",
         "from_logical_attribute_name": "CustomerID",
+        "to_logical_entity_schema_name": "silver",
         "to_logical_entity_name": "Customer",
         "to_logical_attribute_name": "CustomerID",
         "logical_relationship_cardinality": "many_to_one",
@@ -458,6 +427,7 @@ def logical_relationship() -> dict[str, object]:
 def dimensional_entity(name: str, entity_type: str) -> dict[str, object]:
     is_fact = entity_type == "fact"
     return {
+        "dimensional_entity_schema_name": "gold",
         "dimensional_entity_name": name,
         "dimensional_entity_definition": f"{name} entity.",
         "dimensional_entity_type": entity_type,
@@ -495,12 +465,15 @@ def dimensional_attribute(
     key_role: str,
 ) -> dict[str, object]:
     return {
+        "dimensional_entity_schema_name": "gold",
         "dimensional_entity_name": entity,
         "dimensional_attribute_name": name,
         "dimensional_attribute_definition": f"{name} attribute.",
         "dimensional_attribute_data_type": "bigint",
         "dimensional_attribute_is_nullable": False,
-        "dimensional_attribute_ordinal_position": (1 if name in {"SalesKey", "CustomerKey"} else 2),
+        "dimensional_attribute_ordinal_position": (
+            1 if name in {"SalesKey", "CustomerKey"} else 2
+        ),
         "dimensional_attribute_role": "key",
         "dimensional_attribute_key_role": key_role,
         "dimensional_attribute_is_grain_component": True,
@@ -529,8 +502,10 @@ def dimensional_relationship() -> dict[str, object]:
     return {
         "dimensional_relationship_name": "SalesCustomer",
         "dimensional_relationship_definition": "Fact joins Customer Dimension.",
+        "from_dimensional_entity_schema_name": "gold",
         "from_dimensional_entity_name": "SalesFact",
         "from_dimensional_attribute_name": "CustomerKey",
+        "to_dimensional_entity_schema_name": "gold",
         "to_dimensional_entity_name": "CustomerDimension",
         "to_dimensional_attribute_name": "CustomerKey",
         "dimensional_relationship_kind": "fact_dimension",
@@ -545,42 +520,13 @@ def dimensional_relationship() -> dict[str, object]:
     }
 
 
-def object_binding(
-    entity_type: str,
-    entity_name: str,
-    target: tuple[str, str, str, str, str],
-) -> dict[str, object]:
-    return {
-        **physical_object(target),
-        "modeled_entity_type": entity_type,
-        "modeled_entity_name": entity_name,
-        "model_object_binding_status": "active",
-        "model_object_binding_is_locked": False,
-    }
-
-
-def attribute_binding(
-    entity_type: str,
-    entity_name: str,
-    attribute_name: str,
-    target_attribute_name: str,
-) -> dict[str, object]:
-    return {
-        "modeled_entity_type": entity_type,
-        "modeled_entity_name": entity_name,
-        "modeled_attribute_name": attribute_name,
-        "attribute_name": target_attribute_name,
-        "model_attribute_binding_status": "active",
-        "model_attribute_binding_is_locked": False,
-    }
-
-
 def mapping_attribute(
     modeled_attribute_name: str,
     source_attribute_name: str,
 ) -> dict[str, object]:
     return {
         "modeled_entity_type": "logical_entity",
+        "modeled_entity_schema_name": "silver",
         "modeled_entity_name": "Order",
         "modeled_attribute_name": modeled_attribute_name,
         "source_system_code": "ERP",
@@ -658,12 +604,7 @@ def snapshot_from_graph(
                 "attributes": rows("dimensional_attribute"),
                 "relationships": rows("dimensional_relationship"),
             },
-            "model_binding": {
-                "objects": rows("model_object_binding"),
-                "attributes": rows("model_attribute_binding"),
-            },
             "mapping": {
-                "dependencies": rows("mapping_dependency"),
                 "objects": rows("mapping_object"),
                 "attributes": rows("mapping_attribute"),
             },
@@ -716,17 +657,9 @@ def complete_physical_scope() -> PhysicalModelCatalog:
         model_tenant_code="TENANT-A",
         active_system_codes=frozenset({"erp", "gds"}),
         objects=input_objects | target_objects,
-        attributes=input_attributes | logical_target_attributes | dimensional_target_attributes,
+        attributes=input_attributes
+        | logical_target_attributes
+        | dimensional_target_attributes,
         model_input_objects=input_objects,
         model_input_attributes=input_attributes,
-        dimensional_source_objects=frozenset(),
-        dimensional_source_attributes=frozenset(),
-        logical_mapping_target_objects=frozenset(
-            tuple(part.casefold() for part in key) for key in (SILVER_ORDER, SILVER_CUSTOMER)
-        ),
-        logical_mapping_target_attributes=logical_target_attributes,
-        dimensional_mapping_target_objects=frozenset(
-            tuple(part.casefold() for part in key) for key in (GOLD_SALES_FACT, GOLD_CUSTOMER)
-        ),
-        dimensional_mapping_target_attributes=dimensional_target_attributes,
     )

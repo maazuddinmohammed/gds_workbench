@@ -100,7 +100,7 @@ function GeneratedSqlDetailView({
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
-  const title = `${detail.target.object_schema}.${detail.target.object_name}`;
+  const title = `${detail.target.entity_schema_name}.${detail.target.entity_name}`;
   const downloadPath = generatedSqlArtifactDownloadPath(
     tenantId,
     model.model_id,
@@ -160,12 +160,9 @@ function GeneratedSqlDetailView({
       </section>
 
       <details className="detail-section detail-disclosure" aria-labelledby="generated-sql-target-heading">
-        <summary><h2 id="generated-sql-target-heading">Target Object</h2></summary>
+        <summary><h2 id="generated-sql-target-heading">Entity</h2></summary>
         <dl className="detail-fact-grid">
           <Fact label="Object" value={title} />
-          <Fact label="Target Tenant" value={detail.target.tenant_code} />
-          <Fact label="Target System" value={detail.target.system_code} />
-          <Fact label="Zone" value={detail.target.zone_code} />
           <Fact label="Artifact status" value={humanize(detail.generated_code_status)} />
         </dl>
         <p className="detail-empty-note">

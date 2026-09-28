@@ -1,4 +1,4 @@
-"""PostgreSQL Mapping Run plan and compact binding context repositories."""
+"""PostgreSQL Mapping Run plan and compact Entity context repositories."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ SELECT run.workflow_run_id,
        run.mapping_object_output_template_schema_digest,
        run.mapping_attribute_output_template_id,
        run.mapping_attribute_output_template_schema_digest,
-       selection.object_id AS target_object_id,
+       entity_selection.modeled_entity_id AS modeled_entity_id,
        selection.source_system_id,
        selection.selection_order,
        selection.selected_attribute_ids
@@ -46,6 +46,9 @@ SELECT run.workflow_run_id,
   JOIN application.workflow_run_mapping_target_selection AS selection
     ON selection.workflow_run_id = run.workflow_run_id
    AND selection.model_id = run.model_id
+  JOIN application.workflow_run_entity_selection AS entity_selection
+    ON entity_selection.workflow_run_entity_selection_id =
+        selection.workflow_run_entity_selection_id
  WHERE run.model_id = %s
    AND run.workflow_run_id = %s
    AND target_model.model_revision = %s
@@ -66,7 +69,7 @@ SELECT run.workflow_run_id,
        target_model.model_revision,
        run.correlation_id,
        run.actor_principal_id,
-       selection.object_id AS target_object_id,
+       entity_selection.modeled_entity_id AS modeled_entity_id,
        selection.source_system_id,
        run.modeled_entity_type,
        run.mapping_route,
@@ -82,13 +85,6 @@ SELECT run.workflow_run_id,
            'system_description', source_system.system_description,
            'is_active', source_system.is_active
        ) AS source_system,
-       CASE WHEN dependency.mapping_source_system_dependency_id IS NOT NULL THEN jsonb_build_object(
-           'mapping_source_system_dependency_id',
-               dependency.mapping_source_system_dependency_id,
-           'dependency_order', dependency.source_system_dependency_order,
-           'status', dependency.mapping_source_system_dependency_status,
-           'is_locked', dependency.mapping_source_system_dependency_is_locked
-       ) END AS dependency,
        jsonb_build_object(
            'model_name', target_model.model_name,
            'naming_instructions', CASE run.modeled_entity_type
@@ -113,17 +109,16 @@ SELECT run.workflow_run_id,
   JOIN application.workflow_run_mapping_target_selection AS selection
     ON selection.workflow_run_id = run.workflow_run_id
    AND selection.model_id = run.model_id
+  JOIN application.workflow_run_entity_selection AS entity_selection
+    ON entity_selection.workflow_run_entity_selection_id =
+        selection.workflow_run_entity_selection_id
   JOIN core.system AS source_system
     ON source_system.system_id = selection.source_system_id
-  LEFT JOIN workflow.mapping_source_system_dependency AS dependency
-    ON dependency.model_id = run.model_id
-   AND dependency.modeled_entity_type = run.modeled_entity_type
-   AND dependency.source_system_id = selection.source_system_id
  WHERE run.workflow_run_id = %s
    AND run.model_id = %s
    AND run.actor_principal_id = %s
    AND run.correlation_id = %s
-   AND selection.object_id = %s
+   AND entity_selection.modeled_entity_id = %s
    AND selection.source_system_id = %s
    AND run.modeled_entity_type = %s
    AND run.mapping_route = %s
@@ -132,278 +127,83 @@ SELECT run.workflow_run_id,
    AND run.workflow_run_state = 'running'
 """
 
-_MAPPING_DEPENDENCY_NODES_SQL: LiteralString = """
-SELECT jsonb_build_object(
-           'mapping_source_system_dependency_id',
-               dependency.mapping_source_system_dependency_id,
-           'source_system_id', dependency.source_system_id,
-           'dependency_order', dependency.source_system_dependency_order,
-           'status', dependency.mapping_source_system_dependency_status,
-           'is_locked', dependency.mapping_source_system_dependency_is_locked
-       ) AS node
-  FROM workflow.mapping_source_system_dependency AS dependency
- WHERE dependency.model_id = %s
-   AND dependency.modeled_entity_type = %s
-   AND dependency.mapping_source_system_dependency_status = 'active'
- ORDER BY dependency.source_system_id
-"""
-
 _MAPPING_TARGET_NODES_SQL: LiteralString = """
-SELECT jsonb_build_object(
-           'target_object_id', binding.object_id,
-           'dependency_order', coalesce(min(mapping.object_dependency_order), 0),
-           'status', binding.model_object_binding_status,
-           'has_locked_headers', coalesce(bool_or(mapping.object_mapping_is_locked), false),
-           'has_unlocked_headers', coalesce(bool_or(NOT mapping.object_mapping_is_locked), false)
-       ) AS node
-  FROM workflow.model_object_binding AS binding
-  LEFT JOIN workflow.mapping_object AS mapping
-    ON mapping.model_object_binding_id = binding.model_object_binding_id
-   AND mapping.object_mapping_status = 'active'
- WHERE binding.model_id = %s
-   AND binding.modeled_entity_type = %s
-   AND binding.model_object_binding_status = 'active'
- GROUP BY binding.model_object_binding_id,
-          binding.object_id,
-          binding.model_object_binding_status
- ORDER BY binding.object_id
+SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
+ 'dependency_order', coalesce(min(mapping.object_dependency_order), entity.dependency_order),
+ 'status', entity.status,
+ 'has_locked_headers', coalesce(bool_or(mapping.object_mapping_is_locked), false),
+ 'has_unlocked_headers', coalesce(bool_or(NOT mapping.object_mapping_is_locked), false)) AS node
+ FROM workflow.modeled_entity AS entity
+ LEFT JOIN workflow.mapping_object AS mapping ON mapping.model_id = entity.model_id
+  AND mapping.modeled_entity_type = entity.modeled_entity_type
+  AND coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id) = entity.modeled_entity_id
+  AND mapping.object_mapping_status = 'active'
+ WHERE entity.model_id = %s AND entity.modeled_entity_type = %s AND entity.status = 'active'
+ GROUP BY entity.modeled_entity_id, entity.dependency_order, entity.status
+ ORDER BY entity.modeled_entity_id
 """
 
-_MAPPING_TARGET_CONTEXT_SQL: LiteralString = """
-SELECT jsonb_build_object(
-           'object_id', target_object.object_id,
-           'source_tenant_id', target_object.source_tenant_id,
-           'tenant_id', target_tenant.tenant_id,
-           'tenant_code', target_tenant.tenant_code,
-           'tenant_catalog', target_tenant.tenant_catalog,
-           'tenant_is_active', target_tenant.is_active,
-           'system_id', target_system.system_id,
-           'system_code', target_system.system_code,
-           'system_is_active', target_system.is_active,
-           'connection_id', target_connection.connection_id,
-           'connection_code', target_connection.connection_code,
-           'connection_is_active', target_connection.is_active,
-           'is_global_data_store', target_connection.is_global_data_store,
-           'object_schema', target_object.object_schema,
-           'object_name', target_object.object_name,
-           'object_description', target_object.object_description,
-           'batch_attribute_name', target_object.batch_attribute_name,
-           'zone_code', lower(btrim(target_zone.zone_code)),
-           'scope_is_locked', binding.model_object_binding_is_locked,
-           'scope_is_active', binding.model_object_binding_status = 'active',
-           'is_locked', target_object.is_locked,
-           'is_active', target_object.is_active,
-           'attributes', attributes.items
-       ) AS target
-  FROM model.model AS target_model
-  JOIN workflow.model_object_binding AS binding
-    ON binding.model_id = target_model.model_id
-   AND binding.object_id = %s
-   AND binding.model_object_binding_status = 'active'
-  JOIN core.object AS target_object
-    ON target_object.object_id = binding.object_id
-  JOIN core.connection AS target_connection
-    ON target_connection.connection_id = target_object.connection_id
-  JOIN core.tenant AS target_tenant
-    ON target_tenant.tenant_id = target_connection.tenant_id
-  JOIN core.system AS target_system
-    ON target_system.system_id = target_connection.system_id
-  JOIN reference.zone AS target_zone
-    ON target_zone.zone_id = target_object.zone_id
- CROSS JOIN LATERAL (
-       SELECT coalesce(
-                  jsonb_agg(
-                      jsonb_build_object(
-                          'attribute_id', attribute.attribute_id,
-                          'attribute_name', attribute.attribute_name,
-                          'attribute_data_type', attribute.attribute_data_type,
-                          'attribute_inferred_data_type', attribute.attribute_inferred_data_type,
-                          'attribute_nullability', attribute.attribute_nullability,
-                          'attribute_ordinal_position', attribute.attribute_ordinal_position,
-                          'attribute_description', attribute.attribute_description,
-                          'is_active', attribute.is_active
-                      ) ORDER BY attribute.attribute_ordinal_position
-                  ),
-                  '[]'::JSONB
-              ) AS items
-         FROM core.attribute AS attribute
-        WHERE attribute.object_id = target_object.object_id
-  ) AS attributes
- WHERE target_model.tenant_id = %s
-   AND target_model.model_id = %s
-   AND target_model.model_revision = %s
-   AND target_object.source_tenant_id = target_model.tenant_id
-   AND target_model.is_active
-"""
-
-_MAPPING_BINDING_CONTEXT_SQL: LiteralString = """
-WITH selected_binding AS MATERIALIZED (
-    SELECT binding.*
-      FROM workflow.model_object_binding AS binding
-     WHERE binding.model_id = %s
-       AND binding.object_id = %s
-       AND binding.modeled_entity_type = %s
-       AND binding.model_object_binding_status = 'active'
+_MAPPING_ENTITY_CONTEXT_SQL: LiteralString = """
+WITH selected_entity AS MATERIALIZED (
+ SELECT * FROM workflow.modeled_entity WHERE model_id = %s AND modeled_entity_id = %s
+  AND modeled_entity_type = %s AND status = 'active'
 ), selected_mapping AS MATERIALIZED (
-    SELECT mapping.*
-      FROM selected_binding AS binding
-      LEFT JOIN workflow.mapping_object AS mapping
-        ON mapping.model_object_binding_id = binding.model_object_binding_id
-       AND mapping.source_system_id = %s
-       AND mapping.object_mapping_status IN ('active', 'inactive', 'deprecated')
-), modeled_attribute AS MATERIALIZED (
-    SELECT attribute.logical_attribute_id AS modeled_attribute_id,
-           attribute.logical_attribute_name AS attribute_name,
-           attribute.logical_attribute_definition AS attribute_definition,
-           attribute.logical_attribute_data_type AS attribute_data_type,
-           attribute.logical_attribute_is_nullable AS is_nullable,
-           attribute.logical_attribute_ordinal_position AS ordinal_position,
-           attribute.logical_attribute_is_audit_column AS is_audit_column,
-           attribute.logical_attribute_status AS status,
-           attribute.logical_attribute_is_locked AS is_locked,
-           target.model_attribute_binding_id,
-           target.attribute_id AS target_attribute_id
-      FROM selected_binding AS binding
-      JOIN workflow.logical_attribute AS attribute
-        ON binding.modeled_entity_type = 'logical_entity'
-       AND attribute.model_id = binding.model_id
-       AND attribute.logical_entity_id = binding.logical_entity_id
-      JOIN workflow.model_attribute_binding AS target
-        ON target.model_object_binding_id = binding.model_object_binding_id
-       AND target.logical_attribute_id = attribute.logical_attribute_id
-       AND target.model_attribute_binding_status = 'active'
-     UNION ALL
-    SELECT attribute.dimensional_attribute_id,
-           attribute.dimensional_attribute_name,
-           attribute.dimensional_attribute_definition,
-           attribute.dimensional_attribute_data_type,
-           attribute.dimensional_attribute_is_nullable,
-           attribute.dimensional_attribute_ordinal_position,
-           attribute.dimensional_attribute_is_audit_column,
-           attribute.dimensional_attribute_status,
-           attribute.dimensional_attribute_is_locked,
-           target.model_attribute_binding_id,
-           target.attribute_id
-      FROM selected_binding AS binding
-      JOIN workflow.dimensional_attribute AS attribute
-        ON binding.modeled_entity_type = 'dimensional_entity'
-       AND attribute.model_id = binding.model_id
-       AND attribute.dimensional_entity_id = binding.dimensional_entity_id
-      JOIN workflow.model_attribute_binding AS target
-        ON target.model_object_binding_id = binding.model_object_binding_id
-       AND target.dimensional_attribute_id = attribute.dimensional_attribute_id
-       AND target.model_attribute_binding_status = 'active'
+ SELECT mapping.* FROM selected_entity AS entity
+ JOIN workflow.mapping_object AS mapping ON mapping.model_id = entity.model_id
+  AND mapping.modeled_entity_type = entity.modeled_entity_type
+  AND coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id) = entity.modeled_entity_id
+  AND mapping.source_system_id = %s
+), attributes AS MATERIALIZED (
+ SELECT attribute.* FROM selected_entity AS entity
+ JOIN workflow.modeled_attribute AS attribute ON attribute.model_id = entity.model_id
+  AND attribute.modeled_entity_type = entity.modeled_entity_type
+  AND attribute.modeled_entity_id = entity.modeled_entity_id
+ WHERE attribute.status = 'active'
 )
-SELECT jsonb_build_object(
-           'model_object_binding_id', binding.model_object_binding_id,
-           'mapping_object_id', mapping.mapping_object_id,
-           'modeled_entity', jsonb_build_object(
-               'entity_id', CASE binding.modeled_entity_type
-                   WHEN 'logical_entity' THEN logical_entity.logical_entity_id
-                   ELSE dimensional_entity.dimensional_entity_id
-               END,
-               'entity_name', CASE binding.modeled_entity_type
-                   WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-                   ELSE dimensional_entity.dimensional_entity_name
-               END,
-               'entity_definition', CASE binding.modeled_entity_type
-                   WHEN 'logical_entity' THEN logical_entity.logical_entity_definition
-                   ELSE dimensional_entity.dimensional_entity_definition
-               END,
-               'entity_kind', CASE binding.modeled_entity_type
-                   WHEN 'logical_entity' THEN logical_entity.logical_entity_type
-                   ELSE dimensional_entity.dimensional_entity_type
-               END,
-               'grain', CASE binding.modeled_entity_type
-                   WHEN 'logical_entity' THEN logical_entity.logical_entity_grain
-                   ELSE dimensional_entity.dimensional_entity_grain_definition
-               END,
-               'dependency_order', CASE binding.modeled_entity_type
-                   WHEN 'logical_entity' THEN logical_entity.logical_entity_dependency_order
-                   ELSE dimensional_entity.dimensional_entity_dependency_order
-               END,
-               'status', CASE binding.modeled_entity_type
-                   WHEN 'logical_entity' THEN logical_entity.logical_entity_status
-                   ELSE dimensional_entity.dimensional_entity_status
-               END,
-               'is_locked', CASE binding.modeled_entity_type
-                   WHEN 'logical_entity' THEN logical_entity.logical_entity_is_locked
-                   ELSE dimensional_entity.dimensional_entity_is_locked
-               END,
-               'attributes', modeled_attributes.items
-           ),
-           'object_dependency_order', coalesce(
-               mapping.object_dependency_order,
-               CASE binding.modeled_entity_type
-                   WHEN 'logical_entity' THEN logical_entity.logical_entity_dependency_order
-                   ELSE dimensional_entity.dimensional_entity_dependency_order
-               END
-           ),
-           'transformation_document', mapping.mapping_transformation_document,
-           'status', coalesce(mapping.object_mapping_status, 'active'),
-           'is_locked', coalesce(mapping.object_mapping_is_locked, false),
-           'agent_run_id', mapping.agent_run_id,
-           'workflow_run_id', mapping.workflow_run_id,
-           'output_template_id', mapping.output_template_id,
-           'attribute_mappings', mapping_attributes.items
-       ) AS header
-  FROM selected_binding AS binding
-  LEFT JOIN selected_mapping AS mapping ON true
-  LEFT JOIN workflow.logical_entity AS logical_entity
-    ON binding.modeled_entity_type = 'logical_entity'
-   AND logical_entity.model_id = binding.model_id
-   AND logical_entity.logical_entity_id = binding.logical_entity_id
-  LEFT JOIN workflow.dimensional_entity AS dimensional_entity
-    ON binding.modeled_entity_type = 'dimensional_entity'
-   AND dimensional_entity.model_id = binding.model_id
-   AND dimensional_entity.dimensional_entity_id = binding.dimensional_entity_id
+SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
+ 'mapping_object_id', mapping.mapping_object_id, 'modeled_entity', jsonb_build_object(
+ 'entity_type', entity.modeled_entity_type, 'entity_id', entity.modeled_entity_id,
+ 'entity_schema_name', entity.modeled_entity_schema_name,
+ 'entity_name', entity.modeled_entity_name, 'entity_definition', entity.definition,
+ 'entity_kind', entity.classification, 'grain', entity.grain, 'dependency_order',
+     entity.dependency_order,
+ 'status', entity.status, 'is_locked', entity.is_locked, 'attributes', modeled_attributes.items),
+ 'object_dependency_order', coalesce(mapping.object_dependency_order, entity.dependency_order),
+ 'transformation_document', mapping.mapping_transformation_document,
+ 'status', coalesce(mapping.object_mapping_status, 'active'),
+ 'is_locked', entity.is_locked OR coalesce(mapping.object_mapping_is_locked, false),
+ 'agent_run_id', mapping.agent_run_id, 'workflow_run_id', mapping.workflow_run_id,
+ 'output_template_id', mapping.output_template_id, 'attribute_mappings', mapping_attributes.items)
+     AS header
+ FROM selected_entity AS entity LEFT JOIN selected_mapping AS mapping ON true
+ CROSS JOIN LATERAL (SELECT coalesce(jsonb_agg(jsonb_build_object(
+ 'attribute_id', item.modeled_attribute_id, 'attribute_name', item.attribute_name,
+ 'attribute_definition', item.definition, 'attribute_data_type', item.data_type,
+ 'is_nullable', item.is_nullable, 'ordinal_position', item.ordinal_position,
+ 'is_audit_column', item.is_audit_column, 'status', item.status, 'is_locked', item.is_locked)
+     ORDER BY item.ordinal_position, item.modeled_attribute_id), '[]'::JSONB) AS items FROM
+     attributes AS item) AS modeled_attributes
  CROSS JOIN LATERAL (
-       SELECT coalesce(
-                  jsonb_agg(
-                      jsonb_build_object(
-                          'attribute_id', item.modeled_attribute_id,
-                          'attribute_name', item.attribute_name,
-                          'attribute_definition', item.attribute_definition,
-                          'attribute_data_type', item.attribute_data_type,
-                          'is_nullable', item.is_nullable,
-                          'ordinal_position', item.ordinal_position,
-                          'is_audit_column', item.is_audit_column,
-                          'status', item.status,
-                          'is_locked', item.is_locked
-                      ) ORDER BY item.ordinal_position
-                  ),
-                  '[]'::JSONB
-              ) AS items
-         FROM modeled_attribute AS item
-  ) AS modeled_attributes
- CROSS JOIN LATERAL (
-       SELECT coalesce(
-                  jsonb_agg(
-                      jsonb_build_object(
-                          'mapping_attribute_id', child.mapping_attribute_id,
-                          'modeled_attribute_id', item.modeled_attribute_id,
-                          'target_attribute_id', item.target_attribute_id,
-                          'transformation_document',
-                              child.attribute_mapping_transformation_document,
-                          'status', coalesce(child.attribute_mapping_status, 'active'),
-                          'is_locked', coalesce(child.attribute_mapping_is_locked, false),
-                          'agent_run_id', child.agent_run_id,
-                          'workflow_run_id', child.workflow_run_id,
-                          'output_template_id', child.output_template_id
-                      ) ORDER BY item.ordinal_position
-                  ),
-                  '[]'::JSONB
-              ) AS items
-         FROM modeled_attribute AS item
-         LEFT JOIN workflow.mapping_attribute AS child
-           ON child.mapping_object_id = mapping.mapping_object_id
-          AND child.model_attribute_binding_id = item.model_attribute_binding_id
-  ) AS mapping_attributes
+ SELECT coalesce(jsonb_agg(jsonb_build_object(
+  'mapping_attribute_id', child.mapping_attribute_id, 'modeled_attribute_id',
+      item.modeled_attribute_id,
+  'transformation_document', child.attribute_mapping_transformation_document,
+  'status', coalesce(child.attribute_mapping_status, 'active'),
+  'is_locked', item.is_locked OR coalesce(child.attribute_mapping_is_locked, false),
+  'agent_run_id', child.agent_run_id, 'workflow_run_id', child.workflow_run_id,
+      'output_template_id', child.output_template_id
+ ) ORDER BY item.ordinal_position, item.modeled_attribute_id), '[]'::JSONB) AS items
+ FROM attributes AS item
+ LEFT JOIN workflow.mapping_attribute AS child ON child.mapping_object_id =
+     mapping.mapping_object_id
+  AND coalesce(child.logical_attribute_id, child.dimensional_attribute_id) =
+      item.modeled_attribute_id
+ ) AS mapping_attributes
 """
 
 # Input Scope contains Source/Bronze. Silver sources instead require an applied
-# Logical binding and Mapping; Source Tenant owns either independently of placement.
-_MAPPING_SOURCE_CONTEXT_SQL: LiteralString = """
+# Logical Entity and Mapping; Model ownership remains independent of physical placement.
+_MAPPING_PHYSICAL_SOURCE_CONTEXT_SQL: LiteralString = """
 SELECT jsonb_build_object(
            'source_mapping_id', source.source_mapping_id,
            'modeled_entity_id', source.modeled_entity_id,
@@ -437,7 +237,7 @@ SELECT jsonb_build_object(
                'attributes', attributes.items
            )
        ) AS source
-  FROM workflow.list_mapping_source_objects(%s, %s, %s, %s) AS source
+  FROM selected_sources AS source
   JOIN core.object AS source_object
     ON source_object.object_id = source.source_object_id
   JOIN core.connection AS source_connection
@@ -469,6 +269,51 @@ SELECT jsonb_build_object(
   ) AS attributes
  ORDER BY source.mapping_order NULLS LAST, source.source_mapping_id
 """
+
+_MAPPING_MODELED_SOURCE_CONTEXT_SQL: LiteralString = """
+SELECT jsonb_build_object(
+ 'source_mapping_id', source.source_mapping_id, 'modeled_entity_id', source.modeled_entity_id,
+ 'role', source.role, 'rationale', source.rationale, 'mapping_order', source.mapping_order,
+ 'is_locked', source.is_locked, 'object', jsonb_build_object(
+ 'entity_type', entity.modeled_entity_type, 'entity_id', entity.modeled_entity_id,
+ 'entity_schema_name', entity.modeled_entity_schema_name,
+ 'entity_name', entity.modeled_entity_name, 'entity_definition', entity.definition,
+ 'entity_kind', entity.classification, 'grain', entity.grain, 'dependency_order',
+     entity.dependency_order,
+ 'status', entity.status, 'is_locked', entity.is_locked, 'attributes', attributes.items)) AS source
+ FROM selected_sources AS source
+ JOIN workflow.modeled_entity AS entity ON entity.modeled_entity_type = CASE
+  WHEN source.source_dimensional_entity_id IS NOT NULL THEN 'dimensional_entity'
+  ELSE 'logical_entity' END
+  AND entity.modeled_entity_id = coalesce(source.source_logical_entity_id,
+      source.source_dimensional_entity_id)
+ CROSS JOIN LATERAL (
+ SELECT coalesce(jsonb_agg(jsonb_build_object(
+ 'attribute_id', item.modeled_attribute_id, 'attribute_name', item.attribute_name,
+ 'attribute_definition', item.definition, 'attribute_data_type', item.data_type,
+ 'is_nullable', item.is_nullable, 'ordinal_position', item.ordinal_position,
+ 'is_audit_column', item.is_audit_column, 'status', item.status, 'is_locked', item.is_locked
+ ) ORDER BY item.ordinal_position, item.modeled_attribute_id), '[]'::JSONB) AS items
+ FROM workflow.modeled_attribute AS item WHERE item.model_id = entity.model_id
+  AND item.modeled_entity_type = entity.modeled_entity_type AND item.modeled_entity_id =
+      entity.modeled_entity_id
+  AND item.status = 'active'
+ ) AS attributes
+ ORDER BY source.mapping_order NULLS LAST, entity.modeled_entity_id
+"""
+
+_MAPPING_SOURCE_CONTEXT_SQL: LiteralString = (
+    "WITH selected_sources AS MATERIALIZED ("
+    "SELECT * FROM workflow.list_mapping_source_objects(%s, %s, %s, %s)) "
+    "SELECT source FROM (("
+    + _MAPPING_PHYSICAL_SOURCE_CONTEXT_SQL
+    + ") UNION ALL ("
+    + _MAPPING_MODELED_SOURCE_CONTEXT_SQL
+    + ")) AS sources "
+    "ORDER BY (source ->> 'mapping_order')::INTEGER NULLS LAST, "
+    "source -> 'object' ->> 'entity_schema_name', source -> 'object' ->> 'entity_name', "
+    "(source ->> 'source_mapping_id')::BIGINT"
+)
 
 _MAPPING_OUTPUT_TEMPLATE_CONTEXT_SQL: LiteralString = """
 SELECT jsonb_build_object(
@@ -590,12 +435,12 @@ class PostgresMappingRunPlanRepository:
                     MappingRunPlan.model_validate(
                         {
                             "agent_plan": common.model_copy(
-                                update={"selected_object_ids": (row["target_object_id"],)}
+                                update={"selected_entity_ids": (row["modeled_entity_id"],)}
                             ),
                             "selected_attribute_ids": row.get("selected_attribute_ids"),
                             "actor_principal_id": actor_principal_id,
                             "pair": {
-                                "target_object_id": row.get("target_object_id"),
+                                "modeled_entity_id": row.get("modeled_entity_id"),
                                 "source_system_id": row.get("source_system_id"),
                             },
                             "operation": row.get("mapping_operation"),
@@ -633,7 +478,7 @@ class PostgresMappingRunContextRepository:
                 plan.model_id,
                 plan.actor_principal_id,
                 plan.correlation_id,
-                plan.pair.target_object_id,
+                plan.pair.modeled_entity_id,
                 plan.pair.source_system_id,
                 plan.modeled_entity_type,
                 plan.route,
@@ -642,38 +487,25 @@ class PostgresMappingRunContextRepository:
         )
         if anchor is None:
             raise MappingRunContextUnavailableError()
-        target = await transaction.fetch_one(
-            _MAPPING_TARGET_CONTEXT_SQL,
-            (
-                plan.pair.target_object_id,
-                tenant_id,
-                plan.model_id,
-                plan.model_revision,
-            ),
-        )
         header = await transaction.fetch_one(
-            _MAPPING_BINDING_CONTEXT_SQL,
+            _MAPPING_ENTITY_CONTEXT_SQL,
             (
                 plan.model_id,
-                plan.pair.target_object_id,
+                plan.pair.modeled_entity_id,
                 plan.modeled_entity_type,
                 plan.pair.source_system_id,
             ),
         )
-        if target is None or header is None:
+        if header is None:
             raise MappingRunContextUnavailableError()
         source_rows = await transaction.fetch_all(
             _MAPPING_SOURCE_CONTEXT_SQL,
             (
                 plan.model_id,
-                plan.pair.target_object_id,
+                plan.pair.modeled_entity_id,
                 plan.modeled_entity_type,
                 plan.pair.source_system_id,
             ),
-        )
-        dependency_rows = await transaction.fetch_all(
-            _MAPPING_DEPENDENCY_NODES_SQL,
-            (plan.model_id, plan.modeled_entity_type),
         )
         target_node_rows = await transaction.fetch_all(
             _MAPPING_TARGET_NODES_SQL,
@@ -718,12 +550,6 @@ class PostgresMappingRunContextRepository:
                     "route": plan.route,
                     "output_template_selections": plan.output_template_selections,
                     "source_system": anchor.get("source_system"),
-                    "dependency": anchor.get("dependency"),
-                    "dependency_graph": {
-                        "nodes": [row.get("node") for row in dependency_rows],
-                        "edges": [],
-                        "malformed_reference_count": 0,
-                    },
                     "target_dependency_graph": {
                         "nodes": [row.get("node") for row in target_node_rows],
                         "edges": [],
@@ -734,15 +560,13 @@ class PostgresMappingRunContextRepository:
                         "ids": sorted(referenced_template_ids),
                         "definitions": [row.get("output_template") for row in template_rows],
                     },
-                    "target": target.get("target"),
+                    "target": parsed_header.modeled_entity,
                     "sources": [row.get("source") for row in source_rows],
                     "headers": [parsed_header],
                     "authoring": anchor.get("authoring"),
                 },
                 strict=False,
             )
-            if context.target.source_tenant_id != tenant_id:
-                raise MappingRunContextUnavailableError()
             return context
         except MappingRunContextUnavailableError:
             raise

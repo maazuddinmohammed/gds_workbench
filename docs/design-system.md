@@ -277,8 +277,16 @@ Before completing a frontend change:
 
 - Models offers Create Model only to Super Admins and Tenant Admins; the backend
   enforces the same restriction. Require a name and an owned Tenant Lock to save.
-  Keep description, Silver/Gold settings, and registered agent defaults optional.
+  Keep description, Silver/Gold policy settings, and registered agent defaults optional.
+  Edit Logical and Dimensional schema names with optional descriptions in Model settings;
+  each layer requires configured schemas before generation.
   Preserve form values on failure and open the new Model after creation.
+- Model Settings has Definition and Prompts pages. Definition reuses the creation
+  form for schema lists, naming rules, column policies and agent defaults.
+  Saving requires Architect or higher, an owned Tenant Lock and the loaded Model
+  revision. Archived Models are read-only. Preserve unsaved fields on errors and
+  stale revisions; require explicit discard before refreshing a dirty form.
+  Preserve unchanged agent defaults without requiring a capabilities lookup.
 - Enrichment opens on current physical metadata. Keep Workflow history separate
   and collapsed; show run state, date, and scope count, with consumption on demand.
 - Scoped Object filters appear in this order: Source Tenant code, System code,
@@ -303,29 +311,32 @@ Before completing a frontend change:
 - Logical Attributes live inside Entity details, including review actions and
   their source mapping links. Logical and Dimensional provenance use the same
   Source/Rationale/Status table and structured detail renderer as Mapping.
-- Mapping keeps Dependencies and Object mappings at the Model level. Show details
-  on an Object opens its source/target context and its Attribute mappings table.
+- Mapping opens Entity mappings directly at the Model level. An Entity's Show
+  details action opens its source/target context and its Attribute mappings table.
   Attribute filters, pagination, refresh, and review actions stay within that
-  Object; Attribute details return to their parent Object. Keep the Object
+  Entity; Attribute details return to their parent Entity. Keep the Entity
   transformation available in a disclosure below the Attribute table.
 - Mapping separates Logical and Dimensional with prominent layer links above its
-  command bar. Keep the layer in the URL, server-side ledger filters, dependency
-  forms, target-binding links and return navigation. Generate inherits that layer.
+  command bar. Keep the layer in the URL, server-side ledger filters,
+  schema-qualified Entity labels and return navigation. Generate inherits that layer.
+  Label retained Mapping Object order as Entity order. There is no System-order
+  editor or Dependencies tab; legacy view query parameters open the Entity ledger.
   Show execution mode, Model and reasoning effort first, followed by the same
-  All unlocked Objects / Selected Objects controls used by Attribute Enrichment.
-  Object names open Attribute selection with Back to Objects, Select all unlocked
+  All unlocked Entities / Selected Entities controls.
+  Entity names open Attribute selection with Back to Entities, Select all unlocked
   Attributes and Clear Attribute selection. Preserve choices across navigation and
   scope-mode changes; search narrows the list without changing selected targets.
 - Conceptual detail pages use the workspace width, with status beside the title.
   Support evidence uses a Source/Rationale/Confidence/Status table; source codes,
   assertion text, and detailed reasoning remain available through Show details.
-- Target Binding uses Logical/Dimensional segmented links and a rounded table of
-  Entities, registered schema/Object, and lock state. Unbound targets show a dash.
-  Search opens a schema/Object picker; Show details opens Attribute assignments.
-  Generate previews unique, trimmed, case-insensitive name matches within a
-  registered schema. Attribute Generate applies the same name-matching rule.
-  Keep locks in bulk controls above each table. Changed assignments need a fresh
-  preview before Apply; preserve locked and existing bindings.
+- Analysis shows inferred and observed cardinality separately. Unknown inference
+  and unavailable measurements remain explicit. A difference is a nonblocking
+  review warning, not proof that either the business rule or the measured data is wrong.
+- Logical and Dimensional Export prepares a metadata workbook using each applied
+  Entity's saved schema. Show selected Entity count, GDS placement readiness, revision
+  conflicts, and download status. Keep registration as an optional Metadata handoff;
+  Mapping and Code navigation do not require it. Dimensional generation selects
+  applied Logical Entities with schema-qualified labels.
 - Size tables for their actual columns. Keep selection controls compact and row
   actions visible at desktop widths; contain horizontal scrolling inside tables
   on narrow screens. Preserve keyboard focus after returning or saving.

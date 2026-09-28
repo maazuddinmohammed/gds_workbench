@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-from psycopg.errors import InsufficientPrivilege, RaiseException
+from psycopg.errors import CheckViolation, InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
@@ -78,6 +78,7 @@ SAFE_CONTEXT_COLUMNS = {
     "requested_batch_id",
     "analysis_result_id",
     "relationship_kind",
+    "inferred_cardinality",
     "relationship_confidence",
     "relationship_basis",
     "analysis_result_status",
@@ -212,11 +213,12 @@ def _seed_analysis_validation(
                         to_object_id,
                         to_attribute_id,
                         relationship_kind,
+                        inferred_cardinality,
                         relationship_confidence,
                         relationship_basis,
                         analysis_result_status,
                         analysis_result_is_locked
-                    ) VALUES (%s, %s, %s, %s, %s, %s, 'medium', %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, 'many_to_one', 'medium', %s, %s, %s)
                     RETURNING analysis_result_id
                     """,
                     (
@@ -290,7 +292,8 @@ def _validation_result(
         "validation_target_distinct_count": target_distinct_count,
         "validation_source_missing_target_count": source_missing_target_count,
         "validation_unused_target_count": (
-            target_distinct_count - (source_distinct_count - source_missing_target_count)
+            target_distinct_count
+            - (source_distinct_count - source_missing_target_count)
         ),
         "validation_duplicate_target_key_count": duplicate_target_key_count,
     }
@@ -309,7 +312,10 @@ def _source_context_digests(
             GET_ANALYSIS_VALIDATION_EXECUTION_CONTEXT_SQL,
             _analysis_execution_parameters(seed.execution),
         ).fetchall()
-    return {int(row["analysis_result_id"]): str(row["source_context_digest"]) for row in rows}
+    return {
+        int(row["analysis_result_id"]): str(row["source_context_digest"])
+        for row in rows
+    }
 
 
 def _persist_validation_parameters(
@@ -325,11 +331,40 @@ def _persist_validation_parameters(
     return (
         context.entra_tenant_id if entra_tenant_id is None else entra_tenant_id,
         context.entra_object_id if entra_object_id is None else entra_object_id,
-        (seed.execution.workflow_run_id if workflow_run_id is None else workflow_run_id),
-        (context.model_revision if expected_model_revision is None else expected_model_revision),
+        (
+            seed.execution.workflow_run_id
+            if workflow_run_id is None
+            else workflow_run_id
+        ),
+        (
+            context.model_revision
+            if expected_model_revision is None
+            else expected_model_revision
+        ),
         seed.execution.environment_code,
         Jsonb(results),
     )
+
+
+def test_analysis_inferred_cardinality_database_constraint(
+    postgres_database: DisposablePostgres,
+) -> None:
+    seed = _seed_analysis_validation(postgres_database)
+    with postgres_database.connect_owner() as connection:
+        with pytest.raises(CheckViolation), connection.transaction():
+            connection.execute(
+                "UPDATE workflow.analysis_result SET inferred_cardinality = 'invalid' "
+                "WHERE analysis_result_id = %s",
+                (seed.active_result_id,),
+            )
+        row = require_row(
+            connection.execute(
+                "UPDATE workflow.analysis_result SET inferred_cardinality = DEFAULT "
+                "WHERE analysis_result_id = %s RETURNING inferred_cardinality",
+                (seed.active_result_id,),
+            ).fetchone()
+        )
+        assert row["inferred_cardinality"] == "unknown"
 
 
 def test_running_analysis_validation_context_is_safe_exact_and_lock_agnostic(
@@ -390,6 +425,7 @@ def test_running_analysis_validation_context_is_safe_exact_and_lock_agnostic(
             "requested_batch_id": None,
             "analysis_result_id": result_id,
             "relationship_kind": kind,
+            "inferred_cardinality": "many_to_one",
             "relationship_confidence": "medium",
             "relationship_basis": (
                 "Analysis validation relationship "
@@ -412,8 +448,12 @@ def test_running_analysis_validation_context_is_safe_exact_and_lock_agnostic(
     assert _digest(connection_row["databricks_host_name"]) == _digest(
         seed.execution.server_hostname
     )
-    assert _digest(connection_row["databricks_http_path"]) == _digest(seed.execution.http_path)
-    assert _digest(connection_row["databricks_token"]) == _digest(seed.execution.access_token)
+    assert _digest(connection_row["databricks_http_path"]) == _digest(
+        seed.execution.http_path
+    )
+    assert _digest(connection_row["databricks_token"]) == _digest(
+        seed.execution.access_token
+    )
 
 
 def test_analysis_validation_context_allows_zero_eligible_relationships(
@@ -766,7 +806,9 @@ def test_analysis_validation_partial_connection_values_return_no_secrets(
         "gds_connection_id": None,
         "environment_code": seed.execution.environment_code,
         "failure_code": "connection_values_missing",
-        "failure_message": ("Analysis validation GDS connection values are incomplete."),
+        "failure_message": (
+            "Analysis validation GDS connection values are incomplete."
+        ),
         "databricks_host_name": None,
         "databricks_http_path": None,
         "databricks_token": None,
@@ -816,6 +858,7 @@ def test_analysis_validation_results_replace_only_validation_fields_and_replay(
                    validation_workflow_run_id,
                    validation_source_context_digest,
                    relationship_kind,
+                   inferred_cardinality,
                    relationship_confidence,
                    relationship_basis,
                    validation_policy_version,
@@ -910,7 +953,9 @@ def test_analysis_validation_results_replace_only_validation_fields_and_replay(
         "changed_result_count": 0,
     }
     assert completed["workflow_run_state"] == "completed"
-    assert revision_kinds == [{"change_kind": "web_analysis_validation_results_persist"}]
+    assert revision_kinds == [
+        {"change_kind": "web_analysis_validation_results_persist"}
+    ]
     assert after_replay == [
         {
             "analysis_result_id": row["analysis_result_id"],
@@ -933,6 +978,7 @@ def test_analysis_validation_results_replace_only_validation_fields_and_replay(
 
     active = stored_by_id[seed.active_result_id]
     assert active["relationship_kind"] == "reference"
+    assert active["inferred_cardinality"] == "many_to_one"
     assert active["relationship_confidence"] == "medium"
     assert active["relationship_basis"] == "Analysis validation relationship 1."
     assert active["analysis_result_status"] == "active"
@@ -940,6 +986,7 @@ def test_analysis_validation_results_replace_only_validation_fields_and_replay(
 
     locked = stored_by_id[seed.locked_result_id]
     assert locked["relationship_kind"] == "lookup"
+    assert locked["inferred_cardinality"] == "many_to_one"
     assert locked["relationship_basis"] == "Analysis validation relationship 2."
     assert locked["analysis_result_status"] == "active"
     assert locked["analysis_result_is_locked"] is True
@@ -1365,11 +1412,15 @@ def test_analysis_validation_payload_is_exact_strict_and_atomic(
     target_zero_distinct = {
         **valid[0],
         "validation_target_distinct_count": 0,
-        "validation_duplicate_target_key_count": (valid[0]["validation_target_non_null_count"]),
+        "validation_duplicate_target_key_count": (
+            valid[0]["validation_target_non_null_count"]
+        ),
     }
     source_distinct_too_large = {
         **valid[0],
-        "validation_source_distinct_count": (valid[0]["validation_source_non_null_count"] + 1),
+        "validation_source_distinct_count": (
+            valid[0]["validation_source_non_null_count"] + 1
+        ),
     }
     missing_too_large = {
         **valid[0],
@@ -1379,7 +1430,9 @@ def test_analysis_validation_payload_is_exact_strict_and_atomic(
     }
     unused_too_large = {
         **valid[0],
-        "validation_unused_target_count": (valid[0]["validation_target_distinct_count"] + 1),
+        "validation_unused_target_count": (
+            valid[0]["validation_target_distinct_count"] + 1
+        ),
     }
     duplicate_mismatch = {
         **valid[0],

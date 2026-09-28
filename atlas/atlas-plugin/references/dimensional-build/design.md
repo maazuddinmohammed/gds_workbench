@@ -46,7 +46,7 @@ The schema requires aggregation fields for measures and a basis for semi/non-add
 
 ## Lineage, standalone structures and Submodels
 
-- Trace derived Entity/Attribute sources to eligible physical Silver Objects/Attributes under the record contract. Logical entity names and Mapping IDs are not supported source-type substitutes. Every Attribute's physical source needs its corresponding Object source on the Entity; source ordering is not executable transformation logic.
+- Trace derived Entity/Attribute sources to applied Logical Entities/Attributes using schema-qualified keys. Every Attribute's Logical source needs its corresponding Logical Entity source on the Dimensional Entity; source ordering is not executable transformation logic.
 - Use multiple real contributors where needed, with concise contribution roles/rationale. Do not duplicate the same source key merely to label a second role. Keep reconciliation or generation decisions available for later Mapping.
 - Calendar, constant/reference sets and other justified generated structures can have empty sources. Define calendar grain/range/fiscal rules or the constant values/meanings and change ownership. Use an applicable [Assertion](../model/assertions.md) when useful, never just to satisfy an imagined support requirement. Do not fabricate an Object or System.
 - A source-less design still needs a supported population/provenance path before executable Mapping/Code. Current Mapping requires a real source-System context; do not hide this gap with a fake `SourceSystemID` or promise unsupported execution.

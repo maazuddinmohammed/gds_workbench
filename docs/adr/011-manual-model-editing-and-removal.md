@@ -2,6 +2,9 @@
 
 Status: accepted
 
+Historical contract: Binding dependencies and historical physical selections superseded by ADR 012; governance decisions retained.
+See [Entity-owned Mapping and Code](012-entity-owned-mapping-and-code.md).
+
 ## Decision
 
 The web UI reuses governed Model Change Sets for human edits and lifecycle changes.

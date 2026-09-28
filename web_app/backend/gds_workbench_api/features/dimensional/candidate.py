@@ -13,15 +13,15 @@ from gds_etl_workbench.application.change_sets.model_validation import (
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     AttributeAssertionSourceRecord,
-    AttributePhysicalSourceRecord,
+    AttributeLogicalSourceRecord,
     DimensionalAssertionSourceRecord,
     DimensionalAttributeRecord,
     DimensionalEntityRecord,
-    DimensionalObjectSourceRecord,
+    DimensionalLogicalEntitySourceRecord,
     DimensionalRelationshipRecord,
     DimensionalSubmodelRecord,
-    PhysicalAttributeKey,
-    PhysicalObjectKey,
+    LogicalAttributeKey,
+    LogicalEntityKey,
     SubmodelMembershipRecord,
     normalize_model_key_value,
 )
@@ -36,8 +36,8 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     parse_pydantic_candidate,
 )
 
-type _EntitySource = DimensionalObjectSourceRecord | DimensionalAssertionSourceRecord
-type _AttributeSource = AttributePhysicalSourceRecord | AttributeAssertionSourceRecord
+type _EntitySource = DimensionalLogicalEntitySourceRecord | DimensionalAssertionSourceRecord
+type _AttributeSource = AttributeLogicalSourceRecord | AttributeAssertionSourceRecord
 
 
 class _DimensionalCandidate(BaseModel):
@@ -77,24 +77,24 @@ class DimensionalCandidateValidator:
     def __init__(
         self,
         *,
-        selected_object_keys: tuple[PhysicalObjectKey, ...],
-        selected_attribute_keys: tuple[PhysicalAttributeKey, ...],
+        selected_entity_keys: tuple[LogicalEntityKey, ...],
+        selected_attribute_keys: tuple[LogicalAttributeKey, ...],
         assertion_record_keys: tuple[str, ...],
         applied: DimensionalSection | None,
     ) -> None:
-        if not selected_object_keys or len(selected_object_keys) > 50_000:
+        if not selected_entity_keys or len(selected_entity_keys) > 50_000:
             raise ValueError("Dimensional Object selection must be bounded and nonempty")
         if len(selected_attribute_keys) > 50_000:
             raise ValueError("Dimensional Attribute selection must be bounded")
-        self._selected_object_keys = {_physical_object_key(item) for item in selected_object_keys}
+        self._selected_entity_keys = {_logical_entity_key(item) for item in selected_entity_keys}
         self._selected_attribute_keys = {
-            _physical_attribute_key(item) for item in selected_attribute_keys
+            _logical_attribute_key(item) for item in selected_attribute_keys
         }
         self._assertion_record_keys = {
             normalize_model_key_value(item) for item in assertion_record_keys
         }
         if (
-            len(self._selected_object_keys) != len(selected_object_keys)
+            len(self._selected_entity_keys) != len(selected_entity_keys)
             or len(self._selected_attribute_keys) != len(selected_attribute_keys)
             or len(self._assertion_record_keys) != len(assertion_record_keys)
         ):
@@ -207,13 +207,14 @@ class DimensionalCandidateValidator:
             for source_index, source in enumerate(entity.sources):
                 if source.is_locked:
                     _lock_forbidden(("entities", index, "sources", source_index), issues)
-                if isinstance(source, DimensionalObjectSourceRecord):
+                if isinstance(source, DimensionalLogicalEntitySourceRecord):
                     valid = (
                         unchanged_applied
-                        or _physical_object_key(source.source_object) in self._selected_object_keys
+                        or _logical_entity_key(source.source_logical_entity)
+                        in self._selected_entity_keys
                     )
                     code = "candidate.source_outside_selection"
-                    message = "Silver Object source must belong to this immutable run selection."
+                    message = "Logical Entity source must belong to this immutable run selection."
                 else:
                     valid = (
                         normalize_model_key_value(
@@ -257,14 +258,16 @@ class DimensionalCandidateValidator:
             for source_index, source in enumerate(attribute.sources):
                 if source.is_locked:
                     _lock_forbidden(("attributes", index, "sources", source_index), issues)
-                if isinstance(source, AttributePhysicalSourceRecord):
+                if isinstance(source, AttributeLogicalSourceRecord):
                     valid = (
                         unchanged_applied
-                        or _physical_attribute_key(source.source_attribute)
+                        or _logical_attribute_key(source.source_logical_attribute)
                         in self._selected_attribute_keys
                     )
                     code = "candidate.source_outside_selection"
-                    message = "Silver Attribute source must belong to this immutable run selection."
+                    message = (
+                        "Logical Attribute source must belong to this immutable run selection."
+                    )
                 else:
                     valid = (
                         normalize_model_key_value(
@@ -377,7 +380,10 @@ class DimensionalCandidateValidator:
                     )
                 )
         for index, attribute in enumerate(typed_attributes):
-            if normalize_model_key_value(attribute.dimensional_entity_name) not in entity_keys:
+            if (
+                normalize_model_key_value(attribute.dimensional_entity_schema_name),
+                normalize_model_key_value(attribute.dimensional_entity_name),
+            ) not in entity_keys:
                 issues.append(
                     AgentValidationIssue(
                         code="candidate.entity_missing",
@@ -388,10 +394,12 @@ class DimensionalCandidateValidator:
         for index, relationship in enumerate(typed_relationships):
             endpoints = (
                 (
+                    normalize_model_key_value(relationship.from_dimensional_entity_schema_name),
                     normalize_model_key_value(relationship.from_dimensional_entity_name),
                     normalize_model_key_value(relationship.from_dimensional_attribute_name),
                 ),
                 (
+                    normalize_model_key_value(relationship.to_dimensional_entity_schema_name),
                     normalize_model_key_value(relationship.to_dimensional_entity_name),
                     normalize_model_key_value(relationship.to_dimensional_attribute_name),
                 ),
@@ -588,12 +596,16 @@ def _submodel_key(record: DimensionalSubmodelRecord) -> str:
     return normalize_model_key_value(record.dimensional_submodel_name)
 
 
-def _entity_key(record: DimensionalEntityRecord) -> str:
-    return normalize_model_key_value(record.dimensional_entity_name)
-
-
-def _attribute_key(record: DimensionalAttributeRecord) -> tuple[str, str]:
+def _entity_key(record: DimensionalEntityRecord) -> tuple[str, str]:
     return (
+        normalize_model_key_value(record.dimensional_entity_schema_name),
+        normalize_model_key_value(record.dimensional_entity_name),
+    )
+
+
+def _attribute_key(record: DimensionalAttributeRecord) -> tuple[str, str, str]:
+    return (
+        normalize_model_key_value(record.dimensional_entity_schema_name),
         normalize_model_key_value(record.dimensional_entity_name),
         normalize_model_key_value(record.dimensional_attribute_name),
     )
@@ -601,14 +613,16 @@ def _attribute_key(record: DimensionalAttributeRecord) -> tuple[str, str]:
 
 def _relationship_key(
     record: DimensionalRelationshipRecord,
-) -> tuple[str, str, str, str, str, str | None]:
+) -> tuple[str, ...]:
     return (
+        normalize_model_key_value(record.from_dimensional_entity_schema_name),
         normalize_model_key_value(record.from_dimensional_entity_name),
         normalize_model_key_value(record.from_dimensional_attribute_name),
+        normalize_model_key_value(record.to_dimensional_entity_schema_name),
         normalize_model_key_value(record.to_dimensional_entity_name),
         normalize_model_key_value(record.to_dimensional_attribute_name),
         normalize_model_key_value(record.dimensional_relationship_kind),
-        normalize_model_key_value(record.dimensional_relationship_role_name),
+        normalize_model_key_value(record.dimensional_relationship_role_name or ""),
     )
 
 
@@ -617,8 +631,8 @@ def _membership_key(record: SubmodelMembershipRecord) -> tuple[str, ...]:
 
 
 def _entity_source_key(record: _EntitySource) -> tuple[str, ...]:
-    if isinstance(record, DimensionalObjectSourceRecord):
-        return ("object", *_physical_object_key(record.source_object))
+    if isinstance(record, DimensionalLogicalEntitySourceRecord):
+        return ("logical_entity", *_logical_entity_key(record.source_logical_entity))
     return (
         "assertion",
         normalize_model_key_value(record.assertion_record.modeling_assertion_record_key),
@@ -626,8 +640,8 @@ def _entity_source_key(record: _EntitySource) -> tuple[str, ...]:
 
 
 def _attribute_source_key(record: _AttributeSource) -> tuple[str, ...]:
-    if isinstance(record, AttributePhysicalSourceRecord):
-        return ("attribute", *_physical_attribute_key(record.source_attribute))
+    if isinstance(record, AttributeLogicalSourceRecord):
+        return ("logical_attribute", *_logical_attribute_key(record.source_logical_attribute))
     return (
         "assertion",
         normalize_model_key_value(record.assertion_record.modeling_assertion_record_key),
@@ -635,30 +649,22 @@ def _attribute_source_key(record: _AttributeSource) -> tuple[str, ...]:
 
 
 def _nested_source_key(record: object) -> tuple[str, ...]:
-    if isinstance(record, (DimensionalObjectSourceRecord, DimensionalAssertionSourceRecord)):
+    if isinstance(record, (DimensionalLogicalEntitySourceRecord, DimensionalAssertionSourceRecord)):
         return _entity_source_key(record)
-    if isinstance(record, (AttributePhysicalSourceRecord, AttributeAssertionSourceRecord)):
+    if isinstance(record, (AttributeLogicalSourceRecord, AttributeAssertionSourceRecord)):
         return _attribute_source_key(record)
     raise TypeError("Unsupported Dimensional nested source")
 
 
-def _physical_object_key(record: PhysicalObjectKey) -> tuple[str, str, str, str, str]:
-    return tuple(
-        normalize_model_key_value(getattr(record, field))
-        for field in (
-            "tenant_code",
-            "system_code",
-            "connection_code",
-            "object_schema",
-            "object_name",
-        )
+def _logical_entity_key(record: LogicalEntityKey) -> tuple[str, str]:
+    return (
+        normalize_model_key_value(record.logical_entity_schema_name),
+        normalize_model_key_value(record.logical_entity_name),
     )
 
 
-def _physical_attribute_key(
-    record: PhysicalAttributeKey,
-) -> tuple[str, str, str, str, str, str]:
-    return (*_physical_object_key(record), normalize_model_key_value(record.attribute_name))
+def _logical_attribute_key(record: LogicalAttributeKey) -> tuple[str, str, str]:
+    return (*_logical_entity_key(record), normalize_model_key_value(record.logical_attribute_name))
 
 
 __all__ = ["DimensionalCandidateValidator"]

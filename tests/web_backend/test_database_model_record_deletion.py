@@ -145,13 +145,25 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
             assert run is not None
             connection.execute(
                 """
+                WITH selected AS (
+                    INSERT INTO application.workflow_run_entity_selection (
+                        workflow_run_id, model_id, modeled_entity_type, modeled_entity_id,
+                        modeled_entity_schema_name, modeled_entity_name, selection_order
+                    ) SELECT %s, model_id, modeled_entity_type, modeled_entity_id,
+                             modeled_entity_schema_name, modeled_entity_name, 1
+                        FROM workflow.modeled_entity WHERE model_id = %s
+                          AND modeled_entity_type = 'logical_entity'
+                        ORDER BY modeled_entity_id LIMIT 1
+                    RETURNING workflow_run_entity_selection_id,workflow_run_id,model_id,modeled_entity_id
+                )
                 INSERT INTO application.workflow_run_mapping_target_selection (
-                    workflow_run_id, model_id, object_id, source_system_id, selection_order
-                ) SELECT %s, mapping.model_id, binding.object_id, mapping.source_system_id, 1
-                    FROM workflow.mapping_object AS mapping
-                    JOIN workflow.model_object_binding AS binding USING (model_object_binding_id)
-                    WHERE mapping.model_id = %s
-                    ORDER BY mapping_object_id LIMIT 1
+                    workflow_run_entity_selection_id,workflow_run_id,model_id,source_system_id,selection_order
+                ) SELECT selected.workflow_run_entity_selection_id,selected.workflow_run_id,
+                         selected.model_id,mapping.source_system_id,1
+                    FROM selected JOIN workflow.mapping_object mapping
+                      ON mapping.model_id = selected.model_id
+                     AND mapping.logical_entity_id = selected.modeled_entity_id
+                    ORDER BY mapping.mapping_object_id LIMIT 1
                 """,
                 (run["workflow_run_id"], model_id),
             )
@@ -168,8 +180,6 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
             assert all(
                 preview.changes_by_dataset.get(kind, 0) > 0
                 for kind in (
-                    "model_object_binding",
-                    "model_attribute_binding",
                     "mapping_object",
                     "mapping_attribute",
                     "generated_code",
@@ -267,7 +277,7 @@ async def test_permanent_clear_includes_supports_and_replays_without_restoring_r
             )
         if selection == "submodel":
             assert remaining.snapshot.logical.entities
-            assert remaining.snapshot.model_binding.objects
+            assert remaining.snapshot.mapping.objects
             assert remaining.snapshot.code_generation.artifacts
         assert remaining.snapshot.assertion.records
         if layer == "conceptual":

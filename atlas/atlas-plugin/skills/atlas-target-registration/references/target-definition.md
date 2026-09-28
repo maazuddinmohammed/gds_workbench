@@ -12,7 +12,7 @@ Owns registration-specific projection from an applied modeled Entity to Metadata
 
 Each Object's `source_tenant_code` is its chosen owner; its `tenant_code`, `system_code` and `connection_code` are physical GDS placement. Attribute keys inherit that placement from the target Object. Partition Metadata drafts into [owner roots inside the same working directory](../../../references/workspace-contract.md#model-derived-metadata-owners), without changing the owning Model context used to read design inputs.
 
-Current Binding accepts only targets owned by the Model Tenant. Report a different valid target owner as a Binding limitation; registration cannot grant broader Binding eligibility or silently relabel ownership.
+Verify registration and runtime authorization for the actual target owner. Model authoring does not require registration; never relabel physical ownership to satisfy a downstream check.
 
 ## One definition, two outputs
 
@@ -48,7 +48,7 @@ The Metadata schema has no primary-key constraint field, relationship graph or E
 Compare desired target definitions with the effective Metadata Snapshot-plus-pending view by full normalized physical identity. Match meaning, owner, zone, complete column inventory, names, types/capacity, nullability, order and key/audit/protection policy. Similar names at another Connection/schema are not the same target.
 
 - Compatible existing active target: reuse it; author only changed unlocked Metadata records. Supported compatible metadata updates belong here and need not start another workflow.
-- Extra/inactive/protected existing records: retain them; show differences and their impact on later Binding. Do not discard them to obtain an exact match.
+- Extra/inactive/protected existing records: retain them; show differences and their impact on runtime compatibility. Do not discard them to obtain an exact match.
 - Conflicting owner/zone/meaning or ambiguous target: resolve the specific conflict before authoring affected records. Ordinary Apply does not transfer ownership or rename natural keys.
 - Actual-table changes: present known mismatches and user-operated resolution separately. Do not implement migration/backfill/destructive helpers or fabricate replacement tables. A metadata type/name correction is not evidence that the deployed table changed.
 
@@ -85,10 +85,10 @@ Run the shared [local validation sequence](../../../references/local-validation.
 | `registration.ddl-scope` | DDL follows the user's resolved table/Model selection or is explicitly not requested; wider DDL coverage does not expand Metadata edits. Every emitted table includes all modeled columns. |
 | `registration.protection` | Existing parent/Attribute locks, inactive identities and source-derived masking are preserved; unsupported changes remain explicit. |
 | `registration.existing` | Exact target matching and compatible changes are justified; existing-table differences, ownership conflicts and manual-key changes are not hidden by creation DDL. |
-| `registration.binding` | Intended downstream targets meet current ownership/layer requirements or the specific Binding limitation is reported. Do not author Binding here. |
+| `registration.compatibility` | Registered runtime targets match the modeled schema, columns, types, nullability, keys and audit roles; unresolved differences are reported before operational handoff. |
 
 Recheck required freshness before handoff/Apply through the shared lifecycle. If a new baseline is needed, reconcile pending edits first. After confirmed Metadata Apply, install fresh Metadata and verify registered targets; do not treat a pre-Apply refresh as proof that proposed changes were applied.
 
 ## Source pointers
 
-Atlas target registration follows the complete-column and optional-output rules above. Field contracts: `mcp_server/gds_etl_workbench/domain/metadata_records.py`; owner placement: `application/change_sets/metadata_validation.py`; Connection discovery: `tools/tenants/get_tenant_details.py`; Binding eligibility: `application/change_sets/model.py`, `model_validation.py` and `database/11_workflow_eligibility.sql`.
+Atlas target registration follows the complete-column and optional-output rules above. Field contracts: `mcp_server/gds_etl_workbench/domain/metadata_records.py`; owner placement: `application/change_sets/metadata_validation.py`; Connection discovery: `tools/tenants/get_tenant_details.py`; Modeled ownership: `domain/modeling_records.py`; registration remains a separate Metadata workflow.

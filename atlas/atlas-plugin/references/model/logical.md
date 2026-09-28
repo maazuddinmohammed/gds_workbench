@@ -9,9 +9,9 @@ Write complete changed records as JSON arrays under `model-change-set/<dataset>.
 | Dataset | Natural key within the Model |
 |---|---|
 | `logical_submodel` | `logical_submodel_name` |
-| `logical_entity` | `logical_entity_name` |
-| `logical_attribute` | `logical_entity_name` + `logical_attribute_name` |
-| `logical_relationship` | Both Entity/Attribute endpoints + `logical_relationship_name` |
+| `logical_entity` | `logical_entity_schema_name` + `logical_entity_name` |
+| `logical_attribute` | `logical_entity_schema_name` + `logical_entity_name` + `logical_attribute_name` |
+| `logical_relationship` | Both schema-qualified Entity/Attribute endpoints + `logical_relationship_name` |
 
 Use shared key normalization; preserve existing spelling. Below, **name** means nonblank string ≤255 characters, **text** means nonblank string, **status** means `active`, `inactive` or `deprecated`, and **confidence** means `low`, `medium` or `high`. All dataset fields are required, even when nullable.
 
@@ -28,6 +28,7 @@ Use shared key normalization; preserve existing spelling. Below, **name** means 
 
 | Field | Accepted value / meaning |
 |---|---|
+| `logical_entity_schema_name` | Required configured Logical schema name; part of Entity identity. |
 | `logical_entity_name` | Name; Entity identity. |
 | `logical_entity_definition` | Text defining the business meaning. |
 | `logical_entity_type` | `core`, `reference`, `transaction`, `event`, `bridge`, `history`, `snapshot`, `association`, `aggregate` or `other`. |
@@ -44,6 +45,7 @@ Use shared key normalization; preserve existing spelling. Below, **name** means 
 
 | Field | Accepted value / meaning |
 |---|---|
+| `logical_entity_schema_name` | Required configured Logical schema name; part of Entity identity. |
 | `logical_entity_name` | Name of the parent Logical Entity. |
 | `logical_attribute_name` | Name; Attribute identity within its Entity. |
 | `logical_attribute_definition` | Text defining the Attribute, including useful units/semantics. |
@@ -66,8 +68,10 @@ An Attribute cannot be both natural and surrogate key. Any primary/natural/surro
 |---|---|
 | `logical_relationship_name` | Name; association identity together with the endpoints. |
 | `logical_relationship_definition` | Text describing the association. |
+| `from_logical_entity_schema_name` | Required configured Logical schema name; part of Entity identity. |
 | `from_logical_entity_name` | Name of the from Entity. |
 | `from_logical_attribute_name` | Name of the from Attribute in that Entity. |
+| `to_logical_entity_schema_name` | Required configured Logical schema name; part of Entity identity. |
 | `to_logical_entity_name` | Name of the to Entity. |
 | `to_logical_attribute_name` | Name of the to Attribute in that Entity. |
 | `logical_relationship_cardinality` | `one_to_one`, `one_to_many`, `many_to_one` or `many_to_many`, interpreted from → to. |
@@ -134,7 +138,7 @@ These small examples illustrate record shape, not a complete table build. Assume
 ```json
 [
   {
-    "logical_entity_name": "Customer",
+    "logical_entity_schema_name": "silver", "logical_entity_name": "Customer",
     "logical_entity_definition": "A person or organization purchasing goods from the business.",
     "logical_entity_type": "core",
     "logical_entity_type_detail": null,
@@ -154,7 +158,7 @@ These small examples illustrate record shape, not a complete table build. Assume
 ```json
 [
   {
-    "logical_entity_name": "Customer",
+    "logical_entity_schema_name": "silver", "logical_entity_name": "Customer",
     "logical_attribute_name": "CustomerNumber",
     "logical_attribute_definition": "Business customer identifier within the governed customer domain; leading zeros are retained.",
     "logical_attribute_data_type": "STRING",
@@ -178,9 +182,9 @@ These small examples illustrate record shape, not a complete table build. Assume
   {
     "logical_relationship_name": "PlacedByCustomer",
     "logical_relationship_definition": "An Order is placed by a Customer.",
-    "from_logical_entity_name": "Order",
+    "from_logical_entity_schema_name": "silver", "from_logical_entity_name": "Order",
     "from_logical_attribute_name": "CustomerID",
-    "to_logical_entity_name": "Customer",
+    "to_logical_entity_schema_name": "silver", "to_logical_entity_name": "Customer",
     "to_logical_attribute_name": "CustomerID",
     "logical_relationship_cardinality": "many_to_one",
     "logical_relationship_confidence": "high",

@@ -15,7 +15,7 @@ class MappingContractModel(BaseModel):
 
 
 class MappingTargetSelection(MappingContractModel):
-    object_id: int = Field(gt=0)
+    modeled_entity_id: int = Field(gt=0)
     source_system_id: int = Field(gt=0)
     selected_attribute_ids: list[Annotated[int, Field(gt=0)]]
 

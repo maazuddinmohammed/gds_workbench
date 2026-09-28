@@ -1,4 +1,4 @@
-"""Reconcile flexible Mapping output into binding-oriented Model Change records."""
+"""Reconcile flexible Mapping output into Entity-owned Model Change records."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from .contracts import CompleteMappingCandidateV1
 from .preparation_contracts import (
     ExistingMappingAttribute,
     ExistingMappingHeader,
+    MappingModeledEntity,
     MappingPreparation,
 )
 from .semantics import validate_mapping_references
@@ -61,14 +62,38 @@ class MappingCandidateReconciler:
                 source_keys = {
                     natural_key(source.object.model_dump())
                     for source in self._preparation.context.sources
+                    if not isinstance(source.object, MappingModeledEntity)
+                }
+                logical_keys = {
+                    (
+                        source.object.entity_schema_name.casefold(),
+                        source.object.entity_name.casefold(),
+                    )
+                    for source in self._preparation.context.sources
+                    if isinstance(source.object, MappingModeledEntity)
+                    and source.object.entity_type == "logical_entity"
                 }
                 known_source |= any(
                     source.status == "active"
-                    and source.support_source_type == "attribute"
-                    and natural_key(source.source_attribute.model_dump()) in source_keys
+                    and (
+                        (
+                            source.support_source_type == "attribute"
+                            and natural_key(source.source_attribute.model_dump()) in source_keys
+                        )
+                        or (
+                            source.support_source_type == "logical_attribute"
+                            and (
+                                source.source_logical_attribute.logical_entity_schema_name.casefold(),
+                                source.source_logical_attribute.logical_entity_name.casefold(),
+                            )
+                            in logical_keys
+                        )
+                    )
                     for attribute in section.attributes
                     if getattr(attribute, f"{layer}_entity_name").casefold()
                     == header.modeled_entity.entity_name.casefold()
+                    and getattr(attribute, f"{layer}_entity_schema_name").casefold()
+                    == header.modeled_entity.entity_schema_name.casefold()
                     and getattr(attribute, f"{layer}_attribute_status") == "active"
                     for source in attribute.sources
                 )
@@ -79,9 +104,7 @@ class MappingCandidateReconciler:
                 )
             return ()
         if not self._preparation.context.sources:
-            raise InvalidRequestError(
-                "No physical source is available; return no_applicable_source."
-            )
+            raise InvalidRequestError("No source is available; return no_applicable_source.")
         readiness = self._preparation.readiness.headers[0]
         object_actionable = readiness.action in {"author", "extend"}
         if object_actionable != (candidate.object_mapping is not None):
@@ -104,7 +127,7 @@ class MappingCandidateReconciler:
         }
         if returned_names != set(modeled_attributes):
             raise InvalidRequestError(
-                "Mapping output must cover every actionable bound Attribute exactly once."
+                "Mapping output must cover every actionable modeled Attribute exactly once."
             )
 
         validate_mapping_references(self._preparation, candidate)
@@ -113,6 +136,7 @@ class MappingCandidateReconciler:
         if candidate.object_mapping is not None:
             authored = MappingObjectRecord(
                 modeled_entity_type=self._preparation.plan.modeled_entity_type,
+                modeled_entity_schema_name=header.modeled_entity.entity_schema_name,
                 modeled_entity_name=header.modeled_entity.entity_name,
                 source_system_code=self._preparation.context.source_system.system_code,
                 output_template_code=_output_template_code(
@@ -138,9 +162,10 @@ class MappingCandidateReconciler:
             modeled = modeled_attributes[item.modeled_attribute_name.casefold()]
             existing = existing_by_modeled_id.get(modeled.attribute_id)
             if existing is None:
-                raise InvalidRequestError("The bound Mapping Attribute context is unavailable.")
+                raise InvalidRequestError("The modeled Mapping Attribute context is unavailable.")
             authored = MappingAttributeRecord(
                 modeled_entity_type=self._preparation.plan.modeled_entity_type,
+                modeled_entity_schema_name=header.modeled_entity.entity_schema_name,
                 modeled_entity_name=header.modeled_entity.entity_name,
                 modeled_attribute_name=modeled.attribute_name,
                 source_system_code=self._preparation.context.source_system.system_code,
@@ -192,6 +217,7 @@ def _current_object_record(
         return None
     return MappingObjectRecord(
         modeled_entity_type=preparation.plan.modeled_entity_type,
+        modeled_entity_schema_name=header.modeled_entity.entity_schema_name,
         modeled_entity_name=header.modeled_entity.entity_name,
         source_system_code=preparation.context.source_system.system_code,
         output_template_code=_template_code_by_id(preparation, header.output_template_id),
@@ -219,6 +245,7 @@ def _current_attribute_record(
     )
     return MappingAttributeRecord(
         modeled_entity_type=preparation.plan.modeled_entity_type,
+        modeled_entity_schema_name=header.modeled_entity.entity_schema_name,
         modeled_entity_name=header.modeled_entity.entity_name,
         modeled_attribute_name=modeled.attribute_name,
         source_system_code=preparation.context.source_system.system_code,

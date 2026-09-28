@@ -257,7 +257,7 @@ class CodeGenerationWorkflow:
                 attempt=1,
                 stage="code_generation.sql_generation",
                 status="running",
-                message=f"SQL generation started for {target_count} target Objects.",
+                message=f"SQL generation started for {target_count} Entities.",
                 current=0,
                 total=target_count,
                 finding_count=0,
@@ -332,7 +332,7 @@ class CodeGenerationWorkflow:
                     targets=(
                         CodeGenerationTargetReference(
                             target_ref=target.target_ref,
-                            object_id=target.object_id,
+                            modeled_entity_id=target.modeled_entity_id,
                             source_system_codes=target.source_system_codes,
                             file_layout=plan.code_generation_file_layout,
                             preserved_artifact_names=target.preserved_artifact_names,
@@ -400,9 +400,7 @@ class CodeGenerationWorkflow:
                 highest_attempt = max(highest_attempt, outcome.attempt_count)
                 warning_seen = warning_seen or bool(outcome.was_repaired or outcome.warning_codes)
                 if position in progress_points:
-                    message = (
-                        f"SQL generation validated {position} of {target_count} target Objects."
-                    )
+                    message = f"SQL generation validated {position} of {target_count} Entities."
                     if warning_seen:
                         message += " One or more candidates required repair."
                     await progress.append(
@@ -577,7 +575,8 @@ def _generated_code_changes(
         or len(by_ref) != len(contexts)
         or {artifact.target_ref for artifact in artifacts} != set(by_ref)
         or any(
-            artifact.object_id != by_ref[artifact.target_ref].object_id for artifact in artifacts
+            artifact.modeled_entity_id != by_ref[artifact.target_ref].modeled_entity_id
+            for artifact in artifacts
         )
     ):
         raise InvalidRequestError("Code Generation candidate and context coverage differ.")
@@ -589,6 +588,7 @@ def _generated_code_changes(
         code_records.append(
             GeneratedCodeRecord(
                 modeled_entity_type=modeled_entity_type,
+                modeled_entity_schema_name=context.modeled_entity_schema_name,
                 modeled_entity_name=context.modeled_entity_name,
                 artifact_name=artifact.artifact_name,
                 artifact_type="sql_file",
@@ -600,6 +600,7 @@ def _generated_code_changes(
         system_records.extend(
             GeneratedCodeSourceSystemRecord(
                 modeled_entity_type=modeled_entity_type,
+                modeled_entity_schema_name=context.modeled_entity_schema_name,
                 modeled_entity_name=context.modeled_entity_name,
                 artifact_name=artifact.artifact_name,
                 source_system_code=system_code,
@@ -694,9 +695,10 @@ def _reconcile_generated_code_source_systems(
     return tuple(changed)
 
 
-def _artifact_key(record: GeneratedCodeRecord) -> tuple[str, str, str]:
+def _artifact_key(record: GeneratedCodeRecord) -> tuple[str, ...]:
     return (
         record.modeled_entity_type,
+        record.modeled_entity_schema_name.strip().casefold(),
         record.modeled_entity_name.strip().casefold(),
         record.artifact_name.strip().casefold(),
     )
@@ -704,9 +706,10 @@ def _artifact_key(record: GeneratedCodeRecord) -> tuple[str, str, str]:
 
 def _source_system_key(
     record: GeneratedCodeSourceSystemRecord,
-) -> tuple[str, str, str, str]:
+) -> tuple[str, ...]:
     return (
         record.modeled_entity_type,
+        record.modeled_entity_schema_name.strip().casefold(),
         record.modeled_entity_name.strip().casefold(),
         record.artifact_name.strip().casefold(),
         record.source_system_code.strip().casefold(),

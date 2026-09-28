@@ -8,30 +8,31 @@ from typing import cast
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from pydantic import JsonValue
 
-from gds_workbench_api.integrations.agents.fake_shared import (
-    FAKE_SOURCE_FIELDS,
-)
+LOGICAL_SOURCE_FIELDS = ("logical_entity_schema_name", "logical_entity_name")
 
 
 def fake_dimensional_candidate(
     *,
-    source_objects: tuple[dict[str, JsonValue], ...],
+    schema_name: str,
+    source_entities: tuple[dict[str, JsonValue], ...],
     source_attributes: tuple[dict[str, JsonValue], ...],
 ) -> JsonValue:
-    if len(source_objects) + len(source_attributes) > 20_000:
+    if len(source_entities) + len(source_attributes) > 20_000:
         raise InvalidRequestError("The local fake agent context is invalid.")
     object_positions = {
-        tuple(cast(str, source[name]).strip().casefold() for name in FAKE_SOURCE_FIELDS): position
-        for position, source in enumerate(source_objects, start=1)
+        tuple(
+            cast(str, source[name]).strip().casefold() for name in LOGICAL_SOURCE_FIELDS
+        ): position
+        for position, source in enumerate(source_entities, start=1)
     }
-    if len(object_positions) != len(source_objects):
+    if len(object_positions) != len(source_entities):
         raise InvalidRequestError("The local fake agent context is invalid.")
     attributes_by_position: dict[int, list[dict[str, JsonValue]]] = {
         position: [] for position in object_positions.values()
     }
     for attribute in source_attributes:
         object_key = tuple(
-            cast(str, attribute[name]).strip().casefold() for name in FAKE_SOURCE_FIELDS
+            cast(str, attribute[name]).strip().casefold() for name in LOGICAL_SOURCE_FIELDS
         )
         position = object_positions.get(object_key)
         if position is None:
@@ -40,17 +41,18 @@ def fake_dimensional_candidate(
 
     entities: list[JsonValue] = []
     attributes: list[JsonValue] = []
-    for position, source_object in enumerate(source_objects, start=1):
+    for position, source_entity in enumerate(source_entities, start=1):
         entity_name = f"Dimensional Entity {position}"
         entities.append(
             _fake_dimensional_entity_record(
+                schema_name=schema_name,
                 entity_name=entity_name,
                 entity_type="dimension",
                 fact_type=None,
                 grain_definition=None,
                 dependency_order=position - 1,
                 memberships=[],
-                sources=[_fake_dimensional_object_source(source_object, source_order=1)],
+                sources=[_fake_dimensional_object_source(source_entity, source_order=1)],
             )
         )
         for ordinal, source_attribute in enumerate(
@@ -59,6 +61,7 @@ def fake_dimensional_candidate(
         ):
             attributes.append(
                 _fake_dimensional_attribute_record(
+                    schema_name=schema_name,
                     entity_name=entity_name,
                     attribute_name=f"Dimensional Attribute {ordinal}",
                     ordinal=ordinal,
@@ -82,15 +85,15 @@ def fake_dimensional_candidate(
 
 
 def _fake_dimensional_object_source(
-    source_object: dict[str, JsonValue],
+    source_entity: dict[str, JsonValue],
     *,
     source_order: int,
 ) -> dict[str, JsonValue]:
     return {
-        "support_source_type": "object",
-        "source_object": source_object,
+        "support_source_type": "logical_entity",
+        "source_logical_entity": source_entity,
         "source_order": source_order,
-        "rationale": "Selected Object metadata supports this candidate.",
+        "rationale": "Selected Logical Entity metadata supports this candidate.",
         "status": "active",
         "is_locked": False,
         "source_role": "primary",
@@ -103,10 +106,10 @@ def _fake_dimensional_attribute_source(
     source_order: int,
 ) -> dict[str, JsonValue]:
     return {
-        "support_source_type": "attribute",
-        "source_attribute": source_attribute,
+        "support_source_type": "logical_attribute",
+        "source_logical_attribute": source_attribute,
         "source_order": source_order,
-        "rationale": "Selected Attribute metadata supports this candidate.",
+        "rationale": "Selected Logical Attribute metadata supports this candidate.",
         "status": "active",
         "is_locked": False,
     }
@@ -114,6 +117,7 @@ def _fake_dimensional_attribute_source(
 
 def _fake_dimensional_entity_record(
     *,
+    schema_name: str,
     entity_name: str,
     entity_type: str,
     fact_type: JsonValue,
@@ -123,6 +127,7 @@ def _fake_dimensional_entity_record(
     sources: Sequence[JsonValue],
 ) -> dict[str, JsonValue]:
     return {
+        "dimensional_entity_schema_name": schema_name,
         "dimensional_entity_name": entity_name,
         "dimensional_entity_definition": (
             "A locally generated Dimensional business entity candidate."
@@ -141,12 +146,14 @@ def _fake_dimensional_entity_record(
 
 def _fake_dimensional_attribute_record(
     *,
+    schema_name: str,
     entity_name: str,
     attribute_name: str,
     ordinal: int,
     sources: Sequence[JsonValue],
 ) -> dict[str, JsonValue]:
     return {
+        "dimensional_entity_schema_name": schema_name,
         "dimensional_entity_name": entity_name,
         "dimensional_attribute_name": attribute_name,
         "dimensional_attribute_definition": (

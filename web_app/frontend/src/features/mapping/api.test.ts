@@ -14,8 +14,8 @@ describe("Mapping HTTP adapter", () => {
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({}));
     const api = createMappingApi(createHttpRequest(fetcher));
 
-    await api.listMappingTargets(7, 18, "logical_entity", 50, "target+/=");
-    await api.listMappingDependencies(7, 18, {
+    await api.listMappingGenerationTargets(7, 18, "logical_entity", 50, "target+/=");
+    await api.listMappingObjects(7, 18, {
       entityType: "logical_entity",
       sourceSystemId: 2,
       sourceSystemCode: " CRM ",
@@ -35,8 +35,8 @@ describe("Mapping HTTP adapter", () => {
     await api.listOutputTemplates(7, "mapping_attribute");
 
     expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
-      "/api/v1/tenants/7/models/18/mapping/targets?entity_type=logical_entity&page_size=50&cursor=target%2B%2F%3D",
-      "/api/v1/tenants/7/models/18/mapping/dependencies?entity_type=logical_entity&source_system_id=2&source_system_code=crm&status=inactive&locked=false&page_size=50&cursor=opaque%2B%2F%3D",
+      "/api/v1/tenants/7/models/18/mapping/generation-targets?entity_type=logical_entity&page_size=50&cursor=target%2B%2F%3D",
+      "/api/v1/tenants/7/models/18/mapping/objects?entity_type=logical_entity&source_system_id=2&source_system_code=crm&status=inactive&locked=false&page_size=50&cursor=opaque%2B%2F%3D",
       "/api/v1/tenants/7/models/18/mapping/objects?page_size=200",
       "/api/v1/tenants/7/models/18/mapping/objects/81",
       "/api/v1/tenants/7/models/18/mapping/attributes?source_system_id=4&source_system_code=erp&locked=true&mapping_object_id=81&page_size=25&cursor=attributes%2B%2F%3D",

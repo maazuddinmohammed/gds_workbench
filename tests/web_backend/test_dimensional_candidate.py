@@ -8,8 +8,8 @@ from gds_etl_workbench.domain.modeling_records import (
     DimensionalAttributeRecord,
     DimensionalEntityRecord,
     DimensionalSubmodelRecord,
-    PhysicalAttributeKey,
-    PhysicalObjectKey,
+    LogicalAttributeKey,
+    LogicalEntityKey,
 )
 from gds_etl_workbench.domain.snapshots.model import DimensionalSection
 from gds_workbench_api.features.dimensional.candidate import (
@@ -18,18 +18,13 @@ from gds_workbench_api.features.dimensional.candidate import (
 from pydantic import JsonValue
 
 
-def _object(name: str = "dim_customer") -> PhysicalObjectKey:
-    return PhysicalObjectKey(
-        tenant_code="NWA",
-        system_code="GDS",
-        connection_code="PRIMARY",
-        object_schema="silver_nwa",
-        object_name=name,
-    )
+def _object(name: str = "dim_customer") -> LogicalEntityKey:
+    return LogicalEntityKey(logical_entity_schema_name="silver_nwa", logical_entity_name=name)
 
 
-def _attribute(name: str = "customer_id") -> PhysicalAttributeKey:
-    return PhysicalAttributeKey(**_object().model_dump(), attribute_name=name)
+def _attribute(name: str = "customer_id") -> LogicalAttributeKey:
+    return LogicalAttributeKey(**_object().model_dump(), logical_attribute_name=name)
+
 
 
 def _candidate() -> dict[str, object]:
@@ -44,7 +39,7 @@ def _candidate() -> dict[str, object]:
         ],
         "entities": [
             {
-                "dimensional_entity_name": "Customer Dimension",
+                "dimensional_entity_schema_name": "gold", "dimensional_entity_name": "Customer Dimension",
                 "dimensional_entity_definition": "One customer.",
                 "dimensional_entity_type": "dimension",
                 "dimensional_fact_type": None,
@@ -62,10 +57,10 @@ def _candidate() -> dict[str, object]:
                 ],
                 "sources": [
                     {
-                        "support_source_type": "object",
-                        "source_object": _object().model_dump(mode="json"),
+                        "support_source_type": "logical_entity",
+                        "source_logical_entity": _object().model_dump(mode="json"),
                         "source_order": 1,
-                        "rationale": "Registered Silver customer source.",
+                        "rationale": "Logical customer source.",
                         "status": "active",
                         "is_locked": False,
                         "source_role": "primary",
@@ -75,7 +70,7 @@ def _candidate() -> dict[str, object]:
         ],
         "attributes": [
             {
-                "dimensional_entity_name": "Customer Dimension",
+                "dimensional_entity_schema_name": "gold", "dimensional_entity_name": "Customer Dimension",
                 "dimensional_attribute_name": "Customer ID",
                 "dimensional_attribute_definition": "Customer identifier.",
                 "dimensional_attribute_data_type": "bigint",
@@ -94,8 +89,8 @@ def _candidate() -> dict[str, object]:
                 "dimensional_attribute_is_locked": False,
                 "sources": [
                     {
-                        "support_source_type": "attribute",
-                        "source_attribute": _attribute().model_dump(mode="json"),
+                        "support_source_type": "logical_attribute",
+                        "source_logical_attribute": _attribute().model_dump(mode="json"),
                         "source_order": 1,
                         "rationale": "Silver business key.",
                         "status": "active",
@@ -136,7 +131,7 @@ def _validator(
     assertion_record_keys: tuple[str, ...] = (),
 ) -> DimensionalCandidateValidator:
     return DimensionalCandidateValidator(
-        selected_object_keys=(_object(),),
+        selected_entity_keys=(_object(),),
         selected_attribute_keys=(_attribute(),),
         assertion_record_keys=assertion_record_keys,
         applied=applied,
@@ -165,7 +160,7 @@ async def test_candidate_rejects_silver_evidence_outside_frozen_selection() -> N
     candidate = _candidate()
     entity = _first_record(candidate, "entities")
     source = cast(dict[str, object], cast(list[object], entity["sources"])[0])
-    source["source_object"] = _object("unselected_silver").model_dump(mode="json")
+    source["source_logical_entity"] = _object("unselected_silver").model_dump(mode="json")
 
     issues = (await _validator().validate(cast(JsonValue, candidate))).issues
 
@@ -214,9 +209,9 @@ async def test_candidate_requires_complete_future_references() -> None:
         {
             "dimensional_relationship_name": "Missing relationship",
             "dimensional_relationship_definition": "Missing endpoint.",
-            "from_dimensional_entity_name": "Customer Dimension",
+            "from_dimensional_entity_schema_name": "gold", "from_dimensional_entity_name": "Customer Dimension",
             "from_dimensional_attribute_name": "Customer ID",
-            "to_dimensional_entity_name": "Missing Dimension",
+            "to_dimensional_entity_schema_name": "gold", "to_dimensional_entity_name": "Missing Dimension",
             "to_dimensional_attribute_name": "Missing ID",
             "dimensional_relationship_kind": "foreign_key",
             "dimensional_relationship_cardinality": "many_to_one",

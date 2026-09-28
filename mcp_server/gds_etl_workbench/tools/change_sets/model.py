@@ -336,7 +336,6 @@ UPDATE mcp.model_change_set AS change_set
        conceptual_document = %s,
        logical_document = %s,
        dimensional_document = %s,
-       model_binding_document = %s,
        mapping_document = %s,
        code_generation_document = %s,
        validation_document = %s,

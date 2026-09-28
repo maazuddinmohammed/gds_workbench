@@ -182,7 +182,7 @@ def test_code_generation_coverage_is_explicit(
         {
             "expected_model_revision": 4,
             "model_workflow": "code_generation",
-            "selected_object_ids": selected_object_ids,
+            "selected_entity_ids": selected_object_ids,
             "modeled_entity_type": "logical_entity",
             "code_generation_coverage_mode": coverage_mode,
             "sql_generation_guide_version_id": 91,
@@ -208,7 +208,7 @@ def test_code_generation_rejects_mismatched_coverage_intent(
             {
                 "expected_model_revision": 4,
                 "model_workflow": "code_generation",
-                "selected_object_ids": selected_object_ids,
+                "selected_entity_ids": selected_object_ids,
                 "modeled_entity_type": "logical_entity",
                 "code_generation_coverage_mode": coverage_mode,
                 "prompt_overrides": {},
@@ -266,8 +266,9 @@ def test_mapping_request_selects_one_pair_without_choosing_the_route() -> None:
         {
             "expected_model_revision": 4,
             "model_workflow": "mapping",
+            "modeled_entity_type": "logical_entity",
             "workflow_execution_mode": "one_shot",
-            "selected_object_ids": [101],
+            "selected_entity_ids": [101],
             "mapping_operation": "build",
             "mapping_coverage_mode": "selected_targets",
             "mapping_source_system_id": 77,
@@ -278,7 +279,9 @@ def test_mapping_request_selects_one_pair_without_choosing_the_route() -> None:
         strict=True,
     )
 
-    assert command.modeled_entity_type is None
+    assert command.modeled_entity_type == "logical_entity"
+    assert command.selected_entity_ids == [101]
+    assert command.selected_object_ids == []
     assert command.mapping_operation == "build"
     assert command.mapping_coverage_mode == "selected_targets"
     assert command.mapping_source_system_id == 77
@@ -298,8 +301,9 @@ def test_mapping_request_allows_each_output_template_selection_independently(
         {
             "expected_model_revision": 4,
             "model_workflow": "mapping",
+            "modeled_entity_type": "logical_entity",
             "workflow_execution_mode": "one_shot",
-            "selected_object_ids": [101],
+            "selected_entity_ids": [101],
             "mapping_operation": "build",
             "mapping_coverage_mode": "selected_targets",
             "mapping_source_system_id": 77,
@@ -330,8 +334,9 @@ def test_mapping_request_rejects_nonpositive_output_template_id(
     payload: dict[str, object] = {
         "expected_model_revision": 4,
         "model_workflow": "mapping",
+        "modeled_entity_type": "logical_entity",
         "workflow_execution_mode": "one_shot",
-        "selected_object_ids": [101],
+        "selected_entity_ids": [101],
         "mapping_operation": "build",
         "mapping_coverage_mode": "selected_targets",
         "mapping_source_system_id": 77,
@@ -368,7 +373,8 @@ def test_non_mapping_request_rejects_output_template_selection(
 @pytest.mark.parametrize(
     "invalid_fields",
     (
-        {"modeled_entity_type": "logical_entity"},
+        {"mapping_route": "logical_to_silver"},
+        {"modeled_entity_type": None},
         {"mapping_source_system_id": None},
     ),
 )
@@ -378,8 +384,9 @@ def test_mapping_request_rejects_a_caller_route_or_incomplete_pair(
     payload: dict[str, object] = {
         "expected_model_revision": 4,
         "model_workflow": "mapping",
+        "modeled_entity_type": "logical_entity",
         "workflow_execution_mode": "one_shot",
-        "selected_object_ids": [101],
+        "selected_entity_ids": [101],
         "mapping_operation": "build",
         "mapping_coverage_mode": "selected_targets",
         "mapping_source_system_id": 77,
@@ -435,12 +442,13 @@ class WorkflowCommandTransaction:
                 "default_validation_retry_count": 2,
             }
         assert "application.create_workflow_run" in query
-        assert len(parameters) == 29
+        assert len(parameters) == 30
         assert parameters[3:7] == (18, 4, "profiling", None)
         assert parameters[13] == [101, 102]
         assert parameters[14] == []
         assert parameters[16] == "10428"
-        assert parameters[19:] == (None,) * 10
+        assert parameters[19:29] == (None,) * 10
+        assert parameters[29] == []
         return {
             "created": True,
             "workflow_run_id": 1048,
@@ -597,7 +605,7 @@ async def test_database_command_validates_code_generation_against_internal_tool_
         {
             "expected_model_revision": 4,
             "model_workflow": "code_generation",
-            "selected_object_ids": [101],
+            "selected_entity_ids": [101],
             "modeled_entity_type": "logical_entity",
             "code_generation_coverage_mode": "selected_targets",
             "agent": {
@@ -803,7 +811,7 @@ async def test_database_command_passes_validated_defaults_to_governed_creation()
             {
                 "expected_model_revision": 4,
                 "model_workflow": "code_generation",
-                "selected_object_ids": [101],
+                "selected_entity_ids": [101],
                 "modeled_entity_type": "logical_entity",
                 "code_generation_coverage_mode": "selected_targets",
                 "prompt_overrides": {},
@@ -913,18 +921,20 @@ class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
     ) -> dict[str, Any] | None:
         if "application.create_workflow_run" not in query:
             return await super().fetch_one(query, parameters)
-        assert len(parameters) == 29
+        assert len(parameters) == 30
         self.create_parameters = parameters
         assert parameters[3:6] == (18, 4, "mapping")
         assert parameters[6] in {"one_shot", "tool_assisted"}
-        assert parameters[13] == [101]
+        assert parameters[13] == []
+        assert parameters[29] == [101]
+        assert parameters[15] == "logical_entity"
         assert parameters[14] == []
         assert parameters[19:22] == (
             "build",
             "selected_targets",
             77,
         )
-        assert parameters[24:] == (None,) * 5
+        assert parameters[24:29] == (None,) * 5
         return {
             "created": True,
             "workflow_run_id": 1049,
@@ -990,8 +1000,9 @@ async def test_database_command_forwards_mapping_output_template_selection(
         {
             "expected_model_revision": 4,
             "model_workflow": "mapping",
+            "modeled_entity_type": "logical_entity",
             "workflow_execution_mode": mode,
-            "selected_object_ids": [101],
+            "selected_entity_ids": [101],
             "mapping_operation": "build",
             "mapping_coverage_mode": "selected_targets",
             "mapping_source_system_id": 77,
@@ -1051,7 +1062,8 @@ async def test_missing_mapping_default_returns_a_clear_controlled_error(
                 expected_model_revision=4,
                 model_workflow="mapping",
                 workflow_execution_mode="one_shot",
-                selected_object_ids=[101],
+                selected_entity_ids=[101],
+                modeled_entity_type="logical_entity",
                 mapping_operation="build",
                 mapping_coverage_mode="selected_targets",
                 mapping_source_system_id=77,

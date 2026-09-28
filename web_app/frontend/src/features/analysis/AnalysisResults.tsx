@@ -114,7 +114,11 @@ export function AnalysisResults({
     { id: "to_object", header: "To Object", cell: ({ row }) => row.original.to_endpoint.object_name },
     { id: "to_attribute", header: "To Attribute", cell: ({ row }) => row.original.to_endpoint.attribute_name },
     { id: "relationship", header: "Relationship", cell: ({ row }) => relationshipLabel(row.original.relationship_kind) },
-    { id: "cardinality", header: () => <span title="Observed endpoint uniqueness from recorded validation counts">Cardinality</span>, cell: ({ row }) => row.original.observed_cardinality ? relationshipLabel(row.original.observed_cardinality) : row.original.validation_result ? "Unavailable" : "Not validated" },
+    { id: "inferred_cardinality", header: "Inferred cardinality", cell: ({ row }) => relationshipLabel(row.original.inferred_cardinality) },
+    { id: "observed_cardinality", header: () => <span title="Observed endpoint uniqueness from recorded validation counts">Observed cardinality</span>, cell: ({ row }) => <>
+      {row.original.observed_cardinality ? relationshipLabel(row.original.observed_cardinality) : row.original.validation_result ? "Unavailable" : "Not validated"}
+      {row.original.cardinality_mismatch ? <span className="status-badge is-warning" title="Recorded counts differ from the inference. Review the evidence; measured data does not establish a business constraint.">Differs from inference</span> : null}
+    </> },
     {
       accessorKey: "relationship_confidence",
       header: "Confidence",

@@ -31,9 +31,6 @@ export interface ModelInputScopeObject {
   batch_attribute_name: string | null;
   attribute_count: number;
   is_model_input_eligible: boolean;
-  is_dimensional_source_eligible: boolean;
-  is_logical_mapping_target_eligible: boolean;
-  is_dimensional_mapping_target_eligible: boolean;
   created_at: string;
   updated_at: string;
 }

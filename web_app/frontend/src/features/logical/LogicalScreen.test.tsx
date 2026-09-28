@@ -14,11 +14,11 @@ describe("Model Logical", () => {
     render(<WorkbenchApp router={logicalRouter(fetcher)} />);
 
     const ledger = await screen.findByRole("table", { name: "Logical Entities" });
-    expect(within(ledger).getByText("customer_account")).toBeVisible();
+    expect(within(ledger).getByText("silver.customer_account")).toBeVisible();
 
     await user.click(screen.getByRole("link", { name: "Open Logical Entity 71" }));
 
-    expect(await screen.findByRole("heading", { name: "customer_account" })).toHaveFocus();
+    expect(await screen.findByRole("heading", { name: "silver.customer_account" })).toHaveFocus();
     expect(screen.getByRole("heading", { name: "Submodel membership" })).toBeVisible();
     expect(screen.getByText("Customer domain")).not.toBeVisible();
     expect(await screen.findByRole("table", { name: "Entity Attributes" })).toBeVisible();
@@ -49,7 +49,7 @@ describe("Model Logical", () => {
     await user.click(screen.getByRole("link", { name: "Open Logical Submodel 91" }));
     expect(await screen.findByRole("heading", { name: "Customer domain" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Member entities" })).toBeVisible();
-    expect(screen.getByText("customer_account")).toBeVisible();
+    expect(screen.getByText("silver.customer_account")).toBeVisible();
 
     await user.click(screen.getByRole("link", { name: "Back to Logical" }));
     expect(screen.queryByRole("button", { name: "Attributes" })).not.toBeInTheDocument();
@@ -72,8 +72,8 @@ describe("Model Logical", () => {
     await user.click(screen.getByRole("link", { name: "Open Logical Relationship 101" }));
     expect(await screen.findByRole("heading", { name: "customer places order" })).toBeVisible();
     expect(screen.getByText("Customer activity establishes order ownership.")).toBeVisible();
-    expect(screen.getByText("customer_account.customer_id")).toBeVisible();
-    expect(screen.getByText("sales_order.customer_id")).toBeVisible();
+    expect(screen.getByText("silver.customer_account.customer_id")).toBeVisible();
+    expect(screen.getByText("silver.sales_order.customer_id")).toBeVisible();
   });
 
   it("uses backend Logical filters and keeps empty, error, and revision states explicit", async () => {
@@ -305,7 +305,7 @@ const modelPayload = {
   model_description: "Cross-system customer domain",
   model_revision: 18,
   model_input_scope_object_count: 25,
-  silver_model_naming_instructions: null,
+  logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
   gold_model_technical_columns_template: null,
@@ -323,7 +323,7 @@ const modelPayload = {
 const logicalEntityPayload = {
   logical_entity_id: 71,
   workflow_run_id: 1048,
-  logical_entity_name: "customer_account",
+  logical_entity_schema_name: "silver", logical_entity_name: "customer_account",
   logical_entity_type: "core",
   logical_entity_dependency_order: 1,
   logical_entity_confidence: "high",
@@ -412,7 +412,7 @@ const logicalSubmodelDetailPayload = {
       logical_entity_submodel_id: 801,
       workflow_run_id: 1048,
       logical_entity_id: 71,
-      logical_entity_name: "customer_account",
+      logical_entity_schema_name: "silver", logical_entity_name: "customer_account",
       logical_entity_type: "core",
       logical_entity_status: "active",
       membership_status: "active",
@@ -427,7 +427,7 @@ const logicalAttributePayload = {
   logical_attribute_id: 81,
   workflow_run_id: 1048,
   logical_entity_id: 71,
-  logical_entity_name: "customer_account",
+  logical_entity_schema_name: "silver", logical_entity_name: "customer_account",
   logical_attribute_name: "customer_id",
   logical_attribute_data_type: "bigint",
   logical_attribute_is_nullable: false,
@@ -475,11 +475,11 @@ const logicalRelationshipPayload = {
   logical_relationship_id: 101,
   workflow_run_id: 1048,
   from_logical_entity_id: 71,
-  from_logical_entity_name: "customer_account",
+  from_logical_entity_schema_name: "silver", from_logical_entity_name: "customer_account",
   from_logical_attribute_id: 81,
   from_logical_attribute_name: "customer_id",
   to_logical_entity_id: 72,
-  to_logical_entity_name: "sales_order",
+  to_logical_entity_schema_name: "silver", to_logical_entity_name: "sales_order",
   to_logical_attribute_id: 82,
   to_logical_attribute_name: "customer_id",
   logical_relationship_name: "customer places order",
@@ -514,9 +514,6 @@ const scopeObjectPayload = {
   batch_attribute_name: "batch_id",
   attribute_count: 12,
   is_model_input_eligible: true,
-  is_dimensional_source_eligible: false,
-  is_logical_mapping_target_eligible: false,
-  is_dimensional_mapping_target_eligible: false,
   created_at: "2026-08-24T14:00:00Z",
   updated_at: "2026-08-24T14:00:00Z",
 };

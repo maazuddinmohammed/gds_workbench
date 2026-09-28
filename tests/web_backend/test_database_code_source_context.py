@@ -1,4 +1,4 @@
-"""Physical metadata reaches Code and invalidates stale Validation code context."""
+"""Entity and source metadata reach Code and invalidates stale Validation code context."""
 
 # Reuse exact Mapping route fixtures and the production Validation ledger query.
 # pyright: reportPrivateUsage=false
@@ -29,7 +29,7 @@ from tests.web_backend.test_database_model_change_sets import _required_id
 
 
 @pytest.mark.parametrize("dimensional", [False, True], ids=["logical", "dimensional"])
-async def test_code_and_validation_track_physical_metadata_without_model_revision(
+async def test_code_and_validation_track_entity_and_source_metadata(
     web_postgres_database: DisposablePostgres,
     dimensional: bool,
 ) -> None:
@@ -40,17 +40,15 @@ async def test_code_and_validation_track_physical_metadata_without_model_revisio
                 connection.execute(
                     """
                     INSERT INTO workflow.mapping_object (
-                        model_id, model_object_binding_id, source_system_id,
+                        model_id, modeled_entity_type, dimensional_entity_id, source_system_id,
                         mapping_transformation_document
-                    ) SELECT model_id, model_object_binding_id, %s, '{}'::JSONB
-                        FROM workflow.model_object_binding
-                       WHERE model_id = %s AND object_id = %s
+                    ) VALUES (%s, 'dimensional_entity', %s, %s, '{}'::JSONB)
                     RETURNING mapping_object_id
                     """,
                     (
-                        scope.source_system_id,
                         scope.plan.model_id,
-                        scope.plan.pair.target_object_id,
+                        scope.plan.pair.modeled_entity_id,
+                        scope.source_system_id,
                     ),
                 ).fetchone(),
                 "mapping_object_id",
@@ -58,15 +56,14 @@ async def test_code_and_validation_track_physical_metadata_without_model_revisio
             connection.execute(
                 """
                 INSERT INTO workflow.mapping_attribute (
-                    mapping_object_id, model_attribute_binding_id,
-                    attribute_mapping_transformation_document
-                ) SELECT %s, attribute.model_attribute_binding_id, '{}'::JSONB
-                    FROM workflow.model_attribute_binding AS attribute
-                    JOIN workflow.model_object_binding AS object
-                      ON object.model_object_binding_id = attribute.model_object_binding_id
-                   WHERE object.model_id = %s AND object.object_id = %s
+                    mapping_object_id, model_id, modeled_entity_type, dimensional_entity_id,
+                    dimensional_attribute_id, attribute_mapping_transformation_document
+                ) SELECT %s, model_id, 'dimensional_entity', dimensional_entity_id,
+                         dimensional_attribute_id, '{}'::JSONB
+                    FROM workflow.dimensional_attribute
+                   WHERE model_id = %s AND dimensional_entity_id = %s
                 """,
-                (mapping_id, scope.plan.model_id, scope.plan.pair.target_object_id),
+                (mapping_id, scope.plan.model_id, scope.plan.pair.modeled_entity_id),
             )
     mapping_context = await _load(web_postgres_database, scope)
     runtime = WebPostgresDatabase(
@@ -83,12 +80,12 @@ async def test_code_and_validation_track_physical_metadata_without_model_revisio
                 row = await transaction.fetch_one(
                     """
                     SELECT * FROM workflow.list_code_generation_target_context(%s, %s, NULL)
-                     WHERE object_id = %s
+                     WHERE modeled_entity_id = %s
                     """,
                     (
                         scope.plan.model_id,
                         scope.plan.modeled_entity_type,
-                        scope.plan.pair.target_object_id,
+                        scope.plan.pair.modeled_entity_id,
                     ),
                 )
                 assert row is not None
@@ -97,7 +94,7 @@ async def test_code_and_validation_track_physical_metadata_without_model_revisio
         initial = await current()
         assert await current() == initial
         source_context = initial["source_context"]
-        input_plan = _plan(selected_object_ids=(scope.plan.pair.target_object_id,))
+        input_plan = _plan(selected_object_ids=(scope.plan.pair.modeled_entity_id,))
         prefix = "workflow.code_generation.common.sql_generation.inputs."
         input_contracts = {
             name: contract
@@ -148,9 +145,11 @@ async def test_code_and_validation_track_physical_metadata_without_model_revisio
                 validator = cast(Any, Draft202012Validator(contract.value_schema))
                 assert validator.is_valid(contract.example)
                 assert validator.is_valid(values[prefix + name])
-        assert [item["object"]["object_id"] for item in source_context["physical_sources"]] == [
-            item.object.object_id for item in mapping_context.sources
-        ]
+        source_id_field = "modeled_entity_id" if dimensional else "object_id"
+        assert [item["object"][source_id_field] for item in source_context["physical_sources"]] == (
+            [scope.logical_entity_id] if dimensional else [scope.bronze_object_id, scope.source_object_id]
+        )
+        assert mapping_context.sources
         assert [item["object"]["zone_code"] for item in source_context["physical_sources"]] == (
             ["silver"] if dimensional else ["bronze", "source"]
         )
@@ -163,22 +162,24 @@ async def test_code_and_validation_track_physical_metadata_without_model_revisio
         assert physical_source["source_tenant_id"] == scope.tenant_id
         for object_record in (target, physical_source):
             assert object_record["attributes"][0]["attribute_data_type"] == "bigint"
-            assert object_record["attributes"][0]["attribute_inferred_data_type"] is None
+            assert object_record["attributes"][0]["attribute_inferred_data_type"] == (
+                "bigint" if object_record is target or dimensional else None
+            )
 
         with web_postgres_database.connect_owner() as connection:
             connection.execute(
                 """
                 INSERT INTO workflow.generated_code (
-                    model_object_binding_id, artifact_name, artifact_type,
-                    generated_code_content, code_input_digest
-                ) SELECT model_object_binding_id, 'orders.sql', 'sql_file', 'SELECT 1', %s
-                    FROM workflow.model_object_binding
-                   WHERE model_id = %s AND object_id = %s
+                    model_id, modeled_entity_type, logical_entity_id, dimensional_entity_id,
+                    artifact_name, artifact_type, generated_code_content, code_input_digest
+                ) VALUES (%s, %s, %s, %s, 'orders.sql', 'sql_file', 'SELECT 1', %s)
                 """,
                 (
-                    initial["code_input_digest"],
                     scope.plan.model_id,
-                    target["object_id"],
+                    scope.plan.modeled_entity_type,
+                    None if dimensional else scope.plan.pair.modeled_entity_id,
+                    scope.plan.pair.modeled_entity_id if dimensional else None,
+                    initial["code_input_digest"],
                 ),
             )
             connection.execute(
@@ -200,84 +201,58 @@ async def test_code_and_validation_track_physical_metadata_without_model_revisio
             )
         assert (
             len(
-                next(row for row in validation_before if row["object_id"] == target["object_id"])[
+                next(row for row in validation_before if row["modeled_entity_id"] == target["modeled_entity_id"])[
                     "generated_code"
                 ]
             )
             == 1
         )
 
-        changes: tuple[tuple[LiteralString, str], ...] = (
-            (
-                "UPDATE core.attribute SET attribute_data_type = 'string' WHERE object_id = %s",
-                "attribute_data_type",
-            ),
-            (
-                "UPDATE core.attribute SET attribute_inferred_data_type = 'decimal(18,2)' "
-                "WHERE object_id = %s",
-                "attribute_inferred_data_type",
-            ),
-            (
-                "UPDATE core.attribute SET attribute_description = 'Customer business identifier.' "
-                "WHERE object_id = %s",
-                "attribute_description",
-            ),
-            (
-                "UPDATE core.object SET object_description = 'One customer per record.' "
-                "WHERE object_id = %s",
-                "object_description",
-            ),
-        )
+        changes: list[tuple[LiteralString, int]] = [
+            ("UPDATE workflow.dimensional_entity SET dimensional_entity_definition = 'Changed target.' WHERE dimensional_entity_id = %s", scope.plan.pair.modeled_entity_id),
+            ("UPDATE workflow.dimensional_attribute SET dimensional_attribute_data_type = 'string' WHERE dimensional_entity_id = %s", scope.plan.pair.modeled_entity_id),
+            ("UPDATE workflow.logical_entity SET logical_entity_definition = 'Changed Logical source.' WHERE logical_entity_id = %s", scope.logical_entity_id),
+            ("UPDATE workflow.logical_attribute SET logical_attribute_definition = 'Changed source attribute.' WHERE logical_entity_id = %s", scope.logical_entity_id),
+        ] if dimensional else [
+            ("UPDATE workflow.logical_entity SET logical_entity_definition = 'Changed target.' WHERE logical_entity_id = %s", scope.plan.pair.modeled_entity_id),
+            ("UPDATE workflow.logical_attribute SET logical_attribute_data_type = 'string' WHERE logical_entity_id = %s", scope.plan.pair.modeled_entity_id),
+            ("UPDATE core.attribute SET attribute_data_type = 'string' WHERE object_id = %s", scope.bronze_object_id),
+            ("UPDATE core.attribute SET attribute_inferred_data_type = 'decimal(18,2)' WHERE object_id = %s", scope.bronze_object_id),
+            ("UPDATE core.attribute SET attribute_description = 'Changed source attribute.' WHERE object_id = %s", scope.bronze_object_id),
+            ("UPDATE core.object SET object_description = 'Changed source.' WHERE object_id = %s", scope.bronze_object_id),
+        ]
         prior = initial
-        for object_id in (physical_source["object_id"], target["object_id"]):
-            for query, changed_field in changes:
-                with web_postgres_database.connect_owner() as connection:
-                    connection.execute(query, (object_id,))
-                    assert connection.execute(
-                        "SELECT model_revision FROM model.model WHERE model_id = %s",
-                        (scope.plan.model_id,),
-                    ).fetchone() == {"model_revision": 1}
-                changed = await current()
-                assert changed["code_input_digest"] != prior["code_input_digest"], changed_field
-                assert await current() == changed
-                prior = changed
-        for object_record in (
-            prior["source_context"]["target"],
-            prior["source_context"]["physical_sources"][0]["object"],
-        ):
-            assert object_record["object_description"] == "One customer per record."
-            attribute = object_record["attributes"][0]
-            assert attribute["attribute_data_type"] == "string"
-            assert attribute["attribute_inferred_data_type"] == "decimal(18,2)"
-            assert attribute["attribute_description"] == "Customer business identifier."
+        for query, record_id in changes:
+            with web_postgres_database.connect_owner() as connection:
+                connection.execute(query, (record_id,))
+                assert connection.execute(
+                    "SELECT model_revision FROM model.model WHERE model_id = %s",
+                    (scope.plan.model_id,),
+                ).fetchone() == {"model_revision": 1}
+            changed = await current()
+            assert changed["code_input_digest"] != prior["code_input_digest"]
+            assert await current() == changed
+            prior = changed
+        assert prior["source_context"]["target"]["object_description"] == "Changed target."
+        assert prior["source_context"]["target"]["attributes"][0]["attribute_data_type"] == "string"
         async with runtime.read_transaction() as transaction:
             validation_after = await transaction.fetch_all(
                 _CURRENT_CONTEXT_SQL, (scope.tenant_id, scope.plan.model_id)
             )
-        stale = next(row for row in validation_after if row["object_id"] == target["object_id"])
+        stale = next(row for row in validation_after if row["modeled_entity_id"] == target["modeled_entity_id"])
         assert stale["code_input_digest"] == prior["code_input_digest"]
         assert stale["generated_code"] == []
 
-        with web_postgres_database.connect_owner() as connection:
-            connection.execute(
-                "UPDATE core.object SET source_tenant_id = %s WHERE object_id = %s",
-                (scope.placement_tenant_id, physical_source["object_id"]),
-            )
-        foreign = await current()
-        assert foreign["code_input_digest"] != prior["code_input_digest"]
-        # Cross-Tenant Source/Bronze inputs remain structural contributors.
-        # A transferred Silver target is no longer this Model's dimensional input.
-        remaining = {
-            item["object"]["object_id"]: item["object"]
-            for item in foreign["source_context"]["physical_sources"]
-        }
-        if dimensional:
-            assert physical_source["object_id"] not in remaining
-        else:
-            assert (
-                remaining[physical_source["object_id"]]["source_tenant_id"]
-                == scope.placement_tenant_id
-            )
-        assert await current() == foreign
+        if not dimensional:
+            with web_postgres_database.connect_owner() as connection:
+                connection.execute(
+                    "UPDATE core.object SET source_tenant_id = %s WHERE object_id = %s",
+                    (scope.placement_tenant_id, physical_source["object_id"]),
+                )
+            foreign = await current()
+            assert foreign["code_input_digest"] != prior["code_input_digest"]
+            remaining = {item["object"]["object_id"]: item["object"] for item in foreign["source_context"]["physical_sources"]}
+            assert remaining[physical_source["object_id"]]["source_tenant_id"] == scope.placement_tenant_id
+            assert await current() == foreign
     finally:
         await runtime.close()

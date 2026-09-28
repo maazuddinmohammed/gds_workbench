@@ -33,20 +33,20 @@ PostgreSQL SQL, file upload, secret reads, and code execution are not exposed.
 
 - Metadata Change Sets own all physical metadata registration.
 - Model Change Sets own Model Input Scope, profiling, analysis, Assertions,
-  conceptual/logical/dimensional Models, Model Bindings, Mapping, generated
+  conceptual/logical/dimensional Models, Mapping, generated
   Code, and Validation definitions.
-- Target physical Objects and Attributes must be applied through a Metadata
-  Change Set before their Model Bindings can be applied.
-- Mapping refers to existing Model Bindings; it does not establish physical
-  identity.
+- Mapping and Code belong directly to schema-qualified Logical or Dimensional
+  Entities. Models configure their Logical/Dimensional schemas before authoring.
+- Target export and physical registration remain optional Metadata Change Set
+  handoffs for Process/orchestration; they do not gate Mapping or Code.
 - Generated Code and Validation are definitions only. Model Change Sets never
   execute them and never store execution results.
 - A changed Model revision invalidates the caller's working Snapshot. Download
   a fresh Snapshot and reassess before continuing.
 
-`create_model_snapshot` produces one ID-free 25-dataset archive. Its sections are
+`create_model_snapshot` produces one ID-free 22-dataset archive with Model payload schema version 2.0. Its sections are
 Model Input Scope, Profiling, Analysis, Assertion, Conceptual, Logical,
-Dimensional, Model Binding, Mapping, Code Generation, and Validation. Every
+Dimensional, Mapping, Code Generation, and Validation. Every
 dataset uses the same strict Pydantic contract for Snapshot reads and Change
 Set writes. Call `describe_model_dataset` for exact schema and guidance.
 

@@ -11,7 +11,6 @@ import {
 
 import type {
   MappingAttribute,
-  MappingDependency,
   MappingFilters,
   MappingObject,
 } from "./api";
@@ -37,42 +36,6 @@ interface CommonLedgerProps {
   onLoadMore: () => void;
 }
 
-export function MappingDependenciesLedger({
-  onEdit, canEdit,
-  selectedIds, onSelectionChange,
-  items,
-  filters,
-  state,
-  onApplyFilters,
-  onLoadMore,
-}: CommonLedgerProps & { items: MappingDependency[]; onEdit: (dependency: MappingDependency) => void; canEdit: boolean }) {
-  const columns = useMemo<ColumnDef<MappingDependency>[]>(() => [
-    reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.mapping_source_system_dependency_id, "Mapping Dependencies"),
-    {
-      id: "source_system",
-      header: "Source System",
-      cell: ({ row }) => (
-        <strong>{row.original.source_system.system_code}</strong>
-      ),
-    },
-    { accessorKey: "dependency_order", header: "Order" },
-    { accessorKey: "status", header: "Status", cell: ({ getValue }) => humanize(getValue<string>()) },
-    { accessorKey: "is_locked", header: "Lock", cell: ({ getValue }) => getValue<boolean>() ? "Locked" : "Open" },
-    { accessorKey: "updated_at", header: "Updated", cell: ({ getValue }) => formatDateTime(getValue<string>()) },
-    { id: "edit", header: "", cell: ({ row }) => <button className="text-action" type="button" disabled={!canEdit || row.original.is_locked} title={row.original.is_locked ? "Unlock this dependency to edit" : "Edit System order"} onClick={() => onEdit(row.original)}>Edit order</button> },
-  ], [items, selectedIds, onSelectionChange, onEdit, canEdit]);
-  return (
-    <MappingLedgerSurface
-      label="Mapping Dependencies"
-      items={items}
-      columns={columns}
-      filters={<MappingFilterBar filters={filters} onApplyFilters={onApplyFilters} />}
-      state={state}
-      onLoadMore={onLoadMore}
-    />
-  );
-}
-
 export function MappingObjectsLedger({
   tenantId,
   modelId,
@@ -87,25 +50,16 @@ export function MappingObjectsLedger({
     reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.mapping_object_id, "Mapping Objects"),
     {
       id: "target",
-      header: "Target Object",
+      header: "Entity",
       cell: ({ row }) => (
         <span className="endpoint-cell">
-          <strong>{row.original.target.object_schema}.{row.original.target.object_name}</strong>
-          <span>{row.original.target.tenant_code} · {row.original.target.system_code} · {row.original.target.zone_code}</span>
-        </span>
-      ),
-    },
-    {
-      id: "source",
-      header: "Modeled source",
-      cell: ({ row }) => (
-        <span className="endpoint-cell">
-          <strong>{row.original.source.entity_name}</strong>
+          <strong>{row.original.target.entity_schema_name}.{row.original.target.entity_name}</strong>
+          <span>{humanize(row.original.target.entity_type)}</span>
         </span>
       ),
     },
     { id: "source_system", header: "Source System", cell: ({ row }) => row.original.source_system.system_code },
-    { accessorKey: "dependency_order", header: "Order" },
+    { accessorKey: "dependency_order", header: "Entity order" },
     { accessorKey: "status", header: "Status", cell: ({ getValue }) => humanize(getValue<string>()) },
     { accessorKey: "is_locked", header: "Lock", cell: ({ getValue }) => getValue<boolean>() ? "Locked" : "Open" },
     {
@@ -157,16 +111,7 @@ export function MappingAttributesLedger({
       cell: ({ row }) => (
         <span className="endpoint-cell">
           <strong>{row.original.target.attribute_name}</strong>
-          <span>{row.original.target.attribute_data_type} · ordinal {row.original.target.attribute_ordinal_position}</span>
-        </span>
-      ),
-    },
-    {
-      id: "source",
-      header: "Modeled source",
-      cell: ({ row }) => (
-        <span className="endpoint-cell">
-          <strong>{row.original.source.attribute_name}</strong>
+          <span>{row.original.target.data_type} · ordinal {row.original.target.ordinal_position}</span>
         </span>
       ),
     },

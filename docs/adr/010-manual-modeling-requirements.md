@@ -3,6 +3,9 @@
 - Status: implemented
 - Date: 2026-09-22
 
+Historical contract: Silver Object source identity superseded by ADR 012; Assertion decisions retained.
+See [Entity-owned Mapping and Code](012-entity-owned-mapping-and-code.md).
+
 ## Decision
 
 Reuse the existing Assertion Document and Record tables. Documents group multiple

@@ -22,8 +22,8 @@ deployment unit:
 6. Conceptual Object, Relationship, and typed physical Support;
 7. the exact seven Logical families;
 8. the exact seven Dimensional families;
-9. Model Object/Attribute Bindings, Mapping Source System Dependency, Object
-   Mapping, and Attribute Mapping;
+9. Entity-owned Mapping Source System Dependency, Object Mapping, and Attribute
+   Mapping;
 10. generated Code and Validation Groups/Checks;
 11. canonical workflow eligibility;
 12–14. Application configuration, Workflow Runs, and governed execution;
@@ -31,7 +31,7 @@ deployment unit:
 18. three group roles and the separate passwordless runtime logins;
 19. final runtime privileges.
 
-There are 100 tables across `reference`, `core`, `security`, `model`, `workflow`,
+There are 101 tables across `reference`, `core`, `security`, `model`, `workflow`,
 `application`, and `mcp`. Every table has a primary key. Generated numeric artifact IDs use
 `BIGINT GENERATED ALWAYS AS IDENTITY`; callers cannot persist their own numeric
 identity. UUID workflow identities remain caller/server generated at the
@@ -104,30 +104,34 @@ effective Attribute ordinals; and the rule that effective policy-owned audit
 Attributes have no physical source mapping.
 
 Dimensional has the corresponding seven families and no Relationship source
-mapping. Entity and Attribute sources have the same typed physical/Assertion
-choice. Facts and Bridges require both a nonblank grain definition and at
-least one effective structured grain component. Entity and Attribute sources
-must be active Silver objects/attributes reachable through effective Logical
-Object/Attribute Mappings for the same Model. Measures, key roles, audit roles,
-and Type 0/1/2 change behavior are constrained relationally; historized
-Attributes require the Model's Gold technical-column policy.
+mapping. Entity support references same-Model Logical Entities or Assertions;
+Attribute support references Logical Attributes under those Entities or Assertions.
+Facts and Bridges require both a nonblank grain definition and at least one
+effective structured grain component. Measures, key roles, audit roles, and Type
+0/1/2 change behavior remain constrained relationally; historized Attributes
+require the Model's Gold technical-column policy.
 
-Physical target identity is established before Mapping. A
-`workflow.model_object_binding` ties one Logical Entity to one Silver Object or
-one Dimensional Entity to one Gold Object. Its child
-`workflow.model_attribute_binding` ties each modeled Attribute to the matching
-registered physical Attribute. Metadata Change Sets register Objects and
-Attributes; Model Change Sets create only the bindings after those IDs exist.
+Models configure Logical and Dimensional schema lists. Schema plus Entity name
+forms the natural identity within a Model layer; Attribute names extend that
+identity. Relationships and downstream references retain schema fields. Target
+registration is an optional Metadata handoff after authoring, with no Binding
+Section or Binding tables. See [ADR 012](../adr/012-entity-owned-mapping-and-code.md).
 
-Mapping then uses `workflow.mapping_source_system_dependency`,
-`workflow.mapping_object`, and `workflow.mapping_attribute`. A Mapping Object
-references its target binding plus one source System and stores an optional
-Output Template, dependency order, and bounded transformation document. A
-Mapping Attribute references its parent Mapping and Attribute Binding. Output
-Templates are authoring guidance; PostgreSQL validates JSON shape and size but
-does not hard-enforce template-specific functional content. Source-System and
-target dependency-order indexes exist only for the dependency-ordered reads
-that consume them.
+Mapping uses `workflow.mapping_object` and `workflow.mapping_attribute`.
+Each Mapping Object references exactly one typed
+Entity in its Model and one source System. Its Attribute Mappings have composite
+foreign keys to that parent Entity, Model, and Mapping. Generated Code likewise
+references one typed Entity, with artifact names unique per Entity. These checks
+prevent mixing Logical and Dimensional IDs or crossing Model ownership.
+
+Mapping stores an optional Output Template, dependency order, and bounded
+transformation document. Templates remain advisory; shape and size checks do not
+prove functional correctness. Logical source references use physical Source/Bronze
+keys. Dimensional references use Logical schema/Entity/Attribute keys; eligible
+Logical inputs have active applied Mapping for the selected System. Entity
+dependency-order indexes serve the reads that consume them. Source Systems have
+no Mapping order; stable code/name sorting does not establish business precedence.
+Process Groups and Processes own runtime scheduling.
 
 The numbered greenfield DDL enforces its current declarative constraints,
 installed functions, and installed triggers. Any future cross-table graph
@@ -152,8 +156,8 @@ expiry. Only behavior present in the numbered DDL is part of the database.
 ## Durable MCP state
 
 Model Change Sets store object-shaped JSON documents for Model Input Scope,
-Profiling, Assertions, Analysis, Conceptual, Logical, Dimensional, Model
-Bindings, Mapping, Code Generation, and Validation—plus queryable
+Profiling, Assertions, Analysis, Conceptual, Logical, Dimensional,
+Mapping, Code Generation, and Validation—plus queryable
 base revision/digests, global `draft_revision`, validation outcome, sealed
 candidate digest, activity/expiry, and terminal timestamps. Their lifecycle is
 `active`, `validated`, `applied`, `expired`, `discarded`, or `superseded`.
@@ -220,31 +224,30 @@ Registered workload identities map directly to active Super Admin Principals.
 
 ## Durable web Workflow Run inputs
 
-The `application` schema has 15 normalized tables. A governed Workflow Run
-stores the exact active Entra identity used to create it, an optional bounded
-Profiling/Analysis batch ID, its immutable Tenant witness, and one immutable
-`workflow_run_object_selection` row per selected Object. Mapping selected
-coverage also stores one normalized
-`workflow_run_mapping_target_selection` target Object/source System pair. The
-caller chooses `build|extend` but not a modeled layer or
-route. PostgreSQL infers those from active, unlocked preregistered headers and
-the target Zone, then freezes the bound target and route.
-Code Generation retains its explicit modeled Entity discriminator. The public
-create function validates active Model Input Scope or bound target eligibility,
-canonicalizes Object IDs, and derives the SHA-256 digest and count inside
-PostgreSQL. Caller-supplied digest/count witnesses are not accepted. Profiling
-and Analysis batch requests also require every selected eligible Object to
-belong to one System; multi-System selection remains valid without a batch.
-The `(model_id, tenant_id)` foreign key proves ownership, and a partial unique
-index permits at most one `running` Workflow Run per Tenant while allowing
-multiple queued and terminal Runs. `start_workflow_run` maps index contention to
-one stable conflict without disclosing the competing Run.
+The `application` schema has 19 normalized tables. A governed Workflow Run stores
+the exact active Entra identity used to create it, an optional Profiling/Analysis
+batch ID, and an immutable Tenant witness. Physical-input workflows freeze
+`workflow_run_object_selection` rows. Dimensional, Mapping, and Code workflows
+freeze typed Entity IDs and schema/name in `workflow_run_entity_selection`.
+These historical Entity selections have no foreign key to live Entity rows.
 
-Model Input Scope contains only Source/Bronze inputs. Run eligibility uses
-those inputs for Profiling through Logical, mapped/bound Silver inputs for
-Dimensional, and bound Silver/Gold targets for Mapping or Code Generation.
-The web role can read these rows and execute the governed create function, but
-has no direct Application table or sequence mutation privilege.
+Mapping target selections reference the frozen Entity selection plus a source
+System and selected modeled Attribute IDs. The caller chooses the modeled layer
+and `build|extend|generate`; PostgreSQL validates the Entity and derives the layer's
+Silver/Gold route. Code requires complete active Mapping for each selected Entity.
+The public create function checks eligibility, canonicalizes selections, and derives
+the SHA-256 digest and count in PostgreSQL. Caller-supplied digests/counts are rejected.
+Profiling/Analysis batch requests additionally require a single System.
+
+The `(model_id, tenant_id)` foreign key proves ownership. A partial unique index
+permits at most one running Workflow Run per Tenant while allowing multiple queued
+and terminal Runs. `start_workflow_run` maps contention to a stable conflict without
+revealing the competing Run. The web role can read these rows and execute governed
+functions; it has no direct Application table or sequence mutation privileges.
+
+Model Input Scope contains Source/Bronze inputs for Profiling through Logical.
+Dimensional authoring selects applied Logical Entities. Mapping and Code select
+Logical or Dimensional Entities without registered Silver/Gold target Objects.
 
 `application.persist_profiling_results` is the only web Attribute Profile
 write boundary. While the Profiling Run is `running`, it reauthorizes the bound

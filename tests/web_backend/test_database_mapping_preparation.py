@@ -43,10 +43,8 @@ def test_mapping_preparation_queries_compile_against_disposable_postgres(
                 "build",
             ),
         ),
-        (_sql("_MAPPING_DEPENDENCY_NODES_SQL"), (18, "logical_entity")),
         (_sql("_MAPPING_TARGET_NODES_SQL"), (18, "logical_entity")),
-        (_sql("_MAPPING_TARGET_CONTEXT_SQL"), (501, 7, 18, 7)),
-        (_sql("_MAPPING_BINDING_CONTEXT_SQL"), (18, 501, "logical_entity", 31)),
+        (_sql("_MAPPING_ENTITY_CONTEXT_SQL"), (18, 501, "logical_entity", 31)),
         (
             _sql("_MAPPING_SOURCE_CONTEXT_SQL"),
             (18, 501, "logical_entity", 31),

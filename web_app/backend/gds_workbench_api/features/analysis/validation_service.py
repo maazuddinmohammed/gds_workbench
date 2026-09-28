@@ -612,6 +612,7 @@ def _relationship_from_row(
         "relationship_kind": row.get("relationship_kind"),
         "relationship_confidence": row.get("relationship_confidence"),
         "relationship_basis": row.get("relationship_basis"),
+        "inferred_cardinality": row.get("inferred_cardinality"),
         "analysis_result_status": row.get("analysis_result_status"),
         "analysis_result_is_locked": row.get("analysis_result_is_locked"),
         "gds_connection_id": row.get("gds_connection_id"),

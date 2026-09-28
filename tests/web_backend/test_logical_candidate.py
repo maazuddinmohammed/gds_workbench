@@ -43,7 +43,7 @@ def _candidate() -> dict[str, object]:
         ],
         "entities": [
             {
-                "logical_entity_name": "Customer",
+                "logical_entity_schema_name": "silver", "logical_entity_name": "Customer",
                 "logical_entity_definition": "One customer.",
                 "logical_entity_type": "core",
                 "logical_entity_type_detail": None,
@@ -73,7 +73,7 @@ def _candidate() -> dict[str, object]:
         ],
         "attributes": [
             {
-                "logical_entity_name": "Customer",
+                "logical_entity_schema_name": "silver", "logical_entity_name": "Customer",
                 "logical_attribute_name": "Customer Id",
                 "logical_attribute_definition": "Customer identifier.",
                 "logical_attribute_data_type": "bigint",

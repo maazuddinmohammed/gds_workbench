@@ -3,8 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, LiteralString, cast
 
-from tests.mcp.database_test_support import require_row
 from psycopg import Connection
+
+from tests.mcp.database_test_support import require_row
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres, TestRow
@@ -41,8 +42,10 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
         model_id = require_row(
             connection.execute(
                 """
-            INSERT INTO model.model (tenant_id, model_name)
-            VALUES (%s, 'Nullable Workflow Provenance Model')
+            INSERT INTO model.model (tenant_id, model_name, logical_schemas, dimensional_schemas)
+            VALUES (%s, 'Nullable Workflow Provenance Model',
+                    '[{"schema_name":"silver","description":null}]'::JSONB,
+                    '[{"schema_name":"gold","description":null}]'::JSONB)
             RETURNING model_id
             """,
                 (tenant_id,),
@@ -50,29 +53,21 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
         )["model_id"]
         bronze = connection.execute(
             """
-            SELECT object.object_id,
+            SELECT object.object_id, connection.system_id,
                    array_agg(
                        attribute.attribute_id
                        ORDER BY attribute.attribute_ordinal_position
                    ) AS attribute_ids
               FROM core.object AS object
+              JOIN core.connection AS connection
+                ON connection.connection_id = object.connection_id
               JOIN core.attribute AS attribute
                 ON attribute.object_id = object.object_id
              WHERE object.object_schema = 'bronze_demo'
-             GROUP BY object.object_id
-            """
-        ).fetchone()
-        silver = connection.execute(
-            """
-            SELECT object.object_id, connection.system_id
-              FROM core.object AS object
-              JOIN core.connection AS connection
-                ON connection.connection_id = object.connection_id
-             WHERE object.object_schema = 'silver_demo'
+             GROUP BY object.object_id, connection.system_id
             """
         ).fetchone()
         assert bronze is not None
-        assert silver is not None
         assert len(bronze["attribute_ids"]) >= 2
         connection.execute(
             """
@@ -136,30 +131,19 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
                 model_id,
                 agent_run_id,
                 workflow_run_id,
+                logical_entity_schema_name,
                 logical_entity_name,
                 logical_entity_definition,
                 logical_entity_type,
                 logical_entity_grain
             )
-            VALUES (%s, NULL, NULL, 'customer', 'A logical customer.',
+            VALUES (%s, NULL, NULL, 'silver', 'customer', 'A logical customer.',
                     'core', 'One customer')
             RETURNING logical_entity_id
             """,
                 (model_id,),
             ).fetchone()
         )["logical_entity_id"]
-        model_object_binding_id = require_row(
-            connection.execute(
-                """
-            INSERT INTO workflow.model_object_binding (
-                model_id, object_id, modeled_entity_type, logical_entity_id,
-                agent_run_id, workflow_run_id
-            ) VALUES (%s, %s, 'logical_entity', %s, NULL, NULL)
-            RETURNING model_object_binding_id
-            """,
-                (model_id, silver["object_id"], logical_entity_id),
-            ).fetchone()
-        )["model_object_binding_id"]
         dimensional_entity_id = require_row(
             connection.execute(
                 """
@@ -167,30 +151,18 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
                 model_id,
                 agent_run_id,
                 workflow_run_id,
+                dimensional_entity_schema_name,
                 dimensional_entity_name,
                 dimensional_entity_definition,
                 dimensional_entity_type
             )
-            VALUES (%s, NULL, NULL, 'dim_customer',
+            VALUES (%s, NULL, NULL, 'gold', 'dim_customer',
                     'A reusable customer Dimension.', 'dimension')
             RETURNING dimensional_entity_id
             """,
                 (model_id,),
             ).fetchone()
         )["dimensional_entity_id"]
-        connection.execute(
-            """
-            INSERT INTO workflow.mapping_source_system_dependency (
-                model_id,
-                agent_run_id,
-                workflow_run_id,
-                modeled_entity_type,
-                source_system_id
-            )
-            VALUES (%s, NULL, NULL, 'logical_entity', %s)
-            """,
-            (model_id, silver["system_id"]),
-        )
         mapping_object_id = require_row(
             connection.execute(
                 """
@@ -198,17 +170,18 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
                 model_id,
                 agent_run_id,
                 workflow_run_id,
-                model_object_binding_id,
+                modeled_entity_type,
+                logical_entity_id,
                 source_system_id,
                 mapping_transformation_document
             )
-            VALUES (%s, NULL, NULL, %s, %s, '{"kind":"direct"}'::JSONB)
+            VALUES (%s, NULL, NULL, 'logical_entity', %s, %s, '{"kind":"direct"}'::JSONB)
             RETURNING mapping_object_id
             """,
                 (
                     model_id,
-                    model_object_binding_id,
-                    silver["system_id"],
+                    logical_entity_id,
+                    bronze["system_id"],
                 ),
             ).fetchone()
         )["mapping_object_id"]

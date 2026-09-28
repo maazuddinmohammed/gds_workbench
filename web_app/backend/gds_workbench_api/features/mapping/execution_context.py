@@ -40,7 +40,7 @@ from gds_workbench_api.features.workflows.authoring.tool_configuration import (
     registered_tool_definitions,
 )
 
-from .preparation_contracts import MappingPreparation
+from .preparation_contracts import MappingModeledEntity, MappingPreparation
 
 _CONTEXT_FRAGMENT_KEY = "__gds_context_fragment__"
 _CONTEXT_FRAGMENT_ENCODING = "canonical_json"
@@ -306,10 +306,6 @@ def _mapping_provider_context(preparation: MappingPreparation) -> JsonValue:
             },
             "source_system": context.source_system.model_dump(mode="json"),
             "mapping_support": _mapping_support(preparation),
-            "source_system_dependency": context.dependency.model_dump(mode="json")
-            if context.dependency
-            else None,
-            "source_system_dependency_graph": (context.dependency_graph.model_dump(mode="json")),
             "target_dependency_graph": (context.target_dependency_graph.model_dump(mode="json")),
             "target": context.target.model_dump(mode="json"),
             "sources": [item.model_dump(mode="json") for item in context.sources],
@@ -342,10 +338,22 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
     layer = "logical" if preparation.plan.route == "logical_to_silver" else "dimensional"
     section = snapshot.logical if layer == "logical" else snapshot.dimensional
     entity_name = preparation.context.headers[0].modeled_entity.entity_name.casefold()
-    source_keys = {natural_key(item.object.model_dump()) for item in preparation.context.sources}
+    entity_schema = preparation.context.headers[0].modeled_entity.entity_schema_name.casefold()
+    source_keys = {
+        natural_key(item.object.model_dump())
+        for item in preparation.context.sources
+        if not isinstance(item.object, MappingModeledEntity)
+    }
+    logical_keys = {
+        (item.object.entity_schema_name.casefold(), item.object.entity_name.casefold())
+        for item in preparation.context.sources
+        if isinstance(item.object, MappingModeledEntity)
+        and item.object.entity_type == "logical_entity"
+    }
     for attribute in section.attributes:
         if (
             getattr(attribute, f"{layer}_entity_name").casefold() != entity_name
+            or getattr(attribute, f"{layer}_entity_schema_name").casefold() != entity_schema
             or getattr(attribute, f"{layer}_attribute_status") != "active"
         ):
             continue
@@ -355,7 +363,18 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
                 continue
             if (
                 source.support_source_type == "assertion"
-                or natural_key(source.source_attribute.model_dump()) in source_keys
+                or (
+                    source.support_source_type == "attribute"
+                    and natural_key(source.source_attribute.model_dump()) in source_keys
+                )
+                or (
+                    source.support_source_type == "logical_attribute"
+                    and (
+                        source.source_logical_attribute.logical_entity_schema_name.casefold(),
+                        source.source_logical_attribute.logical_entity_name.casefold(),
+                    )
+                    in logical_keys
+                )
             ):
                 sources.append(source.model_dump(mode="json", exclude={"status", "is_locked"}))
         result["attribute_lineage"].append(
@@ -371,9 +390,15 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
         )
     for relationship in section.relationships:
         row = relationship.model_dump(mode="json")
-        if row[f"{layer}_relationship_status"] == "active" and entity_name in {
-            row[f"from_{layer}_entity_name"].casefold(),
-            row[f"to_{layer}_entity_name"].casefold(),
+        if row[f"{layer}_relationship_status"] == "active" and (entity_schema, entity_name) in {
+            (
+                row[f"from_{layer}_entity_schema_name"].casefold(),
+                row[f"from_{layer}_entity_name"].casefold(),
+            ),
+            (
+                row[f"to_{layer}_entity_schema_name"].casefold(),
+                row[f"to_{layer}_entity_name"].casefold(),
+            ),
         }:
             result["modeled_relationships"].append(
                 {
@@ -408,7 +433,7 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
         snapshot.assertion.model_dump(mode="json"),
         source_scope=[
             {
-                "tenant_code": snapshot.model_tenant_code or preparation.context.target.tenant_code,
+                "tenant_code": snapshot.model_tenant_code,
                 "system_code": preparation.context.source_system.system_code,
             },
             *(source.object.model_dump(mode="json") for source in preparation.context.sources),
@@ -437,7 +462,16 @@ def _mapping_context_datasets(
                     {
                         "source_mapping_id": source.source_mapping_id,
                         "modeled_entity_id": source.modeled_entity_id,
-                        "object_id": source.object.object_id,
+                        **(
+                            {
+                                f"{source.object.entity_type}_schema_name": (
+                                    source.object.entity_schema_name
+                                ),
+                                f"{source.object.entity_type}_name": source.object.entity_name,
+                            }
+                            if isinstance(source.object, MappingModeledEntity)
+                            else {"object_id": source.object.object_id}
+                        ),
                         **attribute.model_dump(mode="json"),
                     },
                 )
@@ -459,7 +493,6 @@ def _mapping_context_datasets(
                 cast(
                     JsonValue,
                     {
-                        "model_object_binding_id": header.model_object_binding_id,
                         "mapping_object_id": header.mapping_object_id,
                         "modeled_entity_id": entity.entity_id,
                         **attribute.model_dump(mode="json"),
@@ -471,7 +504,7 @@ def _mapping_context_datasets(
                 cast(
                     JsonValue,
                     {
-                        "model_object_binding_id": header.model_object_binding_id,
+                        "modeled_entity_id": header.modeled_entity_id,
                         "mapping_object_id": header.mapping_object_id,
                         **child.model_dump(mode="json"),
                     },
@@ -481,15 +514,6 @@ def _mapping_context_datasets(
     return {
         "run": (cast(dict[str, JsonValue], _mapping_provider_context(preparation))["run"],),
         "source_system": (cast(JsonValue, context.source_system.model_dump(mode="json")),),
-        "source_system_dependency": (cast(JsonValue, context.dependency.model_dump(mode="json")),)
-        if context.dependency
-        else (),
-        "source_dependency_node": tuple(
-            cast(JsonValue, item.model_dump(mode="json")) for item in context.dependency_graph.nodes
-        ),
-        "source_dependency_edge": tuple(
-            cast(JsonValue, item.model_dump(mode="json")) for item in context.dependency_graph.edges
-        ),
         "target_dependency_node": tuple(
             cast(JsonValue, item.model_dump(mode="json"))
             for item in context.target_dependency_graph.nodes

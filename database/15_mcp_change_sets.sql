@@ -21,7 +21,6 @@ CREATE TABLE mcp.model_change_set (
     conceptual_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     logical_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     dimensional_document JSONB NOT NULL DEFAULT '{}'::JSONB,
-    model_binding_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     mapping_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     code_generation_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     validation_document JSONB NOT NULL DEFAULT '{}'::JSONB,
@@ -70,7 +69,6 @@ CREATE TABLE mcp.model_change_set (
         AND jsonb_typeof(conceptual_document) = 'object'
         AND jsonb_typeof(logical_document) = 'object'
         AND jsonb_typeof(dimensional_document) = 'object'
-        AND jsonb_typeof(model_binding_document) = 'object'
         AND jsonb_typeof(mapping_document) = 'object'
         AND jsonb_typeof(code_generation_document) = 'object'
         AND jsonb_typeof(validation_document) = 'object'
@@ -81,7 +79,6 @@ CREATE TABLE mcp.model_change_set (
         AND octet_length(conceptual_document::TEXT) <= 16777216
         AND octet_length(logical_document::TEXT) <= 16777216
         AND octet_length(dimensional_document::TEXT) <= 16777216
-        AND octet_length(model_binding_document::TEXT) <= 16777216
         AND octet_length(mapping_document::TEXT) <= 16777216
         AND octet_length(code_generation_document::TEXT) <= 16777216
         AND octet_length(validation_document::TEXT) <= 16777216
@@ -166,8 +163,7 @@ CREATE TABLE mcp.model_stage_batch (
             'logical_attribute', 'logical_relationship',
             'dimensional_submodel', 'dimensional_entity',
             'dimensional_attribute', 'dimensional_relationship',
-            'model_object_binding', 'model_attribute_binding',
-            'mapping_dependency', 'mapping_object', 'mapping_attribute',
+            'mapping_object', 'mapping_attribute',
             'generated_code', 'generated_code_source_system',
             'validation_group', 'validation_check'
         )
@@ -311,7 +307,7 @@ CREATE TABLE mcp.model_change_set_event (
         section_name IS NULL
         OR section_name IN (
             'model_input_scope', 'profiling', 'assertion', 'analysis', 'conceptual',
-            'logical', 'dimensional', 'model_binding', 'mapping',
+            'logical', 'dimensional', 'mapping',
             'code_generation', 'validation'
         )
     ),

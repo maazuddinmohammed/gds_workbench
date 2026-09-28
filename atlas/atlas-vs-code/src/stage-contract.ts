@@ -3,6 +3,7 @@ import { unicodeCasefold, unicodeLower } from "./unicode.js";
 // @ts-expect-error Shared Workbench serialization intentionally has no declaration file.
 import workbenchCore from "../../atlas-plugin/workbench/core.js";
 export const stableStringify = workbenchCore.stableStringify as (value: unknown) => string;
+export const isEntityOwnedModelCatalog = workbenchCore.isEntityOwnedModelCatalog as (catalog: unknown) => boolean;
 export const SHA256 = /^[0-9a-f]{64}$/;
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const MAX_MANIFEST_BYTES = 128 * 1024;
@@ -52,9 +53,6 @@ export const ALLOWED_DATASETS: Record<Area, ReadonlySet<string>> = {
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",
-    "model_object_binding",
-    "model_attribute_binding",
-    "mapping_dependency",
     "mapping_object",
     "mapping_attribute",
     "generated_code",

@@ -78,9 +78,9 @@ def _target_row(
 ) -> dict[str, Any]:
     content = "SELECT * FROM catalog.silver.customer"
     row: dict[str, Any] = {
-        "object_id": 501,
+        "modeled_entity_id": 501,
         "modeled_entity_type": "dimensional_entity",
-        "modeled_entity_name": "DimCustomer",
+        "modeled_entity_schema_name": "gold", "modeled_entity_name": "DimCustomer",
         "code_input_digest": "c" * 64,
         "source_context": {
             "target": {
@@ -95,7 +95,6 @@ def _target_row(
                     "source_system_id": 91,
                     "system_code": source_system,
                     "system_name": "ERP",
-                    "dependency_order": 1,
                 }
             ],
             "object_mappings": [],
@@ -107,7 +106,7 @@ def _target_row(
         row["generated_code"] = [
             {
                 "modeled_entity_type": "dimensional_entity",
-                "modeled_entity_name": "DimCustomer",
+                "modeled_entity_schema_name": "gold", "modeled_entity_name": "DimCustomer",
                 "artifact_name": "dim_customer.sql",
                 "artifact_type": "sql_file",
                 "generated_code_content": content,
@@ -274,9 +273,9 @@ async def test_repository_preserves_large_mapping_evidence() -> None:
 async def test_layer_selection_limits_evidence_and_preserves_shared_groups() -> None:
     logical = _target_row(generated=False)
     logical.update(
-        object_id=502,
+        modeled_entity_id=502,
         modeled_entity_type="logical_entity",
-        modeled_entity_name="Customer",
+        modeled_entity_schema_name="silver", modeled_entity_name="Customer",
     )
     context = await PostgresValidationContextRepository().load(
         ContextTransaction(target_rows=[_target_row(), logical]),

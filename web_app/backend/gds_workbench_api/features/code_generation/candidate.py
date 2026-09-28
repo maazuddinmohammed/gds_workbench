@@ -34,7 +34,7 @@ class CodeGenerationTargetReference(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     target_ref: str = Field(pattern=r"^[a-z][a-z0-9_]{0,99}$")
-    object_id: int = Field(gt=0, repr=False)
+    modeled_entity_id: int = Field(gt=0, repr=False)
     source_system_codes: tuple[str, ...] = Field(min_length=1, max_length=200)
 
     file_layout: Literal["combined", "per_system"] | None = None
@@ -52,7 +52,7 @@ class GeneratedSqlArtifact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     target_ref: str = Field(pattern=r"^[a-z][a-z0-9_]{0,99}$")
-    object_id: int = Field(gt=0)
+    modeled_entity_id: int = Field(gt=0)
     artifact_name: str = Field(min_length=1, max_length=400)
     artifact_role: Literal["target_transformation", "support"]
     source_system_codes: tuple[str, ...] = Field(max_length=200)
@@ -140,7 +140,7 @@ class CodeGenerationCandidateValidator:
         if not targets or len(targets) > 50_000:
             raise ValueError("Code Generation targets must be bounded and nonempty")
         refs = [target.target_ref for target in targets]
-        identities = [target.object_id for target in targets]
+        identities = [target.modeled_entity_id for target in targets]
         if len(refs) != len(set(refs)) or len(identities) != len(set(identities)):
             raise ValueError("Code Generation targets must be unique")
         self._targets = targets
@@ -225,7 +225,7 @@ class CodeGenerationCandidateValidator:
                 artifacts.append(
                     GeneratedSqlArtifact(
                         target_ref=target.target_ref,
-                        object_id=target.object_id,
+                        modeled_entity_id=target.modeled_entity_id,
                         artifact_name=candidate_artifact.artifact_name,
                         artifact_role=candidate_artifact.artifact_role,
                         source_system_codes=tuple(

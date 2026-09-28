@@ -13,7 +13,7 @@ from gds_workbench_api.features.logical.policy import project_logical_audit_poli
 
 def _entity(name: str) -> LogicalEntityRecord:
     return LogicalEntityRecord(
-        logical_entity_name=name,
+        logical_entity_schema_name="silver", logical_entity_name=name,
         logical_entity_definition=f"One {name}.",
         logical_entity_type="core",
         logical_entity_type_detail=None,
@@ -29,7 +29,7 @@ def _entity(name: str) -> LogicalEntityRecord:
 
 def _business_attribute(entity: str) -> LogicalAttributeRecord:
     return LogicalAttributeRecord(
-        logical_entity_name=entity,
+        logical_entity_schema_name="silver", logical_entity_name=entity,
         logical_attribute_name=f"{entity} ID",
         logical_attribute_definition=f"{entity} identifier.",
         logical_attribute_data_type="bigint",

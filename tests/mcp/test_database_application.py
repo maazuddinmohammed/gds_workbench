@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
-from tests.mcp.database_test_support import require_row
 from psycopg.errors import (
     CheckViolation,
     ForeignKeyViolation,
@@ -12,6 +11,8 @@ from psycopg.errors import (
     RaiseException,
     UniqueViolation,
 )
+
+from tests.mcp.database_test_support import require_row
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres
@@ -31,6 +32,7 @@ APPLICATION_TABLES = {
     "sql_generation_guide_version",
     "workflow_run",
     "workflow_run_mapping_target_selection",
+    "workflow_run_entity_selection",
     "workflow_run_object_selection",
     "workflow_run_system_selection",
     "workflow_run_prompt_snapshot",
@@ -47,8 +49,6 @@ WEB_PROVENANCE_COLUMNS = {
     ("workflow", "analysis_result", "validation_workflow_run_id"),
     ("workflow", "generated_code", "workflow_run_id"),
     ("workflow", "generated_code_source_system", "workflow_run_id"),
-    ("workflow", "model_object_binding", "workflow_run_id"),
-    ("workflow", "model_attribute_binding", "workflow_run_id"),
     ("workflow", "conceptual_object", "workflow_run_id"),
     ("workflow", "conceptual_relationship", "workflow_run_id"),
     ("workflow", "conceptual_support", "workflow_run_id"),
@@ -66,7 +66,6 @@ WEB_PROVENANCE_COLUMNS = {
     ("workflow", "dimensional_entity_source_mapping", "workflow_run_id"),
     ("workflow", "dimensional_attribute_source_mapping", "workflow_run_id"),
     ("workflow", "dimensional_relationship", "workflow_run_id"),
-    ("workflow", "mapping_source_system_dependency", "workflow_run_id"),
     ("workflow", "mapping_object", "workflow_run_id"),
     ("workflow", "mapping_attribute", "workflow_run_id"),
     ("workflow", "validation_group", "workflow_run_id"),
@@ -273,6 +272,7 @@ def _create_agentic_workflow_run(
                 model_id,
                 model_revision,
                 model_workflow,
+                modeled_entity_type,
                 workflow_execution_mode,
                 actor_principal_id,
                 agent_sdk_code,
@@ -285,7 +285,7 @@ def _create_agentic_workflow_run(
                 selected_scope_count,
                 correlation_id
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, 'openai_agents_sdk',
+                %s, %s, %s, %s, %s, %s, %s, 'openai_agents_sdk',
                 'microsoft_foundry', 'model-1', 'medium', 12, 2,
                 %s, 1, %s
             )
@@ -296,6 +296,7 @@ def _create_agentic_workflow_run(
                     model_id,
                     model["model_revision"],
                     model_workflow,
+                    "logical_entity" if model_workflow == "dimensional" else None,
                     workflow_execution_mode,
                     principal_id,
                     "d" * 64,
@@ -343,8 +344,6 @@ def test_web_workflow_provenance_is_nullable_on_every_common_artifact(
                              ('workflow', 'analysis_result', 'validation_workflow_run_id'),
                              ('workflow', 'generated_code', 'workflow_run_id'),
                              ('workflow', 'generated_code_source_system', 'workflow_run_id'),
-                             ('workflow', 'model_object_binding', 'workflow_run_id'),
-                             ('workflow', 'model_attribute_binding', 'workflow_run_id'),
                              ('workflow', 'conceptual_object', 'workflow_run_id'),
                              ('workflow', 'conceptual_relationship', 'workflow_run_id'),
                              ('workflow', 'conceptual_support', 'workflow_run_id'),
@@ -362,7 +361,6 @@ def test_web_workflow_provenance_is_nullable_on_every_common_artifact(
                              ('workflow', 'dimensional_entity_source_mapping', 'workflow_run_id'),
                              ('workflow', 'dimensional_attribute_source_mapping', 'workflow_run_id'),
                              ('workflow', 'dimensional_relationship', 'workflow_run_id'),
-                             ('workflow', 'mapping_source_system_dependency', 'workflow_run_id'),
                              ('workflow', 'mapping_object', 'workflow_run_id'),
                              ('workflow', 'mapping_attribute', 'workflow_run_id'),
                              ('workflow', 'validation_group', 'workflow_run_id')
@@ -434,7 +432,6 @@ def test_web_workflow_provenance_is_fenced_to_run_or_same_model(
         "generated_code",
         "generated_code_source_system",
         "mapping_attribute",
-        "model_attribute_binding",
     }
     expected = {
         (

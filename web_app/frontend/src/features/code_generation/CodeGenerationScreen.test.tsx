@@ -36,7 +36,7 @@ describe("Code Generation journey", () => {
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
     })} />);
-    const ledger = await screen.findByRole("table", { name: "Code Generation target Objects" });
+    const ledger = await screen.findByRole("table", { name: "Code Generation target Entities" });
     expect(within(ledger).getByText("silver_nwa.customer")).toBeVisible();
     expect(within(ledger).getByText("gold_nwa.order_mart")).toBeVisible();
     expect(screen.queryByLabelText("Target System code")).not.toBeInTheDocument();
@@ -47,8 +47,8 @@ describe("Code Generation journey", () => {
     expect(within(ledger).getByText("silver_nwa.address")).toBeVisible();
     expect(within(ledger).queryByText("silver_nwa.customer")).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Status"), "");
-    await user.click(screen.getByText("All Objects"));
-    await user.click(screen.getByRole("checkbox", { name: "GDS · gold_nwa.order_mart" }));
+    await user.click(screen.getByText("All Entities"));
+    await user.click(screen.getByRole("checkbox", { name: "Logical Entity · gold_nwa.order_mart" }));
     await user.click(screen.getByRole("button", { name: "Done" }));
     await user.click(screen.getByRole("button", { name: "Apply filters" }));
     expect(within(ledger).queryByText("silver_nwa.customer")).not.toBeInTheDocument();
@@ -73,7 +73,7 @@ describe("Code Generation journey", () => {
     expect(heading).toHaveFocus();
     expect(screen.getByLabelText("Stored SQL for silver_nwa.customer")).toBeVisible();
     expect(within(screen.getByRole("group", { name: "Contributing source Systems" })).getByText("CRM")).not.toBeVisible();
-    for (const label of ["Target Object", "Contributing source Systems", "Applied Mapping"]) await userEvent.setup().click(screen.getByRole("heading", { name: label }));
+    for (const label of ["Entity", "Contributing source Systems", "Applied Mapping"]) await userEvent.setup().click(screen.getByRole("heading", { name: label }));
     expect(screen.getByRole("heading", { name: "Contributing source Systems" })).toBeVisible();
     expect(within(screen.getByRole("group", { name: "Contributing source Systems" })).getByText("CRM")).toBeVisible();
     expect(screen.getByRole("table", { name: "Applied Mapping supports" })).toBeVisible();
@@ -86,7 +86,7 @@ describe("Code Generation journey", () => {
     );
     expect(container.querySelector("script")).toBeNull();
     expect(screen.getAllByRole("heading", { level: 2 }).map((item) => item.textContent)).toEqual([
-      "Stored SQL", "Target Object", "Contributing source Systems", "Applied Mapping",
+      "Stored SQL", "Entity", "Contributing source Systems", "Applied Mapping",
     ]);
     expect(screen.getByRole("link", { name: "Object Mapping 81" })).toHaveAttribute(
       "href", "/tenants/7/mapping/models/18/objects/81",
@@ -136,7 +136,7 @@ describe("Code Generation journey", () => {
       api: createApiClient(codeGenerationFetchStub({ hasLock: false })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
     })} />);
-    await screen.findByRole("table", { name: "Code Generation target Objects" });
+    await screen.findByRole("table", { name: "Code Generation target Entities" });
     expect(screen.getByRole("button", { name: "Generate SQL" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Generate SQL" })).toBeDisabled();
     expect(screen.getByText("Tenant Lock required to generate SQL")).toBeVisible();
@@ -146,7 +146,7 @@ describe("Code Generation journey", () => {
       api: createApiClient(codeGenerationFetchStub({ role: "developer" })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
     })} />);
-    await screen.findByRole("table", { name: "Code Generation target Objects" });
+    await screen.findByRole("table", { name: "Code Generation target Entities" });
     expect(screen.getByRole("button", { name: "Generate SQL" })).toBeDisabled();
     expect(screen.getByText("Architect permission required to generate SQL")).toBeVisible();
     denied.unmount();
@@ -157,7 +157,7 @@ describe("Code Generation journey", () => {
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
     })} />);
-    await screen.findByRole("table", { name: "Code Generation target Objects" });
+    await screen.findByRole("table", { name: "Code Generation target Entities" });
     await user.click(screen.getByRole("checkbox", { name: "Select silver_nwa.customer" }));
     await user.click(screen.getByRole("button", { name: "Generate SQL" }));
     expect(await screen.findByRole("heading", { name: "Generate SQL" })).toBeVisible();
@@ -171,7 +171,7 @@ describe("Code Generation journey", () => {
       expected_model_revision: 18,
       model_workflow: "code_generation",
       workflow_execution_mode: null,
-      selected_object_ids: [701],
+      selected_object_ids: [], selected_entity_ids: [701],
       modeled_entity_type: "logical_entity",
       requested_batch_id: null,
       agent: {
@@ -204,7 +204,7 @@ describe("Code Generation journey", () => {
     );
     const allCreate = createCalls(fetcher)[1];
     expect(JSON.parse(String(allCreate?.[1]?.body))).toEqual(expect.objectContaining({
-      selected_object_ids: [701, 702, 703],
+      selected_object_ids: [], selected_entity_ids: [701, 702, 703],
       modeled_entity_type: "logical_entity",
       code_generation_coverage_mode: "selected_targets",
     }));
@@ -231,7 +231,7 @@ describe("Code Generation journey", () => {
     const dialog = await screen.findByRole("dialog", { name: "Generate SQL" });
     await waitFor(() => expect(within(dialog).getByRole("button", { name: "Generate SQL" })).toBeEnabled());
     expect(within(dialog).getByRole("checkbox", { name: "Generate silver_nwa.address" })).toBeDisabled();
-    await user.click(within(dialog).getByRole("radio", { name: "Selected Objects" }));
+    await user.click(within(dialog).getByRole("radio", { name: "Selected Entities" }));
     await user.selectOptions(within(dialog).getByLabelText("Contributing Systems"), "selected");
     expect(within(dialog).getByRole("button", { name: "Generate SQL" })).toBeDisabled();
     await user.click(within(dialog).getByText("Choose Systems"));
@@ -239,11 +239,11 @@ describe("Code Generation journey", () => {
     await user.keyboard("{Escape}");
     expect(dialog).toBeVisible();
     await user.selectOptions(within(dialog).getByLabelText("SQL files"), "combined");
-    expect(within(dialog).getByRole("status")).toHaveTextContent("1 Objects · 1 Systems · 1 transformation SQL files");
+    expect(within(dialog).getByRole("status")).toHaveTextContent("1 Entities · 1 Systems · 1 transformation SQL files");
     await user.click(within(dialog).getByRole("button", { name: "Generate SQL" }));
     await waitFor(() => expect(createCalls(fetcher)).toHaveLength(1));
     expect(JSON.parse(String(createCalls(fetcher)[0]?.[1]?.body))).toMatchObject({
-      selected_object_ids: [701], selected_system_codes: ["ERP"], code_generation_file_layout: "combined",
+      selected_object_ids: [], selected_entity_ids: [701], selected_system_codes: ["ERP"], code_generation_file_layout: "combined",
     });
   });
 
@@ -262,7 +262,7 @@ describe("Code Generation journey", () => {
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
     })} />);
-    await screen.findByRole("table", { name: "Code Generation target Objects" });
+    await screen.findByRole("table", { name: "Code Generation target Entities" });
     await user.click(screen.getByRole("checkbox", { name: "Select silver_nwa.customer" }));
     await user.click(screen.getByRole("button", { name: "Generate SQL" }));
     const submit = await within(await screen.findByRole("dialog")).findByRole("button", { name: "Generate SQL" });
@@ -291,7 +291,7 @@ describe("Code Generation journey", () => {
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
     })} />);
-    await screen.findByRole("table", { name: "Code Generation target Objects" });
+    await screen.findByRole("table", { name: "Code Generation target Entities" });
 
     await user.click(screen.getByRole("checkbox", { name: "Select silver_nwa.customer" }));
     await user.click(screen.getByRole("button", { name: "Generate SQL" }));
@@ -321,7 +321,7 @@ describe("Code Generation journey", () => {
       api: createApiClient(fetcher),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
     })} />);
-    await screen.findByRole("table", { name: "Code Generation target Objects" });
+    await screen.findByRole("table", { name: "Code Generation target Entities" });
 
     await user.click(screen.getByRole("checkbox", { name: "Select silver_nwa.customer" }));
     await user.click(screen.getByRole("button", { name: "Generate SQL" }));
@@ -340,7 +340,7 @@ describe("Code Generation journey", () => {
       api: createApiClient(codeGenerationFetchStub({ empty: true })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
     })} />);
-    expect(await screen.findByText("No eligible target Objects in this layer.")).toBeVisible();
+    expect(await screen.findByText("No eligible target Entities in this layer.")).toBeVisible();
     empty.unmount();
 
     const denied = render(<WorkbenchApp router={createWorkbenchRouter({
@@ -503,7 +503,7 @@ const modelLedger = {
 const modelDetail = {
   ...modelLedger,
   tenant_id: 7,
-  silver_model_naming_instructions: null,
+  logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
   gold_model_technical_columns_template: null,
@@ -518,39 +518,28 @@ const modelDetail = {
 };
 
 const targetObject = {
-  object_id: 701,
-  tenant_id: 7,
-  tenant_code: "NWA",
-  tenant_name: "Northwind Analytics",
-  system_id: 4,
-  system_code: "GDS",
-  system_name: "Global Data Store",
-  connection_id: 8,
-  connection_code: "gds_primary",
-  object_schema: "silver_nwa",
-  object_name: "customer",
-  zone_code: "silver",
+  entity_type: "logical_entity", entity_id: 701,
+  entity_schema_name: "silver_nwa", entity_name: "customer",
 };
 
 const mappingSupport = {
   mapping_object_id: 81,
-  source: { entity_type: "logical_entity", entity_id: 41, entity_name: "Customer source" },
+  source: { entity_type: "logical_entity", entity_id: 41, entity_schema_name: "silver_nwa", entity_name: "Customer source" },
   source_system: { system_id: 2, system_code: "CRM", system_name: "Customer CRM" },
   dependency_order: 10,
 };
 
 const codeGenerationTargets = [
   codeGenerationTarget(targetObject, true, 501),
-  codeGenerationTarget({ ...targetObject, object_id: 702, object_name: "address" }, false, 502),
-  codeGenerationTarget({ ...targetObject, object_id: 703, object_name: "contact" }, null, null),
+  codeGenerationTarget({ ...targetObject, entity_id: 702, entity_name: "address" }, false, 502),
+  codeGenerationTarget({ ...targetObject, entity_id: 703, entity_name: "contact" }, null, null),
 ];
 
 const nextTarget = codeGenerationTarget({
   ...targetObject,
-  object_id: 704,
-  object_schema: "gold_nwa",
-  object_name: "order_mart",
-  zone_code: "gold",
+  entity_id: 704,
+  entity_schema_name: "gold_nwa",
+  entity_name: "order_mart",
 }, null, null);
 
 function codeGenerationTarget(
@@ -569,7 +558,7 @@ function codeGenerationTarget(
     source_system_count: 1,
     artifacts: artifactId === null ? [] : [{
       generated_sql_artifact_id: artifactId,
-      artifact_name: `${target.object_name}.sql`,
+      artifact_name: `${target.entity_name}.sql`,
       workflow_run_id: 1100,
       generated_at: "2026-08-24T10:30:00Z",
       generated_code_status: "active",

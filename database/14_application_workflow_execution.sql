@@ -539,6 +539,7 @@ RETURNS TABLE (
     requested_batch_id VARCHAR(500),
     analysis_result_id BIGINT,
     relationship_kind VARCHAR(100),
+    inferred_cardinality VARCHAR(20),
     relationship_confidence VARCHAR(10),
     relationship_basis TEXT,
     analysis_result_status VARCHAR(20),
@@ -709,6 +710,7 @@ BEGIN
     ), resolved_relationship_input AS MATERIALIZED (
         SELECT result.analysis_result_id,
                result.relationship_kind,
+               result.inferred_cardinality,
                result.relationship_confidence,
                result.relationship_basis,
                result.analysis_result_status,
@@ -974,6 +976,8 @@ BEGIN
                                       resolved.analysis_result_id,
                                       'relationship_kind',
                                       resolved.relationship_kind,
+                                      'inferred_cardinality',
+                                      resolved.inferred_cardinality,
                                       'relationship_confidence',
                                       resolved.relationship_confidence,
                                       'relationship_basis',
@@ -1070,6 +1074,7 @@ BEGIN
                requested_batch_id VARCHAR(500),
                analysis_result_id BIGINT,
                relationship_kind VARCHAR(100),
+               inferred_cardinality VARCHAR(20),
                relationship_confidence VARCHAR(10),
                relationship_basis TEXT,
                analysis_result_status VARCHAR(20),
@@ -3632,10 +3637,9 @@ DECLARE
     v_tables CONSTANT TEXT[] := ARRAY[
         'validation_check', 'validation_group',
         'generated_code_source_system', 'generated_code',
-        'mapping_attribute', 'mapping_object', 'model_attribute_binding',
+        'mapping_attribute', 'mapping_object',
         'dimensional_attribute_source_mapping', 'dimensional_entity_source_mapping',
         'dimensional_entity_submodel', 'dimensional_relationship', 'dimensional_attribute',
-        'model_object_binding',
         'logical_attribute_source_mapping', 'logical_entity_source_mapping',
         'logical_entity_submodel', 'logical_relationship', 'logical_attribute',
         'dimensional_entity', 'logical_entity', 'dimensional_submodel', 'logical_submodel',
@@ -3690,10 +3694,8 @@ BEGIN
             RAISE EXCEPTION 'Invalid deletion identities' USING ERRCODE = '22023';
         END IF;
         v_scope := CASE v_table
-            WHEN 'model_attribute_binding' THEN 'EXISTS (SELECT 1 FROM workflow.model_object_binding b WHERE b.model_object_binding_id = target.model_object_binding_id AND b.model_id = $1)'
             WHEN 'mapping_attribute' THEN 'EXISTS (SELECT 1 FROM workflow.mapping_object m WHERE m.mapping_object_id = target.mapping_object_id AND m.model_id = $1)'
-            WHEN 'generated_code' THEN 'EXISTS (SELECT 1 FROM workflow.model_object_binding b WHERE b.model_object_binding_id = target.model_object_binding_id AND b.model_id = $1)'
-            WHEN 'generated_code_source_system' THEN 'EXISTS (SELECT 1 FROM workflow.generated_code c JOIN workflow.model_object_binding b ON b.model_object_binding_id = c.model_object_binding_id WHERE c.generated_code_id = target.generated_code_id AND b.model_id = $1)'
+            WHEN 'generated_code_source_system' THEN 'EXISTS (SELECT 1 FROM workflow.generated_code c WHERE c.generated_code_id = target.generated_code_id AND c.model_id = $1)'
             WHEN 'validation_check' THEN 'EXISTS (SELECT 1 FROM workflow.validation_group g WHERE g.validation_group_id = target.validation_group_id AND g.model_id = $1)'
             ELSE 'target.model_id = $1'
         END;

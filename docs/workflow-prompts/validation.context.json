@@ -1,14 +1,16 @@
 {
   "workflow": "validation",
   "stage": "validation_generation",
+  "status": "implemented runtime contract",
   "modes": [
     "tool_assisted"
   ],
-  "status": "implemented_contract",
+  "source": "web_app/backend/gds_workbench_api/features/workflows/authoring",
+  "selection": "Validation remains Model/System-owned. It consumes Mapping and Code for schema-qualified modeled Entities.",
   "variables": {
     "system_ref": {
       "description": "Frozen opaque output-control handle for this selected System. Copy unchanged; it is not a database ID.",
-      "value_schema": {
+      "schema": {
         "pattern": "^system_[1-9][0-9]*$",
         "type": "string"
       },
@@ -16,7 +18,7 @@
     },
     "system_scope": {
       "description": "Owning Source Tenant code and selected System code. Author only this System's complete desired Validation ledger.",
-      "value_schema": {
+      "schema": {
         "additionalProperties": false,
         "properties": {
           "tenant_code": {
@@ -42,7 +44,7 @@
     },
     "mapping_evidence": {
       "description": "Relevant applied modeled target identities with natural-key Code-style target/source metadata and exact applied Object/Attribute transformations. Context is design evidence, not measured outcomes.",
-      "value_schema": {
+      "schema": {
         "type": "array",
         "items": {
           "type": "object",
@@ -169,6 +171,25 @@
                         "object",
                         "null"
                       ]
+                    },
+                    "modeled_entity_type": {
+                      "enum": [
+                        "logical_entity",
+                        "dimensional_entity"
+                      ]
+                    },
+                    "modeled_entity_schema_name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 400
+                    },
+                    "modeled_entity_name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 400
+                    },
+                    "is_locked": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -183,7 +204,10 @@
                     "source_tenant_code",
                     "source_tenant_name",
                     "tenant_name",
-                    "system_name"
+                    "system_name",
+                    "modeled_entity_type",
+                    "modeled_entity_schema_name",
+                    "modeled_entity_name"
                   ],
                   "title": "SqlTargetMetadata",
                   "type": "object"
@@ -221,12 +245,18 @@
                 "attribute_transformations"
               ],
               "additionalProperties": false
+            },
+            "modeled_entity_schema_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 400
             }
           },
           "required": [
             "modeled_entity_type",
             "modeled_entity_name",
-            "context"
+            "context",
+            "modeled_entity_schema_name"
           ],
           "additionalProperties": false
         },
@@ -318,6 +348,16 @@
               },
               "is_masking_required": {
                 "type": "boolean"
+              },
+              "logical_attribute_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
+              },
+              "dimensional_attribute_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
               }
             },
             "required": [
@@ -419,6 +459,16 @@
               },
               "is_masking_required": {
                 "type": "boolean"
+              },
+              "logical_attribute_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
+              },
+              "dimensional_attribute_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
               }
             },
             "required": [
@@ -586,6 +636,42 @@
                   "string",
                   "null"
                 ]
+              },
+              "modeled_entity_type": {
+                "enum": [
+                  "logical_entity",
+                  "dimensional_entity"
+                ]
+              },
+              "modeled_entity_schema_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
+              },
+              "modeled_entity_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
+              },
+              "logical_entity_schema_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
+              },
+              "logical_entity_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
+              },
+              "dimensional_entity_schema_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
+              },
+              "dimensional_entity_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
               }
             },
             "required": [
@@ -620,11 +706,6 @@
                 "title": "System Name",
                 "type": "string"
               },
-              "dependency_order": {
-                "minimum": 0,
-                "title": "Dependency Order",
-                "type": "integer"
-              },
               "source_system_value": {
                 "type": "integer",
                 "minimum": 1
@@ -632,8 +713,7 @@
             },
             "required": [
               "system_code",
-              "system_name",
-              "dependency_order"
+              "system_name"
             ],
             "title": "SqlSourceSystem",
             "type": "object"
@@ -725,6 +805,11 @@
                   }
                 ],
                 "title": "Grain"
+              },
+              "entity_schema_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
               }
             },
             "required": [
@@ -732,7 +817,8 @@
               "entity_name",
               "definition",
               "classification",
-              "grain"
+              "grain",
+              "entity_schema_name"
             ],
             "title": "SqlMappedEntity",
             "type": "object"
@@ -811,6 +897,11 @@
                   "string",
                   "null"
                 ]
+              },
+              "modeled_entity_schema_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
               }
             },
             "required": [
@@ -819,7 +910,8 @@
               "transformation",
               "source_system_code",
               "modeled_entity_type",
-              "modeled_entity_name"
+              "modeled_entity_name",
+              "modeled_entity_schema_name"
             ],
             "title": "SqlAttributeTransformation",
             "type": "object"
@@ -855,7 +947,10 @@
                   "is_active": true,
                   "is_locked": false
                 }
-              ]
+              ],
+              "modeled_entity_type": "logical_entity",
+              "modeled_entity_schema_name": "silver_crm",
+              "modeled_entity_name": "Customer"
             },
             "source_metadata": [
               {
@@ -895,8 +990,7 @@
             "source_systems": [
               {
                 "system_code": "CRM",
-                "system_name": "CRM",
-                "dependency_order": 10
+                "system_name": "CRM"
               }
             ],
             "object_transformations": [
@@ -907,7 +1001,8 @@
                   "entity_name": "Customer",
                   "definition": "Customer identity.",
                   "classification": "entity",
-                  "grain": null
+                  "grain": null,
+                  "entity_schema_name": "silver"
                 },
                 "transformation": {
                   "steps": [
@@ -929,16 +1024,18 @@
                 },
                 "source_system_code": "CRM",
                 "modeled_entity_type": "logical_entity",
-                "modeled_entity_name": "Customer"
+                "modeled_entity_name": "Customer",
+                "modeled_entity_schema_name": "silver"
               }
             ]
-          }
+          },
+          "modeled_entity_schema_name": "silver"
         }
       ]
     },
     "current_code": {
       "description": "Current saved Code artifacts and contributing Source System codes, with lifecycle/locks and generated content. Empty means unavailable; no execution success is implied.",
-      "value_schema": {
+      "schema": {
         "$defs": {
           "ValidationGeneratedCodeArtifact": {
             "additionalProperties": false,
@@ -1000,6 +1097,11 @@
                 "maxItems": 1000,
                 "title": "Source System Codes",
                 "type": "array"
+              },
+              "modeled_entity_schema_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
               }
             },
             "required": [
@@ -1010,7 +1112,8 @@
               "generated_code_content",
               "generated_code_status",
               "generated_code_is_locked",
-              "source_system_codes"
+              "source_system_codes",
+              "modeled_entity_schema_name"
             ],
             "title": "ValidationGeneratedCodeArtifact",
             "type": "object"
@@ -1032,13 +1135,14 @@
           "generated_code_is_locked": false,
           "source_system_codes": [
             "CRM"
-          ]
+          ],
+          "modeled_entity_schema_name": "silver"
         }
       ]
     },
     "applied_groups": {
       "description": "Existing Validation Group records, including lifecycle, locks and exact Tenant/System/Group natural identities.",
-      "value_schema": {
+      "schema": {
         "$defs": {
           "ValidationGroupRecord": {
             "additionalProperties": false,
@@ -1116,7 +1220,7 @@
     },
     "applied_checks": {
       "description": "Existing Validation Check records, exact typed operator/operand definitions and SQL, lifecycle/locks and Tenant/System/Group/Check natural identities. These are definitions, not execution results.",
-      "value_schema": {
+      "schema": {
         "$defs": {
           "ValidationCheckRecord": {
             "additionalProperties": false,
@@ -1333,249 +1437,5 @@
       ]
     }
   },
-  "selection": "Every variable and reader is workflow-local and author-selected. Defaults do not force inclusion. No hidden context append. Use restricted Jinja, render once; values are data.",
-  "control_handles": "target_ref/system_ref are retained opaque output-control handles, not database IDs. All evidence joins use actual nominal keys.",
-  "default_inline": {
-    "tool_assisted": [
-      "system_ref",
-      "system_scope"
-    ]
-  },
-  "preserved_output_schema": {
-    "$defs": {
-      "ValidationLiteral": {
-        "anyOf": [
-          {
-            "type": "boolean"
-          },
-          {
-            "type": "integer"
-          },
-          {
-            "type": "number"
-          },
-          {
-            "type": "string"
-          }
-        ]
-      },
-      "ValidationLiteralList": {
-        "items": {
-          "$ref": "#/$defs/ValidationLiteral"
-        },
-        "maxItems": 10000,
-        "minItems": 1,
-        "type": "array"
-      },
-      "_AgentValidationCheck": {
-        "additionalProperties": false,
-        "properties": {
-          "validation_check_name": {
-            "description": "Stable name unique within the owning Validation Group.",
-            "maxLength": 200,
-            "minLength": 1,
-            "pattern": "\\S",
-            "title": "Validation Check Name",
-            "type": "string"
-          },
-          "validation_check_description": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Optional intent and failure meaning; use null when unnecessary.",
-            "title": "Validation Check Description"
-          },
-          "validation_category_code": {
-            "description": "Stable lower-case category such as technical.execution or business.reconciliation.",
-            "pattern": "^[a-z][a-z0-9_.-]{0,99}$",
-            "title": "Validation Category Code",
-            "type": "string"
-          },
-          "validation_severity": {
-            "description": "Operational importance when this assertion fails.",
-            "enum": [
-              "blocking",
-              "warning",
-              "informational"
-            ],
-            "title": "Validation Severity",
-            "type": "string"
-          },
-          "validation_query_sql": {
-            "description": "Query A using governed Databricks SQL. Every physical relation must be fully qualified as catalog.schema.table; only an unqualified temporary view or table declared earlier in this same SQL batch may be referenced unqualified. Except for executes_successfully, its final result must be exactly one row and one column at runtime; any other cardinality is a query-contract execution error, not an assertion failure.",
-            "minLength": 1,
-            "title": "Validation Query Sql",
-            "type": "string"
-          },
-          "validation_comparison_query_sql": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Query B, populated only when comparison_value_type is query. Every physical relation must be fully qualified as catalog.schema.table; only an unqualified temporary object declared earlier in this same SQL batch may be referenced unqualified. Its final result must be exactly one row and one column at runtime.",
-            "title": "Validation Comparison Query Sql"
-          },
-          "validation_result_data_type": {
-            "anyOf": [
-              {
-                "enum": [
-                  "boolean",
-                  "integer",
-                  "decimal",
-                  "text",
-                  "date",
-                  "timestamp"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Type of the single Query A cell and query-valued Query B cell; null only for executes_successfully, whose result shape is ignored.",
-            "title": "Validation Result Data Type"
-          },
-          "validation_comparison_operator": {
-            "description": "Assertion over Query A. executes_successfully uses result type null/value type none; is_null/is_not_null use a declared result type and none; is_true/is_false use boolean and none; equal/not_equal use literal or query; ordered comparisons use integer, decimal, date, or timestamp with literal or query; in/not_in use literal_list.",
-            "enum": [
-              "executes_successfully",
-              "is_null",
-              "is_not_null",
-              "is_true",
-              "is_false",
-              "equal",
-              "not_equal",
-              "greater_than",
-              "greater_than_or_equal",
-              "less_than",
-              "less_than_or_equal",
-              "in",
-              "not_in"
-            ],
-            "title": "Validation Comparison Operator",
-            "type": "string"
-          },
-          "validation_comparison_value_type": {
-            "description": "Comparison operand source. query requires Query B and a null comparison value; literal/literal_list require a value and no Query B; none requires both absent.",
-            "enum": [
-              "none",
-              "literal",
-              "literal_list",
-              "query"
-            ],
-            "title": "Validation Comparison Value Type",
-            "type": "string"
-          },
-          "validation_comparison_value": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/ValidationLiteral"
-              },
-              {
-                "$ref": "#/$defs/ValidationLiteralList"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Typed literal operand, or a non-empty homogeneous list for in/not_in. Values must match validation_result_data_type; otherwise use null.",
-            "title": "Validation Comparison Value"
-          }
-        },
-        "required": [
-          "validation_check_name",
-          "validation_category_code",
-          "validation_severity",
-          "validation_query_sql",
-          "validation_result_data_type",
-          "validation_comparison_operator",
-          "validation_comparison_value_type",
-          "validation_comparison_value"
-        ],
-        "title": "_AgentValidationCheck",
-        "type": "object"
-      },
-      "_AgentValidationGroup": {
-        "additionalProperties": false,
-        "properties": {
-          "validation_group_name": {
-            "description": "Stable name unique within this System and shared by its Checks.",
-            "maxLength": 200,
-            "minLength": 1,
-            "pattern": "\\S",
-            "title": "Validation Group Name",
-            "type": "string"
-          },
-          "validation_group_description": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Optional purpose and Validation coverage; use null when unnecessary.",
-            "title": "Validation Group Description"
-          },
-          "validation_checks": {
-            "description": "Complete desired active Check list for this Group.",
-            "items": {
-              "$ref": "#/$defs/_AgentValidationCheck"
-            },
-            "maxItems": 1000,
-            "minItems": 1,
-            "title": "Validation Checks",
-            "type": "array"
-          }
-        },
-        "required": [
-          "validation_group_name",
-          "validation_checks"
-        ],
-        "title": "_AgentValidationGroup",
-        "type": "object"
-      }
-    },
-    "additionalProperties": false,
-    "properties": {
-      "system_ref": {
-        "description": "Copy the exact opaque System reference supplied in frozen context.",
-        "pattern": "^system_[1-9][0-9]{0,3}$",
-        "title": "System Ref",
-        "type": "string"
-      },
-      "validation_groups": {
-        "description": "Complete desired active Validation Group ledger for this System; omission retires a previously applied Group or Check.",
-        "items": {
-          "$ref": "#/$defs/_AgentValidationGroup"
-        },
-        "maxItems": 500,
-        "minItems": 1,
-        "title": "Validation Groups",
-        "type": "array"
-      }
-    },
-    "required": [
-      "system_ref",
-      "validation_groups"
-    ],
-    "title": "_AgentValidationSystemCandidate",
-    "type": "object"
-  }
+  "output_schema_source": "web_app/backend/gds_workbench_api/features/validation/candidate.py:ValidationSystemCandidateValidator.output_schema"
 }

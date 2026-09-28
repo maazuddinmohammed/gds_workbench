@@ -445,3 +445,58 @@ def analysis_selected_attributes(
             if len(attributes) > 50_000:
                 raise InvalidRequestError("The local fake agent context is invalid.")
     return tuple(attributes)
+
+
+def modeled_output_schema(context: JsonValue, workflow: str) -> str:
+    """Use the first configured schema; a fake must not invent authoring configuration."""
+    original = original_context(context)
+    details = original.get("model_details")
+    schemas = (
+        details.get(f"{workflow}_schemas") if isinstance(details, dict) else original.get("schemas")
+    )
+    if not isinstance(schemas, list) or not schemas or not isinstance(schemas[0], dict):
+        raise InvalidRequestError("The local fake agent output schemas are unavailable.")
+    name = schemas[0].get("schema_name")
+    if not isinstance(name, str) or not name.strip() or len(name) > 400:
+        raise InvalidRequestError("The local fake agent output schemas are invalid.")
+    return name
+
+
+def dimensional_logical_sources(
+    selected: JsonValue,
+) -> tuple[tuple[dict[str, JsonValue], ...], tuple[dict[str, JsonValue], ...]]:
+    """Project the selected Logical records into complete lineage keys."""
+    if not isinstance(selected, list) or not 1 <= len(selected) <= 50_000:
+        raise InvalidRequestError("The local fake agent context is invalid.")
+    entity_fields = ("logical_entity_schema_name", "logical_entity_name")
+    entities: list[dict[str, JsonValue]] = []
+    attributes: list[dict[str, JsonValue]] = []
+    seen: set[tuple[str, ...]] = set()
+    for item in selected:
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("entity"), dict)
+            or not isinstance(item.get("attributes"), list)
+        ):
+            raise InvalidRequestError("The local fake agent context is invalid.")
+        entity = cast(dict[str, JsonValue], item["entity"])
+        key = {name: entity.get(name) for name in entity_fields}
+        if any(not isinstance(v, str) or not v.strip() for v in key.values()):
+            raise InvalidRequestError("The local fake agent context is invalid.")
+        identity = tuple(cast(str, key[name]).strip().casefold() for name in entity_fields)
+        if identity in seen:
+            raise InvalidRequestError("The local fake agent context is invalid.")
+        seen.add(identity)
+        entities.append(key)
+        for attribute in cast(list[JsonValue], item["attributes"]):
+            if not isinstance(attribute, dict):
+                raise InvalidRequestError("The local fake agent context is invalid.")
+            name = attribute.get("logical_attribute_name")
+            if (
+                not isinstance(name, str)
+                or not name.strip()
+                or any(attribute.get(field) != key[field] for field in entity_fields)
+            ):
+                raise InvalidRequestError("The local fake agent context is invalid.")
+            attributes.append({**key, "logical_attribute_name": name})
+    return tuple(entities), tuple(attributes)

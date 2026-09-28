@@ -21,7 +21,7 @@ def compile_mapping_output_schema(
     )
     schema["description"] = (
         "Return only the Mapping transformation content. Identity, lifecycle status, "
-        "bindings, templates, and provenance are derived by the backend."
+        "templates and provenance are derived by the backend."
     )
     guidance: dict[str, JsonValue] = {}
     object_template = _selected_template(preparation, "mapping_object")

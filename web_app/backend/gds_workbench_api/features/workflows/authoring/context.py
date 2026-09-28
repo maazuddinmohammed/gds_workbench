@@ -18,6 +18,8 @@ from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.domain.metadata_records import AttributeRecord, ObjectRecord
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
+    LogicalAttributeRecord,
+    LogicalEntityRecord,
     ModelDetailsRecord,
     ProfilingProfileRecord,
     normalize_model_key_value,
@@ -137,6 +139,22 @@ SELECT model_id,
    AND is_active
 """
 
+_SELECTED_LOGICAL_ENTITIES_SQL: LiteralString = """
+SELECT selection.selection_order, selection.modeled_entity_id,
+       selection.modeled_entity_schema_name, selection.modeled_entity_name
+  FROM application.workflow_run_entity_selection AS selection
+  JOIN workflow.logical_entity AS entity
+    ON entity.model_id = selection.model_id
+   AND entity.logical_entity_id = selection.modeled_entity_id
+   AND lower(btrim(entity.logical_entity_schema_name))
+       = lower(btrim(selection.modeled_entity_schema_name))
+   AND lower(btrim(entity.logical_entity_name)) = lower(btrim(selection.modeled_entity_name))
+   AND entity.logical_entity_status = 'active'
+ WHERE selection.workflow_run_id = %s AND selection.model_id = %s
+   AND selection.modeled_entity_type = 'logical_entity'
+ ORDER BY selection.selection_order
+"""
+
 _SELECTED_OBJECTS_SQL: LiteralString = """
 WITH selected AS (
     SELECT object_id, selection_order
@@ -180,8 +198,7 @@ SELECT selected.selection_order,
     ON system.system_id = eligibility.system_id
   JOIN reference.object_type AS object_type
     ON object_type.object_type_id = object_record.object_type_id
- WHERE %s <> 'dimensional'
-    OR eligibility.is_dimensional_source_eligible
+ WHERE %s IN ('analysis', 'conceptual', 'logical')
  ORDER BY selected.selection_order
 """
 
@@ -234,8 +251,7 @@ SELECT selected.selection_order,
     ON placement_tenant.tenant_id = connection.tenant_id
   JOIN core.system AS system
     ON system.system_id = eligibility.system_id
- WHERE %s <> 'dimensional'
-    OR eligibility.is_dimensional_source_eligible
+ WHERE %s IN ('analysis', 'conceptual', 'logical')
  ORDER BY selected.selection_order,
           attribute.attribute_ordinal_position,
           attribute.attribute_id
@@ -288,6 +304,20 @@ SELECT target.object_id,
     ON source_zone.zone_id = source.zone_id AND source_zone.zone_code = 'source'
  WHERE target.object_id = ANY(%s::BIGINT[]) AND target.source_tenant_id = %s
  ORDER BY target.object_id, source.object_id
+"""
+
+_MODEL_GDS_CONTEXT_SQL: LiteralString = """
+SELECT placement.tenant_code, system.system_code, connection.connection_code,
+       'gold'::TEXT AS zone_code, zone.zone_description
+  FROM model.model AS model
+  JOIN core.tenant AS owner ON owner.tenant_id = model.tenant_id AND owner.is_active
+  JOIN core.connection AS connection ON connection.connection_id = owner.gds_connection_id
+   AND connection.is_active AND connection.is_global_data_store
+  JOIN core.tenant AS placement
+    ON placement.tenant_id = connection.tenant_id AND placement.is_active
+  JOIN core.system AS system ON system.system_id = connection.system_id AND system.is_active
+  LEFT JOIN reference.zone AS zone ON zone.zone_code = 'gold'
+ WHERE model.model_id = %s AND model.tenant_id = %s AND model.is_active
 """
 
 _PROFILE_PROVENANCE_SQL: LiteralString = """
@@ -351,6 +381,14 @@ class SelectedObjectContext(BaseModel):
     attributes: tuple[AttributeRecord, ...] = Field(repr=False)
 
 
+class SelectedLogicalEntityContext(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    selection_order: int = Field(gt=0)
+    entity: LogicalEntityRecord = Field(repr=False)
+    attributes: tuple[LogicalAttributeRecord, ...] = Field(repr=False)
+
+
 class ApplicableAppliedRecords(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -385,6 +423,9 @@ class AgentAuthoringContext(BaseModel):
     selected_scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     model_details: ModelDetailsRecord = Field(repr=False)
     selected_objects: tuple[SelectedObjectContext, ...] = Field(repr=False)
+    selected_logical_entities: tuple[SelectedLogicalEntityContext, ...] = Field(
+        default=(), repr=False
+    )
     profiles: tuple[ProfilingProfileRecord, ...] = Field(repr=False)
     analysis_relationships: tuple[AnalysisResultRecord, ...] = Field(repr=False)
     assertion: AssertionSection = Field(repr=False)
@@ -395,7 +436,6 @@ class AgentAuthoringContext(BaseModel):
     gds_context: tuple[dict[str, JsonValue], ...] = Field(default=(), repr=False)
     ingestion_mapping: tuple[dict[str, JsonValue], ...] = Field(default=(), repr=False)
     profile_provenance: tuple[dict[str, JsonValue], ...] = Field(default=(), repr=False)
-    logical_bindings: tuple[dict[str, JsonValue], ...] = Field(default=(), repr=False)
 
 
 class InMemoryAgentContextToolCatalog:
@@ -630,7 +670,8 @@ class PostgresAgentContextRepository:
     ) -> AgentContextBundle:
         if (
             self._limits.max_selected_objects is not None
-            and len(plan.selected_object_ids) > self._limits.max_selected_objects
+            and len(plan.selected_entity_ids or plan.selected_object_ids)
+            > self._limits.max_selected_objects
         ):
             raise AgentContextTooLargeError()
 
@@ -678,10 +719,61 @@ class PostgresAgentContextRepository:
                 if plan.model_workflow in {"conceptual", "logical", "dimensional"}
                 else None
             )
+            selected_logical: tuple[SelectedLogicalEntityContext, ...] = ()
+            if plan.model_workflow == "dimensional":
+                entity_rows = await transaction.fetch_all(
+                    _SELECTED_LOGICAL_ENTITIES_SQL, (plan.workflow_run_id, plan.model_id)
+                )
+                if len(entity_rows) != len(plan.selected_entity_ids):
+                    raise AgentContextUnavailableError()
+                entity_by_key = {
+                    (
+                        normalize_model_key_value(entity.logical_entity_schema_name),
+                        normalize_model_key_value(entity.logical_entity_name),
+                    ): entity
+                    for entity in snapshot.logical.entities
+                    if entity.logical_entity_status == "active"
+                }
+                selected_entities: list[SelectedLogicalEntityContext] = []
+                for order, (entity_id, row) in enumerate(
+                    zip(plan.selected_entity_ids, entity_rows, strict=True), start=1
+                ):
+                    if row["modeled_entity_id"] != entity_id or row["selection_order"] != order:
+                        raise AgentContextUnavailableError()
+                    key = (
+                        normalize_model_key_value(row["modeled_entity_schema_name"]),
+                        normalize_model_key_value(row["modeled_entity_name"]),
+                    )
+                    entity = entity_by_key.get(key)
+                    if entity is None:
+                        raise AgentContextUnavailableError()
+                    attributes = tuple(
+                        attribute
+                        for attribute in snapshot.logical.attributes
+                        if (
+                            normalize_model_key_value(attribute.logical_entity_schema_name),
+                            normalize_model_key_value(attribute.logical_entity_name),
+                        )
+                        == key
+                        and attribute.logical_attribute_status == "active"
+                    )
+                    selected_entities.append(
+                        SelectedLogicalEntityContext(
+                            selection_order=order, entity=entity, attributes=attributes
+                        )
+                    )
+                selected_logical = tuple(selected_entities)
+                if (
+                    self._limits.max_selected_attributes is not None
+                    and sum(len(entity.attributes) for entity in selected_logical)
+                    > self._limits.max_selected_attributes
+                ):
+                    raise AgentContextTooLargeError()
             context = _assemble_context(
                 plan=plan,
                 model=model,
                 selected=selected,
+                selected_logical=selected_logical,
                 snapshot=snapshot,
             )
             source_rows = await transaction.fetch_all(
@@ -696,6 +788,11 @@ class PostgresAgentContextRepository:
                 snapshot=snapshot,
                 source_rows=source_rows,
                 provenance_rows=provenance_rows,
+                placement_rows=(
+                    await transaction.fetch_all(_MODEL_GDS_CONTEXT_SQL, (plan.model_id, tenant_id))
+                    if plan.model_workflow == "dimensional"
+                    else []
+                ),
             )
             if (
                 self._limits.max_total_records is not None
@@ -898,6 +995,7 @@ def _assemble_context(
     model: ModelReadContext,
     selected: tuple[SelectedObjectContext, ...],
     snapshot: ModelSnapshot,
+    selected_logical: tuple[SelectedLogicalEntityContext, ...] = (),
 ) -> AgentAuthoringContext:
     if (
         snapshot.model_id != model.model_id
@@ -906,41 +1004,17 @@ def _assemble_context(
     ):
         raise AgentContextUnavailableError()
 
+    if plan.model_workflow in {"logical", "dimensional"}:
+        schemas = getattr(snapshot.model_input_scope.details, f"{plan.model_workflow}_schemas")
+        if not schemas:
+            raise AgentContextUnavailableError()
+
     selected_keys = {_physical_key(item.object) for item in selected}
     if len(selected_keys) != len(selected):
         raise AgentContextUnavailableError()
     scope_keys = {_physical_key(item) for item in snapshot.model_input_scope.objects}
     if plan.model_workflow == "dimensional":
-        active_dependencies = {
-            (
-                dependency.modeled_entity_type,
-                normalize_model_key_value(dependency.source_system_code),
-            )
-            for dependency in snapshot.mapping.dependencies
-            if dependency.mapping_source_system_dependency_status == "active"
-        }
-        mapped_logical_entities = {
-            normalize_model_key_value(mapping.modeled_entity_name)
-            for mapping in snapshot.mapping.objects
-            if mapping.modeled_entity_type == "logical_entity"
-            and mapping.object_mapping_status == "active"
-            and mapping.mapping_transformation_document is not None
-            and (
-                mapping.modeled_entity_type,
-                normalize_model_key_value(mapping.source_system_code),
-            )
-            in active_dependencies
-        }
-        eligible_keys = {
-            _physical_key(binding)
-            for binding in snapshot.model_binding.objects
-            if binding.modeled_entity_type == "logical_entity"
-            and binding.model_object_binding_status == "active"
-            and normalize_model_key_value(binding.modeled_entity_name) in mapped_logical_entities
-        }
-        if not selected_keys <= eligible_keys or any(
-            item.object.zone_code != "silver" for item in selected
-        ):
+        if selected or len(selected_logical) != len(plan.selected_entity_ids):
             raise AgentContextUnavailableError()
     elif not selected_keys <= scope_keys:
         raise AgentContextUnavailableError()
@@ -981,6 +1055,7 @@ def _assemble_context(
         selected_scope_digest=plan.selected_scope_digest,
         model_details=snapshot.model_input_scope.details,
         selected_objects=selected,
+        selected_logical_entities=selected_logical,
         profiles=profiles,
         analysis_relationships=analysis_relationships,
         assertion=AssertionSection(
@@ -1008,12 +1083,15 @@ def _with_prompt_evidence(
     snapshot: ModelSnapshot,
     source_rows: list[dict[str, Any]],
     provenance_rows: list[dict[str, Any]],
+    placement_rows: list[dict[str, Any]],
 ) -> AgentAuthoringContext:
     from .context_inputs import OBJECT_FIELDS, natural_key
 
     selected = dict(zip(plan.selected_object_ids, context.selected_objects, strict=True))
     sources: dict[tuple[Any, ...], dict[str, JsonValue]] = {}
     placements: dict[tuple[Any, ...], dict[str, JsonValue]] = {}
+    for row in placement_rows:
+        placements[(*natural_key(row, OBJECT_FIELDS[:3]), row["zone_code"])] = dict(row)
     mappings: dict[tuple[Any, ...], dict[str, JsonValue]] = {}
     for row in source_rows:
         if row["object_id"] not in selected:
@@ -1061,49 +1139,7 @@ def _with_prompt_evidence(
             row["profiled_at"].isoformat() if row["profiled_at"] is not None else None
         )
         provenance.append(value)
-    bindings: list[dict[str, Any]] = []
-    if plan.model_workflow == "dimensional":
-        for selected_object in context.selected_objects:
-            key = _physical_key(selected_object.object)
-            matches = [
-                b
-                for b in snapshot.model_binding.objects
-                if b.modeled_entity_type == "logical_entity"
-                and b.model_object_binding_status == "active"
-                and _physical_key(b) == key
-            ]
-            if len(matches) != 1:
-                raise AgentContextUnavailableError()
-            binding = matches[0]
-            attrs: list[dict[str, str]] = []
-            for attr in selected_object.attributes:
-                candidates = [
-                    a
-                    for a in snapshot.model_binding.attributes
-                    if a.modeled_entity_type == "logical_entity"
-                    and a.model_attribute_binding_status == "active"
-                    and normalize_model_key_value(a.modeled_entity_name)
-                    == normalize_model_key_value(binding.modeled_entity_name)
-                    and normalize_model_key_value(a.attribute_name)
-                    == normalize_model_key_value(attr.attribute_name)
-                ]
-                if len(candidates) != 1:
-                    raise AgentContextUnavailableError()
-                attrs.append(
-                    {
-                        "attribute_name": attr.attribute_name,
-                        "logical_attribute_name": candidates[0].modeled_attribute_name,
-                    }
-                )
-            bindings.append(
-                {
-                    **{f: getattr(binding, f) for f in OBJECT_FIELDS},
-                    "logical_entity_name": binding.modeled_entity_name,
-                    "attributes": attrs,
-                }
-            )
-    # Silver Objects retain the contributing business Systems of their applied Logical Mapping.
-    # Their physical placement System alone cannot scope dimensional requirements correctly.
+    # Assertion scope follows authorized source meaning, independent of target registration.
     assertion_scope = [
         {"tenant_code": snapshot.model_tenant_code, "system_code": system}
         for system in sorted(
@@ -1113,20 +1149,30 @@ def _with_prompt_evidence(
         if snapshot.model_tenant_code
     ]
     if plan.model_workflow == "dimensional":
-        entity_names = {normalize_model_key_value(b["logical_entity_name"]) for b in bindings}
-        for mapping in snapshot.mapping.objects:
-            if (
-                mapping.modeled_entity_type == "logical_entity"
-                and mapping.object_mapping_status == "active"
-                and normalize_model_key_value(mapping.modeled_entity_name) in entity_names
-                and snapshot.model_tenant_code
-            ):
-                assertion_scope.append(
-                    {
-                        "tenant_code": snapshot.model_tenant_code,
-                        "system_code": mapping.source_system_code,
-                    }
-                )
+        entity_keys = {
+            (
+                normalize_model_key_value(item.entity.logical_entity_schema_name),
+                normalize_model_key_value(item.entity.logical_entity_name),
+            )
+            for item in context.selected_logical_entities
+        }
+        source_systems = {source.system_code for source in snapshot.model_input_scope.objects}
+        source_systems.update(
+            mapping.source_system_code
+            for mapping in snapshot.mapping.objects
+            if mapping.modeled_entity_type == "logical_entity"
+            and mapping.object_mapping_status == "active"
+            and (
+                normalize_model_key_value(mapping.modeled_entity_schema_name),
+                normalize_model_key_value(mapping.modeled_entity_name),
+            )
+            in entity_keys
+        )
+        if snapshot.model_tenant_code:
+            assertion_scope.extend(
+                {"tenant_code": snapshot.model_tenant_code, "system_code": system}
+                for system in sorted(source_systems)
+            )
     return context.model_copy(
         update={
             "assertion_source_scope": tuple(assertion_scope),
@@ -1134,7 +1180,6 @@ def _with_prompt_evidence(
             "gds_context": tuple(placements.values()),
             "ingestion_mapping": tuple(mappings.values()),
             "profile_provenance": tuple(provenance),
-            "logical_bindings": tuple(bindings),
         }
     )
 
@@ -1158,9 +1203,6 @@ def modeled_layer_dependencies(
             ),
         )
         for dataset in (
-            "model_object_binding",
-            "model_attribute_binding",
-            "mapping_dependency",
             "mapping_object",
             "mapping_attribute",
             "generated_code",
@@ -1374,6 +1416,10 @@ def _context_datasets(
         "model_details": (cast(JsonValue, context.model_details.model_dump(mode="json")),),
         "selected_object": tuple(selected_objects),
         "selected_attribute": tuple(selected_attributes),
+        "selected_logical_entity": tuple(
+            cast(JsonValue, entity.model_dump(mode="json"))
+            for entity in context.selected_logical_entities
+        ),
         "profiling_profile": tuple(
             cast(JsonValue, record.model_dump(mode="json")) for record in context.profiles
         ),
@@ -1407,7 +1453,6 @@ def _context_datasets(
         datasets["dimensional_relationship"] = _dump_records(dimensional.relationships)
     mapping = context.applied.mapping
     if mapping is not None:
-        datasets["mapping_dependency"] = _dump_records(mapping.dependencies)
         datasets["mapping_object"] = _dump_records(mapping.objects)
         datasets["mapping_attribute"] = _dump_records(mapping.attributes)
     dependencies: dict[str, list[JsonValue]] = {}
@@ -1619,6 +1664,21 @@ def _context_manifest(
         "modeled_entity_type": context.modeled_entity_type,
         "selected_scope_digest": context.selected_scope_digest,
         "selected_objects": selected_objects,
+        "selected_logical_entities": [
+            {
+                "selection_order": item.selection_order,
+                "logical_entity_schema_name": item.entity.logical_entity_schema_name,
+                "logical_entity_name": item.entity.logical_entity_name,
+                "attribute_count": len(item.attributes),
+            }
+            for item in context.selected_logical_entities
+        ],
+        "schemas": cast(
+            JsonValue,
+            context.model_details.model_dump(mode="json").get(
+                f"{context.model_workflow}_schemas", []
+            ),
+        ),
         "dataset_counts": {name: len(rows) for name, rows in datasets.items()},
         "dataset_record_counts": dict(dataset_record_counts),
         "dataset_count_semantics": {
@@ -1652,6 +1712,8 @@ def _compact_context_manifest(manifest: dict[str, JsonValue]) -> dict[str, JsonV
     compact = deepcopy(manifest)
     compact.pop("selected_objects", None)
     compact["selected_objects_dataset"] = "selected_object"
+    compact.pop("selected_logical_entities", None)
+    compact["selected_logical_entities_dataset"] = "selected_logical_entity"
     return compact
 
 

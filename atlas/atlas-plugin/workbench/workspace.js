@@ -167,7 +167,9 @@
     if (manifest.snapshot_kind !== area || catalog.snapshot_kind !== area) {
       throw new Error(`${area} Snapshot kind does not match its session area.`);
     }
+    if (area === "model" && (manifest.schema_version !== "2.0" || catalog.schema_version !== "2.0")) throw new Error("Model Snapshot schema version 2.0 is required.");
     if (!Array.isArray(catalog.sections)) throw new Error(`${area} catalog sections are invalid.`);
+    if (area === "model" && !core.isEntityOwnedModelCatalog(catalog)) throw new Error("Legacy Model Snapshot contract; fetch a new Entity-owned Model Snapshot.");
     if (area === "model") {
       const model = catalog.model;
       if (

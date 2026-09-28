@@ -162,18 +162,18 @@ describe("Model record review", () => {
 });
 
 
-it("previews an explicit unlock for a hidden locked Binding before applying it", async () => {
+it("previews an explicit unlock for a hidden locked Mapping before applying it", async () => {
   const { api, renderReview } = fixture();
   api.previewModelRecordReview.mockResolvedValueOnce({ ...preview, can_apply: false,
-    items: [{ ...preview.items[1]!, dataset: "model_object_binding", record_id: 900, label: "Customer binding", is_locked: true }],
-    issues: [{ code: "record_locked", dataset: "model_object_binding", message: "Unlock the Binding before changing status." }], issue_count: 1,
+    items: [{ ...preview.items[1]!, dataset: "mapping_object", record_id: 900, label: "silver.Customer Mapping", is_locked: true }],
+    issues: [{ code: "record_locked", dataset: "mapping_object", message: "Unlock the Mapping before changing status." }], issue_count: 1,
   });
   render(renderReview());
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Deactivate selected" }));
-  await user.click(await screen.findByRole("button", { name: "Review unlock for Customer binding" }));
+  await user.click(await screen.findByRole("button", { name: "Review unlock for silver.Customer Mapping" }));
   await screen.findByRole("dialog", { name: "Review unlock" });
   await waitFor(() => expect(api.previewModelRecordReview).toHaveBeenLastCalledWith(9, 18,
-    { dataset: "model_object_binding", record_ids: [900], action: "unlock", expected_model_revision: 7 }, 1));
+    { dataset: "mapping_object", record_ids: [900], action: "unlock", expected_model_revision: 7 }, 1));
   expect(api.applyModelRecordReview).not.toHaveBeenCalled();
 });

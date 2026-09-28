@@ -2,6 +2,7 @@
 
 > Historical verification record. The interactive notebook runtime was retired
 > by [ADR 007](adr/007-web-owned-workflows-and-notebook-retirement.md); notebook checks below describe the earlier release.
+> Binding and consumer-context details were superseded by [ADR 012](adr/012-entity-owned-mapping-and-code.md). The counts below do not verify current source or packages.
 
 Local implementation. Deployment and changes to populated installations require separate operator approval. Fresh-install SQL remains a fresh-install sequence; no migration or backfill helper is provided.
 
@@ -55,7 +56,7 @@ Response fields: `schema_version`, `model_id`, `model_revision`, `context_digest
 
 Read the remaining components `source_metadata`, `source_systems`, `object_transformations`, `attribute_transformations`. Send the returned `model_revision` as `expected_model_revision` and `context_digest` as `expected_context_digest` on every further request. Continue each component's `next_cursor` until null. A changed context invalidates its cursor; restart the complete view, never splice pages from different versions.
 
-`source_systems` exposes the registered numeric provenance as `source_system_value`, beside the System code/dependency order. It is context for the Mapping's actual SourceSystemID rule, not permission to replace a mapped expression with a guessed constant. `target_metadata.attributes[].population` is `database`, `framework` or `mapping`, resolved from registered surrogate flags and configured audit/history templates. Existing frozen workflow contexts without these new flags remain readable.
+`source_systems` exposes the registered numeric provenance as `source_system_value`, beside the System code/name. Stable list order does not define execution order or business precedence. It is context for the Mapping's actual SourceSystemID rule, not permission to replace a mapped expression with a guessed constant. `target_metadata.attributes[].population` is `database`, `framework` or `mapping`, resolved from registered surrogate flags and configured audit/history templates. Existing frozen workflow contexts without these new flags remain readable.
 
 Limits: 100 records per request, 256 KiB per page/record, 10 MiB complete target context. An oversized record is rejected rather than truncated; this reader does not promise independent Code Generation for a context it cannot deliver. Preserve local work and resolve the bounded-reader limitation explicitly. `complete` certifies the listed structural checks only; business grain, joins and transformation semantics still require review.
 
@@ -68,6 +69,6 @@ No secrets, connection values, SQL results or raw rows are added to the consumer
 - Both Python source trees pass Ruff formatting/lint and Pyright. Three extracted notebook artifact probes pass on Python 3.12; the notebook artifact excludes MCP transport readers and retains the shared Mapping projector.
 - Deployment packaging suite: 61 passed. Strengthened Metadata Apply fixture confirms two different Object Mappings in one Copy Group both persist at order 1.
 - Native PowerShell 7 profiling/analysis safety scenarios and end-to-end plan manifest/SQL parity: 2 passed. Windows PowerShell 5.1 remains a CI verification target; it was not available on this macOS host.
-- MCP source artifact: `mcp_server/dist/gds-mcp-appservice-atlas-0.1.0.zip`. Built locally; not deployed.
+- Current canonical MCP source artifact: [`gds-mcp-appservice-0.2.0.zip`](../mcp_server/dist/gds-mcp-appservice-0.2.0.zip). Older archive variants were removed; this historical report does not verify the current artifact.
 
 Tests use fixture-created disposable PostgreSQL with random credentials, database and sentinel. The sandbox initially denied its Docker socket; the approved escalated test command accesses that same fixture path. No existing database, DSN, Azure or Databricks execution was substituted.

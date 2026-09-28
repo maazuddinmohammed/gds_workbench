@@ -204,6 +204,8 @@
           memberships.add(key);
         }
         return {
+          schema: record[`${layer}_entity_schema_name`],
+          key: JSON.stringify([normalize(record[`${layer}_entity_schema_name`]), normalize(record[spec.entityName])]),
           name: record[spec.entityName],
           order: record[spec.entityOrder],
           colorGroup: String(record[spec.entityColor] ?? "unspecified"),
@@ -212,11 +214,16 @@
         };
       })
       .sort((left, right) => (left.order ?? 0) - (right.order ?? 0) || normalize(left.name).localeCompare(normalize(right.name)));
-    const entityByKey = uniqueBy(entities, "name", `${layer} Entity`);
+    const entityByKey = new Map();
+    for (const entity of entities) {
+      if (!oneLine(entity.schema)) throw new Error(`An effective ${layer} Entity needs its schema name.`);
+      if (entityByKey.has(entity.key)) throw new Error(`Effective ${layer} Entity identities are not unique.`);
+      entityByKey.set(entity.key, entity);
+    }
     const attributesByEntity = new Map();
     const attributeKeys = new Set();
     for (const record of rows(loaded, spec.attributeDataset).filter((item) => item[spec.attributeStatus] === "active")) {
-      const entityKey = normalize(record[spec.attributeEntity]);
+      const entityKey = JSON.stringify([normalize(record[`${layer}_entity_schema_name`]), normalize(record[spec.attributeEntity])]);
       if (!entityByKey.has(entityKey)) throw new Error(`An effective ${layer} Attribute has an inactive or missing Entity.`);
       const key = `${entityKey}\0${normalize(record[spec.attributeName])}`;
       if (attributeKeys.has(key)) throw new Error(`Effective ${layer} Attribute names are not unique.`);
@@ -247,8 +254,8 @@
       .filter((record) => record[spec.relationshipStatus] === "active")
       .map((record) => ({
         name: record[spec.relationshipName], definition: record[spec.relationshipDefinition],
-        fromEntity: normalize(record[spec.fromEntity]), fromAttribute: normalize(record[spec.fromAttribute]),
-        toEntity: normalize(record[spec.toEntity]), toAttribute: normalize(record[spec.toAttribute]),
+        fromEntity: JSON.stringify([normalize(record[`from_${layer}_entity_schema_name`]), normalize(record[spec.fromEntity])]), fromAttribute: normalize(record[spec.fromAttribute]),
+        toEntity: JSON.stringify([normalize(record[`to_${layer}_entity_schema_name`]), normalize(record[spec.toEntity])]), toAttribute: normalize(record[spec.toAttribute]),
         cardinality: record[spec.relationshipCardinality],
         notes: layer === "logical"
           ? [["Basis", record.logical_relationship_basis], ["Confidence", record.logical_relationship_confidence]]
@@ -283,15 +290,15 @@
   }
 
   function renderModeled(model, data, included, path, view, submodelName, description) {
-    const include = included || new Set(data.entities.map((entity) => normalize(entity.name)));
-    const colors = colorMap(new Map(data.entities.map((entity) => [normalize(entity.name), entity.colorGroup])));
+    const include = included || new Set(data.entities.map((entity) => entity.key));
+    const colors = colorMap(new Map(data.entities.map((entity) => [entity.key, entity.colorGroup])));
     const lines = projectLines(model, token(description), description);
     let tableCount = 0;
     for (const entity of data.entities) {
-      const entityKey = normalize(entity.name);
+      const entityKey = entity.key;
       if (!include.has(entityKey)) continue;
       tableCount += 1;
-      lines.push(`Table ${identifier(entity.name)} [headercolor: ${colors.get(entityKey)}] {`);
+      lines.push(`Table ${identifier(entity.schema)}.${identifier(entity.name)} [headercolor: ${colors.get(entityKey)}] {`);
       const attributes = data.attributesByEntity.get(entityKey) || [];
       const settings = keySettings(attributes);
       for (const attribute of attributes) {
@@ -317,7 +324,7 @@
       const toAttribute = data.attributesByEntity.get(relationship.toEntity).find((item) => normalize(item.name) === relationship.toAttribute);
       lines.push(
         comment([["Relationship", relationship.name], ["Definition", relationship.definition], ...relationship.notes]),
-        `Ref ${data.layer}_relationship_${relationshipCount}: ${identifier(from.name)}.${identifier(fromAttribute.name)} ${CARDINALITY[relationship.cardinality]} ${identifier(to.name)}.${identifier(toAttribute.name)}`,
+        `Ref ${data.layer}_relationship_${relationshipCount}: ${identifier(from.schema)}.${identifier(from.name)}.${identifier(fromAttribute.name)} ${CARDINALITY[relationship.cardinality]} ${identifier(to.schema)}.${identifier(to.name)}.${identifier(toAttribute.name)}`,
         "",
       );
     }
@@ -332,7 +339,7 @@
     const assigned = new Set();
     for (const submodel of data.submodels) {
       const key = normalize(submodel.name);
-      const members = new Set(data.entities.filter((entity) => entity.submodels.has(key)).map((entity) => normalize(entity.name)));
+      const members = new Set(data.entities.filter((entity) => entity.submodels.has(key)).map((entity) => entity.key));
       members.forEach((member) => assigned.add(member));
       const base = `${layer}_${token(submodel.name, "submodel", 220).toLowerCase()}`;
       let path = `${base}.dbml`;
@@ -341,7 +348,7 @@
       usedNames.add(path.toLowerCase());
       documents.push(renderModeled(model, data, members, path, "submodel", submodel.name, `${layer[0].toUpperCase()}${layer.slice(1)} Submodel: ${submodel.name}. ${submodel.definition || ""}`));
     }
-    const unassigned = new Set(data.entities.map((entity) => normalize(entity.name)).filter((key) => !assigned.has(key)));
+    const unassigned = new Set(data.entities.map((entity) => entity.key).filter((key) => !assigned.has(key)));
     if (unassigned.size) documents.push(renderModeled(model, data, unassigned, `${layer}_default.dbml`, "default", null, `${layer[0].toUpperCase()}${layer.slice(1)} Entities without an active Submodel membership`));
     return documents;
   }

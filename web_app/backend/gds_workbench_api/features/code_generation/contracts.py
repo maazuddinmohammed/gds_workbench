@@ -15,7 +15,6 @@ from pydantic import (
 
 from gds_workbench_api.features.mapping.read_contracts import (
     ModeledEntityReference,
-    PhysicalObjectReference,
     SourceSystemReference,
 )
 
@@ -97,22 +96,9 @@ class CodeMappingSupport(ContractModel):
     dependency_order: int = Field(ge=0)
 
 
-class CodeGenerationTargetObjectReference(PhysicalObjectReference):
-    """A physical target and the Tenant whose data it represents.
-
-    The regular Tenant/System/Connection fields identify the physical placement.
-    For Bronze, Silver, and Gold that placement can be GDS; source Tenant remains
-    a distinct Object property.
-    """
-
-    source_tenant_id: int = Field(gt=0)
-    source_tenant_code: str = Field(min_length=1, max_length=100)
-    source_tenant_name: str = Field(min_length=1, max_length=200)
-
-
 class CodeGenerationTargetSummary(ContractModel):
     is_locked: bool = False
-    target: CodeGenerationTargetObjectReference
+    target: ModeledEntityReference
     entity_type: MappingEntityType
     mapping_supports: tuple[CodeMappingSupport, ...] = Field(
         min_length=1,
@@ -169,7 +155,7 @@ class GeneratedSqlArtifactDetail(ContractModel):
     generated_sql_artifact_id: int = Field(gt=0)
     artifact_name: str = Field(min_length=1, max_length=400)
     model_id: int = Field(gt=0)
-    target: CodeGenerationTargetObjectReference
+    target: ModeledEntityReference
     entity_type: MappingEntityType
     source_systems: tuple[SourceSystemReference, ...] = Field(max_length=200)
     source_system_count: int = Field(ge=0, le=200)
@@ -204,7 +190,7 @@ class GeneratedSqlArtifactDetail(ContractModel):
 class SqlArtifactDownload(ContractModel):
     generated_sql_artifact_id: int = Field(gt=0)
     artifact_name: str = Field(min_length=1, max_length=400)
-    target: CodeGenerationTargetObjectReference
+    target: ModeledEntityReference
     entity_type: MappingEntityType
     generated_sql: str = Field(min_length=1, repr=False)
     generated_sql_byte_count: int = Field(gt=0)

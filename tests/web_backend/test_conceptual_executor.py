@@ -550,12 +550,12 @@ def _service(
             attributes=attributes,
             model_input_objects=objects,
             model_input_attributes=attributes,
-            dimensional_source_objects=frozenset(),
-            dimensional_source_attributes=frozenset(),
-            logical_mapping_target_objects=frozenset(),
-            logical_mapping_target_attributes=frozenset(),
-            dimensional_mapping_target_objects=frozenset(),
-            dimensional_mapping_target_attributes=frozenset(),
+
+
+
+
+
+
         )
         applied = context.applied.conceptual
         snapshot = snapshot_from_graph(

@@ -58,6 +58,13 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND to_regclass('application.workflow_stage_variable') IS NOT NULL
        AND to_regclass('application.prompt_template') IS NOT NULL
        AND to_regclass('application.workflow_run_object_selection') IS NOT NULL
+       AND to_regclass('application.workflow_run_entity_selection') IS NOT NULL
+       AND to_regclass('workflow.modeled_entity') IS NOT NULL
+       AND to_regclass('workflow.modeled_attribute') IS NOT NULL
+       AND (SELECT count(*) = 2 FROM information_schema.columns
+             WHERE table_schema = 'model' AND table_name = 'model'
+               AND column_name IN ('logical_schemas', 'dimensional_schemas')
+               AND data_type = 'jsonb' AND is_nullable = 'NO')
        AND to_regclass('workflow.generated_code') IS NOT NULL
        AND to_regclass('model.model_event_log') IS NOT NULL AS schema_ready,
        current_user = 'gds_web_write'
@@ -132,7 +139,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND has_function_privilege(
            'gds_web_write',
            'application.create_model(uuid,uuid,character varying,bigint,'
-           'character varying,character varying,text,jsonb,text,jsonb,jsonb,'
+           'character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,'
            'character varying,character varying,character varying,'
            'character varying,integer,integer)',
            'EXECUTE'

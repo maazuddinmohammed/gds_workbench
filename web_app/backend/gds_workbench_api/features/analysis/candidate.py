@@ -16,6 +16,7 @@ from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
     Code100,
     Confidence,
+    InferredCardinality,
     Name400,
     NonblankText,
     PhysicalAttributeKey,
@@ -58,6 +59,7 @@ class AnalysisInferenceRelationship(BaseModel):
     ]
     relationship_confidence: Confidence
     relationship_basis: NonblankText
+    inferred_cardinality: InferredCardinality
 
 
 class _AnalysisInferenceCandidate(BaseModel):
@@ -130,13 +132,14 @@ class AnalysisInferenceCandidateValidator:
             )
 
         issues: list[AgentValidationIssue] = []
-        seen: dict[tuple[str, ...], tuple[int, tuple[str, str]]] = {}
+        seen: dict[tuple[str, ...], tuple[int, tuple[str, str, str]]] = {}
         raw_records: list[dict[str, object]] = []
         for index, candidate_record in enumerate(parsed.relationships):
             key = _relationship_key(candidate_record)
             content = (
                 candidate_record.relationship_confidence,
                 candidate_record.relationship_basis,
+                candidate_record.inferred_cardinality,
             )
             if key in seen:
                 if seen[key][1] != content:
@@ -144,7 +147,7 @@ class AnalysisInferenceCandidateValidator:
                         AgentValidationIssue(
                             code="candidate.relationship_duplicate",
                             path=("relationships", index),
-                            message="Duplicate relationship has conflicting confidence or basis.",
+                            message="Duplicate relationship has conflicting inference fields.",
                         )
                     )
                 continue

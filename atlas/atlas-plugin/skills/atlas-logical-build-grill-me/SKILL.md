@@ -35,4 +35,4 @@ The interview reference owns questioning and decision capture. Domain rules rema
 
 ## Continue or switch
 
-Follow the [switching rule](../../references/logical-build/context.md#switching-workflows) if the user selects Guided. Once the requested model is ready and required modeling changes are applied, continue through [target registration](../atlas-target-registration/SKILL.md) and [Entity Binding](../atlas-entity-binding/SKILL.md) when requested. Those workflows own storage assignment; modeling decisions remain available to Mapping and Code Generation.
+Follow the [switching rule](../../references/logical-build/context.md#switching-workflows) if the user selects Guided. Once the requested model is ready and required modeling changes are applied, continue through [target registration](../atlas-target-registration/SKILL.md) when requested. Registration is a later operational handoff; modeling decisions remain available to Mapping and Code Generation.

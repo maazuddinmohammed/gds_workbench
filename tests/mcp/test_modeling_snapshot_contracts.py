@@ -10,6 +10,7 @@ from uuid import uuid4
 
 import pytest
 from gds_etl_workbench.domain.modeling_records import (
+    AnalysisResultRecord,
     GeneratedCodeRecord,
     ProfilingProfileRecord,
     ValidationCheckRecord,
@@ -21,6 +22,7 @@ from gds_etl_workbench.domain.snapshots.model import (
     DATASETS_BY_NAME,
     MODEL_SECTIONS,
     ModelChangeSetDataset,
+    ModelSnapshot,
     build_model_dataset_schema,
     model_snapshot_records,
 )
@@ -53,9 +55,6 @@ EXPECTED_DATASETS = (
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",
-    "model_object_binding",
-    "model_attribute_binding",
-    "mapping_dependency",
     "mapping_object",
     "mapping_attribute",
     "generated_code",
@@ -65,9 +64,9 @@ EXPECTED_DATASETS = (
 )
 
 
-def test_model_snapshot_has_exact_25_dataset_registry() -> None:
+def test_model_snapshot_has_exact_22_dataset_registry() -> None:
     assert tuple(definition.name for definition in DATASETS) == EXPECTED_DATASETS
-    assert len(DATASETS_BY_NAME) == 25
+    assert len(DATASETS_BY_NAME) == 22
     assert CHANGE_SET_DATASETS == DATASETS
     assert MODEL_SECTIONS == (
         "model_input_scope",
@@ -77,7 +76,6 @@ def test_model_snapshot_has_exact_25_dataset_registry() -> None:
         "conceptual",
         "logical",
         "dimensional",
-        "model_binding",
         "mapping",
         "code_generation",
         "validation",
@@ -127,7 +125,9 @@ def test_every_custom_model_record_validator_is_exported_for_local_parity() -> N
 
     assert set(MODEL_RECORD_VALIDATIONS) == custom
     for dataset, rules in MODEL_RECORD_VALIDATIONS.items():
-        assert build_model_dataset_schema(DATASETS_BY_NAME[dataset])["x-gds-record-validation"] == {
+        assert build_model_dataset_schema(DATASETS_BY_NAME[dataset])[
+            "x-gds-record-validation"
+        ] == {
             "version": "1.0",
             "rules": list(rules),
         }
@@ -152,13 +152,14 @@ def test_status_contract_has_only_applied_lifecycle_values() -> None:
         "conceptual_object",
         "logical_entity",
         "dimensional_entity",
-        "model_object_binding",
         "mapping_object",
         "generated_code",
     ):
         schema = build_model_dataset_schema(DATASETS_BY_NAME[dataset])
         status_property = next(
-            value for name, value in schema["properties"].items() if name.endswith("_status")
+            value
+            for name, value in schema["properties"].items()
+            if name.endswith("_status")
         )
         assert status_property["enum"] == ["active", "inactive", "deprecated"]
 
@@ -180,11 +181,14 @@ def test_logical_entity_schema_exports_server_type_detail_rule() -> None:
 
 def test_generated_code_and_validation_public_shapes_are_minimal() -> None:
     generated = build_model_dataset_schema(DATASETS_BY_NAME["generated_code"])
-    source_system = build_model_dataset_schema(DATASETS_BY_NAME["generated_code_source_system"])
+    source_system = build_model_dataset_schema(
+        DATASETS_BY_NAME["generated_code_source_system"]
+    )
     group = build_model_dataset_schema(DATASETS_BY_NAME["validation_group"])
 
     assert set(generated["properties"]) == {
         "modeled_entity_type",
+        "modeled_entity_schema_name",
         "modeled_entity_name",
         "artifact_name",
         "artifact_type",
@@ -194,6 +198,7 @@ def test_generated_code_and_validation_public_shapes_are_minimal() -> None:
     }
     assert set(source_system["properties"]) == {
         "modeled_entity_type",
+        "modeled_entity_schema_name",
         "modeled_entity_name",
         "artifact_name",
         "source_system_code",
@@ -235,9 +240,13 @@ def test_code_validation_locks_are_required_in_portable_records(
 def test_records_reject_database_or_removed_fields() -> None:
     graph = complete_model_graph()
 
-    assert ProfilingProfileRecord.model_validate(graph["profiling_profile"][0], strict=False)
+    assert ProfilingProfileRecord.model_validate(
+        graph["profiling_profile"][0], strict=False
+    )
     assert GeneratedCodeRecord.model_validate(graph["generated_code"][0], strict=False)
-    assert ValidationCheckRecord.model_validate(graph["validation_check"][0], strict=False)
+    assert ValidationCheckRecord.model_validate(
+        graph["validation_check"][0], strict=False
+    )
 
     for model, record, extra in (
         (ProfilingProfileRecord, graph["profiling_profile"][0], {"attribute_id": 1}),
@@ -252,13 +261,42 @@ def test_records_reject_database_or_removed_fields() -> None:
             model.model_validate({**record, **extra}, strict=False)
 
 
-def test_snapshot_flattens_binding_mapping_code_and_validation_sections() -> None:
+@pytest.mark.parametrize(
+    "cardinality",
+    ["one_to_one", "one_to_many", "many_to_one", "many_to_many", "unknown"],
+)
+def test_analysis_inference_is_independent_of_measured_evidence(
+    cardinality: str,
+) -> None:
+    record = complete_model_graph()["analysis_result"][0]
+    inferred = AnalysisResultRecord.model_validate(
+        {**record, "inferred_cardinality": cardinality}, strict=True
+    )
+    assert inferred.inferred_cardinality == cardinality
+    assert inferred.validation_source_non_null_count == 9
+    assert inferred.validation_source_distinct_count == 5
+    assert inferred.validation_result == "supported"
+
+
+def test_analysis_cardinality_defaults_unknown_and_rejects_invalid_values() -> None:
+    record = complete_model_graph()["analysis_result"][0]
+    record.pop("inferred_cardinality")
+    assert (
+        AnalysisResultRecord.model_validate(record, strict=True).inferred_cardinality
+        == "unknown"
+    )
+    for invalid in (None, "one", 1):
+        with pytest.raises(ValidationError):
+            AnalysisResultRecord.model_validate(
+                {**record, "inferred_cardinality": invalid}
+            )
+
+
+def test_snapshot_flattens_entity_mapping_code_and_validation_sections() -> None:
     graph = complete_model_graph()
     records = model_snapshot_records(snapshot_from_graph(graph))
 
     assert tuple(records) == EXPECTED_DATASETS
-    assert len(records["model_object_binding"]) == 4
-    assert len(records["model_attribute_binding"]) == 6
     assert len(records["mapping_object"]) == 1
     assert len(records["generated_code"]) == 1
     assert len(records["generated_code_source_system"]) == 1
@@ -270,7 +308,8 @@ def test_snapshot_encoding_sorts_rows_and_rejects_duplicate_keys() -> None:
     graph = complete_model_graph()
     graph["conceptual_object"].reverse()
     encoded = {
-        item.definition.name: item for item in encode_model_snapshot(snapshot_from_graph(graph))
+        item.definition.name: item
+        for item in encode_model_snapshot(snapshot_from_graph(graph))
     }
     rows = encoded["conceptual_object"].rows_jsonl.decode().splitlines()
     assert [json.loads(row)["conceptual_object_name"] for row in rows] == [
@@ -279,7 +318,9 @@ def test_snapshot_encoding_sorts_rows_and_rejects_duplicate_keys() -> None:
     ]
 
     duplicate = deepcopy(graph["conceptual_object"][0])
-    duplicate["conceptual_object_name"] = f" {duplicate['conceptual_object_name'].upper()} "
+    duplicate["conceptual_object_name"] = (
+        f" {duplicate['conceptual_object_name'].upper()} "
+    )
     graph["conceptual_object"].append(duplicate)
     with pytest.raises(SnapshotContractError, match="duplicate canonical key"):
         encode_model_snapshot(snapshot_from_graph(graph))
@@ -312,10 +353,7 @@ def test_snapshot_archive_catalogs_all_sections_and_datasets(tmp_path: Path) -> 
 
     sections = {section["name"]: section for section in catalog["sections"]}
     assert tuple(sections) == MODEL_SECTIONS
-    assert [item["name"] for item in sections["model_binding"]["datasets"]] == [
-        "model_object_binding",
-        "model_attribute_binding",
-    ]
+    assert "model_binding" not in sections
     assert [item["name"] for item in sections["code_generation"]["datasets"]] == [
         "generated_code",
         "generated_code_source_system",
@@ -329,8 +367,19 @@ def test_snapshot_archive_catalogs_all_sections_and_datasets(tmp_path: Path) -> 
         "Legacy Model",
         "Other Model",
     ]
-    assert manifest["counts"]["logical_dataset_count"] == 25
+    assert manifest["counts"]["logical_dataset_count"] == 22
     assert manifest["database_ids_included"] is False
-    assert len([name for name in names if name.endswith(".schema.json")]) == 25
-    assert len([name for name in names if name.endswith("rows.jsonl")]) == 25
+    assert len([name for name in names if name.endswith(".schema.json")]) == 22
+    assert len([name for name in names if name.endswith("rows.jsonl")]) == 22
     assert not any("qa" in name.casefold() or "model_scope" in name for name in names)
+
+
+def test_removed_mapping_dependency_is_absent_and_legacy_snapshot_section_is_rejected() -> None:
+    snapshot = snapshot_from_graph(complete_model_graph())
+    assert "mapping_dependency" not in DATASETS_BY_NAME
+    assert set(snapshot.mapping.model_dump()) == {"objects", "attributes"}
+    legacy = snapshot.model_dump(mode="json")
+    legacy["mapping"]["dependencies"] = []
+    with pytest.raises(ValidationError) as error:
+        ModelSnapshot.model_validate(legacy)
+    assert any(item["loc"] == ("mapping", "dependencies") for item in error.value.errors())

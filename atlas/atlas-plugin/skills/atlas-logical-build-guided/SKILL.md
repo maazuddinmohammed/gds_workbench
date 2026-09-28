@@ -28,7 +28,7 @@ With SQL `never`, reuse applicable existing profiles or record Profiling as **no
 
 For profiling, load the [profiling reference](../../references/logical-build/profiling.md). Resolve inputs and batch choices, invoke the available generator using its verified contract, execute permitted query groups, and save validated results as the reference directs. If generation fails, use its [agent-written SQL fallback](../../references/logical-build/profiling.md#agent-written-sql-fallback). Keep SQL templates, files, tool arguments and result handling in that reference.
 
-For analysis, load [finding relationships](../../references/logical-build/find-relationships.md): inspect scoped Objects, infer clear identity/role and category/reference relationships from metadata, and use SQL only when useful under the saved policy. Keep inferred and measured conclusions explicit. Shared [Model authoring](../../references/model/change-sets.md) owns the unchanged payload structure.
+For analysis, load [finding relationships](../../references/logical-build/find-relationships.md): inspect scoped Objects, infer clear identity/role and category/reference relationships from metadata, and use SQL only when useful under the saved policy. Explicitly populate `inferred_cardinality` and explain it in `relationship_basis`; keep measured validation separate. Shared [Model authoring](../../references/model/change-sets.md) owns local authoring and the [Analysis record](../../references/model/analysis-result.md) owns its fields.
 
 For conceptual modeling, load [business concepts](../../references/logical-build/business-concepts.md): identify business meanings and grain, reuse/consolidate equivalent concepts, attach real supports, then define relationships and cardinality. Use the exact [Conceptual record contract](../../references/model/conceptual.md) for the two local datasets and nested supports.
 
@@ -65,4 +65,4 @@ Load only relevant topics. Both Logical Build skills use the same logical-build 
 
 ## Continue when requested
 
-Continue with [target registration](../atlas-target-registration/SKILL.md), [Entity Binding](../atlas-entity-binding/SKILL.md) and [Mapping](../atlas-mapping/SKILL.md) when requested. Those workflows and Code Generation must preserve the design and identify actual support for generated inputs.
+Continue with [target registration](../atlas-target-registration/SKILL.md) and [Mapping](../atlas-mapping/SKILL.md) when requested. Those workflows and Code Generation must preserve the design and identify actual support for generated inputs.

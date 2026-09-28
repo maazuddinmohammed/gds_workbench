@@ -6,7 +6,7 @@ export type ModelReviewDataset =
   | "conceptual_object" | "conceptual_relationship"
   | "logical_submodel" | "logical_entity" | "logical_attribute" | "logical_relationship"
   | "dimensional_submodel" | "dimensional_entity" | "dimensional_attribute" | "dimensional_relationship"
-  | "model_object_binding" | "model_attribute_binding" | "mapping_dependency" | "mapping_object" | "mapping_attribute"
+  | "mapping_object" | "mapping_attribute"
   | "generated_code" | "generated_code_source_system" | "validation_group" | "validation_check";
 export type ModelReviewAction = "lock" | "unlock" | "deactivate" | "reactivate" | "delete";
 

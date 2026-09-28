@@ -60,6 +60,7 @@ Cardinality = Literal[
     "many_to_one",
     "many_to_many",
 ]
+InferredCardinality = Cardinality | Literal["unknown"]
 JsonObject = dict[str, object]
 ANALYSIS_VALIDATION_FIELDS = (
     "validation_policy_version",
@@ -99,6 +100,13 @@ class PhysicalAttributeKey(PhysicalObjectKey):
     attribute_name: Name400
 
 
+class ModelSchemaDefinition(ModelingRecord):
+    schema_name: Name400
+    description: (
+        Annotated[str, StringConstraints(min_length=1, max_length=2000, pattern=r"\S")] | None
+    )
+
+
 class ModelDetailsRecord(ModelingRecord):
     model_name: Annotated[
         str,
@@ -116,9 +124,15 @@ class ModelDetailsRecord(ModelingRecord):
     gold_model_naming_instructions: NamingInstructions | None
     gold_model_technical_columns_template: JsonObject | None
     gold_model_audit_columns_template: JsonObject | None
+    logical_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
+    dimensional_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
 
     @model_validator(mode="after")
     def validate_policy_fields(self) -> ModelDetailsRecord:
+        for schemas in (self.logical_schemas, self.dimensional_schemas):
+            _require_unique((schema.schema_name for schema in schemas), "Model schema names")
+            if _json_size([schema.model_dump(mode="json") for schema in schemas]) > 262_144:
+                raise ValueError("Model schema configuration is too large.")
         naming_instructions = (
             self.silver_model_naming_instructions,
             self.gold_model_naming_instructions,
@@ -263,6 +277,7 @@ class AnalysisResultRecord(ModelingRecord):
     to_object_name: Name400
     to_attribute_name: Name400
     relationship_kind: Annotated[str, StringConstraints(min_length=1, max_length=100)]
+    inferred_cardinality: InferredCardinality = "unknown"
     relationship_confidence: Literal["low", "medium", "high"]
     relationship_basis: NonblankText
     validation_policy_version: DigestVersion | None = None
@@ -527,7 +542,26 @@ type LogicalEntitySourceRecord = Annotated[
 ]
 
 
-class DimensionalObjectSourceRecord(LogicalObjectSourceRecord):
+class LogicalEntityKey(ModelingRecord):
+    logical_entity_schema_name: Name400
+    logical_entity_name: Annotated[
+        str, StringConstraints(min_length=1, max_length=255, pattern=r"\S")
+    ]
+
+
+class LogicalAttributeKey(LogicalEntityKey):
+    logical_attribute_name: Annotated[
+        str, StringConstraints(min_length=1, max_length=255, pattern=r"\S")
+    ]
+
+
+class DimensionalLogicalEntitySourceRecord(ModelingRecord):
+    support_source_type: Literal["logical_entity"]
+    source_logical_entity: LogicalEntityKey
+    source_order: int | None = Field(default=None, gt=0)
+    rationale: NonblankText
+    status: Status
+    is_locked: bool
     source_role: Annotated[
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
@@ -542,7 +576,7 @@ class DimensionalAssertionSourceRecord(LogicalAssertionSourceRecord):
 
 
 type DimensionalEntitySourceRecord = Annotated[
-    DimensionalObjectSourceRecord | DimensionalAssertionSourceRecord,
+    DimensionalLogicalEntitySourceRecord | DimensionalAssertionSourceRecord,
     Field(discriminator="support_source_type"),
 ]
 
@@ -571,6 +605,21 @@ type AttributeSourceRecord = Annotated[
 ]
 
 
+class AttributeLogicalSourceRecord(ModelingRecord):
+    support_source_type: Literal["logical_attribute"]
+    source_logical_attribute: LogicalAttributeKey
+    source_order: int | None = Field(default=None, gt=0)
+    rationale: NonblankText
+    status: Status
+    is_locked: bool
+
+
+type DimensionalAttributeSourceRecord = Annotated[
+    AttributeLogicalSourceRecord | AttributeAssertionSourceRecord,
+    Field(discriminator="support_source_type"),
+]
+
+
 class LogicalSubmodelRecord(ModelingRecord):
     logical_submodel_name: Annotated[
         str,
@@ -582,6 +631,7 @@ class LogicalSubmodelRecord(ModelingRecord):
 
 
 class LogicalEntityRecord(ModelingRecord):
+    logical_entity_schema_name: Name400
     logical_entity_name: Annotated[
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
@@ -621,6 +671,7 @@ class LogicalEntityRecord(ModelingRecord):
 
 
 class LogicalAttributeRecord(ModelingRecord):
+    logical_entity_schema_name: Name400
     logical_entity_name: Annotated[
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
@@ -656,6 +707,8 @@ class LogicalAttributeRecord(ModelingRecord):
 
 
 class LogicalRelationshipRecord(ModelingRecord):
+    from_logical_entity_schema_name: Name400
+    to_logical_entity_schema_name: Name400
     logical_relationship_name: Annotated[
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
@@ -687,9 +740,11 @@ class LogicalRelationshipRecord(ModelingRecord):
     @model_validator(mode="after")
     def validate_endpoints(self) -> LogicalRelationshipRecord:
         if (
+            normalize_model_key_value(self.from_logical_entity_schema_name),
             normalize_model_key_value(self.from_logical_entity_name),
             normalize_model_key_value(self.from_logical_attribute_name),
         ) == (
+            normalize_model_key_value(self.to_logical_entity_schema_name),
             normalize_model_key_value(self.to_logical_entity_name),
             normalize_model_key_value(self.to_logical_attribute_name),
         ):
@@ -708,6 +763,7 @@ class DimensionalSubmodelRecord(ModelingRecord):
 
 
 class DimensionalEntityRecord(ModelingRecord):
+    dimensional_entity_schema_name: Name400
     dimensional_entity_name: Annotated[
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
@@ -749,6 +805,7 @@ class DimensionalEntityRecord(ModelingRecord):
 
 
 class DimensionalAttributeRecord(ModelingRecord):
+    dimensional_entity_schema_name: Name400
     dimensional_entity_name: Annotated[
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
@@ -794,7 +851,7 @@ class DimensionalAttributeRecord(ModelingRecord):
     dimensional_attribute_confidence: Confidence
     dimensional_attribute_status: Status
     dimensional_attribute_is_locked: bool
-    sources: tuple[AttributeSourceRecord, ...]
+    sources: tuple[DimensionalAttributeSourceRecord, ...]
 
     @model_validator(mode="after")
     def validate_attribute_policy(self) -> DimensionalAttributeRecord:
@@ -823,6 +880,8 @@ class DimensionalAttributeRecord(ModelingRecord):
 
 
 class DimensionalRelationshipRecord(ModelingRecord):
+    from_dimensional_entity_schema_name: Name400
+    to_dimensional_entity_schema_name: Name400
     dimensional_relationship_name: Annotated[
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
@@ -866,9 +925,11 @@ class DimensionalRelationshipRecord(ModelingRecord):
     @model_validator(mode="after")
     def validate_endpoints(self) -> DimensionalRelationshipRecord:
         if (
+            normalize_model_key_value(self.from_dimensional_entity_schema_name),
             normalize_model_key_value(self.from_dimensional_entity_name),
             normalize_model_key_value(self.from_dimensional_attribute_name),
         ) == (
+            normalize_model_key_value(self.to_dimensional_entity_schema_name),
             normalize_model_key_value(self.to_dimensional_entity_name),
             normalize_model_key_value(self.to_dimensional_attribute_name),
         ):
@@ -876,40 +937,8 @@ class DimensionalRelationshipRecord(ModelingRecord):
         return self
 
 
-class MappingDependencyRecord(ModelingRecord):
-    modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
-    source_system_code: Code100
-    source_system_dependency_order: int = Field(ge=0)
-    mapping_source_system_dependency_status: Status
-    mapping_source_system_dependency_is_locked: bool
-
-
-class ModelObjectBindingRecord(PhysicalObjectKey):
-    modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
-    modeled_entity_name: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
-    ]
-    model_object_binding_status: Status
-    model_object_binding_is_locked: bool
-
-
-class ModelAttributeBindingRecord(ModelingRecord):
-    modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
-    modeled_entity_name: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
-    ]
-    modeled_attribute_name: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
-    ]
-    attribute_name: Name400
-    model_attribute_binding_status: Status
-    model_attribute_binding_is_locked: bool
-
-
 class MappingObjectRecord(ModelingRecord):
+    modeled_entity_schema_name: Name400
     modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
     modeled_entity_name: Annotated[
         str,
@@ -931,6 +960,7 @@ class MappingObjectRecord(ModelingRecord):
 
 
 class MappingAttributeRecord(ModelingRecord):
+    modeled_entity_schema_name: Name400
     modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
     modeled_entity_name: Annotated[
         str,
@@ -958,6 +988,7 @@ VALIDATION_QUERY_MAX_BYTES = 100_000
 
 
 class GeneratedCodeRecord(ModelingRecord):
+    modeled_entity_schema_name: Name400
     modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
     modeled_entity_name: Annotated[
         str,
@@ -986,6 +1017,7 @@ class GeneratedCodeRecord(ModelingRecord):
 
 
 class GeneratedCodeSourceSystemRecord(ModelingRecord):
+    modeled_entity_schema_name: Name400
     modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
     modeled_entity_name: Annotated[
         str,
@@ -1194,6 +1226,22 @@ def _require_unique_sources(sources: Iterable[Any], label: str) -> None:
             key = (
                 "assertion",
                 normalize_model_key_value(source.assertion_record.modeling_assertion_record_key),
+            )
+        elif source.support_source_type in {"logical_entity", "logical_attribute"}:
+            logical = (
+                source.source_logical_entity
+                if source.support_source_type == "logical_entity"
+                else source.source_logical_attribute
+            )
+            key = (
+                source.support_source_type,
+                normalize_model_key_value(logical.logical_entity_schema_name),
+                normalize_model_key_value(logical.logical_entity_name),
+                *(
+                    (normalize_model_key_value(logical.logical_attribute_name),)
+                    if source.support_source_type == "logical_attribute"
+                    else ()
+                ),
             )
         else:
             physical = getattr(source, "source_object", None) or source.source_attribute

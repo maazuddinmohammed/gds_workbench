@@ -16,4 +16,4 @@ Follow [Dimensional context](../../references/dimensional-build/context.md), the
 
 Example useful question: "When a customer changes segment, should old sales remain under the segment at sale time or move to the current segment?" Ask it only when the analytical requirement is unresolved; accepted model flags do not prove the framework can implement the answer.
 
-Switching to Guided follows the [shared switching rule](../../references/dimensional-build/context.md#switching-build-skills). After verified Dimensional Apply, the same requested Gold registration, Binding and Mapping workflows apply. No separate GrillMe installation or parallel decision ledger is required.
+Switching to Guided follows the [shared switching rule](../../references/dimensional-build/context.md#switching-build-skills). After verified Dimensional Apply, the same requested Mapping and optional later Gold registration workflows apply. No separate GrillMe installation or parallel decision ledger is required.

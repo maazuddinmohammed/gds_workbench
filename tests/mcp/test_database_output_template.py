@@ -54,8 +54,8 @@ def _seed_mapping(connection: Any) -> dict[str, int]:
     assert tenant is not None and target is not None and source_system is not None
     model = connection.execute(
         """
-        INSERT INTO model.model (tenant_id, model_name)
-        VALUES (%s, %s)
+        INSERT INTO model.model (tenant_id, model_name, logical_schemas)
+        VALUES (%s, %s, '[{"schema_name":"silver","description":null}]')
         RETURNING model_id
         """,
         (tenant["tenant_id"], f"Output Template {uuid4().hex}"),
@@ -65,8 +65,8 @@ def _seed_mapping(connection: Any) -> dict[str, int]:
         """
         INSERT INTO workflow.logical_entity (
             model_id, logical_entity_name, logical_entity_definition,
-            logical_entity_type, logical_entity_grain
-        ) VALUES (%s, 'Customer', 'Customer.', 'core', 'One customer')
+            logical_entity_type, logical_entity_grain, logical_entity_schema_name
+        ) VALUES (%s, 'Customer', 'Customer.', 'core', 'One customer', 'silver')
         RETURNING logical_entity_id
         """,
         (model["model_id"],),
@@ -84,49 +84,17 @@ def _seed_mapping(connection: Any) -> dict[str, int]:
         (model["model_id"], entity["logical_entity_id"]),
     ).fetchone()
     assert logical_attribute is not None
-    object_binding = connection.execute(
-        """
-        INSERT INTO workflow.model_object_binding (
-            model_id, object_id, modeled_entity_type, logical_entity_id
-        ) VALUES (%s, %s, 'logical_entity', %s)
-        RETURNING model_object_binding_id
-        """,
-        (model["model_id"], target["object_id"], entity["logical_entity_id"]),
-    ).fetchone()
-    assert object_binding is not None
-    attribute_binding = connection.execute(
-        """
-        INSERT INTO workflow.model_attribute_binding (
-            model_object_binding_id, logical_attribute_id, attribute_id
-        ) VALUES (%s, %s, %s)
-        RETURNING model_attribute_binding_id
-        """,
-        (
-            object_binding["model_object_binding_id"],
-            logical_attribute["logical_attribute_id"],
-            target["attribute_id"],
-        ),
-    ).fetchone()
-    assert attribute_binding is not None
-    connection.execute(
-        """
-        INSERT INTO workflow.mapping_source_system_dependency (
-            model_id, modeled_entity_type, source_system_id
-        ) VALUES (%s, 'logical_entity', %s)
-        """,
-        (model["model_id"], source_system["system_id"]),
-    )
     mapping_object = connection.execute(
         """
         INSERT INTO workflow.mapping_object (
-            model_id, model_object_binding_id, source_system_id,
+            model_id, logical_entity_id, source_system_id, modeled_entity_type,
             mapping_transformation_document
-        ) VALUES (%s, %s, %s, '{"kind":"direct"}'::JSONB)
+        ) VALUES (%s, %s, %s, 'logical_entity', '{"kind":"direct"}'::JSONB)
         RETURNING mapping_object_id
         """,
         (
             model["model_id"],
-            object_binding["model_object_binding_id"],
+            entity["logical_entity_id"],
             source_system["system_id"],
         ),
     ).fetchone()
@@ -134,14 +102,16 @@ def _seed_mapping(connection: Any) -> dict[str, int]:
     mapping_attribute = connection.execute(
         """
         INSERT INTO workflow.mapping_attribute (
-            mapping_object_id, model_attribute_binding_id,
+            mapping_object_id, logical_attribute_id, model_id, logical_entity_id, modeled_entity_type,
             attribute_mapping_transformation_document
-        ) VALUES (%s, %s, '{"expression":"CustomerID"}'::JSONB)
+        ) VALUES (%s, %s, %s, %s, 'logical_entity', '{"expression":"CustomerID"}'::JSONB)
         RETURNING mapping_attribute_id
         """,
         (
             mapping_object["mapping_object_id"],
-            attribute_binding["model_attribute_binding_id"],
+            logical_attribute["logical_attribute_id"],
+            model["model_id"],
+            entity["logical_entity_id"],
         ),
     ).fetchone()
     assert mapping_attribute is not None

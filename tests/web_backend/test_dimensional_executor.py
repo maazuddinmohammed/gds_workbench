@@ -147,9 +147,10 @@ def _plan(
             "model_revision": 7,
             "model_workflow": "dimensional",
             "workflow_execution_mode": mode,
-            "modeled_entity_type": None,
+            "modeled_entity_type": "logical_entity",
             "selected_scope_digest": "a" * 64,
-            "selected_object_ids": (501,),
+            "selected_object_ids": (),
+            "selected_entity_ids": (501,),
             "selection": AgentRunSelection(
                 sdk_code="openai_agents_sdk",
                 provider_code="microsoft_foundry",
@@ -164,54 +165,43 @@ def _plan(
     )
 
 
-def _selected_object() -> dict[str, object]:
-    attributes: list[dict[str, object]] = []
-    for position, name in enumerate(("customer_id", "sale_customer_id"), start=1):
-        attributes.append(
-            {
-                "tenant_code": "NWA",
-                "system_code": "GDS",
-                "connection_code": "PRIMARY",
-                "object_schema": "silver_nwa",
-                "object_name": "sales_customer",
-                "attribute_name": name,
-                "fc_attribute_name": None,
-                "attribute_ordinal_position": position,
-                "attribute_description": f"{name} source value.",
-                "attribute_data_type": "bigint",
-                "attribute_inferred_data_type": None,
-                "is_locked": False,
-                "attribute_nullability": False,
-                "attribute_custom_code": None,
-                "is_surrogate_key": False,
-                "is_natural_key": True,
-                "is_meta_data": False,
-                "is_masking_required": False,
-                "is_mapped": True,
-                "is_purge": False,
-                "is_active": True,
-            }
-        )
+def _selected_logical_entity() -> dict[str, object]:
+    entity: dict[str, object] = {
+        "logical_entity_schema_name": "silver_nwa",
+        "logical_entity_name": "sales_customer",
+        "logical_entity_definition": "Customer",
+        "logical_entity_type": "core",
+        "logical_entity_type_detail": None,
+        "logical_entity_grain": "One customer",
+        "logical_entity_dependency_order": 0,
+        "logical_entity_confidence": "high",
+        "logical_entity_status": "active",
+        "logical_entity_is_locked": False,
+        "submodels": [],
+        "sources": [],
+    }
     return {
         "selection_order": 1,
-        "object": {
-            "tenant_code": "NWA",
-            "source_tenant_code": "NWA",
-            "system_code": "GDS",
-            "connection_code": "PRIMARY",
-            "object_schema": "silver_nwa",
-            "object_name": "sales_customer",
-            "fc_object_schema": None,
-            "fc_object_name": None,
-            "object_transformation": None,
-            "object_description": "Eligible Silver dimensional contribution.",
-            "batch_attribute_name": None,
-            "object_type_code": "table",
-            "zone_code": "silver",
-            "is_locked": False,
-            "is_active": True,
-        },
-        "attributes": tuple(attributes),
+        "entity": entity,
+        "attributes": [
+            {
+                "logical_entity_schema_name": "silver_nwa",
+                "logical_entity_name": "sales_customer",
+                "logical_attribute_name": name,
+                "logical_attribute_definition": name,
+                "logical_attribute_data_type": "bigint",
+                "logical_attribute_is_nullable": False,
+                "logical_attribute_is_primary_key": False,
+                "logical_attribute_is_natural_key": True,
+                "logical_attribute_is_surrogate_key": False,
+                "logical_attribute_ordinal_position": ordinal,
+                "logical_attribute_is_audit_column": False,
+                "logical_attribute_status": "active",
+                "logical_attribute_is_locked": False,
+                "sources": [],
+            }
+            for ordinal, name in enumerate(("customer_id", "sale_customer_id"), start=1)
+        ],
     }
 
 
@@ -278,18 +268,23 @@ def _context_bundle(
             "model_revision": 7,
             "model_workflow": "dimensional",
             "workflow_execution_mode": mode,
-            "modeled_entity_type": None,
+            "modeled_entity_type": "logical_entity",
             "selected_scope_digest": "a" * 64,
             "model_details": {
                 "model_name": "Sales Model",
                 "model_description": None,
+                "logical_schemas": [{"schema_name": "silver_nwa", "description": None}],
+                "dimensional_schemas": [
+                    {"schema_name": "gold_nwa", "description": None}
+                ],
                 "silver_model_naming_instructions": None,
                 "silver_model_audit_columns_template": None,
                 "gold_model_naming_instructions": "Use business-facing Gold names.",
                 "gold_model_technical_columns_template": _technical_template(),
                 "gold_model_audit_columns_template": _audit_template(),
             },
-            "selected_objects": (_selected_object(),),
+            "selected_objects": (),
+            "selected_logical_entities": (_selected_logical_entity(),),
             "profiles": (),
             "analysis_relationships": (),
             "assertion": {
@@ -349,21 +344,18 @@ def _context_bundle(
 
 def _object_key(*, object_name: str = "sales_customer") -> dict[str, object]:
     return {
-        "tenant_code": "NWA",
-        "system_code": "GDS",
-        "connection_code": "PRIMARY",
-        "object_schema": "silver_nwa",
-        "object_name": object_name,
+        "logical_entity_schema_name": "silver_nwa",
+        "logical_entity_name": object_name,
     }
 
 
 def _source(attribute_name: str) -> list[dict[str, object]]:
     return [
         {
-            "support_source_type": "attribute",
-            "source_attribute": {
+            "support_source_type": "logical_attribute",
+            "source_logical_attribute": {
                 **_object_key(),
-                "attribute_name": attribute_name,
+                "logical_attribute_name": attribute_name,
             },
             "source_order": 1,
             "rationale": "Eligible Silver contribution.",
@@ -381,8 +373,8 @@ def _candidate(
     source_object = _object_key(object_name=source_name)
     entity_source = [
         {
-            "support_source_type": "object",
-            "source_object": source_object,
+            "support_source_type": "logical_entity",
+            "source_logical_entity": source_object,
             "source_order": 1,
             "rationale": "Eligible Silver contribution.",
             "status": "active",
@@ -403,6 +395,7 @@ def _candidate(
             ],
             "entities": [
                 {
+                    "dimensional_entity_schema_name": "gold_nwa",
                     "dimensional_entity_name": "Customer Dimension",
                     "dimensional_entity_definition": "One customer.",
                     "dimensional_entity_type": "dimension",
@@ -422,6 +415,7 @@ def _candidate(
                     "sources": entity_source,
                 },
                 {
+                    "dimensional_entity_schema_name": "gold_nwa",
                     "dimensional_entity_name": "Sales Fact",
                     "dimensional_entity_definition": "One sale.",
                     "dimensional_entity_type": "fact",
@@ -443,6 +437,7 @@ def _candidate(
             ],
             "attributes": [
                 {
+                    "dimensional_entity_schema_name": "gold_nwa",
                     "dimensional_entity_name": "Customer Dimension",
                     "dimensional_attribute_name": "Customer ID",
                     "dimensional_attribute_definition": "Customer identifier.",
@@ -463,6 +458,7 @@ def _candidate(
                     "sources": _source("customer_id"),
                 },
                 {
+                    "dimensional_entity_schema_name": "gold_nwa",
                     "dimensional_entity_name": "Sales Fact",
                     "dimensional_attribute_name": "Source Customer ID",
                     "dimensional_attribute_definition": "Sale customer identifier.",
@@ -487,8 +483,10 @@ def _candidate(
                 {
                     "dimensional_relationship_name": "Sales to customer",
                     "dimensional_relationship_definition": "Each sale references a customer.",
+                    "from_dimensional_entity_schema_name": "gold_nwa",
                     "from_dimensional_entity_name": "Sales Fact",
                     "from_dimensional_attribute_name": "Source Customer ID",
+                    "to_dimensional_entity_schema_name": "gold_nwa",
                     "to_dimensional_entity_name": "Customer Dimension",
                     "to_dimensional_attribute_name": "Customer ID",
                     "dimensional_relationship_kind": "foreign_key",
@@ -652,6 +650,15 @@ class _ContextRepository:
                 item.model_dump(mode="json") for item in context.assertion.records
             ],
         }
+        graph["logical_entity"] = [
+            item.entity.model_dump(mode="json")
+            for item in context.selected_logical_entities
+        ]
+        graph["logical_attribute"] = [
+            attribute.model_dump(mode="json")
+            for item in context.selected_logical_entities
+            for attribute in item.attributes
+        ]
         applied = context.applied.dimensional
         if applied:
             for dataset, records in (
@@ -692,12 +699,6 @@ class _ContextRepository:
             attributes=attributes,
             model_input_objects=frozenset(),
             model_input_attributes=frozenset(),
-            dimensional_source_objects=objects,
-            dimensional_source_attributes=attributes,
-            logical_mapping_target_objects=objects,
-            logical_mapping_target_attributes=attributes,
-            dimensional_mapping_target_objects=frozenset(),
-            dimensional_mapping_target_attributes=frozenset(),
         )
         return replace(
             self.bundle, snapshot=snapshot_from_graph(graph), physical_scope=scope

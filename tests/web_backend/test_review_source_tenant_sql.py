@@ -55,50 +55,34 @@ def test_logical_source_keys_use_physical_connection_tenant() -> None:
     assert "source_eligibility.object_tenant_id" not in attribute_query
 
 
-def test_dimensional_source_keys_use_physical_connection_tenant() -> None:
+def test_dimensional_source_keys_are_model_owned_logical_entities() -> None:
     entity_query = _compact(DIMENSIONAL_OBJECT_SOURCES_SQL)
     attribute_query = _compact(DIMENSIONAL_ATTRIBUTE_SOURCES_SQL)
-
-    assert "workflow.list_model_object_eligibility(" in entity_query
-    assert "source_eligibility.is_dimensional_source_eligible" in entity_query
-    assert "source_placement_tenant.tenant_id = source_connection.tenant_id" in entity_query
-    assert "source_eligibility.object_id IS NOT NULL" in entity_query
-    assert "source_eligibility.object_tenant_id" not in entity_query
-    assert "workflow.list_model_attribute_eligibility(" in attribute_query
-    assert "source_eligibility.is_dimensional_source_eligible" in attribute_query
-    assert "source_placement_tenant.tenant_id = source_connection.tenant_id" in attribute_query
-    assert "source_eligibility.attribute_id IS NOT NULL" in attribute_query
-    assert "source_eligibility.object_tenant_id" not in attribute_query
+    for query in (entity_query, attribute_query):
+        assert "workflow.logical_entity AS logical_source" in query
+        assert "logical_source.model_id = source.model_id" in query
+        assert "source_logical_entity_schema_name" in query
+        assert "list_model_object_eligibility" not in query
+    assert "source_logical_attribute_id" in attribute_query
 
 
-def test_mapping_target_keys_use_physical_connection_tenant() -> None:
-    queries = (
-        MAPPING_OBJECTS_SQL,
-        MAPPING_OBJECT_DETAIL_SQL,
-        MAPPING_ATTRIBUTES_SQL,
-        MAPPING_ATTRIBUTE_DETAIL_SQL,
-    )
-    for sql in queries:
+def test_mapping_targets_are_model_owned_entities() -> None:
+    for sql in (MAPPING_OBJECTS_SQL, MAPPING_OBJECT_DETAIL_SQL, MAPPING_ATTRIBUTES_SQL, MAPPING_ATTRIBUTE_DETAIL_SQL):
         compact = _compact(sql)
-        assert "target_tenant.tenant_id = target_connection.tenant_id" in compact
-        assert "target_object.source_tenant_id" not in compact
+        assert "workflow.modeled_entity AS entity" in compact
+        assert "entity.model_id" in compact
+        assert "entity_schema_name" in compact
+        assert "core.object" not in compact
 
 
-def test_code_generation_target_keys_use_physical_connection_tenant() -> None:
+def test_code_generation_targets_are_model_owned_entities() -> None:
     target_collection = _compact(_CODE_GENERATION_TARGETS_SQL)
     assert "workflow.list_code_generation_target_context(" in target_collection
-    assert "jsonb_build_object(" in target_collection
-    assert "'tenant_id', context.source_context -> 'target' -> 'tenant_id'" in target_collection
-    assert (
-        "'source_tenant_id', context.source_context -> 'target' -> 'source_tenant_id'"
-        in target_collection
-    )
-    assert "context.source_context -> 'target' - 'source_tenant_id'" not in target_collection
-
-    for sql in (
-        _GENERATED_SQL_ARTIFACT_DETAIL_SQL,
-        _GENERATED_SQL_DOWNLOAD_SQL,
-    ):
+    assert "context.modeled_entity_schema_name" in target_collection
+    assert "context.modeled_entity_id" in target_collection
+    for sql in (_GENERATED_SQL_ARTIFACT_DETAIL_SQL, _GENERATED_SQL_DOWNLOAD_SQL):
         compact = _compact(sql)
-        assert "target_tenant.tenant_id = target_connection.tenant_id" in compact
-        assert "target_source_tenant.tenant_id = target_object.source_tenant_id" in compact
+        assert "workflow.modeled_entity AS entity" in compact
+        assert "entity.modeled_entity_schema_name" in compact
+        assert "entity.model_id = artifact.model_id" in compact
+        assert "core.object" not in compact

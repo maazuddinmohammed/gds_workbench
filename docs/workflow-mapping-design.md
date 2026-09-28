@@ -1,5 +1,10 @@
 # Mapping — inputs, prompts and validation
 
+**Contract update — 27 September 2026.** Mapping now belongs to schema-qualified modeled Entities; Dimensional sources use Logical keys.
+Earlier physical target, Binding, and reader examples below are retained as design
+history where superseded. Use [ADR 012](adr/012-entity-owned-mapping-and-code.md)
+and [current domain contracts](../CONTEXT.md) for implemented ownership and scope.
+
 Authorized for implementation. Existing stages/output schemas remain. Variables/tools are workflow-local author choices; no hidden context append.
 
 Stage: mapping_authoring. Modes: One-shot and Tool-assisted.

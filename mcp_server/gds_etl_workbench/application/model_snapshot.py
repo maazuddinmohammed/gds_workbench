@@ -44,6 +44,8 @@ _MAX_TOTAL_ROWS = 50_000
 _MODEL_DETAILS_SQL: LiteralString = """
 SELECT model_name,
        model_description,
+       logical_schemas,
+       dimensional_schemas,
        silver_model_naming_instructions,
        silver_model_audit_columns_template,
        gold_model_naming_instructions,
@@ -82,264 +84,91 @@ SELECT placement_tenant.tenant_code,
  LIMIT %s
 """
 
-_MODEL_OBJECT_BINDING_SQL: LiteralString = """
-SELECT binding.model_object_binding_id,
-       placement_tenant.tenant_code,
-       system.system_code,
-       connection.connection_code,
-       object.object_schema,
-       object.object_name,
-       binding.modeled_entity_type,
-       CASE binding.modeled_entity_type
-           WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-           ELSE dimensional_entity.dimensional_entity_name
-       END AS modeled_entity_name,
-       binding.model_object_binding_status,
-       binding.model_object_binding_is_locked
-  FROM workflow.model_object_binding AS binding
-  JOIN core.object AS object
-    ON object.object_id = binding.object_id
-  JOIN core.connection AS connection
-    ON connection.connection_id = object.connection_id
-  JOIN core.tenant AS placement_tenant
-    ON placement_tenant.tenant_id = connection.tenant_id
-  JOIN core.system AS system
-    ON system.system_id = connection.system_id
-  LEFT JOIN workflow.logical_entity AS logical_entity
-    ON logical_entity.logical_entity_id = binding.logical_entity_id
-   AND logical_entity.model_id = binding.model_id
-  LEFT JOIN workflow.dimensional_entity AS dimensional_entity
-    ON dimensional_entity.dimensional_entity_id = binding.dimensional_entity_id
-   AND dimensional_entity.model_id = binding.model_id
- WHERE binding.model_id = %s
- ORDER BY binding.modeled_entity_type,
-          lower(CASE binding.modeled_entity_type
-              WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-              ELSE dimensional_entity.dimensional_entity_name
-          END)
- LIMIT %s
-"""
-
-_MODEL_ATTRIBUTE_BINDING_SQL: LiteralString = """
-SELECT attribute_binding.model_attribute_binding_id,
-       object_binding.model_object_binding_id,
-       object_binding.modeled_entity_type,
-       CASE object_binding.modeled_entity_type
-           WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-           ELSE dimensional_entity.dimensional_entity_name
-       END AS modeled_entity_name,
-       CASE object_binding.modeled_entity_type
-           WHEN 'logical_entity' THEN logical_attribute.logical_attribute_name
-           ELSE dimensional_attribute.dimensional_attribute_name
-       END AS modeled_attribute_name,
-       attribute.attribute_name,
-       attribute_binding.model_attribute_binding_status,
-       attribute_binding.model_attribute_binding_is_locked
-  FROM workflow.model_attribute_binding AS attribute_binding
-  JOIN workflow.model_object_binding AS object_binding
-    ON object_binding.model_object_binding_id =
-       attribute_binding.model_object_binding_id
-  JOIN core.attribute AS attribute
-    ON attribute.attribute_id = attribute_binding.attribute_id
-  LEFT JOIN workflow.logical_entity AS logical_entity
-    ON logical_entity.logical_entity_id = object_binding.logical_entity_id
-   AND logical_entity.model_id = object_binding.model_id
-  LEFT JOIN workflow.dimensional_entity AS dimensional_entity
-    ON dimensional_entity.dimensional_entity_id = object_binding.dimensional_entity_id
-   AND dimensional_entity.model_id = object_binding.model_id
-  LEFT JOIN workflow.logical_attribute AS logical_attribute
-    ON logical_attribute.logical_attribute_id =
-       attribute_binding.logical_attribute_id
-  LEFT JOIN workflow.dimensional_attribute AS dimensional_attribute
-    ON dimensional_attribute.dimensional_attribute_id =
-       attribute_binding.dimensional_attribute_id
- WHERE object_binding.model_id = %s
- ORDER BY object_binding.modeled_entity_type,
-          lower(CASE object_binding.modeled_entity_type
-              WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-              ELSE dimensional_entity.dimensional_entity_name
-          END),
-          lower(CASE object_binding.modeled_entity_type
-              WHEN 'logical_entity' THEN logical_attribute.logical_attribute_name
-              ELSE dimensional_attribute.dimensional_attribute_name
-          END)
- LIMIT %s
-"""
-
-_MAPPING_DEPENDENCY_SQL: LiteralString = """
-SELECT dependency.mapping_source_system_dependency_id,
-       dependency.modeled_entity_type,
-       system.system_code AS source_system_code,
-       dependency.source_system_dependency_order,
-       dependency.mapping_source_system_dependency_status,
-       dependency.mapping_source_system_dependency_is_locked
-  FROM workflow.mapping_source_system_dependency AS dependency
-  JOIN core.system AS system
-    ON system.system_id = dependency.source_system_id
- WHERE dependency.model_id = %s
- ORDER BY dependency.modeled_entity_type,
-          dependency.source_system_dependency_order,
-          lower(system.system_code)
- LIMIT %s
-"""
-
 _MAPPING_OBJECT_SQL: LiteralString = """
 SELECT mapping.mapping_object_id,
-       binding.modeled_entity_type,
-       CASE binding.modeled_entity_type
-           WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-           ELSE dimensional_entity.dimensional_entity_name
-       END AS modeled_entity_name,
+       entity.modeled_entity_type, entity.modeled_entity_schema_name, entity.modeled_entity_name,
        source_system.system_code AS source_system_code,
        output_template.output_template_code,
-       mapping.object_dependency_order,
-       mapping.mapping_transformation_document,
-       mapping.object_mapping_status,
-       mapping.object_mapping_is_locked
+       mapping.object_dependency_order, mapping.mapping_transformation_document,
+       mapping.object_mapping_status, mapping.object_mapping_is_locked
   FROM workflow.mapping_object AS mapping
-  JOIN workflow.model_object_binding AS binding
-    ON binding.model_object_binding_id = mapping.model_object_binding_id
-   AND binding.model_id = mapping.model_id
-  JOIN core.system AS source_system
-    ON source_system.system_id = mapping.source_system_id
-  LEFT JOIN application.output_template
-    ON output_template.output_template_id = mapping.output_template_id
-  LEFT JOIN workflow.logical_entity AS logical_entity
-    ON logical_entity.logical_entity_id = binding.logical_entity_id
-   AND logical_entity.model_id = binding.model_id
-  LEFT JOIN workflow.dimensional_entity AS dimensional_entity
-    ON dimensional_entity.dimensional_entity_id = binding.dimensional_entity_id
-   AND dimensional_entity.model_id = binding.model_id
+  JOIN workflow.modeled_entity AS entity
+    ON entity.model_id = mapping.model_id
+   AND entity.modeled_entity_type = mapping.modeled_entity_type
+   AND entity.modeled_entity_id = COALESCE(mapping.logical_entity_id, mapping.dimensional_entity_id)
+  JOIN core.system AS source_system ON source_system.system_id = mapping.source_system_id
+  LEFT JOIN application.output_template USING (output_template_id)
  WHERE mapping.model_id = %s
- ORDER BY mapping.object_dependency_order,
-          binding.modeled_entity_type,
-          lower(CASE binding.modeled_entity_type
-              WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-              ELSE dimensional_entity.dimensional_entity_name
-          END),
+ ORDER BY mapping.object_dependency_order, entity.modeled_entity_type,
+          lower(entity.modeled_entity_schema_name), lower(entity.modeled_entity_name),
           lower(source_system.system_code)
  LIMIT %s
 """
 
 _MAPPING_ATTRIBUTE_SQL: LiteralString = """
-SELECT mapping_attribute.mapping_attribute_id,
-       object_binding.modeled_entity_type,
-       CASE object_binding.modeled_entity_type
-           WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-           ELSE dimensional_entity.dimensional_entity_name
-       END AS modeled_entity_name,
-       CASE object_binding.modeled_entity_type
-           WHEN 'logical_entity' THEN logical_attribute.logical_attribute_name
-           ELSE dimensional_attribute.dimensional_attribute_name
-       END AS modeled_attribute_name,
+SELECT attribute.mapping_attribute_id,
+       entity.modeled_entity_type, entity.modeled_entity_schema_name, entity.modeled_entity_name,
+       modeled.modeled_attribute_name,
        source_system.system_code AS source_system_code,
        output_template.output_template_code,
-       mapping_attribute.attribute_mapping_transformation_document,
-       mapping_attribute.attribute_mapping_status,
-       mapping_attribute.attribute_mapping_is_locked
-  FROM workflow.mapping_attribute AS mapping_attribute
-  JOIN workflow.mapping_object AS mapping
-    ON mapping.mapping_object_id = mapping_attribute.mapping_object_id
-  JOIN workflow.model_object_binding AS object_binding
-    ON object_binding.model_object_binding_id = mapping.model_object_binding_id
-   AND object_binding.model_id = mapping.model_id
-  JOIN workflow.model_attribute_binding AS attribute_binding
-    ON attribute_binding.model_attribute_binding_id =
-       mapping_attribute.model_attribute_binding_id
-   AND attribute_binding.model_object_binding_id =
-       object_binding.model_object_binding_id
-  JOIN core.system AS source_system
-    ON source_system.system_id = mapping.source_system_id
+       attribute.attribute_mapping_transformation_document,
+       attribute.attribute_mapping_status, attribute.attribute_mapping_is_locked
+  FROM workflow.mapping_attribute AS attribute
+  JOIN workflow.mapping_object AS mapping USING (mapping_object_id, model_id)
+  JOIN workflow.modeled_entity AS entity
+    ON entity.model_id = mapping.model_id
+   AND entity.modeled_entity_type = mapping.modeled_entity_type
+   AND entity.modeled_entity_id = COALESCE(mapping.logical_entity_id, mapping.dimensional_entity_id)
+  JOIN workflow.modeled_attribute AS modeled
+    ON modeled.model_id = mapping.model_id
+   AND modeled.modeled_entity_type = mapping.modeled_entity_type
+   AND modeled.modeled_entity_id = entity.modeled_entity_id
+   AND modeled.modeled_attribute_id = COALESCE(
+       attribute.logical_attribute_id, attribute.dimensional_attribute_id)
+  JOIN core.system AS source_system ON source_system.system_id = mapping.source_system_id
   LEFT JOIN application.output_template
-    ON output_template.output_template_id = mapping_attribute.output_template_id
-  LEFT JOIN workflow.logical_entity AS logical_entity
-    ON logical_entity.logical_entity_id = object_binding.logical_entity_id
-   AND logical_entity.model_id = object_binding.model_id
-  LEFT JOIN workflow.dimensional_entity AS dimensional_entity
-    ON dimensional_entity.dimensional_entity_id = object_binding.dimensional_entity_id
-   AND dimensional_entity.model_id = object_binding.model_id
-  LEFT JOIN workflow.logical_attribute AS logical_attribute
-    ON logical_attribute.logical_attribute_id =
-       attribute_binding.logical_attribute_id
-  LEFT JOIN workflow.dimensional_attribute AS dimensional_attribute
-    ON dimensional_attribute.dimensional_attribute_id =
-       attribute_binding.dimensional_attribute_id
+    ON output_template.output_template_id = attribute.output_template_id
  WHERE mapping.model_id = %s
- ORDER BY object_binding.modeled_entity_type,
-          lower(CASE object_binding.modeled_entity_type
-              WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-              ELSE dimensional_entity.dimensional_entity_name
-          END),
-          lower(source_system.system_code),
-          lower(CASE object_binding.modeled_entity_type
-              WHEN 'logical_entity' THEN logical_attribute.logical_attribute_name
-              ELSE dimensional_attribute.dimensional_attribute_name
-          END)
+ ORDER BY entity.modeled_entity_type, lower(entity.modeled_entity_schema_name),
+          lower(entity.modeled_entity_name), lower(source_system.system_code),
+          lower(modeled.modeled_attribute_name)
  LIMIT %s
 """
 
 _GENERATED_CODE_SQL: LiteralString = """
 SELECT generated.generated_code_id,
-       binding.modeled_entity_type,
-       CASE binding.modeled_entity_type
-           WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-           ELSE dimensional_entity.dimensional_entity_name
-       END AS modeled_entity_name,
-       generated.artifact_name,
-       generated.artifact_type,
-       generated.generated_code_content,
-       generated.generated_code_status,
-       generated.generated_code_is_locked
+       entity.modeled_entity_type, entity.modeled_entity_schema_name, entity.modeled_entity_name,
+       generated.artifact_name, generated.artifact_type, generated.generated_code_content,
+       generated.generated_code_status, generated.generated_code_is_locked
   FROM workflow.generated_code AS generated
-  JOIN workflow.model_object_binding AS binding
-    ON binding.model_object_binding_id = generated.model_object_binding_id
-  LEFT JOIN workflow.logical_entity AS logical_entity
-    ON logical_entity.logical_entity_id = binding.logical_entity_id
-   AND logical_entity.model_id = binding.model_id
-  LEFT JOIN workflow.dimensional_entity AS dimensional_entity
-    ON dimensional_entity.dimensional_entity_id = binding.dimensional_entity_id
-   AND dimensional_entity.model_id = binding.model_id
- WHERE binding.model_id = %s
- ORDER BY binding.modeled_entity_type,
-          lower(CASE binding.modeled_entity_type
-              WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-              ELSE dimensional_entity.dimensional_entity_name
-          END),
-          lower(generated.artifact_name)
+  JOIN workflow.modeled_entity AS entity
+    ON entity.model_id = generated.model_id
+   AND entity.modeled_entity_type = generated.modeled_entity_type
+   AND entity.modeled_entity_id = COALESCE(
+       generated.logical_entity_id, generated.dimensional_entity_id)
+ WHERE generated.model_id = %s
+ ORDER BY entity.modeled_entity_type, lower(entity.modeled_entity_schema_name),
+          lower(entity.modeled_entity_name), lower(generated.artifact_name)
  LIMIT %s
 """
 
 _GENERATED_CODE_SOURCE_SYSTEM_SQL: LiteralString = """
 SELECT association.generated_code_source_system_id,
-       binding.modeled_entity_type,
-       CASE binding.modeled_entity_type
-           WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-           ELSE dimensional_entity.dimensional_entity_name
-       END AS modeled_entity_name,
-       generated.artifact_name,
-       system.system_code AS source_system_code,
+       entity.modeled_entity_type, entity.modeled_entity_schema_name, entity.modeled_entity_name,
+       generated.artifact_name, system.system_code AS source_system_code,
        association.generated_code_source_system_status,
        association.generated_code_source_system_is_locked
   FROM workflow.generated_code_source_system AS association
-  JOIN workflow.generated_code AS generated
-    ON generated.generated_code_id = association.generated_code_id
-  JOIN workflow.model_object_binding AS binding
-    ON binding.model_object_binding_id = generated.model_object_binding_id
-  JOIN core.system AS system
-    ON system.system_id = association.source_system_id
-  LEFT JOIN workflow.logical_entity AS logical_entity
-    ON logical_entity.logical_entity_id = binding.logical_entity_id
-   AND logical_entity.model_id = binding.model_id
-  LEFT JOIN workflow.dimensional_entity AS dimensional_entity
-    ON dimensional_entity.dimensional_entity_id = binding.dimensional_entity_id
-   AND dimensional_entity.model_id = binding.model_id
- WHERE binding.model_id = %s
- ORDER BY binding.modeled_entity_type,
-          lower(CASE binding.modeled_entity_type
-              WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-              ELSE dimensional_entity.dimensional_entity_name
-          END),
-          lower(generated.artifact_name),
+  JOIN workflow.generated_code AS generated USING (generated_code_id)
+  JOIN workflow.modeled_entity AS entity
+    ON entity.model_id = generated.model_id
+   AND entity.modeled_entity_type = generated.modeled_entity_type
+   AND entity.modeled_entity_id = COALESCE(
+       generated.logical_entity_id, generated.dimensional_entity_id)
+  JOIN core.system AS system ON system.system_id = association.source_system_id
+ WHERE generated.model_id = %s
+ ORDER BY entity.modeled_entity_type, lower(entity.modeled_entity_schema_name),
+          lower(entity.modeled_entity_name), lower(generated.artifact_name),
           lower(system.system_code)
  LIMIT %s
 """
@@ -427,10 +256,7 @@ _INTERNAL_READ_FIELDS = frozenset(
         "logical_submodel_id",
         "mapping_attribute_id",
         "mapping_object_id",
-        "mapping_source_system_dependency_id",
         "model_tenant_code",
-        "model_attribute_binding_id",
-        "model_object_binding_id",
         "modeled_attribute_id",
         "modeled_entity_id",
         "modeling_assertion_document_id",
@@ -541,10 +367,7 @@ async def read_model_review_snapshot(
     )
     await _fetch_layer(transaction, model, LOGICAL, rows, limit)
     await _fetch_layer(transaction, model, DIMENSIONAL, rows, limit)
-    binding_queries: tuple[tuple[str, LiteralString], ...] = (
-        ("model_object_binding", _MODEL_OBJECT_BINDING_SQL),
-        ("model_attribute_binding", _MODEL_ATTRIBUTE_BINDING_SQL),
-        ("mapping_dependency", _MAPPING_DEPENDENCY_SQL),
+    downstream_queries: tuple[tuple[str, LiteralString], ...] = (
         ("mapping_object", _MAPPING_OBJECT_SQL),
         ("mapping_attribute", _MAPPING_ATTRIBUTE_SQL),
         ("generated_code", _GENERATED_CODE_SQL),
@@ -552,7 +375,7 @@ async def read_model_review_snapshot(
         ("validation_group", _VALIDATION_GROUP_SQL),
         ("validation_check", _VALIDATION_CHECK_SQL),
     )
-    for dataset, query in binding_queries:
+    for dataset, query in downstream_queries:
         rows[dataset] = await fetch(
             transaction,
             dataset,
@@ -606,12 +429,7 @@ async def read_model_review_snapshot(
                 "attributes": records["dimensional_attribute"],
                 "relationships": records["dimensional_relationship"],
             },
-            "model_binding": {
-                "objects": records["model_object_binding"],
-                "attributes": records["model_attribute_binding"],
-            },
             "mapping": {
-                "dependencies": records["mapping_dependency"],
                 "objects": records["mapping_object"],
                 "attributes": records["mapping_attribute"],
             },
@@ -642,9 +460,6 @@ async def read_model_review_snapshot(
         "dimensional_entity",
         "dimensional_attribute",
         "dimensional_relationship",
-        "model_object_binding",
-        "model_attribute_binding",
-        "mapping_dependency",
         "mapping_object",
         "mapping_attribute",
         "generated_code",
@@ -660,11 +475,7 @@ async def read_model_review_snapshot(
             ): record
             for record in records[dataset]
         }
-        id_field = (
-            "mapping_source_system_dependency_id"
-            if dataset == "mapping_dependency"
-            else dataset + "_id"
-        )
+        id_field = dataset + "_id"
         indexed: dict[int, ModelingRecord] = {}
         for row in rows[dataset]:
             record_id = row.get(id_field)
@@ -700,13 +511,27 @@ async def _fetch_layer(
         transaction,
         f"{config.layer}_entity",
         entities_sql(config, historical=True),
-        (model.model_id, list(model.readable_source_tenant_ids), [], [], limit, 0),
+        (
+            model.model_id,
+            *([list(model.readable_source_tenant_ids)] if config.layer == "logical" else []),
+            [],
+            [],
+            limit,
+            0,
+        ),
     )
     rows[f"{config.layer}_attribute"] = await fetch(
         transaction,
         f"{config.layer}_attribute",
         attributes_sql(config, historical=True),
-        (model.model_id, list(model.readable_source_tenant_ids), [], [], limit, 0),
+        (
+            model.model_id,
+            *([list(model.readable_source_tenant_ids)] if config.layer == "logical" else []),
+            [],
+            [],
+            limit,
+            0,
+        ),
     )
     rows[f"{config.layer}_relationship"] = await fetch(
         transaction,

@@ -35,7 +35,7 @@ class _FrozenModel(BaseModel):
 
 
 class MappingPairIdentity(_FrozenModel):
-    target_object_id: int = Field(gt=0)
+    modeled_entity_id: int = Field(gt=0)
     source_system_id: int = Field(gt=0)
 
 
@@ -71,7 +71,7 @@ class MappingRunPlan(_FrozenModel):
         if (
             self.agent_plan.model_workflow != "mapping"
             or self.agent_plan.workflow_execution_mode is None
-            or self.agent_plan.selected_object_ids != (self.pair.target_object_id,)
+            or self.agent_plan.selected_entity_ids != (self.pair.modeled_entity_id,)
             or expected_route != self.route
         ):
             raise ValueError("The Mapping Run must freeze one target/System pair")
@@ -154,34 +154,8 @@ class MappingSourceSystem(_FrozenModel):
     is_active: bool
 
 
-class MappingDependency(_FrozenModel):
-    mapping_source_system_dependency_id: int = Field(gt=0)
-    dependency_order: int = Field(ge=0)
-    status: LifecycleStatus
-    is_locked: bool
-
-
-class MappingDependencyNode(_FrozenModel):
-    mapping_source_system_dependency_id: int = Field(gt=0)
-    source_system_id: int = Field(gt=0)
-    dependency_order: int = Field(ge=0)
-    status: LifecycleStatus
-    is_locked: bool
-
-
-class MappingDependencyEdge(_FrozenModel):
-    predecessor_source_system_id: int = Field(gt=0)
-    successor_source_system_id: int = Field(gt=0)
-
-
-class MappingDependencyGraph(_FrozenModel):
-    nodes: tuple[MappingDependencyNode, ...]
-    edges: tuple[MappingDependencyEdge, ...]
-    malformed_reference_count: int = Field(ge=0)
-
-
 class MappingTargetDependencyNode(_FrozenModel):
-    target_object_id: int = Field(gt=0)
+    modeled_entity_id: int = Field(gt=0)
     dependency_order: int = Field(ge=0)
     status: LifecycleStatus
     has_locked_headers: bool
@@ -189,8 +163,8 @@ class MappingTargetDependencyNode(_FrozenModel):
 
 
 class MappingTargetDependencyEdge(_FrozenModel):
-    predecessor_target_object_id: int = Field(gt=0)
-    successor_target_object_id: int = Field(gt=0)
+    predecessor_modeled_entity_id: int = Field(gt=0)
+    successor_modeled_entity_id: int = Field(gt=0)
 
 
 class MappingTargetDependencyGraph(_FrozenModel):
@@ -246,6 +220,8 @@ class MappingModeledAttribute(_FrozenModel):
 
 
 class MappingModeledEntity(_FrozenModel):
+    entity_type: ModeledEntityType
+    entity_schema_name: str = Field(min_length=1, max_length=400)
     entity_id: int = Field(gt=0)
     entity_name: str = Field(min_length=1, max_length=255)
     entity_definition: str = Field(min_length=1)
@@ -260,7 +236,6 @@ class MappingModeledEntity(_FrozenModel):
 class ExistingMappingAttribute(_FrozenModel):
     mapping_attribute_id: int | None = Field(default=None, gt=0)
     modeled_attribute_id: int = Field(gt=0)
-    target_attribute_id: int = Field(gt=0)
     transformation_document: JsonObject | None = Field(default=None, repr=False)
     status: LifecycleStatus = "active"
     is_locked: bool = False
@@ -270,7 +245,7 @@ class ExistingMappingAttribute(_FrozenModel):
 
 
 class ExistingMappingHeader(_FrozenModel):
-    model_object_binding_id: int = Field(gt=0)
+    modeled_entity_id: int = Field(gt=0)
     mapping_object_id: int | None = Field(default=None, gt=0)
     modeled_entity: MappingModeledEntity
     object_dependency_order: int = Field(ge=0)
@@ -294,7 +269,7 @@ class MappingSource(_FrozenModel):
     rationale: str = Field(min_length=1, max_length=2_000)
     mapping_order: int | None = Field(default=None, gt=0)
     is_locked: bool
-    object: MappingPhysicalObject
+    object: MappingPhysicalObject | MappingModeledEntity
 
 
 class MappingAuthoringPolicy(_FrozenModel):
@@ -314,11 +289,9 @@ class MappingRunContext(_FrozenModel):
     route: MappingRoute
     output_template_selections: MappingOutputTemplateSelections
     source_system: MappingSourceSystem
-    dependency: MappingDependency | None
-    dependency_graph: MappingDependencyGraph = Field(repr=False)
     target_dependency_graph: MappingTargetDependencyGraph = Field(repr=False)
     output_templates: MappingOutputTemplateInventory = Field(repr=False)
-    target: MappingPhysicalObject = Field(repr=False)
+    target: MappingModeledEntity = Field(repr=False)
     sources: tuple[MappingSource, ...] = Field(repr=False)
     headers: tuple[ExistingMappingHeader, ...] = Field(min_length=1, max_length=1, repr=False)
     authoring: MappingAuthoringPolicy = Field(repr=False)
@@ -332,7 +305,9 @@ class MappingRunContext(_FrozenModel):
         header = self.headers[0]
         if (
             self.route != expected_route
-            or self.target.object_id != self.pair.target_object_id
+            or self.target.entity_type != self.modeled_entity_type
+            or header.modeled_entity.entity_type != self.modeled_entity_type
+            or self.target.entity_id != self.pair.modeled_entity_id
             or self.source_system.system_id != self.pair.source_system_id
             or any(
                 source.modeled_entity_id != header.modeled_entity.entity_id
@@ -344,10 +319,10 @@ class MappingRunContext(_FrozenModel):
         modeled_ids = {item.attribute_id for item in header.modeled_entity.attributes}
         if any(
             child.modeled_attribute_id not in modeled_ids
-            or child.target_attribute_id not in target_ids
+            or child.modeled_attribute_id not in target_ids
             for child in header.attribute_mappings
         ):
-            raise ValueError("Mapping Attribute bindings must resolve in context")
+            raise ValueError("Mapping Attributes must resolve in Entity context")
         return self
 
 
@@ -365,7 +340,7 @@ class MappingAttributeReadiness(_FrozenModel):
 
 
 class MappingHeaderReadiness(_FrozenModel):
-    model_object_binding_id: int = Field(gt=0)
+    modeled_entity_id: int = Field(gt=0)
     mapping_object_id: int | None = Field(default=None, gt=0)
     action: ReadinessAction
     attribute_actions: tuple[MappingAttributeReadiness, ...]

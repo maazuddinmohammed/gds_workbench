@@ -7,6 +7,8 @@ from uuid import UUID
 import pytest
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.domain.modeling_records import (
+    LogicalAttributeKey,
+    LogicalEntityKey,
     PhysicalAttributeKey,
     PhysicalObjectKey,
 )
@@ -77,9 +79,13 @@ def _request(*, sdk_code: str) -> AgentExecutionRequest:
 
 
 @pytest.mark.asyncio
-async def test_agent_router_rejects_a_model_profile_for_the_wrong_execution_mode() -> None:
+async def test_agent_router_rejects_a_model_profile_for_the_wrong_execution_mode() -> (
+    None
+):
     registry = load_default_agent_capabilities()
-    databricks_model = next(model for model in registry.models if model.code == "foundry-primary")
+    databricks_model = next(
+        model for model in registry.models if model.code == "foundry-primary"
+    )
     restricted = databricks_model.model_copy(
         update={
             "execution_profiles": (
@@ -94,7 +100,8 @@ async def test_agent_router_rejects_a_model_profile_for_the_wrong_execution_mode
     registry = registry.model_copy(
         update={
             "models": tuple(
-                restricted if model.code == restricted.code else model for model in registry.models
+                restricted if model.code == restricted.code else model
+                for model in registry.models
             )
         }
     )
@@ -299,10 +306,11 @@ class _LogicalCatalog:
         if tool_name == "get_agent_context_manifest":
             assert arguments == {}
             return {
+                "schemas": [{"schema_name": "silver", "description": None}],
                 "dataset_counts": {
                     "selected_object": 1,
                     "selected_attribute": 1,
-                }
+                },
             }
         assert tool_name == "get_agent_context_dataset"
         dataset = arguments.get("dataset")
@@ -440,10 +448,11 @@ def _tool_assisted_logical_request(*, sdk_code: str) -> AgentExecutionRequest:
         tool_instruction="Use the local tools.",
         context={
             "original_context": {
+                "schemas": [{"schema_name": "silver", "description": None}],
                 "dataset_counts": {
                     "selected_object": 1,
                     "selected_attribute": 1,
-                }
+                },
             },
             "repair": None,
         },
@@ -456,15 +465,13 @@ def _tool_assisted_logical_request(*, sdk_code: str) -> AgentExecutionRequest:
 def _tool_assisted_dimensional_request(
     *,
     sdk_code: str,
-    catalog: _PaginatedDimensionalCatalog,
+    catalog: _PaginatedLogicalEntityCatalog,
 ) -> AgentExecutionRequest:
     manifest = cast(
         JsonValue,
         {
-            "dataset_counts": {
-                "selected_object": 2,
-                "selected_attribute": 2,
-            }
+            "schemas": [{"schema_name": "gold", "description": None}],
+            "dataset_counts": {"selected_logical_entity": 2},
         },
     )
     return AgentExecutionRequest(
@@ -569,6 +576,9 @@ def _logical_request(*, sdk_code: str) -> AgentExecutionRequest:
         instruction_prompt="private instruction prompt",
         context={
             "original_context": {
+                "model_details": {
+                    "logical_schemas": [{"schema_name": "silver", "description": None}]
+                },
                 "selected_objects": [
                     {
                         "selection_order": 1,
@@ -592,7 +602,7 @@ def _logical_request(*, sdk_code: str) -> AgentExecutionRequest:
                             }
                         ],
                     }
-                ]
+                ],
             },
             "repair": None,
         },
@@ -622,6 +632,50 @@ def _logical_validator() -> LogicalCandidateValidator:
     )
 
 
+def _dimensional_selected(name: str) -> dict[str, JsonValue]:
+    key: dict[str, JsonValue] = {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": name,
+    }
+    return {
+        "selection_order": 1,
+        "entity": key,
+        "attributes": [{**key, "logical_attribute_name": "customer_id"}],
+    }
+
+
+class _PaginatedLogicalEntityCatalog:
+    max_cumulative_result_bytes = 64 * 1024
+    definitions = (
+        LocalAgentToolDefinition(
+            name="get_selected_logical_entities",
+            description="Read one frozen Logical Entity page.",
+            input_schema={
+                "type": "object",
+                "properties": {"cursor": {"type": "string"}},
+                "additionalProperties": False,
+            },
+        ),
+    )
+
+    def __init__(self) -> None:
+        self.calls: list[int] = []
+
+    def invoke(self, tool_name: str, arguments: Mapping[str, JsonValue]) -> JsonValue:
+        assert tool_name == "get_selected_logical_entities"
+        offset = 1 if arguments else 0
+        assert arguments == ({"cursor": "next"} if offset else {})
+        self.calls.append(offset)
+        return {
+            "items": [
+                _dimensional_selected(("customer_curated", "order_curated")[offset])
+            ],
+            "next_cursor": "next" if offset == 0 else None,
+            "is_complete": offset == 1,
+            "incomplete_object_key": None,
+        }
+
+
 def _dimensional_request(*, sdk_code: str) -> AgentExecutionRequest:
     return AgentExecutionRequest(
         workflow_run_id=1048,
@@ -633,30 +687,14 @@ def _dimensional_request(*, sdk_code: str) -> AgentExecutionRequest:
         instruction_prompt="private instruction prompt",
         context={
             "original_context": {
-                "selected_objects": [
-                    {
-                        "selection_order": 1,
-                        "object": {
-                            "tenant_code": "NWA",
-                            "system_code": "CRM",
-                            "connection_code": "CURATED",
-                            "object_schema": "silver",
-                            "object_name": "customer_curated",
-                            "object_description": "private object context",
-                        },
-                        "attributes": [
-                            {
-                                "tenant_code": "NWA",
-                                "system_code": "CRM",
-                                "connection_code": "CURATED",
-                                "object_schema": "silver",
-                                "object_name": "customer_curated",
-                                "attribute_name": "customer_id",
-                                "attribute_description": "private attribute context",
-                            }
-                        ],
-                    }
-                ]
+                "model_details": {
+                    "dimensional_schemas": [
+                        {"schema_name": "gold", "description": None}
+                    ]
+                },
+                "selected_logical_entities": [
+                    _dimensional_selected("customer_curated")
+                ],
             },
             "repair": None,
         },
@@ -667,23 +705,18 @@ def _dimensional_request(*, sdk_code: str) -> AgentExecutionRequest:
 
 def _dimensional_validator(
     *,
-    source_objects: tuple[PhysicalObjectKey, ...] | None = None,
-    source_attributes: tuple[PhysicalAttributeKey, ...] | None = None,
+    source_objects: tuple[LogicalEntityKey, ...] | None = None,
+    source_attributes: tuple[LogicalAttributeKey, ...] | None = None,
 ) -> DimensionalCandidateValidator:
-    default_object = PhysicalObjectKey(
-        tenant_code="NWA",
-        system_code="CRM",
-        connection_code="CURATED",
-        object_schema="silver",
-        object_name="customer_curated",
+    default_entity = LogicalEntityKey(
+        logical_entity_schema_name="silver", logical_entity_name="customer_curated"
     )
     return DimensionalCandidateValidator(
-        selected_object_keys=source_objects or (default_object,),
+        selected_entity_keys=source_objects or (default_entity,),
         selected_attribute_keys=source_attributes
         or (
-            PhysicalAttributeKey(
-                **default_object.model_dump(),
-                attribute_name="customer_id",
+            LogicalAttributeKey(
+                **default_entity.model_dump(), logical_attribute_name="customer_id"
             ),
         ),
         assertion_record_keys=(),
@@ -749,7 +782,9 @@ async def test_local_fake_uses_local_tools_for_one_complete_mapping_candidate(
         parent = cast(list[dict[str, JsonValue]], page["items"])[0]
         assert parent[nested_field]
         assert "object_id" not in parent
-    page = cast(dict[str, JsonValue], catalog.delegate.invoke("get_mapping_sources", {}))
+    page = cast(
+        dict[str, JsonValue], catalog.delegate.invoke("get_mapping_sources", {})
+    )
     source = cast(list[dict[str, JsonValue]], page["items"])[0]
     assert cast(dict[str, JsonValue], source["object"])["attributes"]
 
@@ -873,13 +908,10 @@ async def test_local_fake_returns_deterministic_valid_dimensional_business_candi
     candidate = cast(dict[str, JsonValue], result.candidate)
     attributes = cast(list[dict[str, JsonValue]], candidate["attributes"])
     attribute_sources = cast(list[dict[str, JsonValue]], attributes[0]["sources"])
-    assert attribute_sources[0]["source_attribute"] == {
-        "tenant_code": "NWA",
-        "system_code": "CRM",
-        "connection_code": "CURATED",
-        "object_schema": "silver",
-        "object_name": "customer_curated",
-        "attribute_name": "customer_id",
+    assert attribute_sources[0]["source_logical_attribute"] == {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "customer_curated",
+        "logical_attribute_name": "customer_id",
     }
     assert all(
         item["dimensional_attribute_role"] not in ("technical", "audit")
@@ -949,7 +981,7 @@ async def test_local_fake_uses_logical_tool_catalog_without_context_echo(
 async def test_local_fake_pages_dimensional_tool_catalog_and_preserves_sources(
     sdk_code: str,
 ) -> None:
-    catalog = _PaginatedDimensionalCatalog()
+    catalog = _PaginatedLogicalEntityCatalog()
     router = create_agent_execution_router(
         configuration=AgentRuntimeConfiguration(
             mode="fake",
@@ -967,19 +999,14 @@ async def test_local_fake_pages_dimensional_tool_catalog_and_preserves_sources(
     )
 
     source_objects = tuple(
-        PhysicalObjectKey(
-            tenant_code="NWA",
-            system_code="CRM",
-            connection_code="CURATED",
-            object_schema="silver",
-            object_name=object_name,
+        LogicalEntityKey(
+            logical_entity_schema_name="silver", logical_entity_name=object_name
         )
         for object_name in ("customer_curated", "order_curated")
     )
     source_attributes = tuple(
-        PhysicalAttributeKey(
-            **source_object.model_dump(),
-            attribute_name="customer_id",
+        LogicalAttributeKey(
+            **source_object.model_dump(), logical_attribute_name="customer_id"
         )
         for source_object in source_objects
     )
@@ -989,13 +1016,8 @@ async def test_local_fake_pages_dimensional_tool_catalog_and_preserves_sources(
             source_attributes=source_attributes,
         ).validate(result.candidate)
     ).issues == ()
-    assert catalog.calls == [
-        ("selected_object", 0),
-        ("selected_object", 1),
-        ("selected_attribute", 0),
-        ("selected_attribute", 1),
-    ]
-    assert result.tool_call_count == 5
+    assert catalog.calls == [0, 1]
+    assert result.tool_call_count == 2
     assert "private" not in repr(result.candidate)
 
 
@@ -1033,8 +1055,11 @@ async def test_local_fake_returns_bounded_analysis_inference_candidate(
                 "to_object_name": "customer_raw",
                 "to_attribute_name": "customer_id",
                 "relationship_kind": "reference",
+                "inferred_cardinality": "unknown",
                 "relationship_confidence": "medium",
-                "relationship_basis": ("Selected Attribute metadata supports this candidate."),
+                "relationship_basis": (
+                    "Selected Attribute metadata supports this candidate."
+                ),
             }
         ]
     }
@@ -1078,8 +1103,11 @@ async def test_local_fake_pages_tool_assisted_analysis_context(
                 "to_object_name": "order_curated",
                 "to_attribute_name": "customer_id",
                 "relationship_kind": "reference",
+                "inferred_cardinality": "unknown",
                 "relationship_confidence": "medium",
-                "relationship_basis": ("Selected Attribute metadata supports this candidate."),
+                "relationship_basis": (
+                    "Selected Attribute metadata supports this candidate."
+                ),
             }
         ]
     }
@@ -1102,7 +1130,9 @@ async def test_local_fake_rejects_unsupported_path_or_malformed_context() -> Non
         ),
         capabilities=load_default_agent_capabilities(),
     )
-    unsupported = _request(sdk_code="openai_agents_sdk").model_copy(update={"workflow": "logical"})
+    unsupported = _request(sdk_code="openai_agents_sdk").model_copy(
+        update={"workflow": "logical"}
+    )
     malformed = _request(sdk_code="openai_agents_sdk").model_copy(
         update={"context": {"original_context": {}, "repair": None}}
     )

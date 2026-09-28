@@ -21,17 +21,10 @@ from gds_workbench_api.features.models import ModelNotFoundError, ModelRevisionC
 
 from .contracts import (
     ExportModelTargetsRequest,
-    ModelTargetBinding,
-    ModelTargetBindingPage,
     ModelTargetOptions,
-    ObjectTypeOption,
-    RegisteredTargetMatch,
-    RegisteredTargetPage,
     TargetLayer,
     TargetPlacement,
-    TargetSchema,
 )
-from .queries import BINDING_ENTITIES_SQL, TARGETS_FROM
 
 _PLACEMENT_SQL: LiteralString = """
 SELECT placement.tenant_code, system.system_code, connection.connection_code,
@@ -50,6 +43,7 @@ SELECT object_type_code AS code, object_type_name AS name
 _ENTITY_QUERIES: dict[TargetLayer, LiteralString] = {
     "logical": """
 SELECT logical_entity_id AS entity_id, logical_entity_name AS entity_name,
+       logical_entity_schema_name AS entity_schema_name,
        logical_entity_definition AS definition
   FROM workflow.logical_entity
  WHERE model_id = %s AND (%s::BIGINT[] IS NULL OR logical_entity_id = ANY(%s::BIGINT[]))
@@ -58,6 +52,7 @@ SELECT logical_entity_id AS entity_id, logical_entity_name AS entity_name,
 """,
     "dimensional": """
 SELECT dimensional_entity_id AS entity_id, dimensional_entity_name AS entity_name,
+       dimensional_entity_schema_name AS entity_schema_name,
        dimensional_entity_definition AS definition
   FROM workflow.dimensional_entity
  WHERE model_id = %s AND (%s::BIGINT[] IS NULL OR dimensional_entity_id = ANY(%s::BIGINT[]))
@@ -103,37 +98,17 @@ _ATTRIBUTE_QUERIES: dict[TargetLayer, LiteralString] = {
             "attribute.dimensional_attribute_is_surrogate_key",
             "(attribute.dimensional_attribute_key_role = 'surrogate')",
         )
+        .replace(
+            "JOIN core.attribute AS physical ON physical.attribute_id = source.source_attribute_id",
+            "JOIN workflow.logical_attribute_source_mapping AS logical_source "
+            "ON logical_source.model_id = source.model_id "
+            "AND logical_source.logical_attribute_id = source.source_logical_attribute_id "
+            "AND logical_source.logical_attribute_source_mapping_status = 'active' "
+            "JOIN core.attribute AS physical "
+            "ON physical.attribute_id = logical_source.source_attribute_id",
+        )
     ),
 }
-_SCHEMAS_SQL: LiteralString = (
-    "SELECT DISTINCT lower(btrim(zone.zone_code)) AS zone_code, object.object_schema "
-    + TARGETS_FROM
-    + " AND lower(btrim(zone.zone_code)) IN ('silver', 'gold') "
-    "ORDER BY zone_code, object.object_schema LIMIT 1001"
-)
-_TARGETS_SQL: dict[TargetLayer, LiteralString] = {
-    "logical": """
-SELECT object.object_id, object.object_schema, object.object_name, connection.connection_code,
-       ARRAY(SELECT entity.logical_entity_id FROM workflow.logical_entity AS entity
-             WHERE entity.model_id = %s AND entity.logical_entity_status = 'active'
-               AND lower(btrim(entity.logical_entity_name)) = lower(btrim(object.object_name))
-             ORDER BY entity.logical_entity_id) AS matching_entity_ids,
-       ARRAY(SELECT binding.logical_entity_id FROM workflow.model_object_binding AS binding
-             WHERE binding.model_id = %s AND binding.object_id = object.object_id
-               AND binding.logical_entity_id IS NOT NULL
-               AND binding.model_object_binding_status = 'active'
-             ORDER BY binding.logical_entity_id) AS bound_entity_ids
-"""
-    + TARGETS_FROM
-    + """
-   AND lower(btrim(zone.zone_code)) = %s
-   AND object.object_id > %s
-   AND strpos(lower(object.object_schema || '.' || object.object_name), lower(%s)) > 0
-   AND (%s::TEXT IS NULL OR object.object_schema = %s)
- ORDER BY object.object_id LIMIT 201
-""",
-}
-_TARGETS_SQL["dimensional"] = _TARGETS_SQL["logical"].replace("logical", "dimensional")
 
 
 class ModelTargetsDatabase(Protocol):
@@ -169,7 +144,7 @@ def registration_workbook(
             raise InvalidRequestError("Every exported Entity must have active Attributes.")
         key = {
             **identity,
-            "object_schema": command.object_schema,
+            "object_schema": entity["entity_schema_name"],
             "object_name": entity["entity_name"],
         }
         objects.append(
@@ -244,31 +219,6 @@ class DatabaseModelTargetsService:
         self._database = database
         self._authorizer = authorizer
 
-    async def bindings(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        layer: TargetLayer,
-        after: int = 0,
-    ) -> ModelTargetBindingPage:
-        async with self._database.read_transaction(
-            isolation=ReadIsolation.REPEATABLE_READ
-        ) as transaction:
-            model = await authorize_model_read(
-                transaction, authorizer=self._authorizer, principal=principal, model_id=model_id
-            )
-            if model.tenant_id != tenant_id:
-                raise ModelNotFoundError()
-            rows = await transaction.fetch_all(BINDING_ENTITIES_SQL[layer], (model_id, after))
-        return ModelTargetBindingPage(
-            model_id=model_id,
-            model_revision=model.model_revision,
-            items=tuple(ModelTargetBinding.model_validate(row) for row in rows[:200]),
-            next_after=rows[199]["entity_id"] if len(rows) > 200 else None,
-        )
-
     async def options(
         self, principal: RequestPrincipal, *, tenant_id: int, model_id: int
     ) -> ModelTargetOptions:
@@ -281,10 +231,6 @@ class DatabaseModelTargetsService:
             if model.tenant_id != tenant_id:
                 raise ModelNotFoundError()
             placement = await transaction.fetch_one(_PLACEMENT_SQL, (tenant_id,))
-            types = await transaction.fetch_all(_OBJECT_TYPES_SQL, ())
-            schemas = await transaction.fetch_all(_SCHEMAS_SQL, (tenant_id, tenant_id))
-            if len(schemas) > 1000:
-                raise InvalidRequestError("The GDS Connection exceeds 1,000 target schemas.")
         return ModelTargetOptions(
             model_id=model_id,
             model_revision=model.model_revision,
@@ -293,14 +239,6 @@ class DatabaseModelTargetsService:
             )
             if placement
             else None,
-            object_types=tuple(ObjectTypeOption.model_validate(row) for row in types),
-            schemas=tuple(
-                TargetSchema(
-                    layer="logical" if row["zone_code"] == "silver" else "dimensional",
-                    object_schema=row["object_schema"],
-                )
-                for row in schemas
-            ),
         )
 
     async def export(
@@ -371,42 +309,4 @@ class DatabaseModelTargetsService:
             content=content,
             filename=f"gds_{zone}_registration__model_{model_id}__r{model.model_revision}.xlsx",
             sheet_count=2,
-        )
-
-    async def targets(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        layer: TargetLayer,
-        search: str,
-        after: int,
-        object_schema: str | None = None,
-    ) -> RegisteredTargetPage:
-        async with self._database.read_transaction(
-            isolation=ReadIsolation.REPEATABLE_READ
-        ) as transaction:
-            model = await authorize_model_read(
-                transaction, authorizer=self._authorizer, principal=principal, model_id=model_id
-            )
-            if model.tenant_id != tenant_id:
-                raise ModelNotFoundError()
-            rows = await transaction.fetch_all(
-                _TARGETS_SQL[layer],
-                (
-                    model_id,
-                    model_id,
-                    tenant_id,
-                    tenant_id,
-                    "silver" if layer == "logical" else "gold",
-                    after,
-                    search,
-                    object_schema,
-                    object_schema,
-                ),
-            )
-        return RegisteredTargetPage(
-            items=tuple(RegisteredTargetMatch.model_validate(row) for row in rows[:200]),
-            next_after=rows[199]["object_id"] if len(rows) > 200 else None,
         )

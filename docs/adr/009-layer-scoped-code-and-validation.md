@@ -3,6 +3,9 @@
 - Status: accepted
 - Date: 2026-09-22
 
+Historical contract: Physical Object selection superseded by ADR 012; other decisions retained.
+See [Entity-owned Mapping and Code](012-entity-owned-mapping-and-code.md).
+
 ## Decision
 
 Logical/Silver and Dimensional/Gold are separate navigation scopes for Code

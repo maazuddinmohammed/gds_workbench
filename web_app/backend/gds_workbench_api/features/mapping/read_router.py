@@ -12,14 +12,12 @@ from gds_workbench_api.features.mapping.read_contracts import (
     MappingAttributeFilters,
     MappingAttributeListQuery,
     MappingAttributePage,
-    MappingDependencyFilters,
-    MappingDependencyPage,
     MappingEntityType,
+    MappingFilters,
     MappingGenerationPage,
     MappingListQuery,
     MappingObjectDetail,
     MappingObjectPage,
-    MappingTargetPage,
 )
 from gds_workbench_api.features.mapping.read_service import MappingReviewService
 
@@ -34,64 +32,6 @@ def create_mapping_review_router(
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/mapping",
         tags=["mapping"],
-    )
-
-    async def list_dependencies(
-        tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
-        query: Annotated[MappingListQuery, Query()],
-        *,
-        principal: RequestPrincipal = Depends(authenticate),
-    ) -> MappingDependencyPage:
-        filters = MappingDependencyFilters.model_validate(
-            {
-                "entity_type": query.entity_type,
-                "source_system_id": query.source_system_id,
-                "source_system_code": query.source_system_code,
-                "status": query.status,
-                "locked": query.locked,
-            },
-            strict=True,
-        )
-        return await service.list_dependencies(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            filters=filters,
-            page_size=query.page_size,
-            cursor=query.cursor,
-        )
-
-    router.add_api_route(
-        "/dependencies",
-        list_dependencies,
-        methods=["GET"],
-        response_model=MappingDependencyPage,
-    )
-
-    async def list_targets(
-        tenant_id: Annotated[int, Path(gt=0)],
-        model_id: Annotated[int, Path(gt=0)],
-        entity_type: Annotated[MappingEntityType, Query()],
-        page_size: Annotated[int, Query(ge=1, le=200)] = 200,
-        cursor: Annotated[str | None, Query(max_length=2048)] = None,
-        *,
-        principal: RequestPrincipal = Depends(authenticate),
-    ) -> MappingTargetPage:
-        return await service.list_targets(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            entity_type=entity_type,
-            page_size=page_size,
-            cursor=cursor,
-        )
-
-    router.add_api_route(
-        "/targets",
-        list_targets,
-        methods=["GET"],
-        response_model=MappingTargetPage,
     )
 
     async def list_generation_targets(
@@ -126,7 +66,7 @@ def create_mapping_review_router(
         *,
         principal: RequestPrincipal = Depends(authenticate),
     ) -> MappingObjectPage:
-        filters = MappingDependencyFilters.model_validate(
+        filters = MappingFilters.model_validate(
             {
                 "entity_type": query.entity_type,
                 "source_system_id": query.source_system_id,

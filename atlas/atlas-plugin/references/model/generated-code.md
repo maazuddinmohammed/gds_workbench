@@ -4,11 +4,11 @@ Owns artifact and source-System assignment fields, identities and storage checks
 
 ## Identity and local files
 
-Both datasets belong to Model section `code_generation`. Read the current Snapshot catalog and exact dataset schemas. The catalog requires applied `mapping`; active applied Binding and complete Mapping are workflow prerequisites. `successive_change_set_required: false` does not make unapproved local Mapping an applied input.
+Both datasets belong to Model section `code_generation`. Read the current Snapshot catalog and exact dataset schemas. The catalog requires applied `mapping`; active applied Entity definitions and complete Mapping are workflow prerequisites. `successive_change_set_required: false` does not make unapproved local Mapping an applied input.
 
 | Dataset | Natural key within the Model | Snapshot location |
 |---|---|---|
-| `generated_code` | `modeled_entity_type` + `modeled_entity_name` + `artifact_name` | `code_generation.artifacts` |
+| `generated_code` | `modeled_entity_type` + `modeled_entity_schema_name` + `modeled_entity_name` + `artifact_name` | `code_generation.artifacts` |
 | `generated_code_source_system` | Artifact key + `source_system_code` | `code_generation.source_systems` |
 
 Use shared Model key normalization for comparisons; preserve actual names. Write complete changed records as arrays in `model-change-set/generated_code.json` and `model-change-set/generated_code_source_system.json`. These are not patches or backend workflow candidate envelopes. Artifact identity belongs to one target Entity; a filename is not globally unique across the Model.
@@ -22,7 +22,8 @@ The [first release](../release-scope.md) generates SQL only. Keep the complete e
 | Field | Accepted value / meaning |
 |---|---|
 | `modeled_entity_type` | `logical_entity` or `dimensional_entity`. |
-| `modeled_entity_name` | Nonblank string, 1–255 characters; exact bound target Entity. |
+| `modeled_entity_schema_name` | Required schema from the selected modeled layer. |
+| `modeled_entity_name` | Nonblank string, 1–255 characters; exact modeled target Entity. |
 | `artifact_name` | Nonblank string, 1–400 characters; filename only, with no leading/trailing whitespace, `/`, `\`, `.` or `..` as the entire name. Use the approved filename and extension; no directory path. |
 | `artifact_type` | `sql_file`, `python_file` or `python_notebook`. These are accepted storage types, not proof that every authoring/execution consumer supports them. |
 | `generated_code_content` | Complete nonblank text, not a filepath, Markdown fence or JSON-encoded content object. Characters below U+0020 are rejected except tab, LF and CR. Record schema does not parse SQL/Python or establish a per-record content maximum; transport limits still apply. |
@@ -38,27 +39,28 @@ One row connects a target artifact to one contributing source System. Repeat the
 | Field | Accepted value / meaning |
 |---|---|
 | `modeled_entity_type` | `logical_entity` or `dimensional_entity`; same as the artifact. |
+| `modeled_entity_schema_name` | Required schema from the selected modeled layer. |
 | `modeled_entity_name` | Nonblank string, 1–255 characters; same target Entity. |
 | `artifact_name` | Nonblank string, 1–400 characters; exact parent artifact filename. Parent existence and filename validity must resolve. |
 | `source_system_code` | Nonblank string, 1–100 characters; the originating System whose active Mapping this artifact implements, not the physical GDS placement System. |
 | `generated_code_source_system_status` | `active`, `inactive` or `deprecated`. |
 | `generated_code_source_system_is_locked` | Boolean. |
 
-No outer `source_system_codes` array, dependency order, target physical keys, output path, `artifact_role`, Model/database IDs, run IDs, timestamps or digest fields are accepted. Physical target comes from Binding. Source-System provenance comes from Mapping and these assignments, not a fabricated ID in the record.
+No outer `source_system_codes` array, dependency order, target physical keys, output path, `artifact_role`, Model/database IDs, run IDs, timestamps or digest fields are accepted. Planned target coordinates come from the Entity schema/name. Source-System provenance comes from Mapping and these assignments, not a fabricated ID in the record.
 
 ## Combined and separate files
 
 - **One file per target:** one artifact and one assignment for every System it implements. All branches use the same mapped target shape and explicit reconciliation policy.
 - **One file per target/System:** separate artifact names; each assignment points to the corresponding file. Each file is self-contained. Do not rely on a temporary view from another file/session.
 - **Mixed grouping:** an artifact can own a subset of Systems if the approved layout needs it. Across the target, each active mapped System belongs to exactly one active transformation artifact.
-- Dependency orders remain in `mapping_dependency` and `mapping_object`; assignment-array order and filenames do not schedule execution. Later Process Metadata represents orchestration placement. A combined artifact must preserve mapped dependencies without assuming arbitrary branch order satisfies them.
+- Object dependency order remains in `mapping_object`; assignment-array order, System list order and filenames do not schedule execution. Later Process Metadata represents orchestration placement. A combined artifact must preserve mapped lookup dependencies, SQL stage order and explicit business precedence without assuming arbitrary branch order satisfies them.
 - Multiple artifacts for the same target/System cannot represent repeated executions through duplicate active assignments. Resolve repeated execution in the approved transformation/Process design; do not invent another Code key dimension.
 
 The backend authoring candidate has `artifact_role: target_transformation|support` and a source-System array. Conversion produces these two datasets and does not retain `artifact_role`. A generic active artifact with no assignments is therefore not inherently invalid, but the reader cannot infer its intended role from a stored role field. Atlas transformation outputs must have explicit coverage; target-registration DDL stays in its separate, user-selected generation flow. Do not automatically add unassigned support artifacts to hide missing assignments.
 
 ## Eligibility, coverage and protection
 
-- Every artifact requires its target Object Binding; active artifacts require active Binding. New/changed authoring requires an eligible active Silver target for Logical or Gold target for Dimensional. Apply resolves complete active Mapping for that Binding before storing Code.
+- Every artifact requires its modeled Entity; active artifacts require an active Entity. Apply resolves complete active Mapping for that schema-qualified Entity before storing Code. No registered physical target is required.
 - Every assignment requires its artifact and an active registered source System. An active assignment requires an active artifact and active Object Mapping for that target/System.
 - During Code authoring for a target, every active mapped System must have exactly one active assignment. Duplicate assignments across active artifacts are rejected. Upstream Mapping may add a System while unchanged Code remains; missing assignments then indicate stale/incomplete Code rather than permission to omit the new branch.
 - A partial selection of targets is valid. Within each selected target, reconcile the complete existing-plus-proposed assignment set; changing one file must not remove another System's coverage.
@@ -83,8 +85,8 @@ Use the shared [review/Stage/Validate/Apply lifecycle](../change-set-lifecycle.m
 
 | Rule | Check / reason | Current coverage |
 |---|---|---|
-| `code.shape` | Exact 7/6 fields, canonical keys, enums, nonblank content and legal filenames. | Generic schema, duplicate-key checks and database constraints; assignment filename resolves through its parent. |
-| `code.parents` | Real eligible target Binding, complete active Mapping and active assigned System. | Graph/eligibility checks and Apply context resolution. |
+| `code.shape` | Exact fields from the current schema, canonical keys, enums, nonblank content and legal filenames. | Generic schema, duplicate-key checks and database constraints; assignment filename resolves through its parent. |
+| `code.parents` | Real modeled target Entity, complete active Mapping and active assigned System. | Graph/eligibility checks and Apply context resolution. |
 | `code.coverage` | Every selected target's mapped System assigned exactly once across active transformation artifacts. | Generic Code-authoring graph checks; backend candidate also checks its frozen target set. |
 | `code.layout` | Approved filenames/grouping, no output-path collision, self-contained artifacts and compatible dependencies. | Additional workflow/local checks; no scheduling/path fields in record schema. |
 | `code.protection` | Preserve independent Code/assignment locks, statuses and unaffected coverage. | Direct record locks checked; semantic consequences of assignment/layout changes need review. |
@@ -95,7 +97,7 @@ Additional checks here are Atlas requirements, not newly implemented runtime gua
 
 ## Complete synthetic examples
 
-Assume applied Customer Binding and complete CRM/ERP Mapping. The confirmed target grain/key is `(SourceSystemID, CustomerCode)`; input customer references are nonblank and unique within each System. Source code/name fields are STRING; names may be null. Both sources contain valid non-null BIGINT `source_system_id` values with disjoint System identities. They need no batch filter. The approved layout combines their disjoint branches; own CustomerID and the nine framework audit fields are omitted from the final projection. These examples are complete record arrays, not evidence that the fictional tables exist.
+Assume applied silver.Customer Entity and complete CRM/ERP Mapping. The confirmed target grain/key is `(SourceSystemID, CustomerCode)`; input customer references are nonblank and unique within each System. Source code/name fields are STRING; names may be null. Both sources contain valid non-null BIGINT `source_system_id` values with disjoint System identities. They need no batch filter. The approved layout combines their disjoint branches; own CustomerID and the nine framework audit fields are omitted from the final projection. These examples are complete record arrays, not evidence that the fictional tables exist.
 
 `model-change-set/generated_code.json`:
 
@@ -103,6 +105,7 @@ Assume applied Customer Binding and complete CRM/ERP Mapping. The confirmed targ
 [
   {
     "modeled_entity_type": "logical_entity",
+    "modeled_entity_schema_name": "silver",
     "modeled_entity_name": "Customer",
     "artifact_name": "Customer.sql",
     "artifact_type": "sql_file",
@@ -119,6 +122,7 @@ Assume applied Customer Binding and complete CRM/ERP Mapping. The confirmed targ
 [
   {
     "modeled_entity_type": "logical_entity",
+    "modeled_entity_schema_name": "silver",
     "modeled_entity_name": "Customer",
     "artifact_name": "Customer.sql",
     "source_system_code": "CRM",
@@ -127,6 +131,7 @@ Assume applied Customer Binding and complete CRM/ERP Mapping. The confirmed targ
   },
   {
     "modeled_entity_type": "logical_entity",
+    "modeled_entity_schema_name": "silver",
     "modeled_entity_name": "Customer",
     "artifact_name": "Customer.sql",
     "source_system_code": "ERP",

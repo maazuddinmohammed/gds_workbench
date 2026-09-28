@@ -119,9 +119,12 @@ def test_runtime_factory_owns_the_database_lifecycle() -> None:
     )
     assert (
         "/api/v1/tenants/{tenant_id}/models/{model_id}/mapping/dependencies"
+        not in app.openapi()["paths"]
+    )
+    assert (
+        "/api/v1/tenants/{tenant_id}/models/{model_id}/mapping/generation-targets"
         in app.openapi()["paths"]
     )
-    assert "/api/v1/tenants/{tenant_id}/models/{model_id}/mapping/targets" in app.openapi()["paths"]
     assert (
         "/api/v1/tenants/{tenant_id}/models/{model_id}/mapping/"
         "runs/{workflow_run_id}/execute" in app.openapi()["paths"]

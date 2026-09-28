@@ -15,10 +15,11 @@ class CodeGenerationArtifactContext(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     target_ref: str = Field(pattern=r"^[a-z][a-z0-9_]{0,99}$")
-    object_id: int = Field(gt=0, repr=False)
+    modeled_entity_id: int = Field(gt=0, repr=False)
     code_input_digest: str = Field(pattern=r"^[0-9a-f]{64}$", repr=False)
     sql_generation_guide_version_id: int = Field(gt=0)
     modeled_entity_type: ModeledEntityType
+    modeled_entity_schema_name: str = Field(min_length=1, max_length=400)
     modeled_entity_name: str = Field(min_length=1, max_length=255)
     source_system_codes: tuple[str, ...] = Field(min_length=1)
     applied_generated_code: tuple[GeneratedCodeRecord, ...] = Field(

@@ -2,7 +2,10 @@
 
 CREATE TABLE workflow.generated_code (
     generated_code_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_object_binding_id BIGINT NOT NULL,
+    model_id BIGINT NOT NULL,
+    modeled_entity_type VARCHAR(30) NOT NULL,
+    logical_entity_id BIGINT,
+    dimensional_entity_id BIGINT,
     artifact_name VARCHAR(400) NOT NULL,
     artifact_type VARCHAR(30) NOT NULL,
     generated_code_content TEXT NOT NULL,
@@ -21,9 +24,18 @@ CREATE TABLE workflow.generated_code (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_generated_code_binding FOREIGN KEY (model_object_binding_id)
-        REFERENCES workflow.model_object_binding (model_object_binding_id)
-        ON DELETE NO ACTION,
+    CONSTRAINT fk_generated_code_model FOREIGN KEY (model_id)
+        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_generated_code_logical_entity FOREIGN KEY (logical_entity_id, model_id)
+        REFERENCES workflow.logical_entity (logical_entity_id, model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_generated_code_dimensional_entity FOREIGN KEY (dimensional_entity_id, model_id)
+        REFERENCES workflow.dimensional_entity (dimensional_entity_id, model_id) ON DELETE NO ACTION,
+    CONSTRAINT ck_generated_code_typed_entity CHECK (
+        (modeled_entity_type = 'logical_entity' AND logical_entity_id IS NOT NULL
+            AND dimensional_entity_id IS NULL)
+        OR (modeled_entity_type = 'dimensional_entity' AND dimensional_entity_id IS NOT NULL
+            AND logical_entity_id IS NULL)
+    ),
     CONSTRAINT ck_generated_code_artifact_name CHECK (
         reference.is_nonblank(artifact_name)
         AND artifact_name = btrim(artifact_name)
@@ -44,11 +56,12 @@ CREATE TABLE workflow.generated_code (
     )
 );
 
-CREATE UNIQUE INDEX ux_generated_code_artifact_name_ci
-    ON workflow.generated_code (
-        model_object_binding_id,
-        lower(btrim(artifact_name))
-    );
+CREATE UNIQUE INDEX ux_generated_code_logical_artifact_name_ci
+    ON workflow.generated_code (model_id, logical_entity_id, lower(btrim(artifact_name)))
+    WHERE modeled_entity_type = 'logical_entity';
+CREATE UNIQUE INDEX ux_generated_code_dimensional_artifact_name_ci
+    ON workflow.generated_code (model_id, dimensional_entity_id, lower(btrim(artifact_name)))
+    WHERE modeled_entity_type = 'dimensional_entity';
 
 CREATE TABLE workflow.generated_code_source_system (
     generated_code_source_system_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

@@ -39,21 +39,6 @@
   grid-template-columns: minmax(8rem, 0.8fr) repeat(3, minmax(10rem, 1fr)) auto;
 }
 
-.local-status-filter {
-  position: relative;
-}
-
-.local-status-filter > small {
-  position: absolute;
-  top: 0;
-  right: 0;
-  color: var(--faint);
-  font-size: 0.56rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .code-generation-ledger-heading {
   display: flex;
   min-height: 4.9rem;
@@ -211,39 +196,6 @@
   text-align: center;
 }
 
-.code-generation-run-dialog {
-  width: min(50rem, 100%);
-}
-
-.code-generation-run-scope {
-  margin-bottom: 1.15rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--line);
-}
-
-.code-generation-run-scope > header,
-.code-generation-run-scope > header > span {
-  display: grid;
-}
-
-.code-generation-run-scope > header {
-  gap: 0.22rem;
-}
-
-.code-generation-run-scope > header > strong {
-  font-size: 0.75rem;
-}
-
-.code-generation-run-scope > header > span {
-  color: var(--muted);
-  font-size: 0.64rem;
-}
-
-.code-generation-run-scope .detail-fact-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.code-generation-run-targets,
 .code-generation-system-ledger {
   display: grid;
   margin: 1rem 0 0;
@@ -252,7 +204,6 @@
   list-style: none;
 }
 
-.code-generation-run-targets li,
 .code-generation-system-ledger li {
   display: flex;
   min-width: 0;
@@ -263,15 +214,9 @@
   border-bottom: 1px solid var(--line);
 }
 
-.code-generation-run-targets strong,
 .code-generation-system-ledger strong {
   font-size: 0.7rem;
   overflow-wrap: anywhere;
-}
-
-.code-generation-run-targets span {
-  color: var(--muted);
-  font-size: 0.63rem;
 }
 
 .code-generation-detail-page {
@@ -312,17 +257,6 @@
 
 .code-generation-support-scroll table {
   min-width: 48rem;
-}
-
-.code-generation-provenance-grid .digest-fact {
-  grid-column: span 2;
-}
-
-.digest-fact code {
-  color: #43505c;
-  font-size: 0.66rem;
-  font-weight: 620;
-  overflow-wrap: anywhere;
 }
 
 .detail-empty-note {
@@ -379,13 +313,8 @@
     justify-items: start;
   }
 
-  .code-generation-system-ledger,
-  .code-generation-provenance-grid {
+  .code-generation-system-ledger {
     grid-template-columns: 1fr;
-  }
-
-  .code-generation-provenance-grid .digest-fact {
-    grid-column: auto;
   }
 }
 
@@ -419,16 +348,10 @@
     flex-direction: column;
     padding-top: 1rem;
   }
-
-  .code-generation-run-scope .detail-fact-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .code-generation-table-scroll tbody tr,
-  .code-generation-dialog-scrim,
-  .code-generation-run-dialog {
+  .code-generation-table-scroll tbody tr {
     animation: none;
     transition: none;
   }

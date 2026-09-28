@@ -16,7 +16,7 @@ from gds_workbench_api.features.code_generation import (
 from gds_workbench_api.features.mapping import (
     DatabaseMappingReviewService,
     MappingAttributeNotFoundError,
-    MappingDependencyFilters,
+    MappingFilters,
     MappingObjectNotFoundError,
 )
 from gds_workbench_api.features.mapping.read_contracts import MappingAttributeFilters
@@ -154,19 +154,11 @@ async def test_mapping_and_code_reads_round_trip_through_web_role(
 
     await database.open()
     try:
-        dependencies = await mapping_service.list_dependencies(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            filters=MappingDependencyFilters(),
-            page_size=25,
-            cursor=None,
-        )
         objects = await mapping_service.list_objects(
             principal,
             tenant_id=tenant_id,
             model_id=model_id,
-            filters=MappingDependencyFilters(),
+            filters=MappingFilters(),
             page_size=25,
             cursor=None,
         )
@@ -187,11 +179,9 @@ async def test_mapping_and_code_reads_round_trip_through_web_role(
             cursor=None,
         )
 
-        assert dependencies.items == ()
         assert objects.items == ()
         assert attributes.items == ()
         assert targets.items == ()
-        assert dependencies.model_revision == objects.model_revision
         assert objects.model_revision == attributes.model_revision
         assert attributes.model_revision == targets.model_revision
 

@@ -81,6 +81,8 @@ CREATE FUNCTION application.create_model(
     p_tenant_id BIGINT,
     p_model_name VARCHAR(255),
     p_model_description VARCHAR(2000),
+    p_logical_schemas JSONB,
+    p_dimensional_schemas JSONB,
     p_silver_model_naming_instructions TEXT,
     p_silver_model_audit_columns_template JSONB,
     p_gold_model_naming_instructions TEXT,
@@ -121,6 +123,8 @@ BEGIN
         tenant_id,
         model_name,
         model_description,
+        logical_schemas,
+        dimensional_schemas,
         silver_model_naming_instructions,
         silver_model_audit_columns_template,
         gold_model_naming_instructions,
@@ -136,6 +140,8 @@ BEGIN
         p_tenant_id,
         p_model_name,
         p_model_description,
+        p_logical_schemas,
+        p_dimensional_schemas,
         p_silver_model_naming_instructions,
         p_silver_model_audit_columns_template,
         p_gold_model_naming_instructions,
@@ -169,6 +175,8 @@ REVOKE ALL ON FUNCTION application.create_model(
     BIGINT,
     VARCHAR,
     VARCHAR,
+    JSONB,
+    JSONB,
     TEXT,
     JSONB,
     TEXT,
@@ -190,6 +198,8 @@ CREATE FUNCTION application.update_model(
     p_expected_model_revision BIGINT,
     p_model_name VARCHAR(255),
     p_model_description VARCHAR(2000),
+    p_logical_schemas JSONB,
+    p_dimensional_schemas JSONB,
     p_silver_model_naming_instructions TEXT,
     p_silver_model_audit_columns_template JSONB,
     p_gold_model_naming_instructions TEXT,
@@ -244,6 +254,8 @@ BEGIN
     IF ROW(
         v_existing.model_name,
         v_existing.model_description,
+        v_existing.logical_schemas,
+        v_existing.dimensional_schemas,
         v_existing.silver_model_naming_instructions,
         v_existing.silver_model_audit_columns_template,
         v_existing.gold_model_naming_instructions,
@@ -258,6 +270,8 @@ BEGIN
     ) IS NOT DISTINCT FROM ROW(
         p_model_name,
         p_model_description,
+        p_logical_schemas,
+        p_dimensional_schemas,
         p_silver_model_naming_instructions,
         p_silver_model_audit_columns_template,
         p_gold_model_naming_instructions,
@@ -278,6 +292,8 @@ BEGIN
     UPDATE model.model AS target_model
        SET model_name = p_model_name,
            model_description = p_model_description,
+           logical_schemas = p_logical_schemas,
+           dimensional_schemas = p_dimensional_schemas,
            model_revision = target_model.model_revision + 1,
            silver_model_naming_instructions =
                p_silver_model_naming_instructions,
@@ -321,6 +337,8 @@ REVOKE ALL ON FUNCTION application.update_model(
     BIGINT,
     VARCHAR,
     VARCHAR,
+    JSONB,
+    JSONB,
     TEXT,
     JSONB,
     TEXT,
@@ -790,7 +808,7 @@ BEGIN
             WHEN 'analysis' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_modeling_assertions']
             WHEN 'conceptual' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_modeling_assertions', 'list_conceptual_objects', 'get_conceptual_objects', 'list_conceptual_relationships', 'get_conceptual_relationships']
             WHEN 'logical' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_modeling_assertions', 'list_conceptual_objects', 'get_conceptual_objects', 'list_conceptual_relationships', 'get_conceptual_relationships', 'list_logical_submodels', 'get_logical_submodels', 'list_logical_entities', 'get_logical_entities', 'list_logical_attributes', 'get_logical_attributes', 'list_logical_relationships', 'get_logical_relationships']
-            WHEN 'dimensional' THEN ARRAY['get_gds_context', 'get_objects', 'get_object_details', 'get_modeling_assertions', 'get_logical_bindings', 'list_logical_submodels', 'get_logical_submodels', 'list_logical_entities', 'get_logical_entities', 'list_logical_attributes', 'get_logical_attributes', 'list_logical_relationships', 'get_logical_relationships', 'list_dimensional_submodels', 'get_dimensional_submodels', 'list_dimensional_entities', 'get_dimensional_entities', 'list_dimensional_attributes', 'get_dimensional_attributes', 'list_dimensional_relationships', 'get_dimensional_relationships']
+            WHEN 'dimensional' THEN ARRAY['get_gds_context', 'get_selected_logical_entities', 'get_modeling_assertions', 'list_logical_submodels', 'get_logical_submodels', 'list_logical_entities', 'get_logical_entities', 'list_logical_attributes', 'get_logical_attributes', 'list_logical_relationships', 'get_logical_relationships', 'list_dimensional_submodels', 'get_dimensional_submodels', 'list_dimensional_entities', 'get_dimensional_entities', 'list_dimensional_attributes', 'get_dimensional_attributes', 'list_dimensional_relationships', 'get_dimensional_relationships']
             WHEN 'mapping' THEN ARRAY['get_mapping_target', 'get_mapping_sources', 'get_existing_mapping', 'get_mapping_support']
             WHEN 'code_generation' THEN ARRAY['get_code_target', 'get_code_sources', 'get_code_source_systems', 'get_object_transformations', 'get_attribute_transformations']
             WHEN 'validation' THEN ARRAY['get_mapping_evidence', 'get_current_code', 'get_applied_groups', 'get_applied_checks']

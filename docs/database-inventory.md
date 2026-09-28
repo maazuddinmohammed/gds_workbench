@@ -7,7 +7,7 @@ objects installed by `database/01_reference.sql` through
 `database/19_runtime_integrity.sql`. It excludes seed data plus preflight and
 verification queries.
 
-Inventory totals: **102 tables, 89 functions, and 19 installed triggers**.
+Inventory totals: **100 tables, 93 functions, and 23 installed triggers**.
 
 Read the schemas in dependency order:
 
@@ -70,45 +70,42 @@ retained rather than cascade-deleted.
 
 ### `model` — governed Model aggregate and audit (6)
 
-- `model.model` — Tenant-owned Model, current revision, naming/audit policies, default agent settings, and active state.
+- `model.model` — Tenant-owned Model, current revision, Logical/Dimensional schema lists, naming/audit policies, default agent settings, and active state.
 - `model.model_input_scope` — Retained Source/Bronze input membership for a Model, including business lock and lifecycle.
 - `model.model_event_log` — Append-only safe workflow progress, warning, blocked, completion, and failure events.
 - `model.modeling_assertion_document` — Metadata for an Assertion source document; original bytes are not stored.
 - `model.modeling_assertion_record` — Structured factual Assertion records, applicable layers, confidence, lifecycle, and lock.
 - `model.model_revision_transaction` — One transaction witness for each actual Model revision advance.
 
-### `workflow` — applied modeling graph (28)
+### `workflow` — applied modeling graph (26)
 
 - `workflow.attribute_profile` — Current per-Model/per-Attribute profiling metrics and source-context provenance.
-- `workflow.analysis_result` — Inferred physical relationship plus validation policy, evidence counts, result, provenance, lifecycle, and lock.
+- `workflow.analysis_result` — Inferred physical relationship and explicit `inferred_cardinality` (default `unknown`), plus separate validation policy, evidence counts, result, provenance, lifecycle, and lock. Validation preserves the inference.
 - `workflow.conceptual_object` — Conceptual business object, type, grain, aliases, confidence, lifecycle, and lock.
 - `workflow.conceptual_relationship` — Typed/cardinal conceptual relationship between two Conceptual Objects.
 - `workflow.conceptual_support` — Typed physical Object or Assertion support for one Conceptual Object or Relationship.
 - `workflow.logical_submodel` — Named logical grouping within a Model.
-- `workflow.logical_entity` — Logical entity, type, grain, dependency order, confidence, lifecycle, and lock.
+- `workflow.logical_entity` — Schema-qualified Logical Entity, type, grain, dependency order, confidence, lifecycle, and lock.
 - `workflow.logical_entity_submodel` — Retained membership between a Logical Entity and Logical Submodel.
 - `workflow.logical_attribute` — Logical field with data type, ordinal, nullability, key roles, audit role, lifecycle, and lock.
 - `workflow.logical_entity_source_mapping` — Ordered physical Bronze Object or Assertion support for a Logical Entity.
 - `workflow.logical_attribute_source_mapping` — Ordered physical Bronze Attribute path or Assertion support for a Logical Attribute.
 - `workflow.logical_relationship` — Attribute-level relationship between two same-Model Logical Entities.
 - `workflow.dimensional_submodel` — Named dimensional grouping within a Model.
-- `workflow.dimensional_entity` — Fact, Dimension, or Bridge with grain, dependency order, confidence, lifecycle, and lock.
+- `workflow.dimensional_entity` — Schema-qualified Fact, Dimension, or Bridge with grain, dependency order, confidence, lifecycle, and lock.
 - `workflow.dimensional_entity_submodel` — Retained membership between a Dimensional Entity and Dimensional Submodel.
 - `workflow.dimensional_attribute` — Dimensional field with key/measure roles, grain/additivity/change behavior, lifecycle, and lock.
-- `workflow.dimensional_entity_source_mapping` — Ordered eligible Silver Object or Assertion support for a Dimensional Entity.
-- `workflow.dimensional_attribute_source_mapping` — Ordered eligible Silver Attribute path or Assertion support for a Dimensional Attribute.
+- `workflow.dimensional_entity_source_mapping` — Ordered same-Model Logical Entity or Assertion support for a Dimensional Entity.
+- `workflow.dimensional_attribute_source_mapping` — Ordered same-Model Logical Attribute or Assertion support for a Dimensional Attribute.
 - `workflow.dimensional_relationship` — Typed, cardinal, optional Attribute-level relationship between Dimensional Entities.
-- `workflow.model_object_binding` — One active Logical-to-Silver or Dimensional-to-Gold binding between a modeled entity and its registered physical Object.
-- `workflow.model_attribute_binding` — Attribute-level binding beneath a Model Object Binding, tying one modeled Attribute to one registered physical Attribute.
-- `workflow.mapping_source_system_dependency` — Per-Model/layer ordering and lifecycle of source Systems used by Mapping.
-- `workflow.mapping_object` — One bound target/source-System transformation document, output template, dependency order, lifecycle, and lock.
-- `workflow.mapping_attribute` — Modeled Attribute to physical target Attribute mapping and transformation under a Mapping Object.
-- `workflow.generated_code` — Current Model-owned Code Artifact per bound target, including artifact name/type/content, one server-derived input digest, lifecycle, and optional Run provenance.
+- `workflow.mapping_object` — One modeled Entity/source-System transformation document, output template, dependency order, lifecycle, and lock.
+- `workflow.mapping_attribute` — Transformation owned by one typed modeled Attribute under a Mapping Object.
+- `workflow.generated_code` — Current Model-owned Code Artifact per typed modeled Entity, including artifact name/type/content, one server-derived input digest, lifecycle, and optional Run provenance.
 - `workflow.generated_code_source_system` — Retained source-System membership for one Generated Code Artifact.
 - `workflow.validation_group` — Model/Tenant/System-scoped Validation group with a durable optional modeled layer, internal Mapping and optional Code-context digests, lifecycle, and optional Run provenance.
 - `workflow.validation_check` — Validation query and assertion definition under one Validation Group, including Query A, optional Query B or literal/list operand, result type, operator, category, severity, and lifecycle.
 
-### `application` — web preferences, authoring configuration, and run orchestration (18)
+### `application` — web preferences, authoring configuration, and run orchestration (19)
 
 - `application.principal_preference` — One Principal’s last authorized Tenant selection.
 - `application.workflow_stage` — Ordered stage definition for a workflow/execution-mode pair, including whether it is agentic.
@@ -121,9 +118,10 @@ retained rather than cascade-deleted.
 - `application.sql_generation_guide` — Named global SQL generation guidance identity; one active guide may be default.
 - `application.sql_generation_guide_version` — Draft/published/retired guide content and digest.
 - `application.workflow_run` — Durable immutable Tenant-scoped run request plus state, actor, frozen Model revision, selection digest, agent/mapping/guide inputs, claim lease, and outcome; a partial unique index permits only one running Run per Tenant.
+- `application.workflow_run_entity_selection` — Frozen schema-qualified modeled Entity selection, retained independently of live Entity rows.
 - `application.workflow_run_object_selection` — Immutable ordered Object selection frozen for one Workflow Run.
 - `application.workflow_run_system_selection` — Immutable ordered System selection frozen for one Validation Run.
-- `application.workflow_run_mapping_target_selection` — Immutable ordered target Object/source System pair frozen for a Mapping Run.
+- `application.workflow_run_mapping_target_selection` — Immutable ordered modeled Entity/source System pair referencing the frozen Entity selection for a Mapping Run.
 - `application.workflow_run_prompt_snapshot` — Immutable resolved prompt version/digest per agentic stage for one Run.
 
 - `application.metadata_enrichment_result` — Bounded description/type outcomes for a selected physical Object or Attribute, with evidence methods and no sample rows.
@@ -169,7 +167,7 @@ Each entry gives purpose, then execution order.
 
 - `workflow.list_tenant_visible_objects` — Canonical Tenant-visible Object closure. Steps: (1) resolve every Object through mandatory `source_tenant_id`; (2) seed direct ownership, GDS-placement, Copy, Process, and current Model Input Scope references; (3) recursively traverse active ingestion mappings; (4) return each reachable Object with reason flags.
 - `workflow.list_model_object_eligibility` — Canonical Object-level workflow eligibility for one active Model. Steps: (1) read active Model Input Scope and physical metadata; (2) resolve the source Tenant; (3) mark selected Source/Bronze input eligibility; (4) mark bound Silver dimensional-source eligibility; (5) mark bound Silver/Gold Mapping targets; (6) return ordered rows.
-- `workflow.list_code_generation_target_context` — Canonical complete Mapping context per bound target. Steps: (1) start from eligible Silver/Gold targets; (2) retain active, complete mappings, entities, and child mappings; (3) reject incomplete targets; (4) aggregate Mapping/source context independently of orchestration dependency order; (5) derive `code_input_digest`; (6) return entity, target, digest, and source context.
+- `workflow.list_code_generation_target_context` — Canonical complete Mapping context per typed modeled Entity. Steps: (1) start from eligible Silver/Gold targets; (2) retain active, complete mappings, entities, and child mappings; (3) reject incomplete targets; (4) aggregate Mapping/source context independently of orchestration dependency order; (5) derive `code_input_digest`; (6) return entity, target, digest, and source context.
 - `workflow.list_model_attribute_eligibility` — Attribute-level extension of Object eligibility. Steps: (1) call Object eligibility; (2) join active Attributes; (3) inherit input and target flags; (4) mark bound Silver dimensional-source eligibility; (5) return deterministically ordered rows.
 
 ### `application` — preference and Model authoring (5)
@@ -269,9 +267,14 @@ Each entry gives purpose, then execution order.
 - `application.metadata_object_review_revision` — Compute the opaque revision fence for one physical Object review.
 - `application.review_metadata_records` — Apply exact authorized lock, status, or description changes with parent locks, physical revisions, idempotency and audit. Description audit receipts retain a digest rather than the text.
 - `workflow.list_model_input_sources` — Resolve active Model Input Scope Objects to business Systems; Source uses its Connection, Bronze uses active ingestion lineage. Independent of orchestration dependency order.
-- `workflow.list_mapping_source_objects` — Discover all route-eligible Mapping source candidates for a target/System pair. Saved Entity links supplement discovery; dependency-order records are optional.
+- `workflow.list_mapping_source_objects` — Discover all route-eligible Mapping source candidates for a target/System pair. Saved Entity links supplement discovery; source Systems have no Mapping dependency-order records.
 
 - `workflow.tr_validation_group_layer` — Derive a new Validation Group’s modeled layer from its authoring Run, preserve it through manual review, and reject cross-layer reassignment.
+
+- `model.valid_schema_list` — Pure bounded validation of Model schema-name/description lists and normalized uniqueness.
+- `model.guard_schema_list_references` — Reject removal of schemas still referenced by retained modeled Entities.
+- `workflow.guard_entity_schema_membership` — Serialize on the Model row and require Entity schema membership in its configured layer.
+- `application.guard_workflow_run_entity_selection` — Preserve immutable frozen modeled Entity selections.
 
 ## 3. Installed triggers
 
@@ -299,8 +302,19 @@ All are `BEFORE` triggers. “Row” means once per affected row; “statement�
 
 - `tr_validation_group_layer` on `workflow.validation_group` — Row-level INSERT/UPDATE scope preservation; see `workflow.tr_validation_group_layer`.
 
+- `guard_entity_schema_membership` on `workflow.logical_entity` — INSERT or schema/Model UPDATE; serialize and enforce Logical schema membership.
+- `guard_entity_schema_membership` on `workflow.dimensional_entity` — INSERT or schema/Model UPDATE; serialize and enforce Dimensional schema membership.
+- `guard_schema_list_references` on `model.model` — Schema-list UPDATE; reject changes that orphan retained Entities.
+- `guard_workflow_run_entity_selection` on `application.workflow_run_entity_selection` — UPDATE or DELETE; reject frozen identity mutation.
+
+
 ## 4. Explicit exclusions
 
 - `database/seed/` changes data only; it defines no current schema inventory.
 - `database/00_preflight.sql` and `database/20_verify_install.sql` inspect installation safety/posture; they do not add persistent tables, functions, or triggers.
 - Views, indexes, sequences, constraints, roles, and grants are outside this requested inventory.
+
+
+## Read views
+
+`workflow.modeled_entity` and `workflow.modeled_attribute` expose a shared typed read contract across Logical and Dimensional records. Writes use the concrete tables and their typed foreign keys.

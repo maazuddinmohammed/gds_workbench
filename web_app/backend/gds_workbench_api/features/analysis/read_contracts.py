@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Literal
 
 from gds_etl_workbench.domain.errors import WorkbenchError
+from gds_etl_workbench.domain.modeling_records import Cardinality, InferredCardinality
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
@@ -58,9 +59,9 @@ class AnalysisFindingSummary(ReviewContract):
     relationship_confidence: Literal["low", "medium", "high"]
     validation_state: AnalysisValidationState
     validation_result: AnalysisValidationResult | None = None
-    observed_cardinality: (
-        Literal["one_to_one", "one_to_many", "many_to_one", "many_to_many"] | None
-    ) = None
+    inferred_cardinality: InferredCardinality = "unknown"
+    observed_cardinality: Cardinality | None = None
+    cardinality_mismatch: bool = False
     status: AnalysisStatus
     is_locked: bool
     updated_at: datetime

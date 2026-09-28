@@ -87,6 +87,7 @@ SELECT result.analysis_result_id,
        to_attribute.attribute_data_type AS to_attribute_data_type,
        result.relationship_kind,
        result.relationship_confidence,
+       result.inferred_cardinality,
        CASE
            WHEN result.validation_result IS NULL THEN 'unvalidated'
            ELSE 'validated'
@@ -229,6 +230,7 @@ SELECT result.analysis_result_id,
        to_attribute.attribute_data_type AS to_attribute_data_type,
        result.relationship_kind,
        result.relationship_confidence,
+       result.inferred_cardinality,
        left(result.relationship_basis, 8000) AS relationship_basis,
        char_length(result.relationship_basis) > 8000 AS relationship_basis_truncated,
        CASE
@@ -511,7 +513,13 @@ def _normalize_analysis_summary(row: dict[str, object]) -> AnalysisFindingSummar
             "relationship_confidence": row["relationship_confidence"],
             "validation_state": row["validation_state"],
             "validation_result": row["validation_result"],
+            "inferred_cardinality": row["inferred_cardinality"],
             "observed_cardinality": cardinality,
+            "cardinality_mismatch": (
+                row["inferred_cardinality"] != "unknown"
+                and cardinality is not None
+                and row["inferred_cardinality"] != cardinality
+            ),
             "status": row["status"],
             "is_locked": row["is_locked"],
             "updated_at": row["updated_at"],

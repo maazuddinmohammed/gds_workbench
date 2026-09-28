@@ -6,7 +6,9 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
-from gds_etl_workbench.application.change_sets.model_validation import validate_future_graph
+from gds_etl_workbench.application.change_sets.model_validation import (
+    validate_future_graph,
+)
 from gds_workbench_api.features.dimensional.service import (
     _candidate_validator,
     _project_dimensional_changes,
@@ -16,16 +18,14 @@ from gds_workbench_api.features.workflows.authoring.context import (
     InMemoryAgentContextToolCatalog,
     modeled_layer_dependencies,
 )
-from gds_workbench_api.features.workflows.authoring.repair import AgentCandidateValidationError
+from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentCandidateValidationError,
+)
 from pydantic import JsonValue
 
 from tests.mcp.model_test_fixtures import (
-    GOLD_CUSTOMER,
-    SILVER_ORDER,
-    attribute_binding,
     complete_model_graph,
     complete_physical_scope,
-    object_binding,
     snapshot_from_graph,
 )
 from tests.web_backend.test_dimensional_executor import (
@@ -89,47 +89,36 @@ def _complete_model_candidate() -> dict[str, JsonValue]:
     }
 
 
-def _physical_sources(value: Any) -> Any:
+def _logical_sources(value: Any) -> Any:
     if isinstance(value, list):
-        return [_physical_sources(item) for item in cast(list[Any], value)]
+        return [_logical_sources(item) for item in cast(list[Any], value)]
     if not isinstance(value, dict):
         return value
-    result = {name: _physical_sources(item) for name, item in cast(dict[str, Any], value).items()}
-    if result.get("object_name") == "sales_customer":
-        result.update(
-            dict(
-                zip(
-                    (
-                        "tenant_code",
-                        "system_code",
-                        "connection_code",
-                        "object_schema",
-                        "object_name",
-                    ),
-                    SILVER_ORDER,
-                    strict=True,
-                )
-            )
-        )
-        if "source_tenant_code" in result:
-            result["source_tenant_code"] = "TENANT-A"
-        if "attribute_name" in result:
-            result["attribute_name"] = {"customer_id": "CustomerID", "sale_customer_id": "OrderID"}[
-                result["attribute_name"]
-            ]
+    result = {
+        key: _logical_sources(item) for key, item in cast(dict[str, Any], value).items()
+    }
+    if result.get("logical_entity_name") == "sales_customer":
+        result.update(logical_entity_schema_name="silver", logical_entity_name="Order")
+        if "logical_attribute_name" in result:
+            result["logical_attribute_name"] = {
+                "customer_id": "CustomerID",
+                "sale_customer_id": "OrderID",
+            }[result["logical_attribute_name"]]
+    if result.get("schema_name") == "silver_nwa":
+        result["schema_name"] = "silver"
     return result
 
 
-def _bundle(*, bound: bool) -> tuple[AgentContextBundle, dict[str, Any]]:
+def _bundle(*, mapped: bool) -> tuple[AgentContextBundle, dict[str, Any]]:
     initial = _context_bundle()
     context = initial.context.model_validate(
-        _physical_sources(initial.context.model_dump(mode="json")), strict=False
+        _logical_sources(initial.context.model_dump(mode="json")), strict=False
     )
     graph = complete_model_graph()
     for dataset in tuple(graph):
         if dataset.startswith(("dimensional_", "generated_code", "validation_")):
             graph[dataset] = []
-        elif dataset.startswith(("model_object_binding", "model_attribute_binding", "mapping_")):
+        elif dataset.startswith(("mapping_",)):
             graph[dataset] = [
                 record
                 for record in graph[dataset]
@@ -144,8 +133,10 @@ def _bundle(*, bound: bool) -> tuple[AgentContextBundle, dict[str, Any]]:
     )
     scope = complete_physical_scope()
     snapshot = snapshot_from_graph(graph)
-    assert validate_future_graph(snapshot=snapshot, staged_documents={}, physical_scope=scope).valid
-    candidate = cast(dict[str, Any], _physical_sources(_complete_model_candidate()))
+    assert validate_future_graph(
+        snapshot=snapshot, staged_documents={}, physical_scope=scope
+    ).valid
+    candidate = cast(dict[str, Any], _logical_sources(_complete_model_candidate()))
     bundle = replace(initial, context=context, snapshot=snapshot, physical_scope=scope)
     validator = _candidate_validator(bundle)
     projected = _project_dimensional_changes(
@@ -156,52 +147,68 @@ def _bundle(*, bound: bool) -> tuple[AgentContextBundle, dict[str, Any]]:
         staged_documents={item.dataset: item.records for item in projected},
         physical_scope=scope,
     ).valid
-    if bound:
+    if mapped:
         for item in projected:
             graph[item.dataset] = item.records
-        graph["model_object_binding"].append(
-            object_binding("dimensional_entity", "Customer Dimension", GOLD_CUSTOMER)
+        target_schema = str(
+            graph["dimensional_entity"][0]["dimensional_entity_schema_name"]
         )
-        attributes = graph["dimensional_attribute"]
-        gold = tuple(part.casefold() for part in GOLD_CUSTOMER)
-        physical_attributes = frozenset(
-            (*gold, f"column_{index}") for index in range(len(attributes))
+        graph["mapping_object"].append(
+            {
+                "modeled_entity_type": "dimensional_entity",
+                "modeled_entity_schema_name": target_schema,
+                "modeled_entity_name": "Customer Dimension",
+                "source_system_code": "ERP",
+                "output_template_code": None,
+                "object_dependency_order": 0,
+                "mapping_transformation_document": {
+                    "steps": ["Populate the Dimension."]
+                },
+                "object_mapping_status": "active",
+                "object_mapping_is_locked": False,
+            }
         )
-        for index, attribute in enumerate(attributes):
-            graph["model_attribute_binding"].append(
-                attribute_binding(
-                    "dimensional_entity",
-                    "Customer Dimension",
-                    cast(str, attribute["dimensional_attribute_name"]),
-                    f"column_{index}",
-                )
+        for attribute in graph["dimensional_attribute"]:
+            graph["mapping_attribute"].append(
+                {
+                    "modeled_entity_type": "dimensional_entity",
+                    "modeled_entity_schema_name": target_schema,
+                    "modeled_entity_name": "Customer Dimension",
+                    "modeled_attribute_name": attribute["dimensional_attribute_name"],
+                    "source_system_code": "ERP",
+                    "output_template_code": None,
+                    "attribute_mapping_transformation_document": {
+                        "expression": "Documented population."
+                    },
+                    "attribute_mapping_status": "active",
+                    "attribute_mapping_is_locked": False,
+                }
             )
-        scope = replace(
-            scope,
-            attributes=frozenset(key for key in scope.attributes if key[:5] != gold)
-            | physical_attributes,
-            dimensional_mapping_target_attributes=frozenset(
-                key for key in scope.dimensional_mapping_target_attributes if key[:5] != gold
-            )
-            | physical_attributes,
-        )
         snapshot = snapshot_from_graph(graph)
         assert validate_future_graph(
             snapshot=snapshot, staged_documents={}, physical_scope=scope
         ).valid
         context = context.model_copy(
             update={
-                "applied": context.applied.model_copy(update={"dimensional": snapshot.dimensional})
+                "applied": context.applied.model_copy(
+                    update={"dimensional": snapshot.dimensional}
+                )
             }
         )
-        bundle = replace(bundle, context=context, snapshot=snapshot, physical_scope=scope)
+        bundle = replace(
+            bundle, context=context, snapshot=snapshot, physical_scope=scope
+        )
     return bundle, candidate
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("bound", [False, True], ids=["new_unbound", "retained_bound"])
-async def test_local_status_passes_but_complete_graph_rejects_active_children(bound: bool) -> None:
-    bundle, candidate = _bundle(bound=bound)
+@pytest.mark.parametrize(
+    "mapped", [False, True], ids=["new_unmapped", "retained_mapped"]
+)
+async def test_local_status_passes_but_complete_graph_rejects_active_children(
+    mapped: bool,
+) -> None:
+    bundle, candidate = _bundle(mapped=mapped)
     candidate["entities"][0]["dimensional_entity_status"] = "inactive"
     validator = _candidate_validator(bundle)
     assert not (await validator.validate(cast(JsonValue, candidate))).issues
@@ -220,8 +227,10 @@ async def test_local_status_passes_but_complete_graph_rejects_active_children(bo
 
 
 @pytest.mark.asyncio
-async def test_historize_is_valid_before_policy_but_breaks_retained_binding_coverage() -> None:
-    bundle, candidate = _bundle(bound=True)
+async def test_historize_is_valid_before_policy_but_breaks_retained_mapping_coverage() -> (
+    None
+):
+    bundle, candidate = _bundle(mapped=True)
     candidate["attributes"][2]["dimensional_attribute_change_behavior"] = "historize"
     validator = _candidate_validator(bundle)
     assert not (await validator.validate(cast(JsonValue, candidate))).issues
@@ -240,7 +249,9 @@ async def test_historize_is_valid_before_policy_but_breaks_retained_binding_cove
         staged_documents={item.dataset: item.records for item in projected},
         physical_scope=bundle.physical_scope,
     )
-    assert [item.code for item in checked.issues] == ["binding_coverage_missing"]
+    assert checked.issues and all(
+        item.code == "active_dependency_invalid" for item in checked.issues
+    )
     added = {
         record["dimensional_attribute_name"]
         for item in projected
@@ -252,14 +263,16 @@ async def test_historize_is_valid_before_policy_but_breaks_retained_binding_cove
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
-@pytest.mark.parametrize("fault", ["inactive_parent", "bound_historize", "projected_name_overflow"])
+@pytest.mark.parametrize(
+    "fault", ["inactive_parent", "mapped_historize", "projected_name_overflow"]
+)
 @pytest.mark.parametrize("outcome", ["repair", "exhaust", "later_malformed"])
 async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
     mode: str,
     fault: str,
     outcome: str,
 ) -> None:
-    bundle, valid = _bundle(bound=fault == "bound_historize")
+    bundle, valid = _bundle(mapped=fault == "mapped_historize")
     assert bundle.snapshot is not None and bundle.physical_scope is not None
     context = bundle.context.model_copy(
         update={
@@ -291,20 +304,23 @@ async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
     if fault == "inactive_parent":
         invalid["entities"][0]["dimensional_entity_status"] = "inactive"
         expected_code = "active_dependency_invalid"
-    elif fault == "bound_historize":
+    elif fault == "mapped_historize":
         invalid["attributes"][2]["dimensional_attribute_change_behavior"] = "historize"
-        expected_code = "binding_coverage_missing"
+        expected_code = "active_dependency_invalid"
         assert {item.dataset for item in context.read_only_dependencies} == {
-            "model_object_binding",
-            "model_attribute_binding",
+
+            "mapping_object",
+            "mapping_attribute",
         }
     else:
         invalid["entities"][0]["dimensional_entity_name"] = "D" * 253
         for attribute in invalid["attributes"]:
             attribute["dimensional_entity_name"] = "D" * 253
         expected_code = "gold_projection_conflict"
-    assert not (await _candidate_validator(bundle).validate(cast(JsonValue, invalid))).issues
-    # Ensure the corrected bound candidate changes something, rather than becoming a no-op.
+    assert not (
+        await _candidate_validator(bundle).validate(cast(JsonValue, invalid))
+    ).issues
+    # Ensure the corrected mapped candidate changes something, rather than becoming a no-op.
     valid["entities"][0]["dimensional_entity_definition"] = (
         "Customers represented at one customer per row."
     )
@@ -313,7 +329,11 @@ async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
             cast(JsonValue, invalid),
             cast(
                 JsonValue,
-                valid if outcome == "repair" else invalid if outcome == "exhaust" else None,
+                valid
+                if outcome == "repair"
+                else invalid
+                if outcome == "exhaust"
+                else None,
             ),
         ]
     )
@@ -336,7 +356,8 @@ async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
         assert len(handoff.calls) == 1 and not handoff.retained
         assert bundle.snapshot is not None and bundle.physical_scope is not None
         assert (
-            handoff.final_events[-1].attempt == 2 and handoff.final_events[-1].status == "warning"
+            handoff.final_events[-1].attempt == 2
+            and handoff.final_events[-1].status == "warning"
         )
         assert validate_future_graph(
             snapshot=bundle.snapshot,
@@ -349,6 +370,10 @@ async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
         assert not handoff.calls and len(handoff.retained) == 1
         assert handoff.retained[0]["issues"][0].code == expected_code
     assert len(agent.requests) == 2 and lifecycle.failed is None
-    first, second = [cast(dict[str, Any], request.context) for request in agent.requests]
+    first, second = [
+        cast(dict[str, Any], request.context) for request in agent.requests
+    ]
     assert first["original_context"] == second["original_context"]
-    assert second["repair"]["validation_issues"][0]["code"] == "candidate." + expected_code
+    assert (
+        second["repair"]["validation_issues"][0]["code"] == "candidate." + expected_code
+    )

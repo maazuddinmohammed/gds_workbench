@@ -30,12 +30,12 @@ BEGIN
   {
     "output_template_code": "mapping_object_default",
     "output_template_name": "Default Object Mapping",
-    "output_template_description": "Describe source Objects and ordered Object transformation steps; both values may be null.",
+    "output_template_description": "Describe physical inputs or modeled input/lookup sources and ordered Entity transformation steps.",
     "output_template_target_type": "mapping_object",
     "fields": [
       {
         "output_template_field_name": "source_objects",
-        "output_template_field_description": "Nullable list of source Objects. Each entry has tenant_code, system_code, connection_code, object_schema, object_name, alias, in that order. The field is present and may be JSON null.",
+        "output_template_field_description": "Nullable list of source Objects. Each entry has tenant_code, system_code, connection_code, object_schema, object_name, alias, in that order. The field is present and may be JSON null. Use only for Logical Mapping; set null for Dimensional Mapping.",
         "output_template_field_data_type": "array",
         "output_template_field_array_item_type": "object",
         "output_template_field_is_required": true,
@@ -52,12 +52,42 @@ BEGIN
         ]
       },
       {
+        "output_template_field_name": "source_logical_entities",
+        "output_template_field_description": "Optional nullable Logical Entity sources for Dimensional input or Logical foreign-key lookups. Each entry has logical_entity_schema_name, logical_entity_name, alias. Use only frozen eligible source evidence.",
+        "output_template_field_data_type": "array",
+        "output_template_field_array_item_type": "object",
+        "output_template_field_is_required": false,
+        "output_template_field_order": 2,
+        "output_template_field_example": [
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "Customer",
+            "alias": "c"
+          }
+        ]
+      },
+      {
+        "output_template_field_name": "source_dimensional_entities",
+        "output_template_field_description": "Optional nullable Dimensional Entity lookup sources on the Dimensional route only. Each entry has dimensional_entity_schema_name, dimensional_entity_name, alias. Use only frozen eligible same-Model peer lookup evidence.",
+        "output_template_field_data_type": "array",
+        "output_template_field_array_item_type": "object",
+        "output_template_field_is_required": false,
+        "output_template_field_order": 3,
+        "output_template_field_example": [
+          {
+            "dimensional_entity_schema_name": "gold",
+            "dimensional_entity_name": "CustomerDimension",
+            "alias": "customer_dim"
+          }
+        ]
+      },
+      {
         "output_template_field_name": "steps",
         "output_template_field_description": "Nullable ordered list of Object transformation instructions: Objects/tables to join, join types and column predicates, filters and any additional processing. The field is present and may be JSON null.",
         "output_template_field_data_type": "array",
         "output_template_field_array_item_type": "string",
         "output_template_field_is_required": true,
-        "output_template_field_order": 2,
+        "output_template_field_order": 4,
         "output_template_field_example": [
           "Read customer rows from c.",
           "Keep rows where c.is_active = true."
@@ -68,12 +98,12 @@ BEGIN
   {
     "output_template_code": "mapping_attribute_default",
     "output_template_name": "Default Attribute Mapping",
-    "output_template_description": "Describe optional source Attributes and the target Attribute transformation.",
+    "output_template_description": "Describe physical inputs or modeled input/lookup sources and the target Attribute transformation.",
     "output_template_target_type": "mapping_attribute",
     "fields": [
       {
         "output_template_field_name": "source_attributes",
-        "output_template_field_description": "Optional nullable list of source Attributes. Each entry has tenant_code, system_code, connection_code, object_schema, object_name, attribute_name, in that order. Omission or JSON null is permitted.",
+        "output_template_field_description": "Optional nullable list of source Attributes. Each entry has tenant_code, system_code, connection_code, object_schema, object_name, attribute_name, in that order. Omission or JSON null is permitted. Use only for Logical Mapping; leave null or absent for Dimensional Mapping.",
         "output_template_field_data_type": "array",
         "output_template_field_array_item_type": "object",
         "output_template_field_is_required": false,
@@ -90,12 +120,42 @@ BEGIN
         ]
       },
       {
+        "output_template_field_name": "source_logical_attributes",
+        "output_template_field_description": "Optional nullable Logical Attribute sources for Dimensional input or Logical foreign-key lookups. Each entry has logical_entity_schema_name, logical_entity_name, logical_attribute_name. Use only frozen eligible source evidence.",
+        "output_template_field_data_type": "array",
+        "output_template_field_array_item_type": "object",
+        "output_template_field_is_required": false,
+        "output_template_field_order": 2,
+        "output_template_field_example": [
+          {
+            "logical_entity_schema_name": "silver",
+            "logical_entity_name": "Customer",
+            "logical_attribute_name": "CustomerName"
+          }
+        ]
+      },
+      {
+        "output_template_field_name": "source_dimensional_attributes",
+        "output_template_field_description": "Optional nullable Dimensional Attribute lookup sources on the Dimensional route only. Each entry has dimensional_entity_schema_name, dimensional_entity_name, dimensional_attribute_name. Use only frozen eligible same-Model peer lookup evidence.",
+        "output_template_field_data_type": "array",
+        "output_template_field_array_item_type": "object",
+        "output_template_field_is_required": false,
+        "output_template_field_order": 3,
+        "output_template_field_example": [
+          {
+            "dimensional_entity_schema_name": "gold",
+            "dimensional_entity_name": "CustomerDimension",
+            "dimensional_attribute_name": "CustomerKey"
+          }
+        ]
+      },
+      {
         "output_template_field_name": "transformation",
         "output_template_field_description": "Required SQL expression using available Object aliases, or precise implementable generation rule. Include any necessary cast, null/default, aggregation or self-join source-role behavior.",
         "output_template_field_data_type": "string",
         "output_template_field_array_item_type": null,
         "output_template_field_is_required": true,
-        "output_template_field_order": 2,
+        "output_template_field_order": 4,
         "output_template_field_example": "TRIM(c.customer_name)"
       }
     ]

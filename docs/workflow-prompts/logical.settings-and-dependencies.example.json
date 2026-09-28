@@ -1,4 +1,10 @@
 {
+  "schemas": [
+    {
+      "schema_name": "silver",
+      "description": "Logical model schema."
+    }
+  ],
   "naming_instructions": "Use PascalCase for Logical entity, attribute, and relationship names. Identifier Attribute names end with ID, with both I and D uppercase.",
   "audit_columns": {
     "schema_version": "1.0",

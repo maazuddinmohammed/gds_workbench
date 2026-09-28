@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readFile, readdir, realpath, writeFile, rename, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
-import { stableStringify, SHA256, UUID, MAX_MANIFEST_BYTES, MAX_PATH_CHARACTERS,
+import { stableStringify, isEntityOwnedModelCatalog, SHA256, UUID, MAX_MANIFEST_BYTES, MAX_PATH_CHARACTERS,
  MAX_LOCAL_PAYLOAD_BYTES, ALLOWED_DATASETS, fail, isObject, hasExactKeys,
  recordKey, normalizedTenantCode, type StageRequest, type StageApprovedManifestInput,
  type JsonRecord, type StageRequestDataset, type BackendIdentity } from "./stage-contract.js";
@@ -310,7 +310,7 @@ export async function readRequest(
     try { inputManifest = JSON.parse(bytes.toString("utf8")); } catch { fail("SNAPSHOT_MISMATCH", "An input Snapshot is invalid."); }
     if (sha256(bytes) !== binding.manifest_sha256 || !isObject(inputManifest) ||
         inputManifest.snapshot_id !== binding.snapshot_id || inputManifest.snapshot_kind !== binding.area ||
-        (binding.area === "model" && (inputManifest.model_revision !== binding.model_revision ||
+        (binding.area === "model" && (inputManifest.schema_version !== "2.0" || inputManifest.model_revision !== binding.model_revision ||
           !isObject(state.model) || inputManifest.model_id !== state.model.id || inputManifest.model_name !== state.model.name)) ||
         (binding.area === "metadata" && normalizedTenantCode(inputManifest.tenant_code) !== normalizedTenantCode(inputOwner.code))) {
       fail("SNAPSHOT_MISMATCH", "An input Snapshot changed after acknowledgement.");
@@ -413,6 +413,7 @@ async function verifySnapshotBinding(request: StageRequest, session: string): Pr
   if (
     !isObject(manifest) ||
     manifest.snapshot_kind !== request.area ||
+    (request.area === "model" && manifest.schema_version !== "2.0") ||
     manifest.snapshot_id !== request.snapshot.snapshot_id
   ) {
     fail("SNAPSHOT_MISMATCH", "The Stage request does not match its bound Snapshot.");
@@ -445,9 +446,10 @@ async function verifySnapshotBinding(request: StageRequest, session: string): Pr
   } catch {
     fail("SNAPSHOT_MISMATCH", "The bound Snapshot catalog is invalid.");
   }
-  if (!isObject(catalog) || catalog.snapshot_kind !== request.area || !Array.isArray(catalog.sections)) {
+  if (!isObject(catalog) || catalog.snapshot_kind !== request.area || (request.area === "model" && catalog.schema_version !== "2.0") || !Array.isArray(catalog.sections)) {
     fail("SNAPSHOT_MISMATCH", "The bound Snapshot catalog identity is invalid.");
   }
+  if (request.area === "model" && !isEntityOwnedModelCatalog(catalog)) fail("SNAPSHOT_MISMATCH", "Legacy Model Snapshot contract; fetch a new Entity-owned Model Snapshot.");
   const catalogDatasets = new Map<string, string[]>();
   for (const section of catalog.sections) {
     if (!isObject(section) || !Array.isArray(section.datasets)) {

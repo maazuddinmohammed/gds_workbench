@@ -37,14 +37,20 @@ function Get-AtlasModelPolicy($States, $MetadataStates, $Model) {
         if ($override -and @($added[$dataset]).Count -gt 0 -and $null -ne $added[$dataset]) { Add-PolicyIssue $issues 'model.naming-review' $dataset ($dataset + '_name') "Review new names against the Model's explicit naming instructions." 'warning' }
     }
     foreach ($layer in @('logical', 'dimensional')) {
-        $entityDataset = $layer + '_entity'; $attributeDataset = $layer + '_attribute'; $entityField = $entityDataset + '_name'; $attributeField = $attributeDataset + '_name'
+        $entityDataset = $layer + '_entity'; $attributeDataset = $layer + '_attribute'; $entityField = $entityDataset + '_name'; $schemaField = $entityDataset + '_schema_name'; $attributeField = $attributeDataset + '_name'
+        $configuredSchemas = Get-Property $details ($layer + '_schemas')
+        if ($null -eq $configuredSchemas -and $rows.ContainsKey('model_details')) { $configuredSchemas = @() }
+        if ($configuredSchemas -is [Array]) {
+            $allowed = @{}; foreach ($item in $configuredSchemas) { $allowed[(Normalize-Value 'model' 'value' $item.schema_name)] = $true }
+            foreach ($entity in @($rows[$entityDataset])) { if ($null -ne $entity -and -not $allowed.ContainsKey((Normalize-Value 'model' 'value' (Get-Property $entity $schemaField)))) { Add-PolicyIssue $issues 'model.entity-schema' $entityDataset $schemaField 'Entity schema must be configured on its Model layer.' } }
+        }
         $entities = @($rows[$entityDataset] | Where-Object { $null -ne $_ -and (Get-Active $_) -eq $true })
         $attributes = @($rows[$attributeDataset] | Where-Object { $null -ne $_ -and (Get-Active $_) -eq $true })
         $byEntity = @{}; $submodels = @{}; $newEntities = @{}; $touched = @{}
-        foreach ($entity in $entities) { $byEntity[(Normalize-Value 'model' 'value' (Get-Property $entity $entityField))] = $entity }
+        foreach ($entity in $entities) { $byEntity[(Get-PolicyTuple @((Get-Property $entity $schemaField), (Get-Property $entity $entityField)))] = $entity }
         foreach ($record in @($rows[$layer + '_submodel'])) { if ($null -ne $record) { $submodels[(Normalize-Value 'model' 'value' (Get-Property $record ($layer + '_submodel_name')))] = $record } }
-        foreach ($record in @($added[$entityDataset])) { if ($null -ne $record -and (Get-Active $record) -eq $true) { $newEntities[(Normalize-Value 'model' 'value' (Get-Property $record $entityField))] = $true } }
-        foreach ($record in @($changed[$entityDataset]) + @($changed[$attributeDataset])) { if ($null -ne $record) { $touched[(Normalize-Value 'model' 'value' (Get-Property $record $entityField))] = $true } }
+        foreach ($record in @($added[$entityDataset])) { if ($null -ne $record -and (Get-Active $record) -eq $true) { $newEntities[(Get-PolicyTuple @((Get-Property $record $schemaField), (Get-Property $record $entityField)))] = $true } }
+        foreach ($record in @($changed[$entityDataset]) + @($changed[$attributeDataset])) { if ($null -ne $record) { $touched[(Get-PolicyTuple @((Get-Property $record $schemaField), (Get-Property $record $entityField)))] = $true } }
         foreach ($entity in @($changed[$entityDataset])) {
             if ($null -eq $entity) { continue }
             foreach ($membership in (Get-Property $entity 'submodels')) {
@@ -53,22 +59,23 @@ function Get-AtlasModelPolicy($States, $MetadataStates, $Model) {
                 if ((Get-Property $membership 'membership_status') -ceq 'active' -and ((Get-Active $entity) -ne $true -or (Get-Active $submodel) -ne $true)) { Add-PolicyIssue $issues 'model.membership-state' $entityDataset 'submodels' 'Active membership needs an active Entity and Submodel.' }
             }
         }
-        foreach ($attribute in @($changed[$attributeDataset])) {
-            if ($null -eq $attribute) { continue }
-            $parent = $byEntity[(Normalize-Value 'model' 'value' (Get-Property $attribute $entityField))]
+        foreach ($attribute in $attributes) {
+            $parent = $byEntity[(Get-PolicyTuple @((Get-Property $attribute $schemaField), (Get-Property $attribute $entityField)))]
             if ($null -eq $parent) { continue }
             $parentSources = @{}
             foreach ($source in (Get-Property $parent 'sources')) {
                 if ($null -ne $source -and (Get-Active $source) -ne $false -and (Get-Property $source 'source_object')) { $parentSources[(Get-PolicyPhysical $source.source_object)] = $true }
+                if ($layer -ceq 'dimensional' -and $null -ne $source -and (Get-Active $source) -ne $false -and (Get-Property $source 'source_logical_entity')) { $logical = $source.source_logical_entity; $parentSources[(Get-PolicyTuple @($logical.logical_entity_schema_name, $logical.logical_entity_name))] = $true }
             }
             foreach ($source in (Get-Property $attribute 'sources')) {
+                if ($layer -ceq 'dimensional' -and $null -ne $source -and (Get-Active $source) -ne $false -and (Get-Property $source 'support_source_type') -ceq 'logical_attribute') { $logical = $source.source_logical_attribute; if (-not $parentSources.ContainsKey((Get-PolicyTuple @($logical.logical_entity_schema_name, $logical.logical_entity_name)))) { Add-PolicyIssue $issues 'model.parent-source' $attributeDataset 'sources' 'A Dimensional Attribute''s Logical source requires matching Logical Entity support on its parent.' } }
                 if ($null -ne $source -and (Get-Active $source) -ne $false -and (Get-Property $source 'support_source_type') -ceq 'attribute' -and -not $parentSources.ContainsKey((Get-PolicyPhysical (Get-Property $source 'source_attribute')))) { Add-PolicyIssue $issues 'model.parent-source' $attributeDataset 'sources' "An Attribute's physical source requires the matching Object source on its parent Entity." }
             }
         }
         foreach ($name in $byEntity.Keys) {
             if (-not $touched.ContainsKey($name)) { continue }
             $entity = $byEntity[$name]; $ordinalField = $attributeDataset + '_ordinal_position'
-            $columns = @($attributes | Where-Object { (Normalize-Value 'model' 'value' (Get-Property $_ $entityField)) -ceq $name } | Sort-Object -Property $ordinalField)
+            $columns = @($attributes | Where-Object { (Get-PolicyTuple @((Get-Property $_ $schemaField), (Get-Property $_ $entityField))) -ceq $name } | Sort-Object -Property $ordinalField)
             $ordinals = @{}
             foreach ($column in $columns) { $ordinal = [string](Get-Property $column $ordinalField); if ($ordinals.ContainsKey($ordinal)) { Add-PolicyIssue $issues 'model.attribute-order' $attributeDataset $ordinalField 'Active Attributes within an Entity need distinct ordinal positions.'; break }; $ordinals[$ordinal] = $true }
             if (-not $newEntities.ContainsKey($name)) { continue }
@@ -100,24 +107,12 @@ function Get-AtlasModelPolicy($States, $MetadataStates, $Model) {
             if (-not $template) { Add-PolicyIssue $issues 'model.audit-template-review' $attributeDataset $attributeField 'The audit names are checked; exact types and nullability need the approved Model template.' 'warning' }
         }
         $byAttribute = @{}
-        foreach ($attribute in $attributes) { $byAttribute[(Get-PolicyTuple @((Get-Property $attribute $entityField), (Get-Property $attribute $attributeField)))] = $attribute }
+        foreach ($attribute in $attributes) { $byAttribute[(Get-PolicyTuple @((Get-Property $attribute $schemaField), (Get-Property $attribute $entityField), (Get-Property $attribute $attributeField)))] = $attribute }
         foreach ($relation in @($changed[$layer + '_relationship'])) {
             if ($null -eq $relation -or (Get-Active $relation) -ne $true) { continue }
-            $endpoints = @(@('from', 'to') | ForEach-Object { $byAttribute[(Get-PolicyTuple @((Get-Property $relation ($_ + '_' + $entityField)), (Get-Property $relation ($_ + '_' + $attributeField))))] })
+            $endpoints = @(@('from', 'to') | ForEach-Object { $byAttribute[(Get-PolicyTuple @((Get-Property $relation ($_ + '_' + $schemaField)), (Get-Property $relation ($_ + '_' + $entityField)), (Get-Property $relation ($_ + '_' + $attributeField))))] })
             if ($endpoints.Count -eq 2 -and $null -ne $endpoints[0] -and $null -ne $endpoints[1] -and
                 (Normalize-Value 'model' 'value' (Get-Property $endpoints[0] ($attributeDataset + '_data_type'))) -cne (Normalize-Value 'model' 'value' (Get-Property $endpoints[1] ($attributeDataset + '_data_type')))) { Add-PolicyIssue $issues 'model.relationship-type' ($layer + '_relationship') ($layer + '_relationship_name') 'Relationship endpoint types differ; resolve an explicit compatible representation before defining the FK.' }
-        }
-    }
-    foreach ($dataset in @('model_object_binding', 'model_attribute_binding')) {
-        $state = @($States | Where-Object { $null -ne $_ -and $_.Dataset.name -ceq $dataset })
-        if (-not $state.Count) { continue }
-        $fields = @('tenant_code', 'system_code', 'connection_code', 'object_schema', 'object_name'); if ($dataset -ceq 'model_attribute_binding') { $fields += 'attribute_name' }
-        foreach ($record in @($changed[$dataset])) {
-            $previous = $originals[$dataset][(Get-CanonicalKey 'model' $state[0].Dataset $record)]
-            if ($null -eq $previous) { continue }
-            foreach ($field in $fields) {
-                if ((Normalize-Value 'model' 'value' (Get-Property $previous $field)) -cne (Normalize-Value 'model' 'value' (Get-Property $record $field))) { Add-PolicyIssue $issues 'binding.reassignment-unsupported' $dataset 'object_name' 'Retargeting an existing Binding is unsupported. Preserve it and resolve the governed change separately.'; break }
-            }
         }
     }
     $physicalObjects = @{}; $physicalAttributes = @{}; $mappingObjects = @{}
@@ -127,34 +122,58 @@ function Get-AtlasModelPolicy($States, $MetadataStates, $Model) {
             if ($state.Dataset.name.EndsWith('_attribute')) { $physicalAttributes[(Get-PolicyPhysical $record $true)] = $true }
         }
     }
-    foreach ($record in @($rows['mapping_object'])) { if ($null -ne $record -and (Get-Active $record) -eq $true) { $mappingObjects[(Get-PolicyTuple @($record.modeled_entity_type, $record.modeled_entity_name, $record.source_system_code))] = $record } }
+    $sourceEntities = @{}; $sourceAttributes = @{}
+    foreach ($layer in @('logical', 'dimensional')) {
+        $sourceEntities[$layer] = @{}; $sourceAttributes[$layer] = @{}
+        foreach ($record in @($rows[$layer + '_entity'])) { if ($null -ne $record -and (Get-Active $record) -eq $true) { $sourceEntities[$layer][(Get-PolicyTuple @((Get-Property $record ($layer + '_entity_schema_name')), (Get-Property $record ($layer + '_entity_name'))))] = $true } }
+        foreach ($record in @($rows[$layer + '_attribute'])) { if ($null -ne $record -and (Get-Active $record) -eq $true) { $sourceAttributes[$layer][(Get-PolicyTuple @((Get-Property $record ($layer + '_entity_schema_name')), (Get-Property $record ($layer + '_entity_name')), (Get-Property $record ($layer + '_attribute_name'))))] = $true } }
+    }
+    foreach ($record in @($rows['mapping_object'])) { if ($null -ne $record -and (Get-Active $record) -eq $true) { $mappingObjects[(Get-PolicyTuple @($record.modeled_entity_type, $record.modeled_entity_schema_name, $record.modeled_entity_name, $record.source_system_code))] = $record } }
     foreach ($record in @($changed['mapping_object'])) {
         if ($null -eq $record -or (Get-Active $record) -ne $true -or ((Get-Property $record 'output_template_code') -and $record.output_template_code -cne 'mapping_object_default')) { continue }
         $document = Get-Property $record 'mapping_transformation_document'; $steps = Get-Property $document 'steps'
         if ($steps -isnot [Array] -or -not $steps.Count -or @($steps | Where-Object { $_ -isnot [string] -or [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) { Add-PolicyIssue $issues 'mapping.object-steps' 'mapping_object' 'mapping_transformation_document' 'An active Mapping branch needs concise ordered transformation steps.'; continue }
-        $inputs = Get-Property $document 'source_objects'; if ($null -eq $inputs) { $inputs = @() }
-        if ($inputs -isnot [Array]) { Add-PolicyIssue $issues 'mapping.source-objects' 'mapping_object' 'mapping_transformation_document' 'Mapping source_objects must be an array or null.'; continue }
+        $dimensional = $record.modeled_entity_type -ceq 'dimensional_entity'
+        if ($dimensional -and $null -ne (Get-Property $document 'source_objects')) { Add-PolicyIssue $issues 'mapping.source-kind' 'mapping_object' 'mapping_transformation_document' 'Dimensional Mapping uses modeled source identities; physical source fields must be null or absent.' }
+        if (-not $dimensional -and $null -ne (Get-Property $document 'source_dimensional_entities')) { Add-PolicyIssue $issues 'mapping.source-kind' 'mapping_object' 'mapping_transformation_document' 'Logical Mapping cannot use Dimensional source identities.' }
+        $inputFields = if ($dimensional) { @('source_logical_entities', 'source_dimensional_entities') } else { @('source_objects', 'source_logical_entities') }
         $aliases = @{}
-        foreach ($source in $inputs) {
-            $alias = Get-Property $source 'alias'; $complete = $null -ne $source
-            foreach ($field in @('tenant_code', 'system_code', 'connection_code', 'object_schema', 'object_name')) { $value = Get-Property $source $field; if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value)) { $complete = $false } }
-            $normalized = [string](Normalize-Value 'model' 'value' $alias)
-            if (-not $complete -or $alias -isnot [string] -or [string]::IsNullOrWhiteSpace($alias) -or $aliases.ContainsKey($normalized)) { Add-PolicyIssue $issues 'mapping.source-alias' 'mapping_object' 'mapping_transformation_document' 'Query inputs need complete physical identities and unique nonempty aliases.' }
-            $aliases[$normalized] = $true
-            if ($MetadataStates.Count -gt 0 -and -not $physicalObjects.ContainsKey((Get-PolicyPhysical $source))) { Add-PolicyIssue $issues 'mapping.source-exists' 'mapping_object' 'mapping_transformation_document' 'A Mapping input does not exist in the supplied applied Metadata context.' }
+        foreach ($inputField in $inputFields) {
+            $layer = if ($inputField -ceq 'source_objects') { $null } elseif ($inputField -ceq 'source_logical_entities') { 'logical' } else { 'dimensional' }
+            $sourceFields = if ($layer) { @(($layer + '_entity_schema_name'), ($layer + '_entity_name')) } else { @('tenant_code', 'system_code', 'connection_code', 'object_schema', 'object_name') }
+            $inputs = Get-Property $document $inputField; if ($null -eq $inputs) { $inputs = @() }
+            if ($inputs -isnot [Array]) { Add-PolicyIssue $issues 'mapping.source-objects' 'mapping_object' 'mapping_transformation_document' 'Mapping Entity inputs must be an array or null.'; continue }
+            foreach ($source in $inputs) {
+                $alias = Get-Property $source 'alias'; $complete = $null -ne $source
+                foreach ($field in $sourceFields) { $value = Get-Property $source $field; if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value)) { $complete = $false } }
+                $normalized = [string](Normalize-Value 'model' 'value' $alias)
+                if (-not $complete -or $alias -isnot [string] -or [string]::IsNullOrWhiteSpace($alias) -or $aliases.ContainsKey($normalized)) { Add-PolicyIssue $issues 'mapping.source-alias' 'mapping_object' 'mapping_transformation_document' 'Query inputs need complete source identities and unique nonempty aliases.' }
+                $aliases[$normalized] = $true
+                $missingSource = if ($layer) { -not $sourceEntities[$layer].ContainsKey((Get-PolicyTuple @((Get-Property $source ($layer + '_entity_schema_name')), (Get-Property $source ($layer + '_entity_name'))))) } else { $MetadataStates.Count -gt 0 -and -not $physicalObjects.ContainsKey((Get-PolicyPhysical $source)) }
+                if ($missingSource) { Add-PolicyIssue $issues 'mapping.source-exists' 'mapping_object' 'mapping_transformation_document' 'A Mapping input does not exist in the supplied applied source context.' }
+            }
         }
     }
     foreach ($record in @($changed['mapping_attribute'])) {
         if ($null -eq $record -or (Get-Active $record) -ne $true -or ((Get-Property $record 'output_template_code') -and $record.output_template_code -cne 'mapping_attribute_default')) { continue }
         $document = Get-Property $record 'attribute_mapping_transformation_document'; $rule = Get-Property $document 'transformation'
         if ($rule -isnot [string] -or [string]::IsNullOrWhiteSpace($rule)) { Add-PolicyIssue $issues 'mapping.attribute-rule' 'mapping_attribute' 'attribute_mapping_transformation_document' 'Every active mapped Attribute needs an explicit transformation or generated/framework population rule.'; continue }
-        $object = $mappingObjects[(Get-PolicyTuple @($record.modeled_entity_type, $record.modeled_entity_name, $record.source_system_code))]
-        $inputs = Get-Property (Get-Property $object 'mapping_transformation_document') 'source_objects'
-        $sources = Get-Property $document 'source_attributes'; if ($null -eq $sources) { $sources = @() }
-        if ($sources -isnot [Array]) { Add-PolicyIssue $issues 'mapping.source-attributes' 'mapping_attribute' 'attribute_mapping_transformation_document' 'Mapping source_attributes must be an array or null.'; continue }
-        foreach ($source in $sources) {
-            if ($MetadataStates.Count -gt 0 -and -not $physicalAttributes.ContainsKey((Get-PolicyPhysical $source $true))) { Add-PolicyIssue $issues 'mapping.attribute-exists' 'mapping_attribute' 'attribute_mapping_transformation_document' 'A Mapping source Attribute does not exist in applied Metadata context.' }
-            if ($inputs -is [Array] -and @($inputs | Where-Object { (Get-PolicyPhysical $_) -ceq (Get-PolicyPhysical $source) }).Count -eq 0) { Add-PolicyIssue $issues 'mapping.parent-input' 'mapping_attribute' 'attribute_mapping_transformation_document' 'An Attribute source must belong to an Object-level query input in the same System branch.' }
+        $object = $mappingObjects[(Get-PolicyTuple @($record.modeled_entity_type, $record.modeled_entity_schema_name, $record.modeled_entity_name, $record.source_system_code))]
+        $dimensional = $record.modeled_entity_type -ceq 'dimensional_entity'
+        if ($dimensional -and $null -ne (Get-Property $document 'source_attributes')) { Add-PolicyIssue $issues 'mapping.source-kind' 'mapping_attribute' 'attribute_mapping_transformation_document' 'Dimensional Mapping uses modeled source identities; physical source fields must be null or absent.' }
+        if (-not $dimensional -and $null -ne (Get-Property $document 'source_dimensional_attributes')) { Add-PolicyIssue $issues 'mapping.source-kind' 'mapping_attribute' 'attribute_mapping_transformation_document' 'Logical Mapping cannot use Dimensional source identities.' }
+        $sourceFields = if ($dimensional) { @('source_logical_attributes', 'source_dimensional_attributes') } else { @('source_attributes', 'source_logical_attributes') }
+        foreach ($sourceField in $sourceFields) {
+            $layer = if ($sourceField -ceq 'source_attributes') { $null } elseif ($sourceField -ceq 'source_logical_attributes') { 'logical' } else { 'dimensional' }
+            $inputField = if ($layer) { 'source_' + $layer + '_entities' } else { 'source_objects' }
+            $inputs = Get-Property (Get-Property $object 'mapping_transformation_document') $inputField
+            $sources = Get-Property $document $sourceField; if ($null -eq $sources) { $sources = @() }
+            if ($sources -isnot [Array]) { Add-PolicyIssue $issues 'mapping.source-attributes' 'mapping_attribute' 'attribute_mapping_transformation_document' 'Mapping Attribute inputs must be an array or null.'; continue }
+            foreach ($source in $sources) {
+                $missingSource = if ($layer) { -not $sourceAttributes[$layer].ContainsKey((Get-PolicyTuple @((Get-Property $source ($layer + '_entity_schema_name')), (Get-Property $source ($layer + '_entity_name')), (Get-Property $source ($layer + '_attribute_name'))))) } else { $MetadataStates.Count -gt 0 -and -not $physicalAttributes.ContainsKey((Get-PolicyPhysical $source $true)) }
+                if ($missingSource) { Add-PolicyIssue $issues 'mapping.attribute-exists' 'mapping_attribute' 'attribute_mapping_transformation_document' 'A Mapping source Attribute does not exist in applied source context.' }
+                if ($inputs -isnot [Array] -or @($inputs | Where-Object { if ($layer) { (Get-PolicyTuple @((Get-Property $_ ($layer + '_entity_schema_name')), (Get-Property $_ ($layer + '_entity_name')))) -ceq (Get-PolicyTuple @((Get-Property $source ($layer + '_entity_schema_name')), (Get-Property $source ($layer + '_entity_name')))) } else { (Get-PolicyPhysical $_) -ceq (Get-PolicyPhysical $source) } }).Count -eq 0) { Add-PolicyIssue $issues 'mapping.parent-input' 'mapping_attribute' 'attribute_mapping_transformation_document' 'An Attribute source must belong to an Object-level query input in the same System branch.' }
+            }
         }
     }
     return @($issues)

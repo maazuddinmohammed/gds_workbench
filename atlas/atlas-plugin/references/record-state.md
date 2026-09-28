@@ -15,7 +15,7 @@ Shared rules for every workflow. Apply them when reading inputs, authoring compl
 - A **Model record lock** protects that complete record, including nested supports, sources and submodel memberships. Preserve independently locked nested members when editing an unlocked parent. Carry complete nested arrays; omission does not delete or retire applied members.
 - Logical and Dimensional Entities and their separately stored Attributes/Relationships have their own locks. The current generic Model validator does not propagate an Entity lock to those separate records. Do not claim that additional protection is implemented.
 - Do not clear flags locally to satisfy validation. A separately governed human lifecycle action is distinct from workflow authoring; resume from refreshed/reconciled state after such a change.
-- Binding targets can be derived from a parent record. Follow the [Binding reassignment guard](model/binding.md#existing-records-and-reassignment) so a parent target change does not silently redirect a locked child; its current validation/Apply gaps are documented there.
+- Schema is part of Entity identity. Changing a schema/name changes the key; preserve locked Entity-owned Mapping, Code and nested sources rather than silently redirecting them.
 
 ## Activation and history
 

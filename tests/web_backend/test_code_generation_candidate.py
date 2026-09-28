@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from gds_workbench_api.features.mapping import ModeledEntityReference
+
 from typing import Literal, cast
 
 import pytest
@@ -8,7 +10,6 @@ from gds_workbench_api.features.code_generation.candidate import (
     CodeGenerationTargetReference,
 )
 from gds_workbench_api.features.code_generation.contracts import (
-    CodeGenerationTargetObjectReference,
     SqlArtifactDownload,
 )
 from pydantic import JsonValue
@@ -34,12 +35,12 @@ def _validator() -> CodeGenerationCandidateValidator:
         targets=(
             CodeGenerationTargetReference(
                 target_ref="target_1",
-                object_id=501,
+                modeled_entity_id=501,
                 source_system_codes=("CRM", "ERP"),
             ),
             CodeGenerationTargetReference(
                 target_ref="target_2",
-                object_id=502,
+                modeled_entity_id=502,
                 source_system_codes=("MDM",),
             ),
         )
@@ -63,7 +64,7 @@ async def test_candidate_requires_exact_target_coverage_and_sql_only() -> None:
     parsed = validator.parse_validated(candidate)
 
     assert result.issues == ()
-    assert [artifact.object_id for artifact in parsed] == [501, 502]
+    assert [artifact.modeled_entity_id for artifact in parsed] == [501, 502]
     assert "SELECT" not in repr(parsed)
 
 
@@ -194,23 +195,7 @@ def test_individual_download_contract_has_no_artifact_specific_size_cap() -> Non
     artifact = SqlArtifactDownload(
         generated_sql_artifact_id=1,
         artifact_name="customer.sql",
-        target=CodeGenerationTargetObjectReference(
-            object_id=1,
-            source_tenant_id=2,
-            source_tenant_code="tenant",
-            source_tenant_name="Tenant",
-            tenant_id=2,
-            tenant_code="tenant",
-            tenant_name="Tenant",
-            system_id=3,
-            system_code="system",
-            system_name="System",
-            connection_id=4,
-            connection_code="connection",
-            object_schema="schema",
-            object_name="object",
-            zone_code="silver",
-        ),
+        target=ModeledEntityReference(entity_type="logical_entity", entity_id=501, entity_schema_name="silver", entity_name="Customer"),
         entity_type="logical_entity",
         generated_sql=large_sql,
         generated_sql_byte_count=len(large_sql.encode()),
@@ -225,7 +210,7 @@ def test_output_schema_is_bounded_and_does_not_expose_database_ids() -> None:
 
     assert "target_ref" in serialized
     assert "generated_sql" in serialized
-    assert "object_id" not in serialized
+    assert "modeled_entity_id" not in serialized
     assert "source_system_id" not in serialized
     definitions = cast(dict[str, object], schema["$defs"])
     artifact_schema = cast(dict[str, object], definitions["_AgentSqlArtifact"])
@@ -243,7 +228,7 @@ async def test_selected_file_layout_is_enforced_and_preserved_names_cannot_be_re
         targets=(
             CodeGenerationTargetReference(
                 target_ref="target_1",
-                object_id=501,
+                modeled_entity_id=501,
                 source_system_codes=("CRM", "ERP"),
                 file_layout=layout,
                 preserved_artifact_names=("preserved.sql",),
@@ -289,7 +274,7 @@ async def test_requested_transformation_layout_rejects_loading_sql_and_implicit_
         targets=(
             CodeGenerationTargetReference(
                 target_ref="target_1",
-                object_id=501,
+                modeled_entity_id=501,
                 source_system_codes=("CRM",),
                 file_layout="per_system",
             ),

@@ -218,6 +218,7 @@ export function DimensionalScreen({
           model={model}
           kind="inference"
           workflow="dimensional"
+          logicalEntitySource={api}
           executeCreated={(workflowRunId, executionMode, expectedModelRevision) => api.executeDimensionalRun(
             tenantId,
             model.model_id,

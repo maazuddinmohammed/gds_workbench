@@ -54,7 +54,11 @@ def context():
             {
                 "mapping_object_id": 20,
                 "source_system_id": 10,
-                "entity": {"entity_type": "logical_entity", "entity_name": "Customer"},
+                "entity": {
+                    "entity_type": "logical_entity",
+                    "entity_schema_name": "silver",
+                    "entity_name": "Customer",
+                },
                 "transformation": {
                     "source_objects": [ref],
                     "steps": ["Read Customer."],
@@ -83,6 +87,7 @@ def page(value, **options):
         model_revision=3,
         entity_type="logical_entity",
         entity_name="Customer",
+        entity_schema_name="silver",
         component="attribute_transformations",
         source_system_codes=[],
         page_size=1,
@@ -109,7 +114,9 @@ def test_mapping_pages_are_bound_to_metadata_digest_and_complete_applied_revisio
 
 def test_mapping_reports_missing_references_without_inventing_context():
     value = context()
-    value["object_mappings"][0]["transformation"]["source_objects"][0]["object_name"] = "Missing"
+    value["object_mappings"][0]["transformation"]["source_objects"][0][
+        "object_name"
+    ] = "Missing"
     result = page(value)
     assert not result.complete
     assert "mapping_source_object_missing_or_ineligible" in result.issues
@@ -117,9 +124,13 @@ def test_mapping_reports_missing_references_without_inventing_context():
 
 def test_mapping_population_and_source_system_value_survive_id_stripping():
     projected = project_mapping_inputs(context())
-    assert projected["source_systems"] == [{"system_code": "CRM", "source_system_value": 10}]
+    assert projected["source_systems"] == [
+        {"system_code": "CRM", "source_system_value": 10}
+    ]
     assert "source_tenant_id" not in projected["target_metadata"]
-    assert [row["population"] for row in projected["target_metadata"]["attributes"]] == [
+    assert [
+        row["population"] for row in projected["target_metadata"]["attributes"]
+    ] == [
         "database",
         "mapping",
         "framework",
@@ -141,3 +152,89 @@ def test_mapping_reports_missing_physical_source_columns_and_inactive_batch():
     assert not result.complete
     assert "query_attribute_coordinates_missing" in result.issues
     assert "batch_attribute_missing" in result.issues
+
+
+@pytest.mark.parametrize("reference_part", ["schema", "entity", "attribute", None])
+def test_logical_mapping_resolves_schema_qualified_peer_lookup(
+    reference_part: str | None,
+):
+    value = context()
+    logical_key = {
+        "logical_entity_schema_name": "reference",
+        "logical_entity_name": "Country",
+    }
+    lookup = {
+        **value["target"],
+        "object_schema": "reference",
+        "object_name": "Country",
+        **logical_key,
+        "attributes": [{"attribute_name": "CountryID", "is_active": True}],
+    }
+    value["physical_sources"].append(
+        {"selected_source_system_id": 10, "object": lookup}
+    )
+    entity_ref = dict(logical_key)
+    attribute_ref = {**logical_key, "logical_attribute_name": "CountryID"}
+    if reference_part == "schema":
+        entity_ref["logical_entity_schema_name"] = "wrong"
+    elif reference_part == "entity":
+        entity_ref["logical_entity_name"] = "Missing"
+    elif reference_part == "attribute":
+        attribute_ref["logical_attribute_name"] = "Missing"
+    value["object_mappings"][0]["transformation"]["source_logical_entities"] = [
+        entity_ref
+    ]
+    value["attribute_mappings"][0]["transformation"]["source_logical_attributes"] = [
+        attribute_ref
+    ]
+    result = page(value)
+    assert result.complete is (reference_part is None)
+    if reference_part is not None:
+        assert any(issue.endswith("missing_or_ineligible") for issue in result.issues)
+
+
+@pytest.mark.parametrize("wrong_schema", [False, True])
+def test_dimensional_mapping_resolves_gold_peer_lookup_without_registration(
+    wrong_schema: bool,
+):
+    value = context()
+    value["target"].update(
+        modeled_entity_type="dimensional_entity", object_schema="gold"
+    )
+    entity_key = {
+        "dimensional_entity_schema_name": "gold_reference",
+        "dimensional_entity_name": "Country",
+    }
+    value["physical_sources"] = [
+        {
+            "selected_source_system_id": 10,
+            "object": {
+                **value["target"],
+                **entity_key,
+                "object_schema": "gold_reference",
+                "object_name": "Country",
+                "attributes": [{"attribute_name": "CountryKey", "is_active": True}],
+            },
+        }
+    ]
+    value["object_mappings"][0]["transformation"] = {
+        "source_objects": None,
+        "source_logical_entities": None,
+        "source_dimensional_entities": [entity_key],
+        "steps": ["Join Country by business key."],
+    }
+    value["attribute_mappings"][0]["transformation"][
+        "source_dimensional_attributes"
+    ] = [
+        {
+            **entity_key,
+            "dimensional_entity_schema_name": "wrong"
+            if wrong_schema
+            else "gold_reference",
+            "dimensional_attribute_name": "CountryKey",
+        }
+    ]
+    result = page(value)
+    assert result.complete is not wrong_schema
+    if wrong_schema:
+        assert "mapping_source_attribute_missing_or_ineligible" in result.issues

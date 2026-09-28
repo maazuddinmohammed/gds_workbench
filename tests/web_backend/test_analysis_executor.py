@@ -266,6 +266,7 @@ def _candidate(*, to_name: str = "customer_raw") -> JsonValue:
                     "to_object_name": to_name,
                     "to_attribute_name": "customer_id",
                     "relationship_kind": "reference",
+                    "inferred_cardinality": "unknown",
                     "relationship_confidence": "high",
                     "relationship_basis": "Metadata and profile evidence.",
                 }

@@ -72,12 +72,12 @@ def _applied_relationship_bundle(
         attributes=frozenset(),
         model_input_objects=frozenset({source}),
         model_input_attributes=frozenset(),
-        dimensional_source_objects=frozenset(),
-        dimensional_source_attributes=frozenset(),
-        logical_mapping_target_objects=frozenset(),
-        logical_mapping_target_attributes=frozenset(),
-        dimensional_mapping_target_objects=frozenset(),
-        dimensional_mapping_target_attributes=frozenset(),
+
+
+
+
+
+
     )
     assert validate_future_graph(snapshot=snapshot, staged_documents={}, physical_scope=scope).valid
     context = bundle.context.model_copy(

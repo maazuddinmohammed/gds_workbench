@@ -11,11 +11,7 @@ from gds_etl_workbench.domain.modeling_records import (
     GeneratedCodeRecord,
     GeneratedCodeSourceSystemRecord,
     MappingAttributeRecord,
-    MappingDependencyRecord,
     MappingObjectRecord,
-    ModelAttributeBindingRecord,
-    ModelInputScopeRecord,
-    ModelObjectBindingRecord,
     PhysicalAttributeKey,
     PhysicalObjectKey,
     ValidationGroupRecord,
@@ -75,34 +71,10 @@ def _materializer(transaction: ScriptedTransaction) -> ModelMaterializer:
     )
 
 
-def _object_binding() -> ModelObjectBindingRecord:
-    return ModelObjectBindingRecord(
-        tenant_code="GDS",
-        system_code="GDS",
-        connection_code="GDS",
-        object_schema="silver",
-        object_name="Customer",
-        modeled_entity_type="logical_entity",
-        modeled_entity_name="Customer",
-        model_object_binding_status="active",
-        model_object_binding_is_locked=False,
-    )
-
-
-def _attribute_binding() -> ModelAttributeBindingRecord:
-    return ModelAttributeBindingRecord(
-        modeled_entity_type="logical_entity",
-        modeled_entity_name="Customer",
-        modeled_attribute_name="CustomerID",
-        attribute_name="CustomerID",
-        model_attribute_binding_status="active",
-        model_attribute_binding_is_locked=False,
-    )
-
-
 def _mapping_object() -> MappingObjectRecord:
     return MappingObjectRecord(
         modeled_entity_type="logical_entity",
+        modeled_entity_schema_name="silver",
         modeled_entity_name="Customer",
         source_system_code="CRM",
         output_template_code="mapping-object",
@@ -116,6 +88,7 @@ def _mapping_object() -> MappingObjectRecord:
 def _mapping_attribute() -> MappingAttributeRecord:
     return MappingAttributeRecord(
         modeled_entity_type="logical_entity",
+        modeled_entity_schema_name="silver",
         modeled_entity_name="Customer",
         modeled_attribute_name="CustomerID",
         source_system_code="CRM",
@@ -168,94 +141,26 @@ async def test_physical_keys_use_placement_tenant_and_fence_source_to_model() ->
 
 
 @pytest.mark.asyncio
-async def test_model_input_scope_materializes_before_model_bindings() -> None:
-    transaction = ScriptedTransaction(
-        [
-            ExpectedCall("one", "SELECT object.object_id", {"object_id": 11, "system_id": 5}),
-            ExpectedCall(
-                "one",
-                "INSERT INTO model.model_input_scope",
-                {"model_input_scope_id": 1},
-            ),
-            ExpectedCall("one", "SELECT logical_entity_id", {"logical_entity_id": 101}),
-            ExpectedCall(
-                "one",
-                "INSERT INTO workflow.model_object_binding",
-                {"model_object_binding_id": 201, "object_id": 11},
-            ),
-        ]
-    )
+async def test_entity_resolution_distinguishes_schemas() -> None:
+    from gds_etl_workbench.application.modeling.modeled_layer import LOGICAL
+    transaction = ScriptedTransaction([
+        ExpectedCall("one", "SELECT logical_entity_id", {"logical_entity_id": 101}),
+        ExpectedCall("one", "SELECT logical_entity_id", {"logical_entity_id": 102}),
+    ])
     materializer = _materializer(transaction)
-    scope = ModelInputScopeRecord(
-        tenant_code="GDS",
-        system_code="GDS",
-        connection_code="GDS",
-        object_schema="silver",
-        object_name="Customer",
-        model_input_scope_is_locked=False,
-        is_active=True,
-    )
-
-    action_count = await materializer.apply(
-        {"model_input_scope": (scope,), "model_object_binding": (_object_binding(),)}
-    )
-
-    assert action_count == 2
-    assert "model.model_input_scope" in transaction.calls[1][1]
-    assert "workflow.model_object_binding" in transaction.calls[3][1]
+    assert await materializer.resolve_entity(LOGICAL, "sales", "Customer") == 101
+    assert await materializer.resolve_entity(LOGICAL, "support", "Customer") == 102
+    assert await materializer.resolve_entity(LOGICAL, "SALES", "customer") == 101
+    assert transaction.calls[0][2] == (7, "sales", "Customer")
+    assert transaction.calls[1][2] == (7, "support", "Customer")
+    assert all("logical_entity_schema_name" in call[1] for call in transaction.calls)
     transaction.assert_complete()
 
 
 @pytest.mark.asyncio
-async def test_bindings_resolve_target_attributes_under_the_bound_object() -> None:
+async def test_mapping_materializes_direct_typed_entity_and_attribute_ownership() -> None:
     transaction = ScriptedTransaction(
         [
-            ExpectedCall("one", "SELECT object.object_id", {"object_id": 11, "system_id": 5}),
-            ExpectedCall("one", "SELECT logical_entity_id", {"logical_entity_id": 101}),
-            ExpectedCall(
-                "one",
-                "INSERT INTO workflow.model_object_binding",
-                {"model_object_binding_id": 201, "object_id": 11},
-            ),
-            ExpectedCall(
-                "one",
-                "SELECT attribute.logical_attribute_id",
-                {"logical_attribute_id": 102},
-            ),
-            ExpectedCall("one", "JOIN core.attribute AS attribute", {"attribute_id": 12}),
-            ExpectedCall(
-                "one",
-                "INSERT INTO workflow.model_attribute_binding",
-                {"model_attribute_binding_id": 202},
-            ),
-        ]
-    )
-    materializer = _materializer(transaction)
-
-    action_count = await materializer.apply(
-        {
-            "model_object_binding": (_object_binding(),),
-            "model_attribute_binding": (_attribute_binding(),),
-        }
-    )
-
-    assert action_count == 2
-    attribute_lookup = transaction.calls[4]
-    assert attribute_lookup[2] == ("CustomerID", 201, 7)
-    attribute_insert = transaction.calls[5]
-    assert attribute_insert[2][:4] == (201, 102, None, 12)
-    transaction.assert_complete()
-
-
-@pytest.mark.asyncio
-async def test_mapping_materializes_only_through_bindings() -> None:
-    transaction = ScriptedTransaction(
-        [
-            ExpectedCall(
-                "one",
-                "INSERT INTO workflow.mapping_source_system_dependency",
-                {"mapping_source_system_dependency_id": 1},
-            ),
             ExpectedCall("one", "SELECT mapping_object_id", None),
             ExpectedCall("one", "INSERT INTO workflow.mapping_object", {"mapping_object_id": 301}),
             ExpectedCall("one", "SELECT mapping_attribute_id", None),
@@ -267,35 +172,26 @@ async def test_mapping_materializes_only_through_bindings() -> None:
         ]
     )
     materializer = _materializer(transaction)
-    materializer._model_object_bindings[("logical_entity", "customer")] = (201, 11)
-    materializer._model_attribute_bindings[("logical_entity", "customer", "customerid")] = 202
+    materializer._logical_entity_ids[("silver", "customer")] = 101
+    materializer._logical_attribute_ids[("silver", "customer", "customerid")] = 102
     materializer._system_ids["crm"] = 55
     materializer._output_template_ids[("mapping_object", "mapping-object")] = 501
     materializer._output_template_ids[("mapping_attribute", "mapping-attribute")] = 502
-    dependency = MappingDependencyRecord(
-        modeled_entity_type="logical_entity",
-        source_system_code="CRM",
-        source_system_dependency_order=1,
-        mapping_source_system_dependency_status="active",
-        mapping_source_system_dependency_is_locked=False,
-    )
-
     action_count = await materializer.apply(
         {
-            "mapping_dependency": (dependency,),
             "mapping_object": (_mapping_object(),),
             "mapping_attribute": (_mapping_attribute(),),
         }
     )
 
-    assert action_count == 3
-    object_insert = transaction.calls[2]
-    assert "model_object_binding_id" in object_insert[1]
+    assert action_count == 2
+    object_insert = transaction.calls[1]
+    assert "logical_entity_id" in object_insert[1]
     assert "mapping_profile" not in object_insert[1]
-    assert object_insert[2][:5] == (7, 201, 55, 501, 2)
-    attribute_insert = transaction.calls[4]
-    assert "model_attribute_binding_id" in attribute_insert[1]
-    assert attribute_insert[2][:3] == (301, 202, 502)
+    assert object_insert[2][:7] == (7, "logical_entity", 101, None, 55, 501, 2)
+    attribute_insert = transaction.calls[3]
+    assert "logical_attribute_id" in attribute_insert[1]
+    assert attribute_insert[2][:8] == (301, 7, "logical_entity", 101, None, 102, None, 502)
     transaction.assert_complete()
 
 
@@ -316,14 +212,14 @@ async def test_workflow_mapping_policy_overrides_record_template() -> None:
         mapping_object_output_template_id=901,
         mapping_attribute_output_template_id=902,
     )
-    materializer._model_object_bindings[("logical_entity", "customer")] = (201, 11)
+    materializer._logical_entity_ids[("silver", "customer")] = 101
     materializer._system_ids["crm"] = 55
 
     await materializer.apply({"mapping_object": (_mapping_object(),)})
 
     insert = transaction.calls[1]
-    assert insert[2][3] == 901
-    assert insert[2][6] == 44
+    assert insert[2][5] == 901
+    assert insert[2][8] == 44
     transaction.assert_complete()
 
 
@@ -347,11 +243,12 @@ async def test_generated_code_uses_server_digest_and_separate_source_assignment(
         ]
     )
     materializer = _materializer(transaction)
-    materializer._model_object_bindings[("logical_entity", "customer")] = (201, 11)
+    materializer._logical_entity_ids[("silver", "customer")] = 101
     materializer._system_ids["crm"] = 55
     artifact = GeneratedCodeRecord(
         generated_code_is_locked=False,
         modeled_entity_type="logical_entity",
+        modeled_entity_schema_name="silver",
         modeled_entity_name="Customer",
         artifact_name="Customer.sql",
         artifact_type="sql_file",
@@ -361,6 +258,7 @@ async def test_generated_code_uses_server_digest_and_separate_source_assignment(
     assignment = GeneratedCodeSourceSystemRecord(
         generated_code_source_system_is_locked=False,
         modeled_entity_type="logical_entity",
+        modeled_entity_schema_name="silver",
         modeled_entity_name="Customer",
         artifact_name="Customer.sql",
         source_system_code="CRM",
@@ -375,7 +273,7 @@ async def test_generated_code_uses_server_digest_and_separate_source_assignment(
     code_insert = transaction.calls[2]
     assert "code_input_digest" in code_insert[1]
     assert "generated_code_digest" not in code_insert[1]
-    assert code_insert[2][:5] == (201, "Customer.sql", "sql_file", "SELECT 1", "a" * 64)
+    assert code_insert[2][:8] == (7, "logical_entity", 101, None, "Customer.sql", "sql_file", "SELECT 1", "a" * 64)
     source_insert = transaction.calls[4]
     assert source_insert[2][:2] == (401, 55)
     transaction.assert_complete()
@@ -407,6 +305,7 @@ async def test_validation_digests_are_derived_after_mapping_and_code() -> None:
                 [
                     {
                         "modeled_entity_type": "logical_entity",
+                        "modeled_entity_schema_name": "silver",
                         "modeled_entity_name": "Customer",
                         "code_input_digest": "a" * 64,
                         "source_context": source_context,
@@ -419,6 +318,7 @@ async def test_validation_digests_are_derived_after_mapping_and_code() -> None:
                 [
                     {
                         "modeled_entity_type": "logical_entity",
+                        "modeled_entity_schema_name": "silver",
                         "modeled_entity_name": "Customer",
                         "artifact_name": "Customer.sql",
                         "artifact_type": "sql_file",
@@ -450,17 +350,10 @@ async def test_validation_digests_are_derived_after_mapping_and_code() -> None:
 
     action_count = await materializer.apply({"validation_group": (group,)})
 
-    target = {
-        "tenant_code": "tenant-a",
-        "system_code": "gds",
-        "connection_code": "gds",
-        "object_schema": "silver",
-        "object_name": "customer",
-    }
     mapping_entry = {
         "modeled_entity_type": "logical_entity",
         "modeled_entity_name": "customer",
-        "target": target,
+        "modeled_entity_schema_name": "silver",
         "code_input_digest": "a" * 64,
     }
     expected_mapping_digest = _digest([mapping_entry])

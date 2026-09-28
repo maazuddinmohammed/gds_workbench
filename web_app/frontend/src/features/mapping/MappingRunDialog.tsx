@@ -28,7 +28,7 @@ import {
 import { MappingOutputTemplateSelection } from "./MappingOutputTemplateSelection";
 
 type ExecutionMode = NonNullable<CreateWorkflowRunCommand["workflow_execution_mode"]>;
-const targetKey = (target: MappingGenerationTarget) => `${target.object_id}:${target.source_system.system_id}`;
+const targetKey = (target: MappingGenerationTarget) => `${target.entity_id}:${target.source_system.system_id}`;
 
 export function MappingRunDialog({ api, tenantId, model, entityType, onClose, onCompleted }: {
   api: MappingApi;
@@ -70,7 +70,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
   const systems = [...new Map(rows.map((row) => [row.source_system.system_id, row.source_system])).values()];
   const scoped = rows.filter((row) => !system || String(row.source_system.system_id) === system);
   // Search only narrows the list; it never silently removes a selected target from the run.
-  const visible = scoped.filter((row) => `${row.object_schema}.${row.object_name} ${row.entity_name}`
+  const visible = scoped.filter((row) => `${row.entity_schema_name}.${row.entity_name} ${row.entity_name}`
     .toLowerCase().includes(search.trim().toLowerCase()));
   const eligible = scoped.filter((row) => !row.is_locked && row.attributes.length > 0);
   const eligibleKeys = new Set(eligible.map(targetKey));
@@ -133,14 +133,16 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
       expected_model_revision: model.model_revision,
       model_workflow: "mapping",
       workflow_execution_mode: executionMode,
-      selected_object_ids: [...new Set(selected.map((row) => row.object_id))],
+      selected_object_ids: [],
+      selected_entity_ids: [...new Set(selected.map((row) => row.entity_id))],
+      modeled_entity_type: entityType,
       requested_batch_id: null,
       agent,
       prompt_overrides: {},
       mapping_operation: "generate",
       mapping_coverage_mode: "selected_targets",
       mapping_targets: selected.map((row) => ({
-        object_id: row.object_id,
+        modeled_entity_id: row.entity_id,
         source_system_id: row.source_system.system_id,
         selected_attribute_ids: selectedAttributes(row),
       })),
@@ -161,7 +163,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
       <header className="drawer-header">
         <div>
           <h2 id="mapping-run-heading">Generate mappings</h2>
-          <p>{entityType === "logical_entity" ? "Logical → Silver" : "Dimensional → Gold"}</p>
+          <p>{entityType === "logical_entity" ? "Logical Entities" : "Dimensional Entities"}</p>
         </div>
         <button ref={closeButton} className="panel-close" type="button" aria-label="Close Generate mappings"
           disabled={mutation.isPending} onClick={onClose}>×</button>
@@ -184,26 +186,26 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
               onChange={setSystem} />
           </div> : null}
           <fieldset className="scope-mode-options">
-            <legend>Objects</legend>
+            <legend>Entities</legend>
             <label><input type="radio" name="mapping-object-scope" checked={scopeMode === "all"}
-              onChange={() => setScopeMode("all")} /><span><strong>All unlocked Objects</strong></span></label>
+              onChange={() => setScopeMode("all")} /><span><strong>All unlocked Entities</strong></span></label>
             <label><input type="radio" name="mapping-object-scope" checked={scopeMode === "selected"}
-              onChange={() => setScopeMode("selected")} /><span><strong>Selected Objects</strong></span></label>
+              onChange={() => setScopeMode("selected")} /><span><strong>Selected Entities</strong></span></label>
           </fieldset>
           <div className="enrichment-selection-summary" aria-live="polite">
-            <strong>{selected.length} Object–System mappings · {attributeCount} Attributes to generate</strong>
+            <strong>{selected.length} Entity–System mappings · {attributeCount} Attributes to generate</strong>
             <span>{preservedCount} Attributes preserved. Locked and unselected mappings stay unchanged.</span>
           </div>
-          <p className="field-help">Each selected Object is assessed for every selected input System. Relevant sources produce complete mappings; unrelated Systems are reported without creating a mapping. Dependency order does not affect this selection.</p>
+          <p className="field-help">Each selected Entity is assessed for every selected input System. Relevant sources produce complete mappings; unrelated Systems are reported without creating a mapping.</p>
           {targets.isPending ? <div className="surface-state" aria-busy="true">Loading all Mapping targets and Attributes…</div>
             : targets.isError ? <p className="inline-error" role="alert">Targets could not be fully loaded.</p>
             : revisionChanged ? <p className="inline-error" role="alert">The Model changed. Close this dialog and refresh.</p>
-            : viewed ? <section aria-label="Choose Object Attributes">
-              <button className="text-action" type="button" onClick={() => setViewedKey(null)}>Back to Objects</button>
+            : viewed ? <section aria-label="Choose Entity Attributes">
+              <button className="text-action" type="button" onClick={() => setViewedKey(null)}>Back to Entities</button>
               <header className="enrichment-selection-header">
                 <div>
-                  <small>{viewed.object_schema} · {viewed.source_system.system_code}</small>
-                  <h3 ref={attributeHeading} tabIndex={-1}>{viewed.object_name}</h3>
+                  <small>{viewed.entity_schema_name} · {viewed.source_system.system_code}</small>
+                  <h3 ref={attributeHeading} tabIndex={-1}>{viewed.entity_name}</h3>
                 </div>
                 <span>{viewedSelected ? viewedAttributes.length : 0} selected · {viewed.attributes.length - (viewedSelected ? viewedAttributes.length : 0)} unselected · {viewed.attributes.filter((item) => item.is_locked).length} locked</span>
               </header>
@@ -218,11 +220,11 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
                 </button>
               </div>
               <div className="workflow-table-scroll table-scroll">
-                <table className="enrichment-selection-table" aria-label={`Attributes for ${viewed.object_name} from ${viewed.source_system.system_code}`}>
-                  <thead><tr><th className="selection-cell"><span className="sr-only">Selected</span></th><th>Target Attribute</th><th>Modeled Attribute</th><th>Mapping</th></tr></thead>
+                <table className="enrichment-selection-table" aria-label={`Attributes for ${viewed.entity_name} from ${viewed.source_system.system_code}`}>
+                  <thead><tr><th className="selection-cell"><span className="sr-only">Selected</span></th><th>Attribute</th><th>Mapping</th></tr></thead>
                   <tbody>{viewed.attributes.slice(attributePage * 50, (attributePage + 1) * 50).map((attribute) => <tr key={attribute.attribute_id}>
                     <td className="selection-cell"><input type="checkbox"
-                      aria-label={`Generate ${viewed.object_name}.${attribute.attribute_name} from ${viewed.source_system.system_code}`}
+                      aria-label={`Generate ${viewed.entity_name}.${attribute.attribute_name} from ${viewed.source_system.system_code}`}
                       disabled={!viewedSelected || attribute.is_locked}
                       checked={viewedSelected && !attribute.is_locked && viewedAttributes.includes(attribute.attribute_id)}
                       onChange={(event) => setAttributes((previous) => ({
@@ -231,7 +233,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
                           ? [...viewedAttributes, attribute.attribute_id]
                           : viewedAttributes.filter((id) => id !== attribute.attribute_id),
                       }))} /></td>
-                    <td>{attribute.attribute_name}</td><td>{attribute.modeled_attribute_name}</td>
+                    <td>{attribute.attribute_name}</td>
                     <td>{attribute.is_locked ? "Locked · preserved" : attribute.is_authored ? "Existing" : "Missing"}</td>
                   </tr>)}</tbody>
                 </table>
@@ -245,7 +247,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
               </div> : null}
             </section> : <>
               <div className="agent-run-grid mapping-scope-controls">
-                <label><span>Find Objects</span><input type="search" value={search} placeholder="Schema, Object or Entity"
+                <label><span>Find Entities</span><input type="search" value={search} placeholder="Schema or Entity"
                   onChange={(event) => setSearch(event.target.value)} /></label>
               </div>
               {scopeMode === "selected" ? <div className="enrichment-selection-actions">
@@ -254,45 +256,45 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
                     const next = new Set(previous);
                     for (const row of visible) if (eligibleKeys.has(targetKey(row))) next.delete(targetKey(row));
                     return next;
-                  })}>Select all shown Objects</button>
+                  })}>Select all shown Entities</button>
                 <button type="button" className="button button-secondary button-small" disabled={!selected.length}
-                  onClick={() => setExcluded((previous) => new Set([...previous, ...eligibleKeys]))}>Clear Object selection</button>
+                  onClick={() => setExcluded((previous) => new Set([...previous, ...eligibleKeys]))}>Clear Entity selection</button>
               </div> : null}
               {search.trim() ? <p className="field-help">Showing {visible.length} of {scoped.length} mappings. Searching keeps your selections.</p> : null}
               <div className="workflow-table-scroll table-scroll">
-                <table className="enrichment-selection-table" aria-label="Objects for Mapping">
-                  <thead><tr><th className="selection-cell"><span className="sr-only">Selected</span></th><th>Schema</th><th>Object</th><th>Source System</th><th>Attributes</th><th>Locks</th></tr></thead>
+                <table className="enrichment-selection-table" aria-label="Entities for Mapping">
+                  <thead><tr><th className="selection-cell"><span className="sr-only">Selected</span></th><th>Schema</th><th>Entity</th><th>Source System</th><th>Attributes</th><th>Locks</th></tr></thead>
                   <tbody>{visible.map((row) => {
                     const key = targetKey(row);
                     const checked = selectedKeys.has(key);
                     const chosenCount = checked ? selectedAttributes(row).length : 0;
                     return <tr key={key}>
                       <td className="selection-cell"><input type="checkbox"
-                        aria-label={`Generate ${row.object_schema}.${row.object_name} from ${row.source_system.system_code}`}
+                        aria-label={`Generate ${row.entity_schema_name}.${row.entity_name} from ${row.source_system.system_code}`}
                         checked={checked} disabled={scopeMode === "all" || !eligibleKeys.has(key)}
                         onChange={(event) => setExcluded((previous) => {
                           const next = new Set(previous);
                           if (event.target.checked) next.delete(key); else next.add(key);
                           return next;
                         })} /></td>
-                      <td>{row.object_schema}</td>
+                      <td>{row.entity_schema_name}</td>
                       <td><button type="button" className="text-action" id={`mapping-choose-${key}`}
-                        aria-label={`Choose Attributes for ${row.object_name} from ${row.source_system.system_code}`}
+                        aria-label={`Choose Attributes for ${row.entity_name} from ${row.source_system.system_code}`}
                         disabled={!checked} onClick={() => { returnToObject.current = key; setViewedKey(key); }}>
-                        {row.object_name}
-                      </button><small>{row.entity_name}</small></td>
+                        {row.entity_name}
+                      </button></td>
                       <td>{row.source_system.system_code}</td>
                       <td>{chosenCount} selected · {row.attributes.length - chosenCount} unselected</td>
-                      <td>{row.is_locked ? "Object locked" : `${row.attributes.filter((item) => item.is_locked).length} locked`}</td>
+                      <td>{row.is_locked ? "Entity locked" : `${row.attributes.filter((item) => item.is_locked).length} locked`}</td>
                     </tr>;
                   })}</tbody>
                 </table>
-                {!visible.length ? <p className="empty-state compact">No targets match. Check target bindings and Systems represented in Model Input Scope.</p> : null}
+                {!visible.length ? <p className="empty-state compact">No targets match. Check active Entities and Systems represented in Model Input Scope.</p> : null}
               </div>
             </>}
         </fieldset>
         {targets.isError ? <button type="button" className="text-action" disabled={frozen} onClick={() => void targets.refetch()}>Retry loading targets</button> : null}
-        {incompleteCount > 0 ? <p className="inline-error" role="alert">{incompleteCount} selected Objects have missing Attributes excluded. Select those Attributes to complete their mappings.</p> : null}
+        {incompleteCount > 0 ? <p className="inline-error" role="alert">{incompleteCount} selected Entities have missing Attributes excluded. Select those Attributes to complete their mappings.</p> : null}
         <details className="mapping-advanced"><summary>Advanced settings</summary>
           <MappingOutputTemplateSelection
             mappingObjects={templates.data?.mappingObjects ?? []} mappingAttributes={templates.data?.mappingAttributes ?? []}

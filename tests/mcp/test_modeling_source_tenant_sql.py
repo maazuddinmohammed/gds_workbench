@@ -1,9 +1,7 @@
 from gds_etl_workbench.application.model_snapshot import (
     _MAPPING_ATTRIBUTE_SQL,
     _MAPPING_OBJECT_SQL,
-    _MODEL_ATTRIBUTE_BINDING_SQL,
     _MODEL_INPUT_SCOPE_SQL,
-    _MODEL_OBJECT_BINDING_SQL,
 )
 from gds_etl_workbench.application.modeling.profiling_analysis import (
     ANALYSIS_SQL,
@@ -53,25 +51,13 @@ def test_model_input_scope_reader_exposes_source_owner_and_foreign_catalog() -> 
     assert "zone.zone_code IN ('source', 'bronze')" in sql
 
 
-def test_binding_snapshot_projects_target_placement_through_bindings() -> None:
-    object_sql = compact(_MODEL_OBJECT_BINDING_SQL)
-    attribute_sql = compact(_MODEL_ATTRIBUTE_BINDING_SQL)
-
-    assert "workflow.model_object_binding AS binding" in object_sql
-    assert "placement_tenant.tenant_id = connection.tenant_id" in object_sql
-    assert "binding.modeled_entity_type" in object_sql
-    assert "workflow.model_attribute_binding AS attribute_binding" in attribute_sql
-    assert "attribute_binding.model_object_binding_id" in attribute_sql
-    assert "attribute.attribute_name" in attribute_sql
-
-
-def test_mapping_snapshot_uses_binding_identity_not_repeated_physical_keys() -> None:
+def test_mapping_snapshot_projects_schema_qualified_entity_ownership() -> None:
     object_sql = compact(_MAPPING_OBJECT_SQL)
     attribute_sql = compact(_MAPPING_ATTRIBUTE_SQL)
-
-    assert "mapping.model_object_binding_id" in object_sql
+    assert "workflow.modeled_entity" in object_sql
+    assert "modeled_entity_schema_name" in object_sql
     assert "mapping.mapping_transformation_document" in object_sql
-    assert "mapping_profile_key" not in object_sql
-    assert "mapping_package_document" not in object_sql
-    assert "mapping_attribute.model_attribute_binding_id" in attribute_sql
-    assert "mapping_attribute.attribute_mapping_transformation_document" in attribute_sql
+    assert "workflow.modeled_attribute" in attribute_sql
+    assert "attribute.logical_attribute_id" in attribute_sql
+    assert "attribute.attribute_mapping_transformation_document" in attribute_sql
+    assert "binding" not in object_sql + attribute_sql

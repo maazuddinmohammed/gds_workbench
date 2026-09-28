@@ -96,12 +96,12 @@ def _case(
     history_doc = deepcopy(candidate)
     if locked:
         _lock_history(history_doc)
-    obj = fixtures._object()
-    attr = fixtures._attribute()
-    if not selected:
-        obj = obj.model_copy(update={"object_name": "new_selected_raw"})
-        attr = attr.model_copy(update={"object_name": "new_selected_raw"})
     if family == "logical":
+        obj = logical._object()
+        attr = logical._attribute()
+        if not selected:
+            obj = obj.model_copy(update={"object_name": "new_selected_raw"})
+            attr = attr.model_copy(update={"object_name": "new_selected_raw"})
         return LogicalCandidateValidator(
             selected_object_keys=(obj,),
             selected_attribute_keys=(attr,),
@@ -110,9 +110,14 @@ def _case(
             if applied
             else None,
         ), candidate
+    entity_key = dimensional._object()
+    attribute_key = dimensional._attribute()
+    if not selected:
+        entity_key = entity_key.model_copy(update={"logical_entity_name": "new_selected_raw"})
+        attribute_key = attribute_key.model_copy(update={"logical_entity_name": "new_selected_raw"})
     return DimensionalCandidateValidator(
-        selected_object_keys=(obj,),
-        selected_attribute_keys=(attr,),
+        selected_entity_keys=(entity_key,),
+        selected_attribute_keys=(attribute_key,),
         assertion_record_keys=(),
         applied=DimensionalSection.model_validate_json(json.dumps(history_doc), strict=True)
         if applied
@@ -200,7 +205,9 @@ async def test_changed_nested_history_is_not_an_echo(family: str, edit: str) -> 
         source = candidate["entities"][0]["sources"][0]
         field = "rationale" if edit == "rationale" else "status"
     if edit == "source":
-        source["source_object"]["object_name"] = "another_outside_object"
+        source_key = "source_logical_entity" if family == "dimensional" else "source_object"
+        name_field = "logical_entity_name" if family == "dimensional" else "object_name"
+        source[source_key][name_field] = "another_outside_object"
     else:
         source[field] = "Changed evidence." if edit == "rationale" else "inactive"
     assert CODES[family] in {issue.code for issue in (await validator.validate(candidate)).issues}
@@ -281,10 +288,15 @@ async def test_historical_echo_can_accompany_new_selected_output(family: str) ->
     else:
         new_entity = deepcopy(candidate["entities"][0])
         new_entity[f"{family}_entity_name"] = "New customer"
-        new_entity["sources"][0]["source_object"]["object_name"] = "new_selected_raw"
+        entity_source = "source_logical_entity" if family == "dimensional" else "source_object"
+        attribute_source = (
+            "source_logical_attribute" if family == "dimensional" else "source_attribute"
+        )
+        source_name = "logical_entity_name" if family == "dimensional" else "object_name"
+        new_entity["sources"][0][entity_source][source_name] = "new_selected_raw"
         new_attribute = deepcopy(candidate["attributes"][0])
         new_attribute[f"{family}_entity_name"] = "New customer"
-        new_attribute["sources"][0]["source_attribute"]["object_name"] = "new_selected_raw"
+        new_attribute["sources"][0][attribute_source][source_name] = "new_selected_raw"
         candidate["entities"].append(new_entity)
         candidate["attributes"].append(new_attribute)
     original = deepcopy(candidate)

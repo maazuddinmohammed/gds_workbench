@@ -46,41 +46,12 @@ def test_rework_tables_expose_only_the_approved_columns(
             "updated_time",
             "updated_by",
         ),
-        ("workflow", "model_object_binding"): (
-            "model_object_binding_id",
-            "model_id",
-            "object_id",
-            "modeled_entity_type",
-            "logical_entity_id",
-            "dimensional_entity_id",
-            "agent_run_id",
-            "workflow_run_id",
-            "model_object_binding_status",
-            "model_object_binding_is_locked",
-            "created_time",
-            "created_by",
-            "updated_time",
-            "updated_by",
-        ),
-        ("workflow", "model_attribute_binding"): (
-            "model_attribute_binding_id",
-            "model_object_binding_id",
-            "logical_attribute_id",
-            "dimensional_attribute_id",
-            "attribute_id",
-            "agent_run_id",
-            "workflow_run_id",
-            "model_attribute_binding_status",
-            "model_attribute_binding_is_locked",
-            "created_time",
-            "created_by",
-            "updated_time",
-            "updated_by",
-        ),
         ("workflow", "mapping_object"): (
             "mapping_object_id",
             "model_id",
-            "model_object_binding_id",
+            "modeled_entity_type",
+            "logical_entity_id",
+            "dimensional_entity_id",
             "source_system_id",
             "output_template_id",
             "object_dependency_order",
@@ -97,7 +68,12 @@ def test_rework_tables_expose_only_the_approved_columns(
         ("workflow", "mapping_attribute"): (
             "mapping_attribute_id",
             "mapping_object_id",
-            "model_attribute_binding_id",
+            "model_id",
+            "modeled_entity_type",
+            "logical_entity_id",
+            "dimensional_entity_id",
+            "logical_attribute_id",
+            "dimensional_attribute_id",
             "output_template_id",
             "attribute_mapping_transformation_document",
             "agent_run_id",
@@ -111,7 +87,10 @@ def test_rework_tables_expose_only_the_approved_columns(
         ),
         ("workflow", "generated_code"): (
             "generated_code_id",
-            "model_object_binding_id",
+            "model_id",
+            "modeled_entity_type",
+            "logical_entity_id",
+            "dimensional_entity_id",
             "artifact_name",
             "artifact_type",
             "generated_code_content",
@@ -156,7 +135,9 @@ def test_rework_tables_expose_only_the_approved_columns(
 
         removed = connection.execute(
             """
-            SELECT to_regclass('model.model_scope') AS model_scope,
+            SELECT to_regclass('workflow.model_object_binding') AS model_object_binding,
+                   to_regclass('workflow.model_attribute_binding') AS model_attribute_binding,
+                   to_regclass('model.model_scope') AS model_scope,
                    to_regclass('core.tenant_metadata_discovery_scope')
                        AS discovery_scope,
                    to_regclass('application.generated_sql_artifact')
@@ -171,6 +152,8 @@ def test_rework_tables_expose_only_the_approved_columns(
         ).fetchone()
 
     assert removed == {
+        "model_object_binding": None,
+        "model_attribute_binding": None,
         "model_scope": None,
         "discovery_scope": None,
         "generated_sql_artifact": None,
@@ -211,37 +194,26 @@ def test_generated_code_digest_is_server_derived_and_has_no_review_flags(
         context = connection.execute(
             """
             WITH inserted_model AS (
-                INSERT INTO model.model (tenant_id, model_name)
-                SELECT tenant_id, 'Generated Code Contract'
+                INSERT INTO model.model (tenant_id, model_name, logical_schemas)
+                SELECT tenant_id, 'Generated Code Contract',
+                       '[{"schema_name":"silver","description":null}]'::JSONB
                   FROM core.tenant
                  WHERE tenant_code = 'DEMO_TENANT'
                 RETURNING model_id
             ), inserted_entity AS (
                 INSERT INTO workflow.logical_entity (
                     model_id,
+                    logical_entity_schema_name,
                     logical_entity_name,
                     logical_entity_definition,
                     logical_entity_type,
                     logical_entity_grain
                 )
-                SELECT model_id, 'Customer', 'Customer', 'core', 'One customer'
+                SELECT model_id, 'silver', 'Customer', 'Customer', 'core', 'One customer'
                   FROM inserted_model
                 RETURNING model_id, logical_entity_id
             )
-            INSERT INTO workflow.model_object_binding (
-                model_id,
-                object_id,
-                modeled_entity_type,
-                logical_entity_id
-            )
-            SELECT inserted_entity.model_id,
-                   object_record.object_id,
-                   'logical_entity',
-                   inserted_entity.logical_entity_id
-              FROM inserted_entity
-              JOIN core.object AS object_record
-                ON object_record.object_schema = 'silver_demo'
-            RETURNING model_object_binding_id
+            SELECT model_id, logical_entity_id FROM inserted_entity
             """
         ).fetchone()
         assert context is not None
@@ -249,15 +221,15 @@ def test_generated_code_digest_is_server_derived_and_has_no_review_flags(
         stored = connection.execute(
             """
             INSERT INTO workflow.generated_code (
-                model_object_binding_id,
+                model_id, modeled_entity_type, logical_entity_id,
                 artifact_name,
                 artifact_type,
                 generated_code_content,
                 code_input_digest
-            ) VALUES (%s, 'Customer.sql', 'sql_file', %s, %s)
+            ) VALUES (%s, 'logical_entity', %s, 'Customer.sql', 'sql_file', %s, %s)
             RETURNING generated_code_digest
             """,
-            (context["model_object_binding_id"], content, "a" * 64),
+            (context["model_id"], context["logical_entity_id"], content, "a" * 64),
         ).fetchone()
 
     assert stored == {"generated_code_digest": sha256(content.encode()).hexdigest()}
@@ -274,8 +246,9 @@ def test_code_context_returns_one_server_derived_input_digest(
         assert tenant is not None
         model = connection.execute(
             """
-            INSERT INTO model.model (tenant_id, model_name)
-            VALUES (%s, 'Code Context Contract')
+            INSERT INTO model.model (tenant_id, model_name, logical_schemas)
+            VALUES (%s, 'Code Context Contract',
+                    '[{"schema_name":"silver","description":null}]'::JSONB)
             RETURNING model_id
             """,
             (tenant["tenant_id"],),
@@ -284,9 +257,10 @@ def test_code_context_returns_one_server_derived_input_digest(
         entity = connection.execute(
             """
             INSERT INTO workflow.logical_entity (
-                model_id, logical_entity_name, logical_entity_definition,
+                model_id, logical_entity_schema_name, logical_entity_name,
+                logical_entity_definition,
                 logical_entity_type, logical_entity_grain
-            ) VALUES (%s, 'Customer', 'Customer', 'core', 'One customer')
+            ) VALUES (%s, 'silver', 'Customer', 'Customer', 'core', 'One customer')
             RETURNING logical_entity_id
             """,
             (model["model_id"],),
@@ -304,69 +278,21 @@ def test_code_context_returns_one_server_derived_input_digest(
             (model["model_id"], entity["logical_entity_id"]),
         ).fetchone()
         assert logical_attribute is not None
-        target = connection.execute(
-            """
-            SELECT object_record.object_id, attribute.attribute_id
-              FROM core.object AS object_record
-              JOIN core.attribute AS attribute
-                ON attribute.object_id = object_record.object_id
-             WHERE object_record.object_schema = 'silver_demo'
-             ORDER BY attribute.attribute_ordinal_position
-             LIMIT 1
-            """
-        ).fetchone()
-        assert target is not None
-        binding = connection.execute(
-            """
-            INSERT INTO workflow.model_object_binding (
-                model_id, object_id, modeled_entity_type, logical_entity_id
-            ) VALUES (%s, %s, 'logical_entity', %s)
-            RETURNING model_object_binding_id
-            """,
-            (
-                model["model_id"],
-                target["object_id"],
-                entity["logical_entity_id"],
-            ),
-        ).fetchone()
-        assert binding is not None
-        attribute_binding = connection.execute(
-            """
-            INSERT INTO workflow.model_attribute_binding (
-                model_object_binding_id, logical_attribute_id, attribute_id
-            ) VALUES (%s, %s, %s)
-            RETURNING model_attribute_binding_id
-            """,
-            (
-                binding["model_object_binding_id"],
-                logical_attribute["logical_attribute_id"],
-                target["attribute_id"],
-            ),
-        ).fetchone()
-        assert attribute_binding is not None
         source_system = connection.execute(
             "SELECT system_id FROM core.system WHERE system_code = 'DEMO_CUSTOMER_SYSTEM'"
         ).fetchone()
         assert source_system is not None
-        connection.execute(
-            """
-            INSERT INTO workflow.mapping_source_system_dependency (
-                model_id, modeled_entity_type, source_system_id
-            ) VALUES (%s, 'logical_entity', %s)
-            """,
-            (model["model_id"], source_system["system_id"]),
-        )
         mapping = connection.execute(
             """
             INSERT INTO workflow.mapping_object (
-                model_id, model_object_binding_id, source_system_id,
+                model_id, modeled_entity_type, logical_entity_id, source_system_id,
                 mapping_transformation_document
-            ) VALUES (%s, %s, %s, '{"kind":"direct"}'::JSONB)
+            ) VALUES (%s, 'logical_entity', %s, %s, '{"kind":"direct"}'::JSONB)
             RETURNING mapping_object_id
             """,
             (
                 model["model_id"],
-                binding["model_object_binding_id"],
+                entity["logical_entity_id"],
                 source_system["system_id"],
             ),
         ).fetchone()
@@ -374,13 +300,16 @@ def test_code_context_returns_one_server_derived_input_digest(
         connection.execute(
             """
             INSERT INTO workflow.mapping_attribute (
-                mapping_object_id, model_attribute_binding_id,
+                mapping_object_id, model_id, modeled_entity_type, logical_entity_id,
+                logical_attribute_id,
                 attribute_mapping_transformation_document
-            ) VALUES (%s, %s, '{"expression":"CustomerID"}'::JSONB)
+            ) VALUES (%s, %s, 'logical_entity', %s, %s, '{"expression":"CustomerID"}'::JSONB)
             """,
             (
                 mapping["mapping_object_id"],
-                attribute_binding["model_attribute_binding_id"],
+                model["model_id"],
+                entity["logical_entity_id"],
+                logical_attribute["logical_attribute_id"],
             ),
         )
         document = connection.execute(
@@ -452,7 +381,11 @@ def test_code_context_returns_one_server_derived_input_digest(
     assert first["modeled_entity_name"] == "Customer"
     assert first["source_system_count"] == 1
     assert len(first["code_input_digest"].strip()) == 64
-    assert first["source_context"]["target"]["object_id"] == target["object_id"]
+    assert first["modeled_entity_schema_name"] == "silver"
+    assert first["source_context"]["consumer_context_version"] == "entity-3"
+    assert first["source_context"]["target"]["modeled_entity_id"] == entity["logical_entity_id"]
+    assert first["source_context"]["target"]["object_schema"] == "silver"
+    assert "object_id" not in first["source_context"]["target"]
     assert first["source_context"]["target"]["source_tenant_id"] == tenant["tenant_id"]
     assert first["source_context"]["target"]["source_tenant_code"] == "DEMO_TENANT"
     assert first["source_context"]["target"]["tenant_code"] == "DEMO_GDS_TENANT"
@@ -526,7 +459,6 @@ def test_index_set_omits_speculative_workflow_run_indexes(
             (
                 [
                     "ix_mapping_object_model_wave",
-                    "ix_mapping_source_dependency_wave",
                     "ix_object_source_tenant_zone_active",
                     "ix_workflow_run_claim_eligibility",
                 ],
@@ -536,7 +468,6 @@ def test_index_set_omits_speculative_workflow_run_indexes(
     assert speculative == []
     assert [row["indexname"] for row in retained] == [
         "ix_mapping_object_model_wave",
-        "ix_mapping_source_dependency_wave",
         "ix_object_source_tenant_zone_active",
         "ix_workflow_run_claim_eligibility",
     ]
@@ -553,8 +484,9 @@ def test_needs_review_is_rejected_by_an_applied_table(
         assert tenant is not None
         model = connection.execute(
             """
-            INSERT INTO model.model (tenant_id, model_name)
-            VALUES (%s, 'Status Contract')
+            INSERT INTO model.model (tenant_id, model_name, logical_schemas)
+            VALUES (%s, 'Status Contract',
+                    '[{"schema_name":"silver","description":null}]'::JSONB)
             RETURNING model_id
             """,
             (tenant["tenant_id"],),
@@ -564,10 +496,11 @@ def test_needs_review_is_rejected_by_an_applied_table(
             connection.execute(
                 """
                 INSERT INTO workflow.logical_entity (
-                    model_id, logical_entity_name, logical_entity_definition,
+                    model_id, logical_entity_schema_name, logical_entity_name,
+                logical_entity_definition,
                     logical_entity_type, logical_entity_grain,
                     logical_entity_status
-                ) VALUES (%s, 'Customer', 'Customer', 'core', 'One', 'needs_review')
+                ) VALUES (%s, 'silver', 'Customer', 'Customer', 'core', 'One', 'needs_review')
                 """,
                 (model["model_id"],),
             )

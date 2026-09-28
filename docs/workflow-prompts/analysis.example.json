@@ -236,7 +236,8 @@
         "to_attribute_name": "CustomerCode",
         "relationship_kind": "reference",
         "relationship_confidence": "high",
-        "relationship_basis": "The saved Attribute descriptions identify the ordering-customer reference and ERP customer identifier; assertion order_customer_reference explicitly links these endpoints within the same ERP source. The saved all-row Customers Profile has 100 non-null and 100 distinct values, supporting target uniqueness in that measured scope. No join-coverage measurement is supplied."
+        "relationship_basis": "The saved Attribute descriptions identify the ordering-customer reference and ERP customer identifier; assertion order_customer_reference explicitly links these endpoints within the same ERP source. The saved all-row Customers Profile has 100 non-null and 100 distinct values, supporting target uniqueness in that measured scope. No join-coverage measurement is supplied.",
+        "inferred_cardinality": "unknown"
       }
     ]
   },

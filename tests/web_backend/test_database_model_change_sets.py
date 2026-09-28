@@ -105,7 +105,6 @@ _MATERIALIZED_TABLES = (
     "workflow.logical_entity_submodel",
     "workflow.logical_relationship",
     "workflow.logical_submodel",
-    "workflow.mapping_source_system_dependency",
     "workflow.mapping_object",
 )
 
@@ -495,82 +494,22 @@ def _make_scope_object_dimensional_eligible(
         ).fetchone()
         if scoped is None:
             raise AssertionError("expected one seeded scoped Object")
-        input_object_id = _required_id(scoped, "object_id")
+        system_id = _required_id(scoped, "system_id")
         connection_id = _required_id(scoped, "connection_id")
         source_tenant_id = _required_id(scoped, "source_tenant_id")
-        object_type_id = _required_id(scoped, "object_type_id")
-        system_id = _required_id(scoped, "system_id")
-        input_attribute_id = _required_id(scoped, "attribute_id")
-        silver_zone = connection.execute(
-            """
-            SELECT zone_id
-              FROM reference.zone
-             WHERE lower(btrim(zone_code)) = 'silver'
-            """
-        ).fetchone()
-        if silver_zone is None:
-            silver_zone = connection.execute(
-                """
-                INSERT INTO reference.zone (zone_code, zone_name)
-                VALUES ('silver', 'Silver')
-                RETURNING zone_id
-                """
-            ).fetchone()
-        silver_zone_id = _required_id(silver_zone, "zone_id")
-        object_id = _required_id(
-            connection.execute(
-                """
-                INSERT INTO core.object (
-                    connection_id,
-                    source_tenant_id,
-                    object_schema,
-                    object_name,
-                    object_type_id,
-                    zone_id
-                ) VALUES (%s, %s, 'silver_test', %s, %s, %s)
-                RETURNING object_id
-                """,
-                (
-                    connection_id,
-                    source_tenant_id,
-                    f"orders_{model_id}",
-                    object_type_id,
-                    silver_zone_id,
-                ),
-            ).fetchone(),
-            "object_id",
+        connection.execute(
+            "UPDATE core.connection SET is_global_data_store = TRUE WHERE connection_id = %s",
+            (connection_id,),
         )
-        attribute_id = _required_id(
-            connection.execute(
-                """
-                INSERT INTO core.attribute (
-                    object_id,
-                    attribute_name,
-                    attribute_ordinal_position,
-                    attribute_description,
-                    attribute_data_type,
-                    attribute_nullability,
-                    is_natural_key,
-                    is_mapped
-                )
-                SELECT %s,
-                       attribute_name,
-                       attribute_ordinal_position,
-                       attribute_description,
-                       attribute_data_type,
-                       attribute_nullability,
-                       is_natural_key,
-                       is_mapped
-                  FROM core.attribute
-                 WHERE attribute_id = %s
-                RETURNING attribute_id
-                """,
-                (object_id, input_attribute_id),
-            ).fetchone(),
-            "attribute_id",
+        connection.execute(
+            "UPDATE core.tenant SET gds_connection_id = %s WHERE tenant_id = %s",
+            (connection_id, source_tenant_id),
         )
-        if object_id == input_object_id:
-            raise AssertionError("expected a distinct Silver target Object")
+        connection.execute(
+            'UPDATE model.model SET logical_schemas = \'[{"schema_name":"silver","description":null}]\', '
+            'dimensional_schemas = \'[{"schema_name":"gold","description":null}]\' WHERE model_id = %s',
+            (model_id,),
+        )
         logical_entity_id = _required_id(
             connection.execute(
                 """
@@ -580,14 +519,14 @@ def _make_scope_object_dimensional_eligible(
                     logical_entity_definition,
                     logical_entity_type,
                     logical_entity_grain,
-                    logical_entity_status
+                    logical_entity_status, logical_entity_schema_name
                 ) VALUES (
                     %s,
                     'order',
                     'One source order.',
                     'transaction',
                     'One row per source order.',
-                    'active'
+                    'active', 'silver'
                 )
                 RETURNING logical_entity_id
                 """,
@@ -625,61 +564,19 @@ def _make_scope_object_dimensional_eligible(
             ).fetchone(),
             "logical_attribute_id",
         )
-        connection.execute(
-            """
-            INSERT INTO workflow.mapping_source_system_dependency (
-                model_id,
-                modeled_entity_type,
-                source_system_id,
-                mapping_source_system_dependency_status
-            ) VALUES (%s, 'logical_entity', %s, 'active')
-            """,
-            (model_id, system_id),
-        )
-        model_object_binding_id = _required_id(
-            connection.execute(
-                """
-                INSERT INTO workflow.model_object_binding (
-                    model_id,
-                    object_id,
-                    modeled_entity_type,
-                    logical_entity_id,
-                    model_object_binding_status
-                ) VALUES (%s, %s, 'logical_entity', %s, 'active')
-                RETURNING model_object_binding_id
-                """,
-                (model_id, object_id, logical_entity_id),
-            ).fetchone(),
-            "model_object_binding_id",
-        )
-        model_attribute_binding_id = _required_id(
-            connection.execute(
-                """
-                INSERT INTO workflow.model_attribute_binding (
-                    model_object_binding_id,
-                    logical_attribute_id,
-                    attribute_id,
-                    model_attribute_binding_status
-                ) VALUES (%s, %s, %s, 'active')
-                RETURNING model_attribute_binding_id
-                """,
-                (model_object_binding_id, logical_attribute_id, attribute_id),
-            ).fetchone(),
-            "model_attribute_binding_id",
-        )
         mapping_object_id = _required_id(
             connection.execute(
                 """
                 INSERT INTO workflow.mapping_object (
                     model_id,
-                    model_object_binding_id,
+                    logical_entity_id, modeled_entity_type,
                     source_system_id,
                     mapping_transformation_document,
                     object_mapping_status
-                ) VALUES (%s, %s, %s, '{}'::JSONB, 'active')
+                ) VALUES (%s, %s, 'logical_entity', %s, '{}'::JSONB, 'active')
                 RETURNING mapping_object_id
                 """,
-                (model_id, model_object_binding_id, system_id),
+                (model_id, logical_entity_id, system_id),
             ).fetchone(),
             "mapping_object_id",
         )
@@ -687,12 +584,12 @@ def _make_scope_object_dimensional_eligible(
             """
                 INSERT INTO workflow.mapping_attribute (
                     mapping_object_id,
-                    model_attribute_binding_id,
+                    logical_attribute_id, model_id, logical_entity_id, modeled_entity_type,
                     attribute_mapping_transformation_document,
                     attribute_mapping_status
-                ) VALUES (%s, %s, '{}'::JSONB, 'active')
+                ) VALUES (%s, %s, %s, %s, 'logical_entity', '{}'::JSONB, 'active')
             """,
-            (mapping_object_id, model_attribute_binding_id),
+            (mapping_object_id, logical_attribute_id, model_id, logical_entity_id),
         )
         connection.execute(
             """
@@ -705,17 +602,7 @@ def _make_scope_object_dimensional_eligible(
             """,
             (Jsonb(technical_template), Jsonb(audit_template), model_id),
         )
-        eligibility = connection.execute(
-            """
-            SELECT is_dimensional_source_eligible
-              FROM workflow.list_model_object_eligibility(%s)
-             WHERE object_id = %s
-            """,
-            (model_id, object_id),
-        ).fetchone()
-        if eligibility != {"is_dimensional_source_eligible": True}:
-            raise AssertionError("expected an eligible Silver Dimensional source")
-    return object_id
+    return logical_entity_id
 
 
 def _create_running_conceptual_run(
@@ -819,6 +706,11 @@ def _create_queued_authoring_run_with_prompt(
 ) -> int:
     suffix = uuid4().hex
     with database.connect_owner() as connection:
+        connection.execute(
+            'UPDATE model.model SET logical_schemas = \'[{"schema_name":"silver","description":null}]\', '
+            'dimensional_schemas = \'[{"schema_name":"gold","description":null}]\' WHERE model_id = %s',
+            (model_id,),
+        )
         actor = connection.execute(
             """
             SELECT identity.principal_id
@@ -843,10 +735,10 @@ def _create_queued_authoring_run_with_prompt(
         elif workflow == "dimensional":
             selected = connection.execute(
                 """
-                SELECT eligibility.object_id
-                  FROM workflow.list_model_object_eligibility(%s) AS eligibility
-                 WHERE eligibility.object_id = %s
-                   AND eligibility.is_dimensional_source_eligible
+                SELECT logical_entity_id AS object_id
+                  FROM workflow.logical_entity
+                 WHERE model_id = %s AND logical_entity_id = %s
+                   AND logical_entity_status = 'active'
                 """,
                 (model_id, selected_object_id),
             ).fetchone()
@@ -1065,10 +957,11 @@ def _create_queued_authoring_run_with_prompt(
                   1::INTEGER,
                   %s::BIGINT[],
                   ARRAY[]::VARCHAR[],
-                  NULL::VARCHAR,
+                  %s::VARCHAR,
                   NULL::VARCHAR,
                   %s::UUID,
-                  %s::JSONB
+                  %s::JSONB,
+                  p_selected_entity_ids => %s::BIGINT[]
               )
             """,
             (
@@ -1077,9 +970,11 @@ def _create_queued_authoring_run_with_prompt(
                 model_id,
                 workflow,
                 execution_mode,
-                [object_id],
+                [] if workflow == "dimensional" else [object_id],
+                "logical_entity" if workflow == "dimensional" else None,
                 uuid4(),
                 Jsonb(prompt_overrides),
+                [object_id] if workflow == "dimensional" else None,
             ),
         ).fetchone()
         if (
@@ -1599,6 +1494,7 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
         code_record: dict[str, object] = {
             "generated_code_is_locked": False,
             "modeled_entity_type": "logical_entity",
+            "modeled_entity_schema_name": "silver",
             "modeled_entity_name": "Customer",
             "artifact_name": "fragmented_code.sql",
             "artifact_type": "sql_file",

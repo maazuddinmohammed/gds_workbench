@@ -15,7 +15,7 @@ relationship validation queries and progress reporting. `profiling.json` bounds
 Profiling query size, concurrency, and execution time.
 
 Mapping stores flexible transformation documents. Output templates provide
-advisory field guidance; the backend derives binding identity, provenance,
+advisory field guidance; the backend derives Entity identity, provenance,
 lifecycle status and integrity constraints. New runs use the seeded global
 Object and Attribute templates unless custom IDs are supplied, then freeze
 those IDs and schema digests. Existing runs retain their frozen selections.

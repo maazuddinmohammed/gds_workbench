@@ -1,4 +1,4 @@
-"""Tenant-owned Mapping read contracts aligned with binding persistence."""
+"""Tenant-owned Mapping read contracts for Entity-owned Mapping."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ class ContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
-class MappingDependencyFilters(ContractModel):
+class MappingFilters(ContractModel):
     entity_type: MappingEntityType | None = None
     source_system_id: int | None = Field(default=None, gt=0)
     source_system_code: str | None = Field(default=None, min_length=1, max_length=100)
@@ -47,7 +47,7 @@ class MappingListQuery(BaseModel):
         return normalized
 
 
-class MappingAttributeFilters(MappingDependencyFilters):
+class MappingAttributeFilters(MappingFilters):
     mapping_object_id: int | None = Field(default=None, gt=0)
 
 
@@ -61,78 +61,19 @@ class SourceSystemReference(ContractModel):
     system_name: str = Field(min_length=1, max_length=200)
 
 
-class PhysicalObjectReference(ContractModel):
-    object_id: int = Field(gt=0)
-    tenant_id: int = Field(gt=0)
-    tenant_code: str = Field(min_length=1, max_length=100)
-    tenant_name: str = Field(min_length=1, max_length=200)
-    system_id: int = Field(gt=0)
-    system_code: str = Field(min_length=1, max_length=100)
-    system_name: str = Field(min_length=1, max_length=200)
-    connection_id: int = Field(gt=0)
-    connection_code: str = Field(min_length=1, max_length=100)
-    object_schema: str = Field(min_length=1, max_length=400)
-    object_name: str = Field(min_length=1, max_length=400)
-    zone_code: str = Field(min_length=1, max_length=100)
-
-
 class ModeledEntityReference(ContractModel):
     entity_type: MappingEntityType
     entity_id: int = Field(gt=0)
+    entity_schema_name: str = Field(min_length=1, max_length=400)
     entity_name: str = Field(min_length=1, max_length=255)
 
 
-class PhysicalAttributeReference(ContractModel):
-    object: PhysicalObjectReference
-    attribute_id: int = Field(gt=0)
-    attribute_name: str = Field(min_length=1, max_length=400)
-    attribute_ordinal_position: int = Field(gt=0)
-    attribute_data_type: str = Field(min_length=1, max_length=200)
-
-
 class ModeledAttributeReference(ContractModel):
+    ordinal_position: int = Field(gt=0)
+    data_type: str = Field(min_length=1, max_length=200)
     entity: ModeledEntityReference
     attribute_id: int = Field(gt=0)
     attribute_name: str = Field(min_length=1, max_length=255)
-
-
-class MappingDependencySummary(ContractModel):
-    mapping_source_system_dependency_id: int = Field(gt=0)
-    workflow_run_id: int | None = Field(default=None, gt=0)
-    entity_type: MappingEntityType
-    source_system: SourceSystemReference
-    dependency_order: int = Field(ge=0)
-    status: MappingStatus
-    is_locked: bool
-    updated_at: datetime
-
-
-class MappingDependencyPage(ContractModel):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
-    items: tuple[MappingDependencySummary, ...] = Field(max_length=200)
-    next_cursor: str | None = Field(default=None, max_length=2048)
-
-
-class MappingTargetSummary(ContractModel):
-    object_id: int = Field(gt=0)
-    connection_id: int = Field(gt=0)
-    system_id: int = Field(gt=0)
-    system_code: str = Field(min_length=1, max_length=100)
-    system_name: str = Field(min_length=1, max_length=200)
-    source_tenant_id: int = Field(gt=0)
-    source_tenant_code: str = Field(min_length=1, max_length=100)
-    source_tenant_name: str = Field(min_length=1, max_length=200)
-    object_schema: str = Field(min_length=1, max_length=400)
-    object_name: str = Field(min_length=1, max_length=400)
-    zone_code: Literal["silver", "gold"]
-
-
-class MappingTargetPage(ContractModel):
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
-    items: tuple[MappingTargetSummary, ...] = Field(max_length=200)
-    next_cursor: str | None = Field(default=None, max_length=2048)
 
 
 class MappingGenerationAttribute(ContractModel):
@@ -144,11 +85,10 @@ class MappingGenerationAttribute(ContractModel):
     is_authored: bool
 
 
-class MappingGenerationTarget(MappingTargetSummary):
+class MappingGenerationTarget(ModeledEntityReference):
     source_system: SourceSystemReference
     entity_name: str
     mapping_object_id: int | None
-    dependency_order: int
     object_order: int
     is_locked: bool
     has_sources: bool
@@ -165,8 +105,7 @@ class MappingGenerationPage(ContractModel):
 class MappingObjectSummary(ContractModel):
     mapping_object_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
-    target: PhysicalObjectReference
-    source: ModeledEntityReference
+    target: ModeledEntityReference
     source_system: SourceSystemReference
     dependency_order: int = Field(ge=0)
     status: MappingStatus
@@ -214,8 +153,7 @@ class MappingAttributeSummary(ContractModel):
     mapping_attribute_id: int = Field(gt=0)
     workflow_run_id: int | None = Field(default=None, gt=0)
     mapping_object_id: int = Field(gt=0)
-    target: PhysicalAttributeReference
-    source: ModeledAttributeReference
+    target: ModeledAttributeReference
     source_system: SourceSystemReference
     status: MappingStatus
     is_locked: bool

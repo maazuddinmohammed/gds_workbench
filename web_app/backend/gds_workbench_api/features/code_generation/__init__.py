@@ -12,7 +12,6 @@ from .context import (
 )
 from .contracts import (
     CodeGenerationTargetFilters,
-    CodeGenerationTargetObjectReference,
     CodeGenerationTargetPage,
     CodeGenerationTargetSummary,
     CodeMappingSupport,
@@ -45,7 +44,6 @@ __all__ = [
     "CodeGenerationReadDatabase",
     "CodeGenerationService",
     "CodeGenerationTargetFilters",
-    "CodeGenerationTargetObjectReference",
     "CodeGenerationTargetPage",
     "CodeGenerationWorkflow",
     "CodeGenerationWorkflowService",

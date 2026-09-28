@@ -1209,3 +1209,16 @@ a.model-step:hover {
 .button.model-delete-action { color: var(--red); }
 .model-delete-warning { color: var(--red); }
 .button.model-delete-confirm { background: var(--red); border-color: var(--red); color: var(--surface); }
+
+.model-settings-page { min-width: 0; padding: 1.5rem; }
+.model-settings-page > form { max-width: 56rem; }
+.model-settings-page [role="alert"] { color: var(--red); }
+.model-settings-tabs { margin: 1rem 0; }
+.model-settings-tabs a { padding: 0.5rem 0.9rem; color: var(--muted); border-radius: var(--radius-small); text-decoration: none; }
+.model-settings-tabs a.is-active { color: var(--ink); background: var(--surface); box-shadow: var(--shadow-soft); }
+.model-settings-refresh { margin: 1rem 0; }
+.model-settings-refresh .button + .button { margin-left: 0.5rem; }
+
+@media (max-width: 42rem) {
+  .model-settings-page { padding: 1rem; }
+}

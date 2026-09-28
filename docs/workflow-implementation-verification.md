@@ -303,10 +303,14 @@ checks pass. All observed test failures are resolved.
 
 ## Object-scoped Mapping — 2026-09-22
 
-Mapping now offers manual Add/Edit System order and a Generate mappings dialog
-with layer, System and Object selection, nested Attribute exclusions and existing
+The September 22 release offered manual Add/Edit System order; the September 27
+follow-up removes that editor and its dataset. Mapping now opens its Entity ledger
+directly and retains a Generate mappings dialog with layer, System and Entity selection,
+nested Attribute exclusions and existing
 lock protection. The backend freezes every pair and selected physical Attribute
-ID. Legacy single-pair commands remain supported. Independent pair failures leave
+ID in the historical design; the current implementation freezes modeled Entity
+and Attribute IDs under [ADR 012](adr/012-entity-owned-mapping-and-code.md).
+Legacy single-pair commands remain supported. Independent pair failures leave
 successful changes available in one validated draft; Apply remains explicit.
 
 Both Mapping defaults explain actual saved lineage, linked assertions,

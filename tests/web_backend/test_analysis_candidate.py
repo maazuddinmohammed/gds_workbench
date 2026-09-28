@@ -44,6 +44,7 @@ def _candidate(
         "to_object_name": "customer_raw",
         "to_attribute_name": "customer_id",
         "relationship_kind": "reference",
+        "inferred_cardinality": "unknown",
         "relationship_confidence": "high",
         "relationship_basis": basis,
     }
@@ -300,4 +301,62 @@ async def test_schema_error_uses_original_index_after_duplicate_removal() -> Non
 
     assert [(issue.code, issue.path) for issue in validation.issues] == [
         ("candidate.record_schema_invalid", ("relationships", 2))
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "value", ["one_to_one", "one_to_many", "many_to_one", "many_to_many", "unknown"]
+)
+async def test_inference_owns_cardinality_without_creating_validation_evidence(value: str) -> None:
+    candidate: JsonValue = {"relationships": [_candidate(extra={"inferred_cardinality": value})]}
+    validator = _validator()
+    assert not (await validator.validate(candidate)).issues
+    stored = validator.parse_validated(candidate)[0].records[0]
+    assert stored["inferred_cardinality"] == value
+    assert stored["validation_result"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", [None, "one-to-many", "", 1])
+async def test_inference_rejects_invalid_cardinality(value: JsonValue) -> None:
+    candidate: JsonValue = {"relationships": [_candidate(extra={"inferred_cardinality": value})]}
+    assert [issue.code for issue in (await _validator().validate(candidate)).issues] == [
+        "candidate.schema_invalid"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_inference_requires_explicit_cardinality_and_rejects_conflicting_duplicates() -> None:
+    missing = _candidate()
+    missing.pop("inferred_cardinality")
+    assert [
+        issue.code for issue in (await _validator().validate({"relationships": [missing]})).issues
+    ] == ["candidate.schema_invalid"]
+    duplicate: JsonValue = {
+        "relationships": [
+            _candidate(extra={"inferred_cardinality": "one_to_many"}),
+            _candidate(extra={"inferred_cardinality": "many_to_one"}),
+        ]
+    }
+    assert [issue.code for issue in (await _validator().validate(duplicate)).issues] == [
+        "candidate.relationship_duplicate"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cardinality_change_preserves_evidence_and_respects_lock() -> None:
+    candidate: JsonValue = {
+        "relationships": [
+            _candidate(basis="Original evidence.", extra={"inferred_cardinality": "many_to_one"})
+        ]
+    }
+    validator = _validator(applied=(_applied(),))
+    stored = validator.parse_validated(candidate)[0].records[0]
+    assert stored["inferred_cardinality"] == "many_to_one"
+    assert stored["validation_result"] == "supported"
+    assert stored["validation_source_non_null_count"] == 10
+    locked = _validator(applied=(_applied(locked=True),))
+    assert [issue.code for issue in (await locked.validate(candidate)).issues] == [
+        "candidate.record_locked"
     ]

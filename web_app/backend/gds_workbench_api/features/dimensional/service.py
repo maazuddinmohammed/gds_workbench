@@ -16,8 +16,8 @@ from gds_etl_workbench.application.change_sets.model_validation import (
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.domain.modeling_records import (
-    PhysicalAttributeKey,
-    PhysicalObjectKey,
+    LogicalAttributeKey,
+    LogicalEntityKey,
 )
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
@@ -243,8 +243,10 @@ class DimensionalWorkflow:
             )
 
             execution_mode = plan.workflow_execution_mode
-            selected_object_count = len(context.context.selected_objects)
-            selected_object_label = "Object" if selected_object_count == 1 else "Objects"
+            selected_object_count = len(context.context.selected_logical_entities)
+            selected_object_label = (
+                "Logical Entity" if selected_object_count == 1 else "Logical Entities"
+            )
             candidate_mode_label = "one-shot" if execution_mode == "one_shot" else "tool-assisted"
             progress = AgentWorkflowProgress(
                 lifecycle=self._lifecycle,
@@ -473,40 +475,34 @@ class DimensionalWorkflow:
             or plan.workflow_run_id != workflow_run_id
             or plan.model_revision != expected_model_revision
             or plan.model_workflow != "dimensional"
-            or plan.modeled_entity_type is not None
+            or plan.modeled_entity_type != "logical_entity"
             or not mode_path_is_valid
         ):
             raise InvalidRequestError("The Dimensional run does not use the fixed execution path.")
 
 
 def _candidate_validator(context: AgentContextBundle) -> DimensionalCandidateValidator:
-    selected_objects = tuple(
-        PhysicalObjectKey(
-            tenant_code=item.object.tenant_code,
-            system_code=item.object.system_code,
-            connection_code=item.object.connection_code,
-            object_schema=item.object.object_schema,
-            object_name=item.object.object_name,
+    selected_entities = tuple(
+        LogicalEntityKey(
+            logical_entity_schema_name=item.entity.logical_entity_schema_name,
+            logical_entity_name=item.entity.logical_entity_name,
         )
-        for item in context.context.selected_objects
+        for item in context.context.selected_logical_entities
     )
     selected_attributes = tuple(
-        PhysicalAttributeKey(
-            tenant_code=attribute.tenant_code,
-            system_code=attribute.system_code,
-            connection_code=attribute.connection_code,
-            object_schema=attribute.object_schema,
-            object_name=attribute.object_name,
-            attribute_name=attribute.attribute_name,
+        LogicalAttributeKey(
+            logical_entity_schema_name=attribute.logical_entity_schema_name,
+            logical_entity_name=attribute.logical_entity_name,
+            logical_attribute_name=attribute.logical_attribute_name,
         )
-        for selected in context.context.selected_objects
-        for attribute in selected.attributes
+        for item in context.context.selected_logical_entities
+        for attribute in item.attributes
     )
     assertion_keys = tuple(
         record.modeling_assertion_record_key for record in context.context.assertion.records
     )
     return DimensionalCandidateValidator(
-        selected_object_keys=selected_objects,
+        selected_entity_keys=selected_entities,
         selected_attribute_keys=selected_attributes,
         assertion_record_keys=assertion_keys,
         applied=context.context.applied.dimensional,

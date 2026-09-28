@@ -22,15 +22,12 @@ from gds_etl_workbench.domain.modeling_records import (
     LogicalRelationshipRecord,
     LogicalSubmodelRecord,
     MappingAttributeRecord,
-    MappingDependencyRecord,
     MappingObjectRecord,
-    ModelAttributeBindingRecord,
     ModelDetailsRecord,
     ModelingAssertionDocumentRecord,
     ModelingAssertionRecordRecord,
     ModelingRecord,
     ModelInputScopeRecord,
-    ModelObjectBindingRecord,
     ProfilingProfileRecord,
     ValidationCheckRecord,
     ValidationGroupRecord,
@@ -50,7 +47,6 @@ type ModelSection = Literal[
     "conceptual",
     "logical",
     "dimensional",
-    "model_binding",
     "mapping",
     "code_generation",
     "validation",
@@ -73,9 +69,6 @@ type ModelDataset = Literal[
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",
-    "model_object_binding",
-    "model_attribute_binding",
-    "mapping_dependency",
     "mapping_object",
     "mapping_attribute",
     "generated_code",
@@ -101,9 +94,6 @@ type ModelChangeSetDataset = Literal[
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",
-    "model_object_binding",
-    "model_attribute_binding",
-    "mapping_dependency",
     "mapping_object",
     "mapping_attribute",
     "generated_code",
@@ -120,7 +110,6 @@ MODEL_SECTIONS: tuple[ModelSection, ...] = (
     "conceptual",
     "logical",
     "dimensional",
-    "model_binding",
     "mapping",
     "code_generation",
     "validation",
@@ -185,13 +174,7 @@ class DimensionalSection(ContractModel):
     relationships: tuple[DimensionalRelationshipRecord, ...]
 
 
-class ModelBindingSection(ContractModel):
-    objects: tuple[ModelObjectBindingRecord, ...]
-    attributes: tuple[ModelAttributeBindingRecord, ...]
-
-
 class MappingSection(ContractModel):
-    dependencies: tuple[MappingDependencyRecord, ...]
     objects: tuple[MappingObjectRecord, ...]
     attributes: tuple[MappingAttributeRecord, ...]
 
@@ -207,7 +190,7 @@ class ValidationSection(ContractModel):
 
 
 class ModelSnapshot(ContractModel):
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["2.0"] = "2.0"
     model_id: int
     model_name: str
     model_revision: int
@@ -220,7 +203,6 @@ class ModelSnapshot(ContractModel):
     conceptual: ConceptualSection
     logical: LogicalSection
     dimensional: DimensionalSection
-    model_binding: ModelBindingSection
     mapping: MappingSection
     code_generation: CodeGenerationSection = CodeGenerationSection(
         artifacts=(),
@@ -250,9 +232,6 @@ def model_snapshot_records(
         "dimensional_entity": snapshot.dimensional.entities,
         "dimensional_attribute": snapshot.dimensional.attributes,
         "dimensional_relationship": snapshot.dimensional.relationships,
-        "model_object_binding": snapshot.model_binding.objects,
-        "model_attribute_binding": snapshot.model_binding.attributes,
-        "mapping_dependency": snapshot.mapping.dependencies,
         "mapping_object": snapshot.mapping.objects,
         "mapping_attribute": snapshot.mapping.attributes,
         "generated_code": snapshot.code_generation.artifacts,
@@ -391,21 +370,27 @@ DATASETS = (
         name="logical_entity",
         section="logical",
         row_model=LogicalEntityRecord,
-        canonical_key=("logical_entity_name",),
+        canonical_key=("logical_entity_schema_name", "logical_entity_name"),
     ),
     ModelingDatasetDefinition(
         name="logical_attribute",
         section="logical",
         row_model=LogicalAttributeRecord,
-        canonical_key=("logical_entity_name", "logical_attribute_name"),
+        canonical_key=(
+            "logical_entity_schema_name",
+            "logical_entity_name",
+            "logical_attribute_name",
+        ),
     ),
     ModelingDatasetDefinition(
         name="logical_relationship",
         section="logical",
         row_model=LogicalRelationshipRecord,
         canonical_key=(
+            "from_logical_entity_schema_name",
             "from_logical_entity_name",
             "from_logical_attribute_name",
+            "to_logical_entity_schema_name",
             "to_logical_entity_name",
             "to_logical_attribute_name",
             "logical_relationship_name",
@@ -421,21 +406,27 @@ DATASETS = (
         name="dimensional_entity",
         section="dimensional",
         row_model=DimensionalEntityRecord,
-        canonical_key=("dimensional_entity_name",),
+        canonical_key=("dimensional_entity_schema_name", "dimensional_entity_name"),
     ),
     ModelingDatasetDefinition(
         name="dimensional_attribute",
         section="dimensional",
         row_model=DimensionalAttributeRecord,
-        canonical_key=("dimensional_entity_name", "dimensional_attribute_name"),
+        canonical_key=(
+            "dimensional_entity_schema_name",
+            "dimensional_entity_name",
+            "dimensional_attribute_name",
+        ),
     ),
     ModelingDatasetDefinition(
         name="dimensional_relationship",
         section="dimensional",
         row_model=DimensionalRelationshipRecord,
         canonical_key=(
+            "from_dimensional_entity_schema_name",
             "from_dimensional_entity_name",
             "from_dimensional_attribute_name",
+            "to_dimensional_entity_schema_name",
             "to_dimensional_entity_name",
             "to_dimensional_attribute_name",
             "dimensional_relationship_kind",
@@ -443,33 +434,12 @@ DATASETS = (
         ),
     ),
     ModelingDatasetDefinition(
-        name="model_object_binding",
-        section="model_binding",
-        row_model=ModelObjectBindingRecord,
-        canonical_key=("modeled_entity_type", "modeled_entity_name"),
-    ),
-    ModelingDatasetDefinition(
-        name="model_attribute_binding",
-        section="model_binding",
-        row_model=ModelAttributeBindingRecord,
-        canonical_key=(
-            "modeled_entity_type",
-            "modeled_entity_name",
-            "modeled_attribute_name",
-        ),
-    ),
-    ModelingDatasetDefinition(
-        name="mapping_dependency",
-        section="mapping",
-        row_model=MappingDependencyRecord,
-        canonical_key=("modeled_entity_type", "source_system_code"),
-    ),
-    ModelingDatasetDefinition(
         name="mapping_object",
         section="mapping",
         row_model=MappingObjectRecord,
         canonical_key=(
             "modeled_entity_type",
+            "modeled_entity_schema_name",
             "modeled_entity_name",
             "source_system_code",
         ),
@@ -480,6 +450,7 @@ DATASETS = (
         row_model=MappingAttributeRecord,
         canonical_key=(
             "modeled_entity_type",
+            "modeled_entity_schema_name",
             "modeled_entity_name",
             "modeled_attribute_name",
             "source_system_code",
@@ -491,6 +462,7 @@ DATASETS = (
         row_model=GeneratedCodeRecord,
         canonical_key=(
             "modeled_entity_type",
+            "modeled_entity_schema_name",
             "modeled_entity_name",
             "artifact_name",
         ),
@@ -501,6 +473,7 @@ DATASETS = (
         row_model=GeneratedCodeSourceSystemRecord,
         canonical_key=(
             "modeled_entity_type",
+            "modeled_entity_schema_name",
             "modeled_entity_name",
             "artifact_name",
             "source_system_code",

@@ -8,7 +8,7 @@ Stage: sql_generation. No mode selector is exposed. Internal agent delivery chan
 
 - target_metadata — Actual physical target natural key and catalog plus ordered registered Attributes, exact data types/nullability, current descriptions and locks.
 - source_metadata — Eligible physical source contributions with source_system_code, role, rationale, order, lock and nested actual physical Object/Attributes. No database IDs.
-- source_systems — Frozen contributing Source System codes/names in dependency_order. Codes belong to the one Source Tenant of this target; assign each exactly once across transformation artifacts.
+- source_systems — Frozen contributing Source System codes/names in stable presentation order, which does not define business precedence or execution order. Codes belong to the one Source Tenant of this target; assign each exactly once across transformation artifacts.
 - object_transformations — Applied Object transformation documents with source_system_code, dependency order and exact modeled Entity identity, definition, classification and grain.
 - attribute_transformations — Applied Attribute transformation documents with source_system_code, modeled Entity type/name, physical target_attribute_name and target ordinal. Identity links are resolved from real bindings; no guessed name matching.
 - target_ref — Frozen opaque output-control handle; copy unchanged into artifacts. It is not a database ID and never identifies a SQL relation.
@@ -20,7 +20,7 @@ Stage: sql_generation. No mode selector is exposed. Internal agent delivery chan
 
 - get_code_target — Actual physical target natural key and catalog plus ordered registered Attributes, exact data types/nullability, current descriptions and locks. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.
 - get_code_sources — Eligible physical source contributions with source_system_code, role, rationale, order, lock and nested actual physical Object/Attributes. No database IDs. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.
-- get_code_source_systems — Frozen contributing Source System codes/names in dependency_order. Codes belong to the one Source Tenant of this target; assign each exactly once across transformation artifacts. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.
+- get_code_source_systems — Frozen contributing Source System codes/names in stable presentation order, which does not define business precedence or execution order. Codes belong to the one Source Tenant of this target; assign each exactly once across transformation artifacts. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.
 - get_object_transformations — Applied Object transformation documents with source_system_code, dependency order and exact modeled Entity identity, definition, classification and grain. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.
 - get_attribute_transformations — Applied Attribute transformation documents with source_system_code, modeled Entity type/name, physical target_attribute_name and target ordinal. Identity links are resolved from real bindings; no guessed name matching. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.
 
@@ -61,7 +61,7 @@ columns and types/nullability. source_metadata gives eligible contributions,
 source_system_code, role/rationale/order and nested physical Object/Attributes.
 GDS placement is distinct from source origin. Use actual physical
 tenant_catalog.object_schema.object_name for SQL.
-source_systems gives every required Source System code and dependency order
+source_systems gives every required Source System code and numeric provenance; list order does not define execution order or business precedence
 within the target's one Source Tenant.
 object_transformations supplies applied documents, source_system_code, Object
 order and modeled Entity type/name, definition, classification and grain.
@@ -100,7 +100,7 @@ report conflicting Mapping or guide requirements instead of silently redesigning
 
 METHOD AND QUALITY
 1. Identify the exact target, columns/types and all Source System assignments.
-   Inspect applied source membership and dependency order.
+   Inspect applied source membership and Entity transformation order.
 2. Read Object and Attribute transformations together. Preserve steps,
    joins/predicates, filters, aggregation, deduplication, grain and null/default
    rules. Never infer missing transformation semantics from column names.
@@ -140,7 +140,7 @@ Tool-assisted delivery combines explicitly included inputs with optional readers
 AVAILABLE READERS
 get_code_target: Actual physical target natural key and catalog plus ordered registered Attributes, exact data types/nullability, current descriptions and locks. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.
 get_code_sources: Eligible physical source contributions with source_system_code, role, rationale, order, lock and nested actual physical Object/Attributes. No database IDs. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.
-get_code_source_systems: Frozen contributing Source System codes/names in dependency_order. Codes belong to the one Source Tenant of this target; assign each exactly once across transformation artifacts. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.
+get_code_source_systems: Frozen contributing Source System codes/names in stable presentation order, which does not define business precedence or execution order. Codes belong to the one Source Tenant of this target; assign each exactly once across transformation artifacts. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.
 get_object_transformations: Applied Object transformation documents with source_system_code, dependency order and exact modeled Entity identity, definition, classification and grain. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.
 get_attribute_transformations: Applied Attribute transformation documents with source_system_code, modeled Entity type/name, physical target_attribute_name and target ordinal. Identity links are resolved from real bindings; no guessed name matching. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.
 

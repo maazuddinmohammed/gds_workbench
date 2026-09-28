@@ -21,12 +21,12 @@ Implemented release boundary. The package supplies local runtime, Workbench and 
 
 ## Required compatibility work
 
-Track the implementation beside its authoritative rules: [Process Group order](metadata/tables/process-group.md#dependency-order), [Copy order](metadata/tables/copy.md#copy-order-and-default), [keys/audits](model/keys-and-audit.md#population-boundary-and-implementation-alignment), [Binding](model/binding.md#existing-records-and-reassignment), [Mapping consumer context](model/mapping-documents.md#complete-context-for-coding-and-validation), and [Validation SQL/consumer contracts](model/validation.md#sql-eligibility-and-protection).
+Track the implementation beside its authoritative rules: [Process Group order](metadata/tables/process-group.md#dependency-order), [Copy order](metadata/tables/copy.md#copy-order-and-default), [keys/audits](model/keys-and-audit.md#population-boundary-and-implementation-alignment), [Entity ownership](model/entity-ownership.md), [Mapping consumer context](model/mapping-documents.md#complete-context-for-coding-and-validation), and [Validation SQL/consumer contracts](model/validation.md#sql-eligibility-and-protection).
 
 Existing installations require an explicit backend upgrade and operator review of existing Process Group dependency orders. Do not silently assign 1 to historical groups. Deliver compatibility checks and operator instructions; deployment remains separate.
 
 Model-derived Metadata work may keep several owner-specific Snapshot/draft roots in one working directory. The primary Tenant and active Model stay fixed; each owner retains independent authorization, validation, Stage and Apply evidence. See [workspace ownership](workspace-contract.md#model-derived-metadata-owners).
 
-This workspace arrangement does not broaden Binding eligibility: current Silver/Gold targets require their `source_tenant_id` to match the Model's Tenant. Report an ineligible target before dependent work; never rewrite ownership to make it eligible.
+This workspace arrangement does not broaden physical Metadata write or runtime access. Verify operational targets under their true owner; modeled Mapping and Code need no target registration.
 
 Workbench remains the local review/edit/validation surface. User acknowledgement occurs in the agent conversation; the agent invokes Stage Runner, presents server validation/action review and asks separately to Apply. No acknowledgement, Stage or Apply buttons are included in the first Workbench release.

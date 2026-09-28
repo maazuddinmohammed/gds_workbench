@@ -53,7 +53,9 @@ export interface AnalysisFinding {
   relationship_confidence: "low" | "medium" | "high";
   validation_state: AnalysisValidationState;
   validation_result: AnalysisValidationResult | null;
-  observed_cardinality?: "one_to_one" | "one_to_many" | "many_to_one" | "many_to_many" | null;
+  inferred_cardinality: "one_to_one" | "one_to_many" | "many_to_one" | "many_to_many" | "unknown";
+  cardinality_mismatch: boolean;
+  observed_cardinality: "one_to_one" | "one_to_many" | "many_to_one" | "many_to_many" | null;
   status: ReviewStatus;
   is_locked: boolean;
   updated_at: string;

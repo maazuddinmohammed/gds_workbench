@@ -125,8 +125,9 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
         model_id = _required_id(
             connection.execute(
                 """
-                INSERT INTO model.model (tenant_id, model_name)
-                VALUES (%s, %s)
+                INSERT INTO model.model (tenant_id, model_name, logical_schemas, dimensional_schemas)
+                VALUES (%s, %s, '[{"schema_name":"silver","description":null}]',
+                    '[{"schema_name":"gold","description":null}]')
                 RETURNING model_id
                 """,
                 (tenant_id, f"Modeled Review {suffix}"),
@@ -190,13 +191,14 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
                 """
                 INSERT INTO workflow.logical_entity (
                     model_id,
+                    logical_entity_schema_name,
                     logical_entity_name,
                     logical_entity_definition,
                     logical_entity_type,
                     logical_entity_grain,
                     logical_entity_confidence,
                     logical_entity_status
-                ) VALUES (%s, 'Customer', 'A governed Customer.', 'core',
+                ) VALUES (%s, 'silver', 'Customer', 'A governed Customer.', 'core',
                           'One Customer', 'high', 'active')
                 RETURNING logical_entity_id
                 """,
@@ -209,11 +211,12 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
                 """
                 INSERT INTO workflow.logical_entity (
                     model_id,
+                    logical_entity_schema_name,
                     logical_entity_name,
                     logical_entity_definition,
                     logical_entity_type,
                     logical_entity_grain
-                ) VALUES (%s, 'Order', 'A submitted Order.', 'transaction',
+                ) VALUES (%s, 'silver', 'Order', 'A submitted Order.', 'transaction',
                           'One Order')
                 RETURNING logical_entity_id
                 """,
@@ -347,6 +350,7 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
                 """
                 INSERT INTO workflow.dimensional_entity (
                     model_id,
+                    dimensional_entity_schema_name,
                     dimensional_entity_name,
                     dimensional_entity_definition,
                     dimensional_entity_type,
@@ -354,7 +358,7 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
                     dimensional_entity_grain_definition,
                     dimensional_entity_confidence,
                     dimensional_entity_status
-                ) VALUES (%s, 'Fact Order', 'Submitted Orders.', 'fact',
+                ) VALUES (%s, 'gold', 'Fact Order', 'Submitted Orders.', 'fact',
                           'transaction', 'One submitted Order', 'high',
                           'active')
                 RETURNING dimensional_entity_id
@@ -368,10 +372,11 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
                 """
                 INSERT INTO workflow.dimensional_entity (
                     model_id,
+                    dimensional_entity_schema_name,
                     dimensional_entity_name,
                     dimensional_entity_definition,
                     dimensional_entity_type
-                ) VALUES (%s, 'Dim Customer', 'Customer descriptors.', 'dimension')
+                ) VALUES (%s, 'gold', 'Dim Customer', 'Customer descriptors.', 'dimension')
                 RETURNING dimensional_entity_id
                 """,
                 (model_id,),

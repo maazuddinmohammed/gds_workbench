@@ -1,6 +1,6 @@
 ---
 name: atlas-dimensional-build-guided
-description: Build or refine a dimensional model from applied Logical Mapping and eligible Silver contributions through business process, grain, dimensions, facts and quality review. Use for Guided Gold modeling; collaborative Grill Me modeling has its own skill.
+description: Build or refine a dimensional model from applied Logical Entities and Attributes through business process, grain, dimensions, facts and quality review. Use for Guided Gold modeling; collaborative Grill Me modeling has its own skill.
 ---
 
 # Dimensional build — Guided
@@ -26,6 +26,6 @@ Use [dimensional design](../../references/dimensional-build/design.md) for these
 2. Use [Dimensional records](../../references/model/dimensional.md) and [Model Change Sets](../../references/model/change-sets.md) to write complete records locally. Do not add unsupported SCD, bus-matrix or Logical-source fields. Keep population decisions in supported definitions/basis and lineage in real source records.
 3. Run [local validation](../../references/local-validation.md) and the [design quality checks](../../references/dimensional-build/design.md#quality-checks) after each coherent batch. SQL is optional under policy; its actual scope and limits remain explicit. A structurally valid star can still give wrong totals.
 4. Review requested coverage across all selected processes, not only the last part. Follow the shared [Change Set lifecycle](../../references/change-set-lifecycle.md) for the complete batch or required applied dependency; do not Stage/Apply per fact or dimension.
-5. After verified Apply, refresh the Model Snapshot. Continue to [Gold target registration](../atlas-target-registration/SKILL.md), [Binding](../atlas-entity-binding/SKILL.md) or [Mapping](../atlas-mapping/SKILL.md) only when requested or already part of the agreed journey.
+5. After verified Apply, refresh the Model Snapshot. Continue to [Gold target registration](../atlas-target-registration/SKILL.md) or [Mapping](../atlas-mapping/SKILL.md) only when requested or already part of the agreed journey.
 
 Unresolved grain, history or identity stays explicit. Do not fill a schema field with a guess, create an Assertion to disguise uncertainty or force unsupported runtime behavior into code.

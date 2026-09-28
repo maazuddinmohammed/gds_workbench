@@ -1,4 +1,4 @@
-"""Input Scope additions use the same governed transaction as reviewed Bindings."""
+"""Input Scope additions use governed Model Change Set transactions."""
 
 # pyright: reportPrivateUsage=false
 from uuid import uuid4

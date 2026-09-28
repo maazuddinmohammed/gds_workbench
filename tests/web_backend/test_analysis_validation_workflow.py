@@ -436,6 +436,7 @@ def _database_context_row() -> dict[str, object]:
         "relationship_kind": relationship.relationship_kind,
         "relationship_confidence": relationship.relationship_confidence,
         "relationship_basis": relationship.relationship_basis,
+        "inferred_cardinality": relationship.inferred_cardinality,
         "analysis_result_status": relationship.analysis_result_status,
         "analysis_result_is_locked": relationship.analysis_result_is_locked,
         "gds_connection_id": relationship.gds_connection_id,

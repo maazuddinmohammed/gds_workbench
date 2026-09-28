@@ -538,7 +538,7 @@ def validation_graph_context(
     graph = complete_model_graph()
     systems = tuple(system.system_code for system in context.systems)
     for dataset in (
-        "mapping_dependency",
+
         "mapping_object",
         "mapping_attribute",
         "generated_code_source_system",

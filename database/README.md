@@ -48,20 +48,22 @@ Both memberships disable inheritance and administration and allow explicit
 transaction-scoped role activation. Both logins receive database connection
 access, but neither can authenticate until its own password is set.
 
-`application.create_workflow_run` accepts the exact selected Object IDs plus
-bounded workflow-specific inputs. Mapping selected coverage accepts one target
-Object/source System pair and `build|extend`. The caller does
-not choose its modeled layer or route. PostgreSQL resolves those from the
-active Model Object Binding and target Zone, then freezes the pair and route.
-Code Generation
-is target-first: selected coverage supplies exact target Object IDs, while
-all-eligible coverage supplies an empty selection and lets PostgreSQL derive all
-eligible targets. Each Run freezes its modeled layer, Model revision, canonical
-selection, and active published explicit-or-default SQL Generation Guide
-version and digest. PostgreSQL also resolves the actor and derives every
-canonical selection digest/count. A Profiling or Analysis batch ID is accepted
-only when the selected eligible Objects belong to one System; no-batch
-multi-System runs remain valid. Callers never supply a digest or count.
+`application.create_workflow_run` accepts exact physical Object IDs for physical
+input workflows and exact modeled Entity IDs for Dimensional, Mapping, and Code
+workflows. Dimensional authoring selects applied Logical Entities. Mapping freezes
+Entity/source System pairs, selected modeled Attributes, and `build|extend|generate`.
+The server validates the requested layer and derives its Silver or Gold route.
+Code selected coverage supplies Entity IDs; all-eligible coverage supplies an
+empty selection and PostgreSQL derives eligible Entities with complete Mapping.
+`application.workflow_run_entity_selection` freezes Model, layer, Entity ID,
+schema/name, and selection order without a foreign key to the live Entity. Mapping
+selections reference that immutable witness, preserving run history after deletion.
+
+Each Run freezes its Model revision, canonical selection, and any active published
+explicit-or-default SQL Generation Guide version and digest. PostgreSQL resolves
+the actor and derives canonical selection digests/counts. A Profiling or Analysis
+batch ID is accepted only when selected eligible Objects belong to one System;
+no-batch multi-System runs remain valid. Callers never supply a digest or count.
 
 Metadata Enrichment normally fills missing descriptions and inferred types.
 An explicit description-regeneration request freezes selected Objects, or
@@ -101,11 +103,14 @@ housekeeping terminalizes it safely. Nullable legacy identity provenance is
 claimable only when the Principal has exactly one active Entra identity.
 
 `workflow.list_code_generation_target_context` returns one canonical row per
-bound target Object. It aggregates every active, complete Mapping and its
-ordered source Systems, returns the modeled entity name, and derives one
+eligible modeled Entity. It aggregates every active, complete Mapping and its
+source Systems in stable code/name order, returns the Entity schema/name, and derives one
 `code_input_digest` over Mapping plus source context. Current Code Generation
 writes `workflow.generated_code` only through validated Model Change Set Apply.
-Generated SQL is never executed by this database path.
+The `entity-3` consumer context projects planned schema/name coordinates from the
+Entity and the Model Tenant's GDS placement without requiring a registered target
+Object. Source Systems carry no Mapping dependency order; Process Groups and
+Processes own runtime scheduling. Generated SQL is never executed by this database path.
 
 Large Code stays one `generated_code` record. The normal Model Stage Batch may
 switch from complete-record chunks to ordered JSON byte fragments for that
@@ -164,9 +169,16 @@ require the caller to own the current Tenant Lock, fence updates with
 `model_revision`, and record one revision transaction per actual change. Model
 archive also rejects while any Workflow Run is running for the owning Tenant.
 Model Input Scope is applied through the governed Model Change Set boundary and
-contains only Source/Bronze inputs. Silver/Gold targets are registered first by
-Metadata Change Set, then tied to modeled entities through Model Object and
-Attribute Bindings. The web role has no direct Application-table DML.
+contains only Source/Bronze inputs. The Model configures `logical_schemas` and
+`dimensional_schemas`; schema/name is the Entity natural key. Mapping and Code
+reference typed Entity IDs directly, with same-Model and parent-Entity constraints.
+Dimensional source support references Logical Entities and Attributes. The removed
+Model Object/Attribute Binding tables are not part of the fresh-install schema.
+
+Optional Target export registers Silver/Gold Object and Attribute metadata through
+a separate Metadata Change Set for Process and orchestration. Registration does
+not gate Model authoring or deploy physical tables. The web role has no direct
+Application-table DML. See [ADR 012](../docs/adr/012-entity-owned-mapping-and-code.md).
 
 ## 4. Set the runtime passwords securely
 

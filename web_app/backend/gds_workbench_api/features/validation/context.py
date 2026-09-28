@@ -96,8 +96,9 @@ WITH requested_run AS MATERIALIZED (
           NULL
       ) AS context ON TRUE
 )
-SELECT context.object_id,
+SELECT context.modeled_entity_id,
        context.modeled_entity_type,
+       context.modeled_entity_schema_name,
        context.modeled_entity_name,
        context.code_input_digest,
        context.source_context,
@@ -108,6 +109,7 @@ SELECT context.object_id,
                  jsonb_agg(
                      jsonb_build_object(
                          'modeled_entity_type', context.modeled_entity_type,
+                         'modeled_entity_schema_name', context.modeled_entity_schema_name,
                          'modeled_entity_name', context.modeled_entity_name,
                          'artifact_name', artifact.artifact_name,
                          'artifact_type', artifact.artifact_type,
@@ -136,10 +138,10 @@ SELECT context.object_id,
                ON system.system_id = source.source_system_id
             WHERE source.generated_code_id = artifact.generated_code_id
        ) AS assignment
-       WHERE artifact.model_object_binding_id = (
-                 context.source_context -> 'object_mappings' -> 0
-                 ->> 'model_object_binding_id'
-             )::BIGINT
+       WHERE artifact.model_id = context.model_id
+                  AND artifact.modeled_entity_type = context.modeled_entity_type
+                  AND coalesce(artifact.logical_entity_id, artifact.dimensional_entity_id) =
+                      context.modeled_entity_id
          AND artifact.generated_code_status = 'active'
          AND artifact.code_input_digest = context.code_input_digest
   ) AS generated
@@ -153,7 +155,7 @@ SELECT context.object_id,
               (source_system.document ->> 'source_system_id')::BIGINT
    )
  ORDER BY context.modeled_entity_type,
-          context.object_id
+          context.modeled_entity_id
 """
 
 _APPLIED_VALIDATION_SQL: LiteralString = """
@@ -228,8 +230,9 @@ class ValidationGeneratedCodeArtifact(GeneratedCodeRecord):
 class ValidationMappingTargetContext(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    object_id: int = Field(gt=0, repr=False)
+    modeled_entity_id: int = Field(gt=0, repr=False)
     modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
+    modeled_entity_schema_name: str = Field(min_length=1, max_length=400)
     modeled_entity_name: str = Field(min_length=1, max_length=255)
     tenant_code: str = Field(min_length=1, max_length=100)
     system_code: str = Field(min_length=1, max_length=100)
@@ -246,14 +249,8 @@ class ValidationMappingTargetContext(BaseModel):
 
     def digest_context(self) -> CodeGenerationTargetContext:
         return CodeGenerationTargetContext(
-            object_key=(
-                normalize_model_key_value(self.tenant_code),
-                normalize_model_key_value(self.system_code),
-                normalize_model_key_value(self.connection_code),
-                normalize_model_key_value(self.object_schema),
-                normalize_model_key_value(self.object_name),
-            ),
             modeled_entity_type=self.modeled_entity_type,
+            modeled_entity_schema_name=self.modeled_entity_schema_name,
             modeled_entity_name=self.modeled_entity_name,
             source_system_codes=frozenset(self.source_system_codes),
             code_input_digest=self.code_input_digest,
@@ -298,6 +295,7 @@ class PostgresValidationContextRepository:
             or plan.workflow_execution_mode is not None
             or not plan.selected_system_codes
             or plan.selected_object_ids
+            or plan.selected_entity_ids
         ):
             raise InvalidRequestError("The Validation run plan is invalid.")
         parameters = (
@@ -339,7 +337,7 @@ def _assemble_context(
         raise InvalidRequestError("The Validation Mapping context is incomplete.")
     tenant_code, selected_systems = _selected_systems(plan, system_rows)
     targets = tuple(validation_mapping_target_from_row(row) for row in target_rows)
-    target_keys = [(target.object_id, target.modeled_entity_type) for target in targets]
+    target_keys = [(target.modeled_entity_id, target.modeled_entity_type) for target in targets]
     if len(target_keys) != len(set(target_keys)):
         raise InvalidRequestError("The Validation Mapping context is ambiguous.")
 
@@ -474,7 +472,8 @@ def validation_mapping_target_from_row(row: dict[str, Any]) -> ValidationMapping
     if len({normalize_model_key_value(code) for code in source_codes}) != len(source_codes):
         raise InvalidRequestError("The Validation Mapping context is ambiguous.")
     context = ValidationMappingTargetContext(
-        object_id=_positive_int(row, "object_id"),
+        modeled_entity_id=_positive_int(row, "modeled_entity_id"),
+        modeled_entity_schema_name=_required_text(row, "modeled_entity_schema_name", maximum=400),
         modeled_entity_type=cast(Any, row.get("modeled_entity_type")),
         modeled_entity_name=_required_text(row, "modeled_entity_name", maximum=255),
         tenant_code=_required_nested_text(target, "tenant_code", maximum=100),
@@ -511,6 +510,8 @@ def _generated_code(
         )
         if (
             record.modeled_entity_type != context.modeled_entity_type
+            or normalize_model_key_value(record.modeled_entity_schema_name)
+            != normalize_model_key_value(context.modeled_entity_schema_name)
             or normalize_model_key_value(record.modeled_entity_name)
             != normalize_model_key_value(context.modeled_entity_name)
             or record.generated_code_status != "active"
@@ -620,6 +621,7 @@ def _provider_context(
     mapping_targets = [
         {
             "modeled_entity_type": target.modeled_entity_type,
+            "modeled_entity_schema_name": target.modeled_entity_schema_name,
             "modeled_entity_name": target.modeled_entity_name,
             "context": target.source_context,
         }

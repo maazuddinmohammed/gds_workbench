@@ -17,7 +17,7 @@ from gds_workbench_api.features.mapping.preparation_contracts import (
     MappingRunContext,
     ModeledEntityType,
 )
-from gds_workbench_api.features.mapping.read_service import _MAPPING_TARGETS_SQL
+from gds_workbench_api.features.mapping.read_service import _MAPPING_GENERATION_TARGETS_SQL
 from gds_workbench_api.features.mapping.readiness import assess_mapping_readiness
 from gds_workbench_api.features.mapping.reconciliation import MappingCandidateReconciler
 from gds_workbench_api.features.workflows.authoring.plan import WorkflowExecutionMode
@@ -29,16 +29,15 @@ def _serialized(value: object) -> str:
     return json.dumps(value, sort_keys=True)
 
 
-def test_mapping_targets_are_bound_silver_or_gold_not_model_inputs() -> None:
-    assert "workflow.list_model_object_eligibility" in _MAPPING_TARGETS_SQL
-    assert "is_logical_mapping_target_eligible" in _MAPPING_TARGETS_SQL
-    assert "is_dimensional_mapping_target_eligible" in _MAPPING_TARGETS_SQL
-    assert "model_input_scope" not in _MAPPING_TARGETS_SQL
+def test_mapping_generation_targets_are_active_modeled_entities() -> None:
+    assert "workflow.modeled_entity" in _MAPPING_GENERATION_TARGETS_SQL
+    assert "model_object_binding" not in _MAPPING_GENERATION_TARGETS_SQL
+    assert "model_input_scope" not in _MAPPING_GENERATION_TARGETS_SQL
 
 
 @pytest.mark.parametrize("owner", [None, 0, "missing"])
 def test_mapping_physical_object_requires_source_tenant(owner: object) -> None:
-    value = mapping_preparation().context.target.model_dump(mode="json")
+    value = mapping_preparation().context.sources[0].object.model_dump(mode="json")
     if owner == "missing":
         value.pop("source_tenant_id")
     else:
@@ -48,7 +47,7 @@ def test_mapping_physical_object_requires_source_tenant(owner: object) -> None:
 
 
 def test_mapping_physical_placement_and_source_tenant_are_independent() -> None:
-    value = mapping_preparation().context.target.model_dump(mode="json")
+    value = mapping_preparation().context.sources[0].object.model_dump(mode="json")
     value.update(tenant_id=9, source_tenant_id=7)
     physical = MappingPhysicalObject.model_validate_json(json.dumps(value))
     assert physical.tenant_id == 9
@@ -56,7 +55,7 @@ def test_mapping_physical_placement_and_source_tenant_are_independent() -> None:
 
 
 @pytest.mark.parametrize(
-    "modeled_entity_type", ["logical_entity", "dimensional_entity"]
+    "modeled_entity_type", ["logical_entity"]
 )
 @pytest.mark.parametrize("source_zone", ["source", "bronze", "silver", "gold"])
 def test_mapping_readiness_enforces_each_route_source_zone(
@@ -134,7 +133,7 @@ async def test_mapping_candidate_contains_only_flexible_transformation_content()
 
 
 @pytest.mark.asyncio
-async def test_mapping_candidate_requires_exact_bound_attribute_coverage() -> None:
+async def test_mapping_candidate_requires_exact_modeled_attribute_coverage() -> None:
     validator = CompleteMappingCandidateValidator(preparation=mapping_preparation())
     incomplete = mapping_candidate()
     incomplete["attribute_mappings"] = []
@@ -144,7 +143,7 @@ async def test_mapping_candidate_requires_exact_bound_attribute_coverage() -> No
     assert [issue.code for issue in validation.issues] == [
         "candidate.mapping_integrity_invalid"
     ]
-    with pytest.raises(InvalidRequestError, match="every actionable bound Attribute"):
+    with pytest.raises(InvalidRequestError, match="every actionable modeled Attribute"):
         validator.parse_validated(incomplete)
 
 
@@ -264,7 +263,7 @@ def test_mapping_context_preserves_storage_and_inferred_type_evidence(
         attributes[0]["attribute_description"]
         == "Order amount in the transaction currency."
     )
-    assert preparation.context.target.attributes[0].attribute_inferred_data_type is None
+    assert preparation.context.target.attributes[0].attribute_data_type == "BIGINT"
 
 
 def test_mapping_context_preserves_large_collections_and_policy_text() -> None:
@@ -273,7 +272,7 @@ def test_mapping_context_preserves_large_collections_and_policy_text() -> None:
     attribute = target["attributes"][0]
     target["attributes"] = tuple(
         {**attribute, "attribute_id": attribute["attribute_id"] + index,
-         "attribute_ordinal_position": index + 1}
+         "ordinal_position": index + 1}
         for index in range(5001)
     )
     source = raw["sources"][0]

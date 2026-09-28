@@ -2,14 +2,17 @@
 
 Status: Accepted, 2026-09-22
 
+Historical contract: Physical Object selection, source identities, and Mapping
+System-order configuration are superseded by ADR 012; other decisions retained.
+See [Entity-owned Mapping and Code](012-entity-owned-mapping-and-code.md).
+
 ## Decision
 
-System dependency order is edited manually in Mapping through the governed Model
-Change Set service. It is not an agent stage. Each entry identifies a Model,
-modeled layer and Source System; existing dependency locks still apply. The
-dependency entry is optional orchestration metadata. It does not control Mapping
-eligibility, source discovery, validation or retirement. VS Code's existing governed
-authoring path remains available.
+The original September 22 design exposed manual System dependency ordering in
+Mapping. The September 27 follow-up removes that table, dataset and editor.
+Source-System selection still identifies transformation contributions; Process
+Groups and Processes configure runtime ordering. VS Code's governed authoring
+path remains available for Mapping Object and Attribute records.
 
 Generate mappings selects one layer and any number of target Object–Source System
 pairs. Selecting an Object includes its unlocked Attributes by default. Users
@@ -17,7 +20,7 @@ can exclude Objects or existing Attributes. An excluded unauthored Attribute mus
 be selected before a complete Mapping can be produced.
 
 Logical and Dimensional are separate URL-addressable Mapping views. The selected
-layer scopes ledger reads, manual dependency forms and generation. The generation
+layer scopes Entity ledger reads and generation. The generation
 dialog places mode, Model and reasoning effort above All unlocked Objects /
 Selected Objects. Object details contain Attribute selection with bulk select
 and clear actions; switching modes or returning to the Object list retains those
@@ -67,8 +70,9 @@ actionable bound Attribute, preserving locks and exclusions. A System with no
 applicable source returns an explicit `no_applicable_source` result recorded in
 run events without an empty Mapping record. Existing Mapping or known Entity or
 Attribute source lineage cannot be skipped this way; uncertain transformation
-rules produce actionable evidence issues. Optional System dependency entries do
-not affect generated-code input digests or lifecycle cascades.
+rules produce actionable evidence issues. The current Code context contains no
+System dependency-order property; Object dependencies and business precedence
+remain transformation concerns.
 
 ## Installation
 

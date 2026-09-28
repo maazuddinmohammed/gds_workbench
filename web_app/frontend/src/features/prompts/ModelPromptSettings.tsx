@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-table";
 
 import { ApiError } from "../../core/http";
+import { ModelSettingsTabs } from "../models/ModelSettingsScreen";
 import type { ModelDetail } from "../models/api";
 import {
   loadAssignableTenantPromptVersions,
@@ -142,6 +143,7 @@ export function ModelPromptSettings({
           </button>
         </div>
       </header>
+      <ModelSettingsTabs model={model} active="prompts" />
       <div className="model-prompts-context">
         <strong>{model.model_name} · revision {model.model_revision}</strong>
         <span>Use global removes the Model override. Tenant versions must be active and published.</span>

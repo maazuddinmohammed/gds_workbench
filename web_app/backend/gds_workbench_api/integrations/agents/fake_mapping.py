@@ -71,7 +71,7 @@ def fake_mapping_candidate(context: dict[str, JsonValue]) -> JsonValue:
             if preserved and header.get("transformation_document") is not None
             else {
                 "kind": "derived",
-                "logic": "Build the bound target from the frozen executable sources.",
+                "logic": "Build the Entity from the frozen executable sources.",
             },
         }
     return cast(
@@ -170,8 +170,7 @@ def fake_mapping_context_from_tools(
         document["attribute_mappings"] = [
             item
             for item in existing
-            if mapping_dict(item).get("model_object_binding_id")
-            == document.get("model_object_binding_id")
+            if mapping_dict(item).get("modeled_entity_id") == document.get("modeled_entity_id")
         ]
     return (
         {

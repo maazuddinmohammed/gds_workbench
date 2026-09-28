@@ -22,6 +22,8 @@ export interface ModelCollection {
   next_cursor: string | null;
 }
 
+export interface ModelSchemaDefinition { schema_name: string; description: string | null; }
+
 export interface ModelDetail {
   model_id: number;
   tenant_id: number;
@@ -29,6 +31,8 @@ export interface ModelDetail {
   model_description: string | null;
   model_revision: number;
   model_input_scope_object_count: number;
+  logical_schemas: ModelSchemaDefinition[];
+  dimensional_schemas: ModelSchemaDefinition[];
   silver_model_naming_instructions: string | null;
   silver_model_audit_columns_template: unknown;
   gold_model_naming_instructions: string | null;
@@ -89,6 +93,8 @@ export interface ModelWorkflowOverview {
 export interface CreateModelCommand {
   model_name: string;
   model_description: string | null;
+  logical_schemas: ModelSchemaDefinition[];
+  dimensional_schemas: ModelSchemaDefinition[];
   silver_model_naming_instructions: string | null;
   silver_model_audit_columns_template: JsonObject | null;
   gold_model_naming_instructions: string | null;
@@ -110,8 +116,13 @@ export interface ModelCommandResult {
   updated_at: string;
 }
 
+export interface UpdateModelCommand extends CreateModelCommand {
+  expected_model_revision: number;
+}
+
 export interface ModelsApi {
   createModel: (tenantId: number, command: CreateModelCommand) => Promise<ModelCommandResult>;
+  updateModel: (tenantId: number, modelId: number, command: UpdateModelCommand) => Promise<ModelCommandResult>;
   listModels: (
     tenantId: number,
     status: ModelStatus,
@@ -129,6 +140,11 @@ export function createModelsApi(request: HttpRequest): ModelsApi {
   return {
     createModel: (tenantId, command) => request<ModelCommandResult>(`/api/v1/tenants/${tenantId}/models`, {
       method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(command),
+    }),
+    updateModel: (tenantId, modelId, command) => request<ModelCommandResult>(`/api/v1/tenants/${tenantId}/models/${modelId}`, {
+      method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(command),
     }),

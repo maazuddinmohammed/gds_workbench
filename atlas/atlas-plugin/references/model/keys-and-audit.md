@@ -58,7 +58,7 @@ Specify actual source expressions and any confirmed missing-value behavior per S
 
 ## Population boundary and implementation alignment
 
-Keep every intended column in the Model, target DDL and Binding. Load SQL projects business fields, selected Source audit fields and `SourceSystemID` last; omit the target's own generated surrogate, the nine framework-populated audit fields and applicable framework-populated Type 2 history fields. Mapping accounts for their population without fabricated source expressions.
+Keep every intended column in the Model and target DDL. Load SQL projects business fields, selected Source audit fields and `SourceSystemID` last; omit the target's own generated surrogate, the nine framework-populated audit fields and applicable framework-populated Type 2 history fields. Mapping accounts for their population without fabricated source expressions.
 
 Additional history columns are governed by [Dimension history](../dimensional-build/history.md). The framework populates them using natural keys; retain their definitions and mark them omitted from transformation SQL. Keep them distinct from the audit block. This confirmed rule does not make every technical column framework-generated.
 
@@ -70,4 +70,4 @@ Implemented backend projection:
 - Reapplying the same approved candidate yields no redundant attribute edits. These projection rules do not prove business grain or normalization quality; run the shared technical and modeling review.
 - The nine framework populations and Type 2 history fields remain the external orchestration consumer contract. Inspect that consumer when its configured behavior is unclear; the local build does not deploy it.
 
-Source: existing GDS `references/model-conventions.md` and `references/orchestration-rules.md`; backend `features/logical/policy.py` and `features/dimensional/policy.py`; shared `domain/modeling_records.py`. Backend policy/executor and disposable integration tests cover this alignment.
+Sources: [Logical records](logical.md), [Dimensional records](dimensional.md) and [Dimension history](../dimensional-build/history.md); backend `features/logical/policy.py` and `features/dimensional/policy.py`; shared `domain/modeling_records.py`. Backend policy/executor and disposable integration tests cover this alignment.

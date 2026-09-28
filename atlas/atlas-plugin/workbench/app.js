@@ -46,10 +46,6 @@
     render();
   }
 
-  function areaModule(area = state.area) {
-    return area === "metadata" ? root.GDSMetadata : root.GDSModel;
-  }
-
   function currentTask() {
     return state.workspace?.task || null;
   }

@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from typing import Literal
 
 import pytest
+from pydantic import ValidationError
+
 from gds_etl_workbench.application.change_sets.model import (
     StageModelChange,
     model_validation_outcome,
@@ -29,7 +31,6 @@ from gds_etl_workbench.domain.snapshots.model import (
     ModelChangeSetDataset,
     build_model_dataset_schema,
 )
-
 from tests.mcp.model_test_fixtures import (
     GOLD_SALES_FACT,
     SILVER_ORDER,
@@ -38,13 +39,11 @@ from tests.mcp.model_test_fixtures import (
     complete_physical_scope,
     empty_model_snapshot,
     model_details,
-    physical_attribute,
-    physical_object,
     snapshot_from_graph,
 )
 
 
-def test_complete_25_dataset_model_graph_validates() -> None:
+def test_complete_22_dataset_model_graph_validates() -> None:
     graph = complete_model_graph()
 
     result = validate_future_graph(
@@ -57,7 +56,7 @@ def test_complete_25_dataset_model_graph_validates() -> None:
     assert result.phase == "complete"
     assert result.issues == ()
     assert set(result.records) == set(CHANGE_SET_DATASETS_BY_NAME)
-    assert len(result.action_review) == 25
+    assert len(result.action_review) == 22
     assert all(
         summary.insert_count + summary.no_change_count > 0
         for summary in result.action_review
@@ -67,7 +66,9 @@ def test_complete_25_dataset_model_graph_validates() -> None:
 
 
 @pytest.mark.parametrize("legacy_layers", [[], ["analysis"]])
-def test_assertion_supports_do_not_require_legacy_layer_flags(legacy_layers: list[str]) -> None:
+def test_assertion_supports_do_not_require_legacy_layer_flags(
+    legacy_layers: list[str],
+) -> None:
     graph = complete_model_graph()
     for record in graph["modeling_assertion_record"]:
         record["modeling_assertion_applicable_layers"] = legacy_layers
@@ -175,41 +176,6 @@ def test_source_work_uses_active_model_input_scope(
     assert result.valid is False
     assert result.phase == "model_input_scope"
     assert any(issue.dataset == dataset for issue in result.issues)
-
-
-def test_binding_target_must_be_eligible_for_its_modeled_layer() -> None:
-    graph = complete_model_graph()
-    scope = replace(
-        complete_physical_scope(), logical_mapping_target_objects=frozenset()
-    )
-
-    result = validate_future_graph(
-        snapshot=empty_model_snapshot(),
-        staged_documents=graph,
-        physical_scope=scope,
-    )
-
-    assert result.valid is False
-    assert result.phase == "model_input_scope"
-    assert any(issue.dataset == "model_object_binding" for issue in result.issues)
-
-
-def test_active_attribute_binding_requires_active_object_binding() -> None:
-    graph = complete_model_graph()
-    graph["model_object_binding"][0]["model_object_binding_status"] = "inactive"
-
-    result = validate_future_graph(
-        snapshot=empty_model_snapshot(),
-        staged_documents=graph,
-        physical_scope=complete_physical_scope(),
-    )
-
-    assert result.valid is False
-    assert result.phase == "model_input_scope"
-    assert any(
-        issue.code == "inactive_parent" and issue.dataset == "model_attribute_binding"
-        for issue in result.issues
-    )
 
 
 def _model_layer_graph(
@@ -448,13 +414,7 @@ def _with_inactive_physical_record(
     normalized_object = tuple(value.casefold() for value in object_key)
     fields = (
         "model_input_objects",
-        "dimensional_source_objects",
-        "logical_mapping_target_objects",
-        "dimensional_mapping_target_objects",
         "model_input_attributes",
-        "dimensional_source_attributes",
-        "logical_mapping_target_attributes",
-        "dimensional_mapping_target_attributes",
     )
     filtered = {}
     for field in fields:
@@ -603,90 +563,58 @@ def test_retained_history_still_requires_owned_existing_physical_records(
     assert result.phase == "model_input_scope"
 
 
-@pytest.mark.parametrize("change", ["physical_attribute", "physical_object"])
-def test_new_dimensional_sources_cannot_inherit_inactive_silver_mapping(
-    change: str,
+@pytest.mark.parametrize("source_type", ["logical_entity", "logical_attribute"])
+def test_dimensional_design_uses_active_logical_sources_without_registration(
+    source_type: str,
 ) -> None:
     graph = complete_model_graph()
-    dataset: ModelChangeSetDataset = (
-        "dimensional_attribute"
-        if change == "physical_attribute"
-        else "dimensional_entity"
+    dataset = (
+        "dimensional_entity"
+        if source_type == "logical_entity"
+        else "dimensional_attribute"
     )
-    source: dict[str, object] = {
+    logical_key = {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "Order",
+    }
+    source = {
+        "support_source_type": source_type,
         "source_order": 1,
-        "rationale": "Applied Logical mapping contribution.",
+        "rationale": "Applied Logical source.",
         "status": "active",
         "is_locked": False,
     }
-    if change == "physical_attribute":
-        source.update(
-            {
-                "support_source_type": "attribute",
-                "source_attribute": physical_attribute(SILVER_ORDER, "OrderID"),
-            }
-        )
+    if source_type == "logical_entity":
+        source.update(source_logical_entity=logical_key, source_role="transaction")
     else:
-        source.update(
+        source["source_logical_attribute"] = {
+            **logical_key,
+            "logical_attribute_name": "OrderID",
+        }
+        graph["dimensional_entity"][0]["sources"] = [
             {
-                "support_source_type": "object",
+                "support_source_type": "logical_entity",
+                "source_logical_entity": logical_key,
                 "source_role": "transaction",
-                "source_object": physical_object(SILVER_ORDER),
+                "source_order": 1,
+                "rationale": "Parent source.",
+                "status": "active",
+                "is_locked": False,
             }
-        )
+        ]
     graph[dataset][0]["sources"] = [source]
     assert validate_future_graph(
         snapshot=empty_model_snapshot(),
         staged_documents=graph,
         physical_scope=complete_physical_scope(),
     ).valid
-    changed = deepcopy(graph[dataset][0])
-    changed[f"{dataset}_definition"] = (
-        "New dimensional definition from retained Silver evidence."
-    )
-
+    graph["logical_entity"][0]["logical_entity_status"] = "inactive"
     result = validate_future_graph(
-        snapshot=snapshot_from_graph(graph),
-        staged_documents={dataset: [changed]},
-        physical_scope=_with_inactive_physical_record(
-            SILVER_ORDER,
-            "OrderID" if change == "physical_attribute" else None,
-        ),
+        snapshot=empty_model_snapshot(),
+        staged_documents=graph,
+        physical_scope=complete_physical_scope(),
     )
-
-    assert result.valid is False
-    assert any(issue.dataset == dataset for issue in result.issues)
-
-
-def test_attribute_binding_history_cannot_follow_a_rebound_parent() -> None:
-    graph = complete_model_graph()
-    scope = complete_physical_scope()
-    rebound = {**graph["model_object_binding"][0], "object_name": "MovedOrder"}
-    target = (*tuple(value.casefold() for value in SILVER_ORDER[:4]), "movedorder")
-    inactive_attribute = (*target, "orderid")
-    active_attribute = (*target, "customerid")
-    scope = replace(
-        scope,
-        objects=scope.objects | {target},
-        attributes=scope.attributes | {inactive_attribute, active_attribute},
-        logical_mapping_target_objects=scope.logical_mapping_target_objects | {target},
-        logical_mapping_target_attributes=(
-            scope.logical_mapping_target_attributes | {active_attribute}
-        ),
-    )
-
-    result = validate_future_graph(
-        snapshot=snapshot_from_graph(graph),
-        staged_documents={"model_object_binding": [rebound]},
-        physical_scope=scope,
-    )
-
-    assert result.valid is False
-    assert any(
-        issue.code == "model_input_reference_invalid"
-        and issue.dataset == "model_attribute_binding"
-        for issue in result.issues
-    )
+    assert not result.valid
 
 
 @pytest.mark.parametrize(
@@ -701,7 +629,7 @@ def test_attribute_binding_history_cannot_follow_a_rebound_parent() -> None:
         ("generated_code", "generated_code_content", "SELECT 2"),
     ],
 )
-def test_new_authored_content_cannot_inherit_inactive_bound_targets(
+def test_authored_content_is_independent_of_physical_target_registration(
     dataset: ModelChangeSetDataset,
     field: str,
     value: object,
@@ -715,19 +643,15 @@ def test_new_authored_content_cannot_inherit_inactive_bound_targets(
         physical_scope=_with_inactive_physical_record(SILVER_ORDER),
     )
 
-    assert result.valid is False
-    assert result.phase == "model_input_scope"
-    assert any(issue.dataset == dataset for issue in result.issues)
+    assert result.valid
 
 
-def test_new_inactive_authored_records_can_reference_current_physical_targets() -> None:
+def test_new_inactive_authored_records_can_reference_current_entities() -> None:
     graph = complete_model_graph()
     for dataset in ("validation_group", "validation_check"):
         for record in graph[dataset]:
             record["is_active"] = False
     for dataset, status_field in (
-        ("model_object_binding", "model_object_binding_status"),
-        ("model_attribute_binding", "model_attribute_binding_status"),
         ("mapping_object", "object_mapping_status"),
         ("mapping_attribute", "attribute_mapping_status"),
         ("generated_code", "generated_code_status"),
@@ -745,83 +669,7 @@ def test_new_inactive_authored_records_can_reference_current_physical_targets() 
     assert result.valid
 
 
-def test_active_object_binding_requires_every_active_modeled_attribute() -> None:
-    graph = complete_model_graph()
-    graph["model_attribute_binding"] = [
-        record
-        for record in graph["model_attribute_binding"]
-        if not (
-            record["modeled_entity_type"] == "logical_entity"
-            and record["modeled_entity_name"] == "Order"
-            and record["modeled_attribute_name"] == "CustomerID"
-        )
-    ]
-    scope = complete_physical_scope()
-    missing_target = (*tuple(part.casefold() for part in SILVER_ORDER), "customerid")
-    scope = replace(
-        scope,
-        attributes=scope.attributes - {missing_target},
-        logical_mapping_target_attributes=(
-            scope.logical_mapping_target_attributes - {missing_target}
-        ),
-    )
-
-    result = validate_future_graph(
-        snapshot=empty_model_snapshot(),
-        staged_documents=graph,
-        physical_scope=scope,
-    )
-
-    assert result.valid is False
-    assert result.phase == "model_input_scope"
-    assert any(
-        issue.code == "binding_coverage_missing"
-        and issue.fields == ("modeled_attribute_name",)
-        for issue in result.issues
-    )
-    assert not any(
-        issue.code == "binding_coverage_missing" and issue.fields == ("attribute_name",)
-        for issue in result.issues
-    )
-
-
-def test_active_object_binding_requires_every_physical_target_attribute() -> None:
-    graph = complete_model_graph()
-    scope = complete_physical_scope()
-    unbound_target = (
-        *tuple(part.casefold() for part in SILVER_ORDER),
-        "audittimestamp",
-    )
-    scope = replace(
-        scope,
-        attributes=scope.attributes | {unbound_target},
-        logical_mapping_target_attributes=(
-            scope.logical_mapping_target_attributes | {unbound_target}
-        ),
-    )
-
-    result = validate_future_graph(
-        snapshot=empty_model_snapshot(),
-        staged_documents=graph,
-        physical_scope=scope,
-    )
-
-    assert result.valid is False
-    assert result.phase == "model_input_scope"
-    assert any(
-        issue.code == "binding_coverage_missing" and issue.fields == ("attribute_name",)
-        for issue in result.issues
-    )
-    assert not any(
-        issue.code == "binding_coverage_missing"
-        and issue.fields == ("modeled_attribute_name",)
-        for issue in result.issues
-    )
-
-
-def test_active_mapping_requires_every_bound_target_attribute_per_source_system() -> (
-    None
-):
+def test_active_mapping_requires_every_entity_attribute_per_source_system() -> None:
     graph = complete_model_graph()
     graph["mapping_attribute"] = graph["mapping_attribute"][:1]
 
@@ -840,7 +688,7 @@ def test_active_mapping_requires_every_bound_target_attribute_per_source_system(
     )
 
 
-def test_active_mapping_requires_binding_dependency_and_transformation() -> None:
+def test_active_mapping_requires_transformation() -> None:
     graph = complete_model_graph()
     graph["mapping_object"][0]["mapping_transformation_document"] = None
 
@@ -890,11 +738,12 @@ def test_each_mapped_system_is_assigned_to_exactly_one_active_code_artifact(
     )
 
 
-def test_generated_code_uses_binding_identity_and_artifact_name_only() -> None:
+def test_generated_code_uses_schema_entity_identity_and_artifact_name_only() -> None:
     schema = build_model_dataset_schema(DATASETS_BY_NAME["generated_code"])
 
     assert set(schema["properties"]) == {
         "modeled_entity_type",
+        "modeled_entity_schema_name",
         "modeled_entity_name",
         "artifact_name",
         "artifact_type",
@@ -1009,14 +858,15 @@ def test_active_validation_group_requires_mapping_for_its_source_system() -> Non
 
 def test_server_derived_validation_context_digests_are_stable() -> None:
     context = CodeGenerationTargetContext(
-        object_key=tuple(part.casefold() for part in SILVER_ORDER),
         modeled_entity_type="logical_entity",
+        modeled_entity_schema_name="silver",
         modeled_entity_name="Order",
         source_system_codes=frozenset({"ERP"}),
         code_input_digest="a" * 64,
     )
     code = SimpleNamespace(
         modeled_entity_type="logical_entity",
+        modeled_entity_schema_name="silver",
         modeled_entity_name="Order",
         artifact_name="Order.sql",
         artifact_type="sql_file",
@@ -1101,7 +951,7 @@ def test_adding_mapping_system_keeps_prior_code_as_stale_until_regenerated() -> 
     )
     new_mapping = {
         dataset: [{**record, "source_system_code": "CRM"} for record in graph[dataset]]
-        for dataset in ("mapping_dependency", "mapping_object", "mapping_attribute")
+        for dataset in ("mapping_object", "mapping_attribute")
     }
     checked = validate_future_graph(
         snapshot=snapshot,
@@ -1128,46 +978,71 @@ def test_adding_mapping_system_keeps_prior_code_as_stale_until_regenerated() -> 
     )
 
 
-def test_parent_retarget_cannot_change_locked_child_physical_identity() -> None:
+def test_mapping_and_code_work_without_orchestration_dependency_dataset() -> None:
     graph = complete_model_graph()
-    graph["model_attribute_binding"][0]["model_attribute_binding_is_locked"] = True
-    rebound = {**graph["model_object_binding"][0], "object_name": "MovedOrder"}
-    target = (*tuple(value.casefold() for value in SILVER_ORDER[:4]), "movedorder")
-    scope = complete_physical_scope()
-    attributes = {(*target, "orderid"), (*target, "customerid")}
-    scope = replace(
-        scope,
-        objects=scope.objects | {target},
-        attributes=scope.attributes | attributes,
-        logical_mapping_target_objects=scope.logical_mapping_target_objects | {target},
-        logical_mapping_target_attributes=scope.logical_mapping_target_attributes
-        | attributes,
-    )
-    result = validate_future_graph(
-        snapshot=snapshot_from_graph(graph),
-        staged_documents={"model_object_binding": [rebound]},
-        physical_scope=scope,
-    )
-    assert not result.valid
-    assert any(
-        issue.code == "binding_reassignment_unsupported" for issue in result.issues
-    )
-    assert any(issue.code == "record_locked" for issue in result.issues)
-
-
-@pytest.mark.parametrize("dependency_state", ["missing", "inactive", "deprecated"])
-def test_mapping_and_code_do_not_require_orchestration_dependency_order(
-    dependency_state: str,
-) -> None:
-    graph = complete_model_graph()
-    if dependency_state == "missing":
-        graph["mapping_dependency"] = []
-    else:
-        for row in graph["mapping_dependency"]:
-            row["mapping_source_system_dependency_status"] = dependency_state
+    assert "mapping_dependency" not in graph
     result = validate_future_graph(
         snapshot=empty_model_snapshot(),
         staged_documents=graph,
         physical_scope=complete_physical_scope(),
     )
     assert result.valid, [(issue.dataset, issue.code) for issue in result.issues]
+
+
+@pytest.mark.parametrize("parent_state", ["missing", "inactive"])
+def test_dimensional_attribute_requires_matching_active_parent_support(
+    parent_state: str,
+) -> None:
+    graph = complete_model_graph()
+    logical_key = {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "Order",
+    }
+    graph["dimensional_entity"][0]["sources"] = (
+        []
+        if parent_state == "missing"
+        else [
+            {
+                "support_source_type": "logical_entity",
+                "source_logical_entity": logical_key,
+                "source_role": "transaction",
+                "source_order": 1,
+                "rationale": "Parent source.",
+                "status": "inactive",
+                "is_locked": False,
+            }
+        ]
+    )
+    graph["dimensional_attribute"][0]["sources"] = [
+        {
+            "support_source_type": "logical_attribute",
+            "source_logical_attribute": {
+                **logical_key,
+                "logical_attribute_name": "OrderID",
+            },
+            "source_order": 1,
+            "rationale": "Attribute source.",
+            "status": "active",
+            "is_locked": False,
+        }
+    ]
+    result = validate_future_graph(
+        snapshot=empty_model_snapshot(),
+        staged_documents=graph,
+        physical_scope=complete_physical_scope(),
+    )
+    assert not result.valid
+    assert any(
+        issue.dataset == "dimensional_attribute"
+        and issue.code in {"reference_not_found", "active_dependency_invalid"}
+        for issue in result.issues
+    )
+
+
+def test_model_stage_rejects_removed_mapping_dependency_dataset() -> None:
+    with pytest.raises(ValidationError) as error:
+        StageModelChange.model_validate({
+            "dataset": "mapping_dependency",
+            "records": [{"source_system_code": "ERP", "source_system_dependency_order": 0}],
+        })
+    assert any(item["loc"] == ("dataset",) for item in error.value.errors())

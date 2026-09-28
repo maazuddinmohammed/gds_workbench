@@ -21,7 +21,7 @@ from gds_workbench_api.features.model_change_sets.service import (
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.model_test_fixtures import complete_model_graph
-from tests.mcp.test_database_model_binding_order import bound_layer_graph
+from tests.mcp.test_database_model_entity_order import entity_layer_graph
 from tests.mcp.test_database_model_change_set_round_trip import (
     StaticIdentityProvider,
     _acquire_tenant_lock,
@@ -45,7 +45,7 @@ async def test_populated_code_target_and_artifact_reads_keep_public_target_shape
             "AND object_schema IN ('src','bronze')",
             (model_id, tenant_id),
         )
-    graph = bound_layer_graph(prefix)
+    graph = entity_layer_graph(prefix)
     complete = _replace_codes(complete_model_graph(), code_prefix=prefix)
     for dataset in ("generated_code", "generated_code_source_system"):
         graph[dataset] = complete[dataset]
@@ -117,9 +117,9 @@ async def test_populated_code_target_and_artifact_reads_keep_public_target_shape
         )
         assert len(page.items) == 1
         target = page.items[0]
-        assert target.target.object_name == "Order"
-        assert target.target.source_tenant_id == tenant_id
-        assert target.target.tenant_id != tenant_id
+        assert target.target.entity_name == "Order"
+        assert target.target.entity_schema_name == "silver"
+        assert target.target.entity_type == "logical_entity"
         assert target.mapping_support_count == 1
         assert target.artifact_count == 1
         artifact = await code.read_artifact(

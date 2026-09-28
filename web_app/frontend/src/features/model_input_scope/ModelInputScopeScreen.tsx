@@ -304,9 +304,6 @@ function ScopeDetailDrawer({
   const object = detail ?? fallback;
   const eligibility = detail ? [
     ["Source or Bronze input", detail.is_model_input_eligible],
-    ["Dimensional source", detail.is_dimensional_source_eligible],
-    ["Logical mapping target", detail.is_logical_mapping_target_eligible],
-    ["Dimensional mapping target", detail.is_dimensional_mapping_target_eligible],
   ] as const : [];
 
   return (

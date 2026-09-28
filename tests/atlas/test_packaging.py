@@ -75,7 +75,7 @@ def test_archive_round_trip_and_reproducibility(tmp_path: Path) -> None:
         json.loads((extracted / "plugin.json").read_text(encoding="utf-8"))
     )
     skills = sorted((extracted / "skills").glob("*/SKILL.md"))
-    assert len(skills) == 14
+    assert len(skills) == 13
     for skill in skills:
         text = skill.read_text(encoding="utf-8")
         frontmatter = text.split("---", 2)[1]

@@ -53,6 +53,7 @@ NON_REFERENCE_APPLICATION_TABLES = (
     "sql_generation_guide",
     "sql_generation_guide_version",
     "workflow_run",
+    "workflow_run_entity_selection",
     "workflow_run_mapping_target_selection",
     "workflow_run_object_selection",
     "workflow_run_prompt_snapshot",
@@ -108,15 +109,14 @@ EXPECTED_NAMES = {
     "logical": FOUNDATIONAL_NAMES
     | CONCEPTUAL_NAMES
     | LOGICAL_NAMES
-    | {"naming_instructions", "audit_columns"},
+    | {"naming_instructions", "audit_columns", "schemas"},
     "dimensional": LOGICAL_NAMES
     | DIMENSIONAL_NAMES
     | {
         "gds_context",
-        "object_context",
-        "object_attribute_context",
         "modeling_assertions",
-        "logical_bindings",
+        "selected_logical_entities",
+        "schemas",
         "naming_instructions",
         "audit_columns",
         "technical_columns",

@@ -58,21 +58,10 @@ WITH target_model AS (
       ) AS context
 )
 SELECT jsonb_build_object(
-           'object_id', context.source_context -> 'target' -> 'object_id',
-           'source_tenant_id', context.source_context -> 'target' -> 'source_tenant_id',
-           'source_tenant_code', context.source_context -> 'target' -> 'source_tenant_code',
-           'source_tenant_name', context.source_context -> 'target' -> 'source_tenant_name',
-           'tenant_id', context.source_context -> 'target' -> 'tenant_id',
-           'tenant_code', context.source_context -> 'target' -> 'tenant_code',
-           'tenant_name', context.source_context -> 'target' -> 'tenant_name',
-           'system_id', context.source_context -> 'target' -> 'system_id',
-           'system_code', context.source_context -> 'target' -> 'system_code',
-           'system_name', context.source_context -> 'target' -> 'system_name',
-           'connection_id', context.source_context -> 'target' -> 'connection_id',
-           'connection_code', context.source_context -> 'target' -> 'connection_code',
-           'object_schema', context.source_context -> 'target' -> 'object_schema',
-           'object_name', context.source_context -> 'target' -> 'object_name',
-           'zone_code', context.source_context -> 'target' -> 'zone_code'
+           'entity_id', context.modeled_entity_id,
+           'entity_type', context.modeled_entity_type,
+           'entity_schema_name', context.modeled_entity_schema_name,
+           'entity_name', context.modeled_entity_name
        ) AS target,
        context.modeled_entity_type AS entity_type,
        mapping_support.mapping_supports,
@@ -86,8 +75,10 @@ SELECT jsonb_build_object(
           LEFT JOIN workflow.generated_code_source_system AS locked_source
             ON locked_source.generated_code_id = locked_code.generated_code_id
            AND locked_source.generated_code_source_system_status = 'active'
-         WHERE locked_code.model_object_binding_id = (
-             context.source_context->'object_mappings'->0->>'model_object_binding_id')::BIGINT
+         WHERE locked_code.model_id = context.model_id
+           AND locked_code.modeled_entity_type = context.modeled_entity_type
+           AND coalesce(locked_code.logical_entity_id, locked_code.dimensional_entity_id) =
+               context.modeled_entity_id
            AND locked_code.generated_code_status = 'active'
            AND (locked_code.generated_code_is_locked
                 OR locked_source.generated_code_source_system_is_locked)) AS is_locked
@@ -111,6 +102,8 @@ SELECT jsonb_build_object(
                            'entity_id',
                                (mapping_entry.document -> 'entity' ->>
                                 'entity_id')::BIGINT,
+                           'entity_schema_name',
+                               mapping_entry.document -> 'entity' ->> 'entity_schema_name',
                            'entity_name',
                                mapping_entry.document -> 'entity' ->> 'entity_name'
                        ),
@@ -191,10 +184,10 @@ SELECT jsonb_build_object(
                ON system.system_id = assignment.source_system_id
             WHERE assignment.generated_code_id = generated.generated_code_id
        ) AS association
-       WHERE generated.model_object_binding_id = (
-                 context.source_context -> 'object_mappings' -> 0
-                 ->> 'model_object_binding_id'
-             )::BIGINT
+       WHERE generated.model_id = context.model_id
+           AND generated.modeled_entity_type = context.modeled_entity_type
+           AND coalesce(generated.logical_entity_id, generated.dimensional_entity_id) =
+               context.modeled_entity_id
          AND generated.artifact_type = 'sql_file'
   ) AS artifact
  WHERE (%s::BIGINT IS NULL
@@ -223,11 +216,9 @@ SELECT jsonb_build_object(
             WHERE lower(btrim(entry.document ->> 'system_code')) = %s
        )
    )
- ORDER BY lower(btrim(context.source_context -> 'target' ->> 'tenant_code')),
-          lower(btrim(context.source_context -> 'target' ->> 'system_code')),
-          lower(btrim(context.source_context -> 'target' ->> 'object_schema')),
-          lower(btrim(context.source_context -> 'target' ->> 'object_name')),
-          context.object_id,
+ ORDER BY lower(btrim(context.modeled_entity_schema_name)),
+          lower(btrim(context.modeled_entity_name)),
+          context.modeled_entity_id,
           context.modeled_entity_type
  LIMIT %s OFFSET %s
 """
@@ -237,23 +228,12 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
        artifact.artifact_name,
        target_model.model_id,
        jsonb_build_object(
-           'object_id', target_object.object_id,
-           'source_tenant_id', target_source_tenant.tenant_id,
-           'source_tenant_code', target_source_tenant.tenant_code,
-           'source_tenant_name', target_source_tenant.tenant_name,
-           'tenant_id', target_tenant.tenant_id,
-           'tenant_code', target_tenant.tenant_code,
-           'tenant_name', target_tenant.tenant_name,
-           'system_id', target_system.system_id,
-           'system_code', target_system.system_code,
-           'system_name', target_system.system_name,
-           'connection_id', target_connection.connection_id,
-           'connection_code', target_connection.connection_code,
-           'object_schema', target_object.object_schema,
-           'object_name', target_object.object_name,
-           'zone_code', lower(btrim(target_zone.zone_code))
+           'entity_id', entity.modeled_entity_id,
+           'entity_type', entity.modeled_entity_type,
+           'entity_schema_name', entity.modeled_entity_schema_name,
+           'entity_name', entity.modeled_entity_name
        ) AS target,
-       binding.modeled_entity_type AS entity_type,
+       artifact.modeled_entity_type AS entity_type,
        source_system.source_systems,
        source_system.source_system_count,
        mapping_support.mapping_supports,
@@ -297,30 +277,21 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
        octet_length(artifact.generated_code_content)::INTEGER
            AS generated_sql_byte_count
   FROM workflow.generated_code AS artifact
-  JOIN workflow.model_object_binding AS binding
-    ON binding.model_object_binding_id = artifact.model_object_binding_id
   JOIN model.model AS target_model
-    ON target_model.model_id = binding.model_id
-  JOIN core.object AS target_object
-    ON target_object.object_id = binding.object_id
-  JOIN core.connection AS target_connection
-    ON target_connection.connection_id = target_object.connection_id
-  JOIN core.system AS target_system
-    ON target_system.system_id = target_connection.system_id
-  JOIN reference.zone AS target_zone
-    ON target_zone.zone_id = target_object.zone_id
-  JOIN core.tenant AS target_tenant
-    ON target_tenant.tenant_id = target_connection.tenant_id
-  JOIN core.tenant AS target_source_tenant
-    ON target_source_tenant.tenant_id = target_object.source_tenant_id
+    ON target_model.model_id = artifact.model_id
+  JOIN workflow.modeled_entity AS entity
+    ON entity.model_id = artifact.model_id
+   AND entity.modeled_entity_type = artifact.modeled_entity_type
+   AND entity.modeled_entity_id = coalesce(artifact.logical_entity_id,
+       artifact.dimensional_entity_id)
   LEFT JOIN LATERAL workflow.list_code_generation_target_context(
-      binding.model_id,
-      binding.modeled_entity_type
+      artifact.model_id,
+      artifact.modeled_entity_type
   ) AS current_context
-    ON current_context.object_id = binding.object_id
+    ON current_context.modeled_entity_id = entity.modeled_entity_id
   LEFT JOIN application.workflow_run AS generating_run
     ON generating_run.workflow_run_id = artifact.workflow_run_id
-   AND generating_run.model_id = binding.model_id
+   AND generating_run.model_id = artifact.model_id
    AND generating_run.model_workflow = 'code_generation'
   LEFT JOIN application.sql_generation_guide AS guide
     ON guide.sql_generation_guide_id = generating_run.sql_generation_guide_id
@@ -345,10 +316,12 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
                        'mapping_object_id',
                            (mapping_entry.document ->> 'mapping_object_id')::BIGINT,
                        'source', jsonb_build_object(
-                           'entity_type', binding.modeled_entity_type,
+                           'entity_type', artifact.modeled_entity_type,
                            'entity_id',
                                (mapping_entry.document -> 'entity' ->>
                                 'entity_id')::BIGINT,
+                           'entity_schema_name',
+                               mapping_entry.document -> 'entity' ->> 'entity_schema_name',
                            'entity_name',
                                mapping_entry.document -> 'entity' ->> 'entity_name'
                        ),
@@ -412,10 +385,8 @@ SELECT count(*)::INTEGER AS artifact_count,
        coalesce(sum(octet_length(artifact.generated_code_content)), 0)::BIGINT
            AS total_sql_bytes
   FROM workflow.generated_code AS artifact
-  JOIN workflow.model_object_binding AS binding
-    ON binding.model_object_binding_id = artifact.model_object_binding_id
   JOIN model.model AS target_model
-    ON target_model.model_id = binding.model_id
+    ON target_model.model_id = artifact.model_id
  WHERE target_model.tenant_id = %s
    AND target_model.model_id = %s
    AND artifact.generated_code_id = ANY(%s::BIGINT[])
@@ -426,43 +397,23 @@ _GENERATED_SQL_DOWNLOAD_SQL: LiteralString = """
 SELECT artifact.generated_code_id AS generated_sql_artifact_id,
        artifact.artifact_name,
        jsonb_build_object(
-           'object_id', target_object.object_id,
-           'source_tenant_id', target_source_tenant.tenant_id,
-           'source_tenant_code', target_source_tenant.tenant_code,
-           'source_tenant_name', target_source_tenant.tenant_name,
-           'tenant_id', target_tenant.tenant_id,
-           'tenant_code', target_tenant.tenant_code,
-           'tenant_name', target_tenant.tenant_name,
-           'system_id', target_system.system_id,
-           'system_code', target_system.system_code,
-           'system_name', target_system.system_name,
-           'connection_id', target_connection.connection_id,
-           'connection_code', target_connection.connection_code,
-           'object_schema', target_object.object_schema,
-           'object_name', target_object.object_name,
-           'zone_code', lower(btrim(target_zone.zone_code))
+           'entity_id', entity.modeled_entity_id,
+           'entity_type', entity.modeled_entity_type,
+           'entity_schema_name', entity.modeled_entity_schema_name,
+           'entity_name', entity.modeled_entity_name
        ) AS target,
-       binding.modeled_entity_type AS entity_type,
+       artifact.modeled_entity_type AS entity_type,
        artifact.generated_code_content AS generated_sql,
        octet_length(artifact.generated_code_content)::INTEGER
            AS generated_sql_byte_count
   FROM workflow.generated_code AS artifact
-  JOIN workflow.model_object_binding AS binding
-    ON binding.model_object_binding_id = artifact.model_object_binding_id
   JOIN model.model AS target_model
-    ON target_model.model_id = binding.model_id
-  JOIN core.object AS target_object
-    ON target_object.object_id = binding.object_id
-  JOIN core.connection AS target_connection
-    ON target_connection.connection_id = target_object.connection_id
-  JOIN core.system AS target_system
-    ON target_system.system_id = target_connection.system_id
-  JOIN reference.zone AS target_zone
-    ON target_zone.zone_id = target_object.zone_id
-  JOIN core.tenant AS target_tenant
-    ON target_tenant.tenant_id = target_connection.tenant_id
-  JOIN core.tenant AS target_source_tenant
-    ON target_source_tenant.tenant_id = target_object.source_tenant_id
+    ON target_model.model_id = artifact.model_id
+  JOIN workflow.modeled_entity AS entity
+    ON entity.model_id = artifact.model_id
+   AND entity.modeled_entity_type = artifact.modeled_entity_type
+   AND entity.modeled_entity_id = coalesce(artifact.logical_entity_id,
+       artifact.dimensional_entity_id)
  WHERE target_model.tenant_id = %s
    AND target_model.model_id = %s
    AND artifact.generated_code_id = ANY(%s::BIGINT[])

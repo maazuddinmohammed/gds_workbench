@@ -93,12 +93,12 @@ Reuse this workspace across workflows and tasks for its primary Tenant/Model. Wo
 
 ## Existing work and update scope
 
-Before Dimensional Build, Target Registration, Entity Binding, Mapping, Code Generation, Validation authoring or Process metadata, always inspect existing outputs and resolve what to create, reuse or update. Each workflow follows this shared rule; it does not assume entry means rebuild everything.
+Before Dimensional Build, Target Registration, Mapping, Code Generation, Validation authoring or Process metadata, always inspect existing outputs and resolve what to create, reuse or update. Each workflow follows this shared rule; it does not assume entry means rebuild everything.
 
 1. Read current Snapshot records, pending changes and relevant local files. Use task decisions, known Change Set results, retained input versions and authoritative freshness information where available. Establish what changed by identity/content and actual dependencies; conversation/history helps locate changes but does not replace current state. A Model revision change or file timestamp alone does not prove every output changed.
 2. Identify **new/missing**, **changed/affected**, **unchanged reusable**, and **unresolved/protected** items. Show a compact list of names and reasons, scoped to the current workflow/Model/layer. Trace relevant bindings, source references, target columns, Mapping branches, lookup dependencies and file/System assignments. Distinguish definite effects from possible effects needing review; missing history is unknown, not proof that everything is unchanged.
 3. Resolve the selection before authoring. Follow an explicit instruction such as "regenerate Customer and Order" or "update only what changed"; state the resolved items and reuse that answer. Otherwise ask the appropriate question below. Ask once for the related batch, not for each column or file. If a new dependency changes the agreed scope, show it and resolve that addition before changing it.
-4. Update only the selected items and necessary agreed dependencies. Reuse valid unchanged work, preserve manual edits and locks, and retain unselected/blocked work explicitly. A selected target may require complete per-System Mapping/Binding coverage or rewriting a whole shared Code artifact while preserving its unaffected branches. Explain that consequence; never silently widen to unrelated targets.
+4. Update only the selected items and necessary agreed dependencies. Reuse valid unchanged work, preserve manual edits and locks, and retain unselected/blocked work explicitly. A selected target may require complete per-System Mapping coverage or rewriting a whole shared Code artifact while preserving its unaffected branches. Explain that consequence; never silently widen to unrelated targets.
 5. Save the selection, evidence/basis and affected artifact paths in the existing task's inputs/progress/evidence. No separate handoff ledger or full snapshot-history archive is required. Run the workflow's checks against the complete effective graph; a narrow edit scope does not permit broken references or incomplete target coverage. Selecting work does not approve Stage/Apply or execute SQL.
 
 | Context | Exact question / behavior |
@@ -115,13 +115,12 @@ Before Dimensional Build, Target Registration, Entity Binding, Mapping, Code Gen
 |---|---|
 | Dimensional Build | Selected analytical processes and affected facts, dimensions, bridges, Attributes/relationships. Trace effects of shared dimensions across processes; preserve unrelated designs and agreed grain/history decisions. |
 | Target Registration | New/changed target definitions and their Object/Attribute records. DDL remains optional with its own selected table scope; regenerate only requested complete table definitions. |
-| Entity Binding | New/missing or affected Entity/Attribute matches. Reuse valid assignments; a broader selection does not enable unsupported rebinding. |
 | Mapping | Affected target/System branches, Attribute rules, grain/key/lookup effects and dependencies. Inspect complete target coverage while preserving unchanged rules. |
 | Code Generation | Artifacts that implement affected Mapping or target contracts, plus source-System assignments. A combined file can be affected by one branch; unrelated files remain reusable. |
 | Validation authoring | Checks/groups whose tested fields, Mapping behavior, output contract or code changed, plus missing required coverage. Regenerating definitions is separate from executing checks. |
 | Process metadata | Missing/affected artifact-to-Process assignments, runtime locations, Group/Copy Group links and invocation dependencies. Code text changes alone do not require new registration; existing natural-key changes remain manual database work. |
 
-Example: adding Customer.Email can affect Customer registration, Binding, relevant Mapping branches, Customer code and checks for that field. It does not automatically require regenerating unrelated Order transformations. A changed Customer key or lookup contract may affect Order too; follow actual dependencies rather than names alone. Do not run later workflows automatically merely because their outputs may be affected.
+Example: adding Customer.Email can affect Customer registration, relevant Mapping branches, Customer code and checks for that field. It does not automatically require regenerating unrelated Order transformations. A changed Customer key or lookup contract may affect Order too; follow actual dependencies rather than names alone. Do not run later workflows automatically merely because their outputs may be affected.
 
 ## Complete related work locally
 
@@ -167,7 +166,7 @@ Each topic has one maintained rule source. Skills route to it; repeated reminder
 | Validation coverage, independent expectations and tested population | [Check design](validation/check-design.md); Group/Check fields and comparator contract remain in [Validation records](model/validation.md). |
 | Artifact-to-Process assignment and intake | [Process metadata workflow](../skills/atlas-process-metadata/SKILL.md); [Process](metadata/tables/process.md) and [Process Group](metadata/tables/process-group.md) own fields, keys and scheduling meaning. |
 | Modeled naming, surrogate keys or audit columns | [Naming](model/naming.md) and [keys/audit](model/keys-and-audit.md). |
-| Record fields, keys, value meanings or metric formulas | The affected dataset guide: [Profile](model/profiling-profile.md), [Analysis](model/analysis-result.md), [Conceptual](model/conceptual.md), [Logical](model/logical.md), [Dimensional](model/dimensional.md), [Assertions](model/assertions.md), [Binding](model/binding.md), [Mapping](model/mapping.md), [Code](model/generated-code.md), [Validation](model/validation.md), or a Metadata table page. |
+| Record fields, keys, value meanings or metric formulas | The affected dataset guide: [Profile](model/profiling-profile.md), [Analysis](model/analysis-result.md), [Conceptual](model/conceptual.md), [Logical](model/logical.md), [Dimensional](model/dimensional.md), [Assertions](model/assertions.md), [Entity ownership](model/entity-ownership.md), [Mapping](model/mapping.md), [Code](model/generated-code.md), [Validation](model/validation.md), or a Metadata table page. |
 | Review, Stage, server validation and Apply | [Change Set lifecycle](change-set-lifecycle.md). |
 | Workbench folder access, workspace context, resume and local editing behavior | [Workbench guide](../docs/user-guide.md#workbench); this working method owns workspace identity and record placement. |
 | Stage Runner readiness, invocation and recovery | [Change Set lifecycle](change-set-lifecycle.md); host setup is in the [runtime guide](../docs/runtime-guide.md). |

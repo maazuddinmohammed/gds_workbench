@@ -43,7 +43,7 @@ def _context_row() -> dict[str, object]:
     return {
         "object_id": 91,
         "modeled_entity_type": "logical_entity",
-        "modeled_entity_name": "Customer",
+        "modeled_entity_schema_name": "silver", "modeled_entity_name": "Customer",
         "tenant_code": "acme",
         "system_code": "warehouse",
         "connection_code": "gold",
@@ -54,7 +54,7 @@ def _context_row() -> dict[str, object]:
         "generated_code": [
             {
                 "modeled_entity_type": "logical_entity",
-                "modeled_entity_name": "Customer",
+                "modeled_entity_schema_name": "silver", "modeled_entity_name": "Customer",
                 "artifact_name": "customer.sql",
                 "artifact_type": "transformation_sql",
                 "source_system_codes": ["erp"],

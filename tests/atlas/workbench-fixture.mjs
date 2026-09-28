@@ -33,9 +33,9 @@ export function snapshot(root, area, datasets = [], tenant = 'T') {
     definitions.push({name:dataset.name,record_type:dataset.name,canonical_key:dataset.keys,row_count:dataset.rows.length,rows_file:`data/${dataset.name}.jsonl`,schema_file:`schemas/${dataset.name}.schema.json`});
   }
   const model = area === 'model' ? {model_id:7, model_name:'Sales', model_revision:1,tenant_code:tenant} : undefined;
-  const catalog = JSON.stringify({snapshot_kind:area,model,sections:[{name:area,datasets:definitions}]});
+  const catalog = JSON.stringify({schema_version:"2.0",snapshot_kind:area,model,sections:[{name:area,datasets:definitions}]});
   dir.file('catalog.json', catalog); members.unshift({path:'catalog.json',size_bytes:Buffer.byteLength(catalog),sha256:hash(catalog)});
-  dir.file('manifest.json', JSON.stringify({snapshot_kind:area,snapshot_id:`${area}-snapshot`,tenant_code:tenant,...model,catalog:{path:'catalog.json',sha256:hash(catalog)},members}));
+  dir.file('manifest.json', JSON.stringify({schema_version:"2.0",snapshot_kind:area,snapshot_id:`${area}-snapshot`,tenant_code:tenant,...model,catalog:{path:'catalog.json',sha256:hash(catalog)},members}));
   return dir;
 }
 export function dataset(name, keys, rows) { return {name,keys,rows}; }

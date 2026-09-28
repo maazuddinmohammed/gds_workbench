@@ -469,6 +469,7 @@ class ReviewTransaction:
                 "to_attribute_data_type": "varchar",
                 "relationship_kind": "reference",
                 "relationship_confidence": "high",
+                "inferred_cardinality": "many_to_one",
                 "relationship_basis": (
                     "Country code inclusion and target uniqueness were verified."
                 ),
@@ -599,6 +600,7 @@ class ReviewTransaction:
                     **endpoint,
                     "relationship_kind": "reference",
                     "relationship_confidence": "high",
+                    "inferred_cardinality": "many_to_one",
                     "validation_state": "validated",
                     "validation_result": "supported",
                     "status": "active",
@@ -610,6 +612,7 @@ class ReviewTransaction:
                     **endpoint,
                     "relationship_kind": "lookup",
                     "relationship_confidence": "medium",
+                    "inferred_cardinality": "unknown",
                     "validation_state": "validated",
                     "validation_result": "supported",
                     "status": "active",
@@ -1192,3 +1195,34 @@ def test_review_features_mount_independently(feature: str) -> None:
     with TestClient(app) as client:
         response = client.get(f"/api/v1/tenants/7/models/18/{feature}?page_size=25")
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("inferred", "observed", "mismatch"),
+    [
+        ("many_to_one", True, False),
+        ("one_to_one", True, True),
+        ("unknown", True, False),
+        ("one_to_one", False, False),
+        ("unknown", False, False),
+    ],
+)
+async def test_cardinality_inference_is_independent_of_measured_counts(
+    inferred: str,
+    observed: bool,
+    mismatch: bool,
+) -> None:
+    row = await ReviewTransaction().fetch_one(
+        "SELECT * FROM workflow.analysis_result WHERE target_model.tenant_id = %s",
+        (7, 7, 18, 701),
+    )
+    assert row is not None
+    row["inferred_cardinality"] = inferred
+    if not observed:
+        row["validation_result"] = None
+        row["validation_state"] = "unvalidated"
+    summary = _normalize_analysis_summary(row)
+    assert summary.inferred_cardinality == inferred
+    assert summary.observed_cardinality == ("many_to_one" if observed else None)
+    assert summary.cardinality_mismatch is mismatch

@@ -395,7 +395,10 @@ class LogicalCandidateValidator:
                     )
                 )
         for index, attribute in enumerate(attributes):
-            if normalize_model_key_value(attribute.logical_entity_name) not in entity_keys:
+            if (
+                normalize_model_key_value(attribute.logical_entity_schema_name),
+                normalize_model_key_value(attribute.logical_entity_name),
+            ) not in entity_keys:
                 issues.append(
                     AgentValidationIssue(
                         code="candidate.entity_missing",
@@ -406,10 +409,12 @@ class LogicalCandidateValidator:
         for index, relationship in enumerate(relationships):
             endpoints = (
                 (
+                    normalize_model_key_value(relationship.from_logical_entity_schema_name),
                     normalize_model_key_value(relationship.from_logical_entity_name),
                     normalize_model_key_value(relationship.from_logical_attribute_name),
                 ),
                 (
+                    normalize_model_key_value(relationship.to_logical_entity_schema_name),
                     normalize_model_key_value(relationship.to_logical_entity_name),
                     normalize_model_key_value(relationship.to_logical_attribute_name),
                 ),
@@ -638,21 +643,27 @@ def _submodel_key(record: LogicalSubmodelRecord) -> str:
     return normalize_model_key_value(record.logical_submodel_name)
 
 
-def _entity_key(record: LogicalEntityRecord) -> str:
-    return normalize_model_key_value(record.logical_entity_name)
-
-
-def _attribute_key(record: LogicalAttributeRecord) -> tuple[str, str]:
+def _entity_key(record: LogicalEntityRecord) -> tuple[str, str]:
     return (
+        normalize_model_key_value(record.logical_entity_schema_name),
+        normalize_model_key_value(record.logical_entity_name),
+    )
+
+
+def _attribute_key(record: LogicalAttributeRecord) -> tuple[str, str, str]:
+    return (
+        normalize_model_key_value(record.logical_entity_schema_name),
         normalize_model_key_value(record.logical_entity_name),
         normalize_model_key_value(record.logical_attribute_name),
     )
 
 
-def _relationship_key(record: LogicalRelationshipRecord) -> tuple[str, str, str, str, str]:
+def _relationship_key(record: LogicalRelationshipRecord) -> tuple[str, ...]:
     return (
+        normalize_model_key_value(record.from_logical_entity_schema_name),
         normalize_model_key_value(record.from_logical_entity_name),
         normalize_model_key_value(record.from_logical_attribute_name),
+        normalize_model_key_value(record.to_logical_entity_schema_name),
         normalize_model_key_value(record.to_logical_entity_name),
         normalize_model_key_value(record.to_logical_attribute_name),
         normalize_model_key_value(record.logical_relationship_name),

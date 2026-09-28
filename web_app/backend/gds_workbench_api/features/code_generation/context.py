@@ -45,14 +45,15 @@ WITH requested_run AS MATERIALIZED (
        AND run.workflow_run_state = 'running'
        AND run.modeled_entity_type = %s
 ), selected AS MATERIALIZED (
-    SELECT selection.object_id,
+    SELECT selection.modeled_entity_id,
            selection.selection_order
       FROM requested_run AS run
-      JOIN application.workflow_run_object_selection AS selection
+      JOIN application.workflow_run_entity_selection AS selection
         ON selection.workflow_run_id = run.workflow_run_id
        AND selection.model_id = run.model_id
 )
-SELECT target.object_id,
+SELECT target.modeled_entity_id,
+       target.modeled_entity_schema_name,
        target.source_system_count,
        target.code_input_digest,
        run.sql_generation_guide_version_id,
@@ -75,7 +76,7 @@ SELECT target.object_id,
            run.model_id,
            run.modeled_entity_type
        ) AS target
-    ON target.object_id = selected.object_id
+    ON target.modeled_entity_id = selected.modeled_entity_id
   JOIN application.sql_generation_guide_version AS version
     ON version.sql_generation_guide_version_id =
        run.sql_generation_guide_version_id
@@ -88,6 +89,7 @@ SELECT target.object_id,
                  jsonb_agg(
                      jsonb_build_object(
                          'modeled_entity_type', run.modeled_entity_type,
+                         'modeled_entity_schema_name', target.modeled_entity_schema_name,
                          'modeled_entity_name',
                              target.source_context -> 'object_mappings' -> 0
                              -> 'entity' ->> 'entity_name',
@@ -126,10 +128,10 @@ SELECT target.object_id,
                ON system.system_id = source.source_system_id
             WHERE source.generated_code_id = generated.generated_code_id
        ) AS association
-       WHERE generated.model_object_binding_id = (
-                 target.source_context -> 'object_mappings' -> 0
-                 ->> 'model_object_binding_id'
-             )::BIGINT
+       WHERE generated.model_id = run.model_id
+         AND generated.modeled_entity_type = run.modeled_entity_type
+         AND coalesce(generated.logical_entity_id, generated.dimensional_entity_id) =
+             target.modeled_entity_id
   ) AS applied ON TRUE
  ORDER BY selected.selection_order
 """
@@ -200,11 +202,11 @@ def _assemble_context(
         raise InvalidRequestError("The Code Generation run plan is invalid.")
     if not rows:
         raise InvalidRequestError("The Code Generation Mapping context is incomplete.")
-    rows.sort(key=lambda row: _positive_int(row, "object_id"))
-    identities = [_positive_int(row, "object_id") for row in rows]
+    rows.sort(key=lambda row: _positive_int(row, "modeled_entity_id"))
+    identities = [_positive_int(row, "modeled_entity_id") for row in rows]
     if len(identities) != len(set(identities)):
         raise InvalidRequestError("The Code Generation Mapping context is ambiguous.")
-    if set(identities) != set(plan.selected_object_ids):
+    if set(identities) != set(plan.selected_entity_ids):
         raise InvalidRequestError("The Code Generation Mapping context is incomplete.")
 
     targets: list[CodeGenerationArtifactContext] = []
@@ -247,10 +249,18 @@ def _assemble_context(
             allow_identity_keys=True,
             reject_sensitive_values=True,
         )
+        schema_name = row.get("modeled_entity_schema_name")
+        if not isinstance(schema_name, str) or not schema_name.strip() or len(schema_name) > 400:
+            raise InvalidRequestError("The Code Generation Entity schema is unavailable.")
+        for mapping in object_mappings:
+            entity = mapping.get("entity") if isinstance(mapping, dict) else None
+            if not isinstance(entity, dict) or entity.get("entity_schema_name") != schema_name:
+                raise InvalidRequestError("The Code Generation Entity schema is ambiguous.")
         target_ref = f"target_{position}"
         applied_code, applied_systems, current_artifact_names = _applied_generated_code(
             row,
             modeled_entity_type=modeled_entity_type,
+            modeled_entity_schema_name=schema_name,
             modeled_entity_name=modeled_entity_name,
         )
         selected_codes = {code.strip().casefold() for code in plan.selected_system_codes}
@@ -260,7 +270,7 @@ def _assemble_context(
             code for code in source_system_codes if code.strip().casefold() in selected_codes
         )
         if not source_system_codes:
-            raise InvalidRequestError("A selected Object has no Mapping for the selected Systems.")
+            raise InvalidRequestError("A selected Entity has no Mapping for the selected Systems.")
         selected_codes = {code.strip().casefold() for code in source_system_codes}
         preserved_names: set[str] = set()
         for artifact in applied_code:
@@ -345,13 +355,14 @@ def _assemble_context(
         )
         context = CodeGenerationArtifactContext(
             target_ref=target_ref,
-            object_id=_positive_int(row, "object_id"),
+            modeled_entity_id=_positive_int(row, "modeled_entity_id"),
             code_input_digest=_required_digest(row, "code_input_digest"),
             sql_generation_guide_version_id=_positive_int(
                 row,
                 "sql_generation_guide_version_id",
             ),
             modeled_entity_type=modeled_entity_type,
+            modeled_entity_schema_name=schema_name,
             modeled_entity_name=modeled_entity_name,
             source_system_codes=source_system_codes,
             preserved_artifact_names=tuple(sorted(preserved_names)),
@@ -398,6 +409,7 @@ def _applied_generated_code(
     row: dict[str, Any],
     *,
     modeled_entity_type: str,
+    modeled_entity_schema_name: str,
     modeled_entity_name: str,
 ) -> tuple[
     tuple[GeneratedCodeRecord, ...],
@@ -419,6 +431,7 @@ def _applied_generated_code(
         )
         if (
             artifact.modeled_entity_type != modeled_entity_type
+            or artifact.modeled_entity_schema_name != modeled_entity_schema_name
             or artifact.modeled_entity_name != modeled_entity_name
         ):
             raise InvalidRequestError("The Code Generation context is unavailable.")
@@ -438,6 +451,7 @@ def _applied_generated_code(
                 GeneratedCodeSourceSystemRecord.model_validate(
                     {
                         "modeled_entity_type": modeled_entity_type,
+                        "modeled_entity_schema_name": modeled_entity_schema_name,
                         "modeled_entity_name": modeled_entity_name,
                         "artifact_name": artifact.artifact_name,
                         "source_system_code": source.get("source_system_code"),

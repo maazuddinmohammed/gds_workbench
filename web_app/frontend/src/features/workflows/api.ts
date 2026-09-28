@@ -79,6 +79,7 @@ export interface CreateWorkflowRunCommand {
   model_workflow: ModelWorkflow;
   workflow_execution_mode: WorkflowExecutionMode | null;
   selected_object_ids: number[];
+  selected_entity_ids?: number[];
   description_targets?: { object_id: number; attribute_id: number | null; expected_revision: string }[];
   selected_system_codes?: string[];
   requested_batch_id: string | null;
@@ -86,7 +87,7 @@ export interface CreateWorkflowRunCommand {
   prompt_overrides: Record<string, number>;
   modeled_entity_type?: "logical_entity" | "dimensional_entity" | null;
   mapping_operation?: "build" | "extend" | "generate" | null;
-  mapping_targets?: { object_id: number; source_system_id: number; selected_attribute_ids: number[] }[];
+  mapping_targets?: { modeled_entity_id: number; source_system_id: number; selected_attribute_ids: number[] }[];
   mapping_coverage_mode?: "selected_targets" | null;
   mapping_source_system_id?: number | null;
   mapping_object_output_template_id?: number | null;
@@ -590,7 +591,6 @@ export interface WorkflowScopeObject {
   source_tenant_code: string;
   object_name: string;
   zone_code?: "source" | "bronze" | "silver";
-  is_dimensional_source_eligible: boolean;
 }
 
 interface WorkflowScopePage<TScope extends WorkflowScopeObject> {
@@ -603,7 +603,7 @@ interface WorkflowScopeReader<TScope extends WorkflowScopeObject = WorkflowScope
   listModelInputScope: (
     tenantId: number,
     modelId: number,
-    filters: { zone?: "bronze" | "silver" },
+    filters: { zone?: "bronze" },
     pageSize: number,
     cursor?: string,
   ) => Promise<WorkflowScopePage<TScope>>;
@@ -646,16 +646,13 @@ export const workflowCreationQueryKeys = {
   enrichmentScope: (tenantId: number, modelId: number) => (
     ["workflow-run-enrichment-scope", tenantId, modelId] as const
   ),
-  dimensionalScope: (tenantId: number, modelId: number) => (
-    ["workflow-run-dimensional-scope", tenantId, modelId] as const
-  ),
 };
 
 export async function loadWorkflowScope<TScope extends WorkflowScopeObject>(
   api: WorkflowScopeReader<TScope>,
   tenantId: number,
   modelId: number,
-  scope: "bronze" | "enrichment" | "dimensional",
+  scope: "bronze" | "enrichment",
 ): Promise<{ modelRevision: number; items: TScope[] }> {
   const items: TScope[] = [];
   const seenCursors = new Set<string>();
@@ -666,7 +663,7 @@ export async function loadWorkflowScope<TScope extends WorkflowScopeObject>(
     const response = await api.listModelInputScope(
       tenantId,
       modelId,
-      scope === "enrichment" ? {} : { zone: scope === "dimensional" ? "silver" : "bronze" },
+      scope === "enrichment" ? {} : { zone: "bronze" },
       200,
       cursor,
     );
@@ -678,9 +675,7 @@ export async function loadWorkflowScope<TScope extends WorkflowScopeObject>(
       && response.items.some((item) => item.zone_code !== "source" && item.zone_code !== "bronze")) {
       throw new Error("Enrichment requires Source and Bronze Model Input Scope");
     }
-    items.push(...(scope === "dimensional"
-      ? response.items.filter((item) => item.is_dimensional_source_eligible)
-      : response.items));
+    items.push(...response.items);
     if (!response.next_cursor) return { modelRevision, items };
     if (seenCursors.has(response.next_cursor)) {
       throw new Error("Model Input Scope cursor repeated");
@@ -688,7 +683,7 @@ export async function loadWorkflowScope<TScope extends WorkflowScopeObject>(
     seenCursors.add(response.next_cursor);
     cursor = response.next_cursor;
   }
-  const zoneName = scope === "enrichment" ? "Source and Bronze" : scope === "dimensional" ? "Silver" : "Bronze";
+  const zoneName = scope === "enrichment" ? "Source and Bronze" : "Bronze";
   throw new Error(`Active ${zoneName} Scope exceeds the supported bounded selection`);
 }
 

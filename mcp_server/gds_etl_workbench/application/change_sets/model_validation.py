@@ -35,8 +35,8 @@ MAX_REVIEW_KEYS = 100
 
 type PhysicalObjectNaturalKey = tuple[str, str, str, str, str]
 type PhysicalAttributeNaturalKey = tuple[str, str, str, str, str, str]
-type ModeledEntityKey = tuple[str, str]
-type ModeledAttributeKey = tuple[str, str, str]
+type ModeledEntityKey = tuple[str, str, str]
+type ModeledAttributeKey = tuple[str, str, str, str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +52,7 @@ class ModelValidationIssue:
 class CodeGenerationTargetContext:
     """Internal currentness input. These fields are never agent-authored records."""
 
-    object_key: PhysicalObjectNaturalKey
+    modeled_entity_schema_name: str
     modeled_entity_type: str
     modeled_entity_name: str
     source_system_codes: frozenset[str]
@@ -67,12 +67,6 @@ class PhysicalModelCatalog:
     attributes: frozenset[PhysicalAttributeNaturalKey]
     model_input_objects: frozenset[PhysicalObjectNaturalKey]
     model_input_attributes: frozenset[PhysicalAttributeNaturalKey]
-    dimensional_source_objects: frozenset[PhysicalObjectNaturalKey]
-    dimensional_source_attributes: frozenset[PhysicalAttributeNaturalKey]
-    logical_mapping_target_objects: frozenset[PhysicalObjectNaturalKey]
-    logical_mapping_target_attributes: frozenset[PhysicalAttributeNaturalKey]
-    dimensional_mapping_target_objects: frozenset[PhysicalObjectNaturalKey]
-    dimensional_mapping_target_attributes: frozenset[PhysicalAttributeNaturalKey]
     other_model_names: frozenset[str] = frozenset()
 
 
@@ -211,7 +205,6 @@ def validate_future_graph(
         return _failed(staged, "uniqueness", candidate_digest, uniqueness_issues)
 
     reference_issues: list[ModelValidationIssue] = []
-    _validate_binding_reassignment(effective, staged, reference_issues)
     _validate_references(future, reference_issues)
     _validate_active_dependencies(
         future,
@@ -386,6 +379,25 @@ def _validate_model_details(
             "Another active Model in this Tenant already uses this name.",
         )
 
+    if len(details) == 1:
+        for layer in ("logical", "dimensional"):
+            allowed = {
+                normalize_model_key_value(schema.schema_name)
+                for schema in getattr(details[0], f"{layer}_schemas")
+            }
+            for record in future[f"{layer}_entity"]:
+                if (
+                    normalize_model_key_value(getattr(record, f"{layer}_entity_schema_name"))
+                    not in allowed
+                ):
+                    _issue(
+                        issues,
+                        "entity_schema_not_configured",
+                        f"{layer}_entity",
+                        (f"{layer}_entity_schema_name",),
+                        "Entity schema must be configured in the Model's layer schema list.",
+                    )
+
 
 def _validate_physical_scope(
     future: Mapping[str, tuple[Any, ...]],
@@ -508,96 +520,6 @@ def _validate_physical_scope(
                         issues,
                     )
 
-    bindings = _validate_bindings(future, catalog, issues, retained_keys=retained_keys)
-    logical_object_sources = set(catalog.dimensional_source_objects)
-    logical_attribute_sources = set(catalog.dimensional_source_attributes)
-    for record in future["mapping_object"]:
-        if (
-            record.object_mapping_status == "active"
-            and record.modeled_entity_type == "logical_entity"
-        ):
-            target = bindings[0].get(_entity_key(record))
-            if target is not None and target in catalog.logical_mapping_target_objects:
-                logical_object_sources.add(target)
-    for record in future["mapping_attribute"]:
-        if (
-            record.attribute_mapping_status == "active"
-            and record.modeled_entity_type == "logical_entity"
-        ):
-            target = bindings[1].get(_attribute_key(record))
-            if target is not None and target in catalog.logical_mapping_target_attributes:
-                logical_attribute_sources.add(target)
-    for dataset in ("dimensional_entity", "dimensional_attribute"):
-        for record in future[dataset]:
-            for source in record.sources:
-                if source.support_source_type == "object":
-                    _require_object(
-                        source.source_object,
-                        dataset,
-                        "source_object",
-                        catalog.objects if retained(dataset, record) else logical_object_sources,
-                        "Dimensional source requires an active Silver Logical contribution.",
-                        issues,
-                    )
-                elif source.support_source_type == "attribute":
-                    _require_attribute(
-                        source.source_attribute,
-                        dataset,
-                        "source_attribute",
-                        catalog.attributes
-                        if retained(dataset, record)
-                        else logical_attribute_sources,
-                        "Dimensional source requires an active Silver Logical contribution.",
-                        issues,
-                    )
-
-    # Current authoring must not inherit an inactive target through a retained Binding.
-    all_object_targets = {
-        _entity_key(record): _physical_object_key(record)
-        for record in future["model_object_binding"]
-    }
-    all_attribute_targets = {
-        _attribute_key(record): (
-            *all_object_targets[_entity_key(record)],
-            normalize_model_key_value(record.attribute_name),
-        )
-        for record in future["model_attribute_binding"]
-        if _entity_key(record) in all_object_targets
-    }
-    for dataset in ("mapping_object", "generated_code", "generated_code_source_system"):
-        for record in future[dataset]:
-            if retained(dataset, record):
-                continue
-            eligible_objects = (
-                catalog.logical_mapping_target_objects
-                if record.modeled_entity_type == "logical_entity"
-                else catalog.dimensional_mapping_target_objects
-            )
-            if all_object_targets.get(_entity_key(record)) not in eligible_objects:
-                _scope_missing(
-                    issues,
-                    dataset,
-                    "model_object_binding",
-                    "New or changed authoring requires an eligible active physical target Object.",
-                )
-    for record in future["mapping_attribute"]:
-        if retained("mapping_attribute", record):
-            continue
-        eligible_attributes = (
-            catalog.logical_mapping_target_attributes
-            if record.modeled_entity_type == "logical_entity"
-            else catalog.dimensional_mapping_target_attributes
-        )
-        if all_attribute_targets.get(_attribute_key(record)) not in eligible_attributes:
-            _scope_missing(
-                issues,
-                "mapping_attribute",
-                "model_attribute_binding",
-                "New or changed authoring requires an eligible active physical target Attribute.",
-            )
-
-    for record in future["mapping_dependency"]:
-        _require_active_system(record.source_system_code, "mapping_dependency", catalog, issues)
     for record in future["mapping_object"]:
         _require_active_system(record.source_system_code, "mapping_object", catalog, issues)
     for record in future["mapping_attribute"]:
@@ -647,194 +569,6 @@ def _validate_physical_scope(
                     )
 
 
-def _validate_binding_reassignment(
-    applied: Mapping[str, tuple[Any, ...]],
-    staged: Mapping[str, tuple[Any, ...]],
-    issues: list[ModelValidationIssue],
-) -> None:
-    """Payload identities cannot safely retarget the physical-key Apply upserts."""
-    for dataset in ("model_object_binding", "model_attribute_binding"):
-        definition = CHANGE_SET_DATASETS_BY_NAME[dataset]
-        existing = {_canonical_key(definition, row): row for row in applied[dataset]}
-        for changed in staged.get(dataset, ()):
-            original = existing.get(_canonical_key(definition, changed))
-            if original is None:
-                continue
-            retargeted = (
-                _physical_object_key(original) != _physical_object_key(changed)
-                if dataset == "model_object_binding"
-                else normalize_model_key_value(original.attribute_name)
-                != normalize_model_key_value(changed.attribute_name)
-            )
-            if retargeted:
-                _issue(
-                    issues,
-                    "binding_reassignment_unsupported",
-                    dataset,
-                    definition.canonical_key,
-                    "Existing Binding targets cannot be reassigned by a Change Set. "
-                    "Preserve the assignment and request a governed operator correction.",
-                )
-                if dataset == "model_object_binding" and any(
-                    _entity_key(child) == _entity_key(original)
-                    and child.model_attribute_binding_is_locked
-                    for child in applied["model_attribute_binding"]
-                ):
-                    _issue(
-                        issues,
-                        "record_locked",
-                        "model_attribute_binding",
-                        ("attribute_name",),
-                        "Retargeting the parent would change a locked Attribute Binding's target.",
-                    )
-
-
-def _validate_bindings(
-    future: Mapping[str, tuple[Any, ...]],
-    catalog: PhysicalModelCatalog,
-    issues: list[ModelValidationIssue],
-    *,
-    retained_keys: Mapping[str, set[tuple[object, ...]]],
-) -> tuple[
-    dict[ModeledEntityKey, PhysicalObjectNaturalKey],
-    dict[ModeledAttributeKey, PhysicalAttributeNaturalKey],
-]:
-    entity_targets: dict[ModeledEntityKey, PhysicalObjectNaturalKey] = {}
-    all_entity_targets: dict[ModeledEntityKey, PhysicalObjectNaturalKey] = {}
-    active_physical_targets: set[PhysicalObjectNaturalKey] = set()
-    retained_object_bindings: set[ModeledEntityKey] = set()
-    for record in future["model_object_binding"]:
-        entity = _entity_key(record)
-        target = _physical_object_key(record)
-        eligible = (
-            catalog.logical_mapping_target_objects
-            if record.modeled_entity_type == "logical_entity"
-            else catalog.dimensional_mapping_target_objects
-        )
-        historical = (
-            _canonical_key(CHANGE_SET_DATASETS_BY_NAME["model_object_binding"], record)
-            in retained_keys["model_object_binding"]
-        )
-        if historical:
-            retained_object_bindings.add(entity)
-        if target not in (catalog.objects if historical else eligible):
-            _scope_missing(
-                issues,
-                "model_object_binding",
-                "object_name",
-                "Bound target Object is not eligible for its modeled layer.",
-            )
-        all_entity_targets[entity] = target
-        if target in active_physical_targets:
-            _issue(
-                issues,
-                "binding_target_conflict",
-                "model_object_binding",
-                ("object_name",),
-                "A physical Object assignment remains reserved across Binding statuses.",
-            )
-        active_physical_targets.add(target)
-        if record.model_object_binding_status != "active":
-            continue
-        entity_targets[entity] = target
-
-    attribute_targets: dict[ModeledAttributeKey, PhysicalAttributeNaturalKey] = {}
-    active_physical_attributes: set[PhysicalAttributeNaturalKey] = set()
-    retained_physical_attributes: set[PhysicalAttributeNaturalKey] = set()
-    for record in future["model_attribute_binding"]:
-        entity = _entity_key(record)
-        object_target = all_entity_targets.get(entity)
-        if object_target is None:
-            _missing(issues, "model_attribute_binding", "model_object_binding")
-            continue
-        target = (*object_target, normalize_model_key_value(record.attribute_name))
-        eligible = (
-            catalog.logical_mapping_target_attributes
-            if record.modeled_entity_type == "logical_entity"
-            else catalog.dimensional_mapping_target_attributes
-        )
-        # Attribute Binding targets derive from the parent, so both must retain identity.
-        historical = entity in retained_object_bindings and (
-            _canonical_key(CHANGE_SET_DATASETS_BY_NAME["model_attribute_binding"], record)
-            in retained_keys["model_attribute_binding"]
-        )
-        if target not in (catalog.attributes if historical else eligible):
-            _scope_missing(
-                issues,
-                "model_attribute_binding",
-                "attribute_name",
-                "Bound target Attribute is not eligible for its modeled layer.",
-            )
-        if target in active_physical_attributes:
-            _issue(
-                issues,
-                "binding_target_conflict",
-                "model_attribute_binding",
-                ("attribute_name",),
-                "A physical Attribute assignment remains reserved across Binding statuses.",
-            )
-        active_physical_attributes.add(target)
-        if record.model_attribute_binding_status != "active":
-            continue
-        if historical and target in catalog.attributes:
-            retained_physical_attributes.add(target)
-        if entity not in entity_targets:
-            _issue(
-                issues,
-                "inactive_parent",
-                "model_attribute_binding",
-                ("modeled_entity_name",),
-                "An active Attribute Binding requires an active Object Binding.",
-            )
-            continue
-        attribute_targets[_attribute_key(record)] = cast(PhysicalAttributeNaturalKey, target)
-
-    active_modeled_attributes = {
-        _attribute_key(record)
-        for layer in ("logical", "dimensional")
-        for record in future[f"{layer}_attribute"]
-        if getattr(record, f"{layer}_attribute_status") == "active"
-    }
-    for entity, object_target in entity_targets.items():
-        bound_modeled = {attribute for attribute in attribute_targets if attribute[:2] == entity}
-        expected_modeled = {
-            attribute for attribute in active_modeled_attributes if attribute[:2] == entity
-        }
-        if bound_modeled != expected_modeled:
-            _issue(
-                issues,
-                "binding_coverage_missing",
-                "model_attribute_binding",
-                ("modeled_attribute_name",),
-                "An active Object Binding requires one active Binding for every active "
-                "modeled Attribute.",
-            )
-
-        eligible_attributes = (
-            catalog.logical_mapping_target_attributes
-            if entity[0] == "logical_entity"
-            else catalog.dimensional_mapping_target_attributes
-        )
-        expected_physical = {
-            attribute
-            for attribute in (*eligible_attributes, *retained_physical_attributes)
-            if attribute[:5] == object_target
-        }
-        bound_physical = {
-            target for attribute, target in attribute_targets.items() if attribute[:2] == entity
-        }
-        if bound_physical != expected_physical:
-            _issue(
-                issues,
-                "binding_coverage_missing",
-                "model_attribute_binding",
-                ("attribute_name",),
-                "An active Object Binding requires one active Binding for every active "
-                "physical Attribute.",
-            )
-    return entity_targets, attribute_targets
-
-
 def _validate_references(
     future: Mapping[str, tuple[Any, ...]],
     issues: list[ModelValidationIssue],
@@ -881,33 +615,54 @@ def _validate_references(
     _validate_modeled_layer(future, "logical", assertion_records, issues)
     _validate_modeled_layer(future, "dimensional", assertion_records, issues)
 
+    logical_entities = {_entity_key(row): row for row in future["logical_entity"]}
+    logical_attributes = {_attribute_key(row): row for row in future["logical_attribute"]}
+    for dataset in ("dimensional_entity", "dimensional_attribute"):
+        for record in future[dataset]:
+            active = getattr(record, f"{dataset}_status") == "active"
+            for source in record.sources:
+                if source.support_source_type == "logical_entity":
+                    target = logical_entities.get(_entity_key(source.source_logical_entity))
+                    parent = target
+                    is_active = target is not None and target.logical_entity_status == "active"
+                elif source.support_source_type == "logical_attribute":
+                    key = source.source_logical_attribute
+                    target = logical_attributes.get(_attribute_key(key))
+                    parent = logical_entities.get(_entity_key(key))
+                    is_active = (
+                        target is not None
+                        and target.logical_attribute_status == "active"
+                        and parent is not None
+                        and parent.logical_entity_status == "active"
+                    )
+                else:
+                    continue
+                if target is None or parent is None:
+                    _missing(issues, dataset, "sources")
+                elif active and source.status == "active" and not is_active:
+                    _active_invalid(
+                        issues,
+                        dataset,
+                        "sources",
+                        "Active Dimensional support requires an active Logical source.",
+                    )
+
     entities = _modeled_entities(future)
     attributes = _modeled_attributes(future)
-    object_bindings = {_entity_key(record) for record in future["model_object_binding"]}
-    attribute_bindings = {_attribute_key(record) for record in future["model_attribute_binding"]}
-    for record in future["model_object_binding"]:
-        if _entity_key(record) not in entities:
-            _missing(issues, "model_object_binding", "modeled_entity_name")
-    for record in future["model_attribute_binding"]:
-        if _entity_key(record) not in object_bindings:
-            _missing(issues, "model_attribute_binding", "model_object_binding")
-        if _attribute_key(record) not in attributes:
-            _missing(issues, "model_attribute_binding", "modeled_attribute_name")
-
     mapping_objects = {_mapping_object_reference(record) for record in future["mapping_object"]}
     for record in future["mapping_object"]:
-        if _entity_key(record) not in object_bindings:
-            _missing(issues, "mapping_object", "model_object_binding")
+        if _entity_key(record) not in entities:
+            _missing(issues, "mapping_object", "modeled_entity_name")
     for record in future["mapping_attribute"]:
         if _mapping_object_reference(record) not in mapping_objects:
             _missing(issues, "mapping_attribute", "mapping_object")
-        if _attribute_key(record) not in attribute_bindings:
-            _missing(issues, "mapping_attribute", "model_attribute_binding")
+        if _attribute_key(record) not in attributes:
+            _missing(issues, "mapping_attribute", "modeled_attribute_name")
 
     artifacts = {_artifact_reference(record) for record in future["generated_code"]}
     for record in future["generated_code"]:
-        if _entity_key(record) not in object_bindings:
-            _missing(issues, "generated_code", "model_object_binding")
+        if _entity_key(record) not in entities:
+            _missing(issues, "generated_code", "modeled_entity_name")
     for record in future["generated_code_source_system"]:
         if _artifact_reference(record) not in artifacts:
             _missing(issues, "generated_code_source_system", "generated_code")
@@ -974,13 +729,16 @@ def _validate_active_dependencies(
             endpoints = (
                 (
                     f"{layer}_entity",
+                    normalize_model_key_value(
+                        getattr(record, f"{side}_{layer}_entity_schema_name")
+                    ),
                     normalize_model_key_value(getattr(record, f"{side}_{layer}_entity_name")),
                     normalize_model_key_value(getattr(record, f"{side}_{layer}_attribute_name")),
                 )
                 for side in ("from", "to")
             )
             if any(
-                endpoint not in active_attributes or endpoint[:2] not in active_entities
+                endpoint not in active_attributes or endpoint[:3] not in active_entities
                 for endpoint in endpoints
             ):
                 _active_invalid(
@@ -990,47 +748,20 @@ def _validate_active_dependencies(
                     f"Active {layer.title()} Relationship requires active endpoint "
                     "Attributes and Entities.",
                 )
-    active_object_bindings = {
-        _entity_key(record)
-        for record in future["model_object_binding"]
-        if record.model_object_binding_status == "active"
-    }
-    active_attribute_bindings = {
-        _attribute_key(record)
-        for record in future["model_attribute_binding"]
-        if record.model_attribute_binding_status == "active"
-    }
-    for entity in active_object_bindings:
-        if entity not in active_entities:
-            _active_invalid(
-                issues,
-                "model_object_binding",
-                "modeled_entity_name",
-                "Active Object Binding requires an active modeled Entity.",
-            )
-    for attribute in active_attribute_bindings:
-        if attribute not in active_attributes or attribute[:2] not in active_object_bindings:
-            _active_invalid(
-                issues,
-                "model_attribute_binding",
-                "modeled_attribute_name",
-                "Active Attribute Binding requires active modeled and Object bindings.",
-            )
-
-    active_mapping_objects: set[tuple[str, str, str]] = set()
-    active_mapping_attributes: set[tuple[str, str, str, str]] = set()
+    active_mapping_objects: set[tuple[str, str, str, str]] = set()
+    active_mapping_attributes: set[tuple[str, str, str, str, str]] = set()
     mapping_systems_by_entity: dict[ModeledEntityKey, set[str]] = {}
     for record in future["mapping_object"]:
         if record.object_mapping_status != "active":
             continue
         entity = _entity_key(record)
         system = normalize_model_key_value(record.source_system_code)
-        if entity not in active_object_bindings or record.mapping_transformation_document is None:
+        if entity not in active_entities or record.mapping_transformation_document is None:
             _active_invalid(
                 issues,
                 "mapping_object",
                 "mapping_transformation_document",
-                "Active Mapping Object requires active Binding and transformation.",
+                "Active Mapping Object requires active Entity and transformation.",
             )
             continue
         reference = _mapping_object_reference(record)
@@ -1042,20 +773,21 @@ def _validate_active_dependencies(
             continue
         if (
             _mapping_object_reference(record) not in active_mapping_objects
-            or _attribute_key(record) not in active_attribute_bindings
+            or _attribute_key(record) not in active_attributes
             or record.attribute_mapping_transformation_document is None
         ):
             _active_invalid(
                 issues,
                 "mapping_attribute",
-                "model_attribute_binding",
-                "Active Mapping Attribute requires active Mapping and Attribute Binding.",
+                "modeled_attribute_name",
+                "Active Mapping Attribute requires active Mapping and modeled Attribute.",
             )
             continue
-        entity_type, entity_name, attribute_name = _attribute_key(record)
+        entity_type, entity_schema, entity_name, attribute_name = _attribute_key(record)
         active_mapping_attributes.add(
             (
                 entity_type,
+                entity_schema,
                 entity_name,
                 normalize_model_key_value(record.source_system_code),
                 attribute_name,
@@ -1064,7 +796,7 @@ def _validate_active_dependencies(
 
     for entity, systems in mapping_systems_by_entity.items():
         entity_attributes = {
-            attribute[2] for attribute in active_attribute_bindings if attribute[:2] == entity
+            attribute[3] for attribute in active_attributes if attribute[:3] == entity
         }
         for system in systems:
             if any(
@@ -1075,7 +807,7 @@ def _validate_active_dependencies(
                     issues,
                     "mapping_attribute",
                     "modeled_attribute_name",
-                    "Active Mapping must cover every active bound target Attribute per System.",
+                    "Active Mapping must cover every active modeled Attribute per System.",
                 )
 
     active_artifacts = {
@@ -1085,12 +817,12 @@ def _validate_active_dependencies(
     }
     system_assignments: Counter[tuple[ModeledEntityKey, str]] = Counter()
     for record in active_artifacts.values():
-        if _entity_key(record) not in active_object_bindings:
+        if _entity_key(record) not in active_entities:
             _active_invalid(
                 issues,
                 "generated_code",
-                "model_object_binding",
-                "Active Code artifact requires an active Object Binding.",
+                "modeled_entity_name",
+                "Active Code artifact requires an active modeled Entity.",
             )
     for record in future["generated_code_source_system"]:
         if record.generated_code_source_system_status != "active":
@@ -1163,7 +895,9 @@ def validation_mapping_context_digest(
         {
             "modeled_entity_type": context.modeled_entity_type,
             "modeled_entity_name": normalize_model_key_value(context.modeled_entity_name),
-            "target": _object_key_document(context.object_key),
+            "modeled_entity_schema_name": normalize_model_key_value(
+                context.modeled_entity_schema_name
+            ),
             "code_input_digest": context.code_input_digest,
         }
         for context in contexts
@@ -1183,6 +917,7 @@ def validation_code_context_digest(
     relevant = {
         (
             context.modeled_entity_type,
+            normalize_model_key_value(context.modeled_entity_schema_name),
             normalize_model_key_value(context.modeled_entity_name),
         ): context
         for context in contexts
@@ -1195,12 +930,10 @@ def validation_code_context_digest(
             continue
         entity_type = getattr(record, "modeled_entity_type", None)
         entity_name = getattr(record, "modeled_entity_name", None)
-        if not isinstance(entity_type, str) or not isinstance(entity_name, str):
+        entity_schema = getattr(record, "modeled_entity_schema_name", None)
+        if not all(isinstance(value, str) for value in (entity_type, entity_schema, entity_name)):
             continue
-        key: ModeledEntityKey = (
-            entity_type,
-            normalize_model_key_value(entity_name),
-        )
+        key = _entity_key(record)
         context = relevant.get(key)
         if context is None:
             continue
@@ -1218,8 +951,10 @@ def validation_code_context_digest(
         entries.append(
             {
                 "modeled_entity_type": key[0],
-                "modeled_entity_name": key[1],
-                "target": _object_key_document(context.object_key),
+                "modeled_entity_name": key[2],
+                "modeled_entity_schema_name": normalize_model_key_value(
+                    context.modeled_entity_schema_name
+                ),
                 "artifact_name": getattr(record, "artifact_name", ""),
                 "artifact_type": getattr(record, "artifact_type", ""),
                 "code_input_digest": context.code_input_digest,
@@ -1275,17 +1010,8 @@ def _validate_modeled_layer(
         normalize_model_key_value(getattr(record, f"{layer}_submodel_name"))
         for record in future[f"{layer}_submodel"]
     }
-    entities = {
-        normalize_model_key_value(getattr(record, f"{layer}_entity_name"))
-        for record in future[f"{layer}_entity"]
-    }
-    attributes = {
-        (
-            normalize_model_key_value(getattr(record, f"{layer}_entity_name")),
-            normalize_model_key_value(getattr(record, f"{layer}_attribute_name")),
-        )
-        for record in future[f"{layer}_attribute"]
-    }
+    entities = {_entity_key(record): record for record in future[f"{layer}_entity"]}
+    attributes = {_attribute_key(record) for record in future[f"{layer}_attribute"]}
     for record in future[f"{layer}_entity"]:
         if any(
             normalize_model_key_value(membership.submodel_name) not in submodels
@@ -1299,8 +1025,32 @@ def _validate_modeled_layer(
             issues=issues,
         )
     for record in future[f"{layer}_attribute"]:
-        if normalize_model_key_value(getattr(record, f"{layer}_entity_name")) not in entities:
+        if _entity_key(record) not in entities:
             _missing(issues, f"{layer}_attribute", f"{layer}_entity_name")
+        if layer == "dimensional" and (owner := entities.get(_entity_key(record))) is not None:
+            for source in record.sources:
+                if source.support_source_type != "logical_attribute":
+                    continue
+                source_entity = _entity_key(source.source_logical_attribute)
+                parents = [
+                    support
+                    for support in owner.sources
+                    if support.support_source_type == "logical_entity"
+                    and _entity_key(support.source_logical_entity) == source_entity
+                ]
+                if not parents:
+                    _missing(issues, "dimensional_attribute", "sources")
+                elif (
+                    record.dimensional_attribute_status == "active"
+                    and source.status == "active"
+                    and not any(parent.status == "active" for parent in parents)
+                ):
+                    _active_invalid(
+                        issues,
+                        "dimensional_attribute",
+                        "sources",
+                        "Active Attribute support requires active support on its parent Entity.",
+                    )
         _validate_supports(
             record.sources,
             dataset=f"{layer}_attribute",
@@ -1310,13 +1060,12 @@ def _validate_modeled_layer(
     for record in future[f"{layer}_relationship"]:
         endpoints = (
             (
-                normalize_model_key_value(getattr(record, f"from_{layer}_entity_name")),
-                normalize_model_key_value(getattr(record, f"from_{layer}_attribute_name")),
-            ),
-            (
-                normalize_model_key_value(getattr(record, f"to_{layer}_entity_name")),
-                normalize_model_key_value(getattr(record, f"to_{layer}_attribute_name")),
-            ),
+                f"{layer}_entity",
+                normalize_model_key_value(getattr(record, f"{side}_{layer}_entity_schema_name")),
+                normalize_model_key_value(getattr(record, f"{side}_{layer}_entity_name")),
+                normalize_model_key_value(getattr(record, f"{side}_{layer}_attribute_name")),
+            )
+            for side in ("from", "to")
         )
         if any(endpoint not in attributes for endpoint in endpoints):
             _missing(issues, f"{layer}_relationship", f"{layer}_attribute_name")
@@ -1361,35 +1110,28 @@ def _entity_key(record: Any) -> ModeledEntityKey:
             "logical_entity" if hasattr(record, "logical_entity_name") else "dimensional_entity"
         )
     name = getattr(record, "modeled_entity_name", None)
+    schema = getattr(record, "modeled_entity_schema_name", None)
     if name is None:
-        name = getattr(
-            record,
-            "logical_entity_name" if entity_type == "logical_entity" else "dimensional_entity_name",
-        )
-    return entity_type, normalize_model_key_value(name)
+        name = getattr(record, f"{entity_type}_name")
+        schema = getattr(record, f"{entity_type}_schema_name")
+    assert isinstance(schema, str) and isinstance(name, str)
+    return entity_type, normalize_model_key_value(schema), normalize_model_key_value(name)
 
 
 def _attribute_key(record: Any) -> ModeledAttributeKey:
-    entity_type, entity_name = _entity_key(record)
+    entity = _entity_key(record)
     name = getattr(record, "modeled_attribute_name", None)
     if name is None:
-        name = getattr(
-            record,
-            "logical_attribute_name"
-            if entity_type == "logical_entity"
-            else "dimensional_attribute_name",
-        )
-    return entity_type, entity_name, normalize_model_key_value(name)
+        name = getattr(record, f"{entity[0].removesuffix('_entity')}_attribute_name")
+    return *entity, normalize_model_key_value(name)
 
 
-def _mapping_object_reference(record: Any) -> tuple[str, str, str]:
-    entity_type, entity_name = _entity_key(record)
-    return entity_type, entity_name, normalize_model_key_value(record.source_system_code)
+def _mapping_object_reference(record: Any) -> tuple[str, str, str, str]:
+    return *_entity_key(record), normalize_model_key_value(record.source_system_code)
 
 
-def _artifact_reference(record: Any) -> tuple[str, str, str]:
-    entity_type, entity_name = _entity_key(record)
-    return entity_type, entity_name, normalize_model_key_value(record.artifact_name)
+def _artifact_reference(record: Any) -> tuple[str, str, str, str]:
+    return *_entity_key(record), normalize_model_key_value(record.artifact_name)
 
 
 def _validation_group_reference(record: Any) -> tuple[str, str, str]:
@@ -1559,6 +1301,10 @@ def _nested_record_key(record: Any) -> tuple[object, ...]:
             source_type,
             normalize_model_key_value(record.assertion_record.modeling_assertion_record_key),
         )
+    if source_type == "logical_entity":
+        return source_type, *_entity_key(record.source_logical_entity)
+    if source_type == "logical_attribute":
+        return source_type, *_attribute_key(record.source_logical_attribute)
     physical = record.source_attribute if source_type == "attribute" else record.source_object
     return (
         source_type,
@@ -1577,16 +1323,6 @@ def _canonical_key(
 ) -> tuple[object, ...]:
     return tuple(
         normalize_model_key_value(getattr(record, field)) for field in definition.canonical_key
-    )
-
-
-def _object_key_document(key: PhysicalObjectNaturalKey) -> dict[str, str]:
-    return dict(
-        zip(
-            ("tenant_code", "system_code", "connection_code", "object_schema", "object_name"),
-            key,
-            strict=True,
-        )
     )
 
 

@@ -30,6 +30,7 @@ from gds_workbench_api.features.models.command_contracts import (
     ModelCommandResult,
     ModelNameConflictError,
     ModelRevisionConflictError,
+    ModelSchemaConflictError,
     UpdateModelRequest,
 )
 from gds_workbench_api.features.models.contracts import ModelNotFoundError
@@ -42,7 +43,7 @@ SELECT created.model_id,
        created.updated_time AS updated_at
   FROM application.create_model(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS created
 """
 
@@ -62,7 +63,7 @@ SELECT updated.model_id,
        updated.updated_time AS updated_at
   FROM application.update_model(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS updated
 """
 
@@ -257,6 +258,8 @@ def _complete_model_parameters(request: CompleteModelRequest) -> tuple[object, .
     return (
         request.model_name,
         request.model_description,
+        Jsonb([item.model_dump() for item in request.logical_schemas]),
+        Jsonb([item.model_dump() for item in request.dimensional_schemas]),
         request.silver_model_naming_instructions,
         _as_jsonb(request.silver_model_audit_columns_template),
         request.gold_model_naming_instructions,
@@ -290,6 +293,8 @@ def _raise_safe_command_error(error: Exception) -> Never:
     message = _primary_database_message(error)
     if message == "stale_model_revision":
         raise ModelRevisionConflictError() from error
+    if message == "A referenced Model schema cannot be removed or renamed":
+        raise ModelSchemaConflictError() from error
     if message == "Model is unavailable":
         raise ModelNotFoundError() from error
     denial_code = _controlled_denial_code(message)

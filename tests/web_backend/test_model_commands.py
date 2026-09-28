@@ -100,6 +100,8 @@ def _complete_model_payload() -> dict[str, object]:
     return {
         "model_name": "Customer 360",
         "model_description": "Cross-system customer domain",
+        "logical_schemas": [{"schema_name": "silver", "description": "Operational entities"}],
+        "dimensional_schemas": [{"schema_name": "gold", "description": None}],
         "silver_model_naming_instructions": "Use snake case.",
         "silver_model_audit_columns_template": {
             "columns": [{"name": "created_at", "type": "timestamp"}]
@@ -314,21 +316,25 @@ async def test_database_create_model_authorizes_lock_and_passes_full_identity_co
     assert created.model_id == 18
     parameters = database.transaction.create_parameters
     assert parameters is not None
-    assert parameters[:7] == (
+    assert parameters[:6] == (
         principal.entra_tenant_id,
         principal.entra_object_id,
         "user",
         7,
         "Customer 360",
         "Cross-system customer domain",
-        "Use snake case.",
     )
+    assert isinstance(parameters[6], Jsonb)
+    assert parameters[6].obj == _complete_model_payload()["logical_schemas"]
     assert isinstance(parameters[7], Jsonb)
-    assert parameters[7].obj == request.silver_model_audit_columns_template
-    assert parameters[8] == "Use business names."
+    assert parameters[7].obj == _complete_model_payload()["dimensional_schemas"]
+    assert parameters[8] == "Use snake case."
     assert isinstance(parameters[9], Jsonb)
-    assert isinstance(parameters[10], Jsonb)
-    assert parameters[11:] == (
+    assert parameters[9].obj == request.silver_model_audit_columns_template
+    assert parameters[10] == "Use business names."
+    assert isinstance(parameters[11], Jsonb)
+    assert isinstance(parameters[12], Jsonb)
+    assert parameters[13:] == (
         "openai_agents_sdk",
         "microsoft_foundry",
         "foundry-primary",
@@ -443,18 +449,17 @@ async def test_revision_commands_precheck_path_tenant_and_call_only_governed_fun
     update_call, archive_call = database.transaction.function_calls
     assert update_call[0] == "update"
     assert update_call[1][:5] == identity + (18, 4)
-    assert update_call[1][5:11] == (
-        "Customer 360",
-        "Cross-system customer domain",
-        "Use snake case.",
-        update_call[1][8],
-        "Use business names.",
-        update_call[1][10],
-    )
+    assert update_call[1][5:7] == ("Customer 360", "Cross-system customer domain")
+    assert isinstance(update_call[1][7], Jsonb)
+    assert update_call[1][7].obj == _complete_model_payload()["logical_schemas"]
     assert isinstance(update_call[1][8], Jsonb)
+    assert update_call[1][8].obj == _complete_model_payload()["dimensional_schemas"]
+    assert update_call[1][9] == "Use snake case."
     assert isinstance(update_call[1][10], Jsonb)
-    assert isinstance(update_call[1][11], Jsonb)
-    assert update_call[1][12:] == (
+    assert update_call[1][11] == "Use business names."
+    assert isinstance(update_call[1][12], Jsonb)
+    assert isinstance(update_call[1][13], Jsonb)
+    assert update_call[1][14:] == (
         "openai_agents_sdk",
         "microsoft_foundry",
         "foundry-primary",
@@ -584,6 +589,16 @@ class FailingFunctionDatabase:
     ("database_message", "expected_status", "expected_code"),
     [
         ("stale_model_revision", 409, "model_revision_conflict"),
+        (
+            "A referenced Model schema cannot be removed or renamed",
+            409,
+            "model_schema_conflict",
+        ),
+        (
+            "A referenced Model schema cannot be removed or renamed: private database detail",
+            503,
+            "dependency_unavailable",
+        ),
         ("Model is unavailable", 404, "model_not_found"),
         ("Model update denied: tenant_lock_required", 409, "tenant_lock_required"),
         ("Model update denied: authorization_denied", 403, "authorization_denied"),
@@ -613,6 +628,7 @@ def test_database_model_failures_are_mapped_without_raw_message_disclosure(
 
     assert response.status_code == expected_status
     assert response.json()["error"]["code"] == expected_code
+    assert response.json()["error"]["retryable"] == (expected_status == 503)
     assert database_message not in response.text
 
 

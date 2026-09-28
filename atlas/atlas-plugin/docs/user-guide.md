@@ -46,14 +46,13 @@ These are the choices shown by the starter skill. Build modes are explicit:
 | [Dimensional / Gold build — Guided](../skills/atlas-dimensional-build-guided/SKILL.md) | Establish analytical purpose, grain, dimensions, facts and history. |
 | [Dimensional / Gold build — Grill Me](../skills/atlas-dimensional-build-grill-me/SKILL.md) | Discuss analytical choices and build agreed parts together. |
 | [Target registration](../skills/atlas-target-registration/SKILL.md) | Register Silver/Gold targets; optionally generate creation DDL. |
-| [Entity binding](../skills/atlas-entity-binding/SKILL.md) | Match model Entities/Attributes to registered targets. |
 | [Mapping](../skills/atlas-mapping/SKILL.md) | Define concise transformation instructions for each target and contributing System. |
 | [Code generation](../skills/atlas-code-generation/SKILL.md) | Generate transformation SQL from applied Mapping. |
 | [Validation](../skills/atlas-validation/SKILL.md) | Author meaningful technical and functional checks. |
 | [Process metadata](../skills/atlas-process-metadata/SKILL.md) | Register applied transformation files, locations and execution dependencies. |
 | [Custom](../skills/atlas-custom/SKILL.md) | Debug supplied code, explain a model, reverse engineer logic or investigate other questions. |
 
-**Guided** follows defined phases. **Grill Me** inspects evidence, recommends answers and works through consequential decisions with you. “Drill me” is accepted as an alias for Grill Me. Switching modes preserves work; it does not restart the model. For registration, binding, mapping, code and validation, specify **Logical/Silver** or **Dimensional/Gold** when context does not make it clear.
+**Guided** follows defined phases. **Grill Me** inspects evidence, recommends answers and works through consequential decisions with you. “Drill me” is accepted as an alias for Grill Me. Switching modes preserves work; it does not restart the model. For registration, mapping, code and validation, specify **Logical/Silver** or **Dimensional/Gold** when context does not make it clear.
 
 ## Useful requests
 

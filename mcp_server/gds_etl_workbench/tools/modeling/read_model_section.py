@@ -20,10 +20,7 @@ from gds_etl_workbench.application.cursor import CursorCodec
 from gds_etl_workbench.application.model_read import POLICY, authorize_model_read
 from gds_etl_workbench.application.model_snapshot import (
     _MAPPING_ATTRIBUTE_SQL,
-    _MAPPING_DEPENDENCY_SQL,
     _MAPPING_OBJECT_SQL,
-    _MODEL_ATTRIBUTE_BINDING_SQL,
-    _MODEL_OBJECT_BINDING_SQL,
     _validate_records,
 )
 from gds_etl_workbench.application.modeling.assertions import DOCUMENTS_SQL, RECORDS_SQL
@@ -62,9 +59,6 @@ type ReadableModelDataset = Literal[
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",
-    "model_object_binding",
-    "model_attribute_binding",
-    "mapping_dependency",
     "mapping_object",
     "mapping_attribute",
 ]
@@ -73,9 +67,6 @@ _TOOL_NAME = "read_model_section"
 _MAX_PAGE_SIZE = 200
 _MAX_OFFSET = 20_000
 _NO_OFFSET_QUERIES: dict[ReadableModelDataset, LiteralString] = {
-    "model_object_binding": _MODEL_OBJECT_BINDING_SQL,
-    "model_attribute_binding": _MODEL_ATTRIBUTE_BINDING_SQL,
-    "mapping_dependency": _MAPPING_DEPENDENCY_SQL,
     "mapping_object": _MAPPING_OBJECT_SQL,
     "mapping_attribute": _MAPPING_ATTRIBUTE_SQL,
 }
@@ -111,7 +102,7 @@ def register_read_model_section_tool(
         name=_TOOL_NAME,
         description=(
             "Read one bounded applied Model dataset from Profiling, Analysis, Assertions, "
-            "Conceptual, Logical, Dimensional, Binding, or Mapping. Generated Code and "
+            "Conceptual, Logical, Dimensional, or Mapping. Generated Code and "
             "Validation are Snapshot-only; use a Model Snapshot when either is needed."
         ),
         annotations=ToolAnnotations(

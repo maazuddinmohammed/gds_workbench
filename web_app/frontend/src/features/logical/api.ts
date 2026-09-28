@@ -23,6 +23,7 @@ export interface LogicalEntityFilters extends LogicalFilters {
 export interface LogicalEntity {
   logical_entity_id: number;
   workflow_run_id: number | null;
+  logical_entity_schema_name: string;
   logical_entity_name: string;
   logical_entity_type: string;
   logical_entity_dependency_order: number;
@@ -109,6 +110,7 @@ export interface LogicalAttribute {
   logical_attribute_id: number;
   workflow_run_id: number | null;
   logical_entity_id: number;
+  logical_entity_schema_name: string;
   logical_entity_name: string;
   logical_attribute_name: string;
   logical_attribute_data_type: string;
@@ -175,10 +177,12 @@ export interface LogicalRelationship {
   logical_relationship_id: number;
   workflow_run_id: number | null;
   from_logical_entity_id: number;
+  from_logical_entity_schema_name: string;
   from_logical_entity_name: string;
   from_logical_attribute_id: number;
   from_logical_attribute_name: string;
   to_logical_entity_id: number;
+  to_logical_entity_schema_name: string;
   to_logical_entity_name: string;
   to_logical_attribute_id: number;
   to_logical_attribute_name: string;
@@ -225,6 +229,7 @@ export interface LogicalSubmodelEntityMembership {
   logical_entity_submodel_id: number;
   workflow_run_id: number | null;
   logical_entity_id: number;
+  logical_entity_schema_name: string;
   logical_entity_name: string;
   logical_entity_type: string;
   logical_entity_status: ReviewStatus;

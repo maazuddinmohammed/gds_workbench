@@ -78,7 +78,7 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 - All four zone datasets share one physical-table identity. Owner and Zone are not part of the natural key.
 - Follow [ownership and physical identity](object.md#ownership-and-physical-identity) for placement and the selected Change Set Tenant.
 - Changing Connection/schema/name requires the user's [manual database correction](../editing.md#manual-natural-key-changes). The agent supplies instructions only. Apply does not transfer Object ownership.
-- Preserve existing protection and unrelated fields. Check Attributes, mappings, Copies, Model bindings and Processes when changing classification or activity.
+- Preserve existing protection and unrelated fields. Check Attributes, mappings, Copies, Model Input Scope and Processes when changing classification or activity.
 - Stage only affected records. Even unchanged re-staging of a locked Object or its Attributes fails the lock check.
 - Foreign-catalog coordinates are conditional on the requested evidence operation; they are not universally mandatory.
 - Follow [shared editing rules](../editing.md); validate the complete effective result and preserve unrelated fields.

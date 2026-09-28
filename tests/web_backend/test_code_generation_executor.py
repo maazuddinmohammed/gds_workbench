@@ -131,7 +131,7 @@ def _plan(*, retry_count: int = 1) -> AgentRunPlan:
         sql_generation_guide_version_id=91,
         sql_generation_guide_digest="9" * 64,
         selected_scope_digest="a" * 64,
-        selected_object_ids=(501, 502),
+        selected_object_ids=(), selected_entity_ids=(501, 502),
         selection=AgentRunSelection(
             sdk_code="openai_agents_sdk",
             provider_code="microsoft_foundry",
@@ -175,20 +175,20 @@ def _execution_context() -> CodeGenerationExecutionContext:
         targets=(
             CodeGenerationArtifactContext(
                 target_ref="target_1",
-                object_id=501,
+                modeled_entity_id=501,
                 code_input_digest="c" * 64,
                 sql_generation_guide_version_id=91,
                 modeled_entity_type="logical_entity",
-                modeled_entity_name="TargetOne",
+                modeled_entity_schema_name="silver", modeled_entity_name="TargetOne",
                 source_system_codes=("CRM",),
             ),
             CodeGenerationArtifactContext(
                 target_ref="target_2",
-                object_id=502,
+                modeled_entity_id=502,
                 code_input_digest="e" * 64,
                 sql_generation_guide_version_id=91,
                 modeled_entity_type="logical_entity",
-                modeled_entity_name="TargetTwo",
+                modeled_entity_schema_name="silver", modeled_entity_name="TargetTwo",
                 source_system_codes=("CRM",),
             ),
         ),
@@ -222,7 +222,7 @@ def _applied_execution_context() -> CodeGenerationExecutionContext:
                         GeneratedCodeRecord(
                             generated_code_is_locked=False,
                             modeled_entity_type="logical_entity",
-                            modeled_entity_name=target.modeled_entity_name,
+                            modeled_entity_schema_name="silver", modeled_entity_name=target.modeled_entity_name,
                             artifact_name=f"target_{position}.sql",
                             artifact_type="sql_file",
                             generated_code_content=content,
@@ -233,7 +233,7 @@ def _applied_execution_context() -> CodeGenerationExecutionContext:
                         GeneratedCodeSourceSystemRecord(
                             generated_code_source_system_is_locked=False,
                             modeled_entity_type="logical_entity",
-                            modeled_entity_name=target.modeled_entity_name,
+                            modeled_entity_schema_name="silver", modeled_entity_name=target.modeled_entity_name,
                             artifact_name=f"target_{position}.sql",
                             source_system_code="CRM",
                             generated_code_source_system_status="active",
@@ -252,11 +252,11 @@ def _execution_context_for_target_count(
     targets = tuple(
         CodeGenerationArtifactContext(
             target_ref=f"target_{position}",
-            object_id=500 + position,
+            modeled_entity_id=500 + position,
             code_input_digest="c" * 64,
             sql_generation_guide_version_id=91,
             modeled_entity_type="logical_entity",
-            modeled_entity_name=f"Target{position}",
+            modeled_entity_schema_name="silver", modeled_entity_name=f"Target{position}",
             source_system_codes=("CRM",),
         )
         for position in range(1, target_count + 1)
@@ -286,11 +286,11 @@ def _multibyte_execution_context(
     targets = tuple(
         CodeGenerationArtifactContext(
             target_ref=f"target_{position}",
-            object_id=500 + position,
+            modeled_entity_id=500 + position,
             code_input_digest=f"{position}" * 64,
             sql_generation_guide_version_id=91,
             modeled_entity_type="logical_entity",
-            modeled_entity_name=f"Target{position}",
+            modeled_entity_schema_name="silver", modeled_entity_name=f"Target{position}",
             source_system_codes=("CRM",),
         )
         for position in (1, 2)
@@ -1043,7 +1043,7 @@ async def test_executor_does_not_mark_run_failed_after_uncertain_finalization() 
 async def test_executor_bounds_progress_events_for_large_target_sets() -> None:
     target_count = 80
     context = _execution_context_for_target_count(target_count)
-    plan = _plan().model_copy(update={"selected_object_ids": tuple(range(501, 501 + target_count))})
+    plan = _plan().model_copy(update={"selected_entity_ids": tuple(range(501, 501 + target_count))})
     agent = _AgentExecutor(
         responses=[
             cast(
@@ -1385,7 +1385,7 @@ async def test_executor_propagates_a_bounded_terminal_failure_persistence_error(
 def code_validation_context(
     context: CodeGenerationExecutionContext,
 ) -> CodeGenerationExecutionContext:
-    """Applied Mapping and physical bindings for synthetic Code targets."""
+    """Applied Entity Mapping for synthetic Code targets."""
     from dataclasses import fields, replace
 
     from gds_etl_workbench.domain.modeling_records import (
@@ -1445,7 +1445,7 @@ def code_validation_context(
                     if dataset == "generated_code"
                     else target.applied_generated_code_source_systems
                 )
-            if dataset in {"mapping_object", "mapping_attribute", "mapping_dependency"}:
+            if dataset in {"mapping_object", "mapping_attribute"}:
                 values = tuple(
                     record.model_copy(update={"source_system_code": code})
                     for record in values

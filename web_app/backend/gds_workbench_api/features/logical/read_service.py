@@ -55,6 +55,7 @@ SELECT target_model.model_revision
 _LOGICAL_ENTITIES_SQL: LiteralString = """
 SELECT entity.logical_entity_id,
        entity.workflow_run_id,
+       entity.logical_entity_schema_name,
        entity.logical_entity_name,
        entity.logical_entity_type,
        entity.logical_entity_dependency_order,
@@ -102,6 +103,7 @@ SELECT entity.logical_entity_id,
 _LOGICAL_ENTITY_DETAIL_SQL: LiteralString = """
 SELECT entity.logical_entity_id,
        entity.workflow_run_id,
+       entity.logical_entity_schema_name,
        entity.logical_entity_name,
        entity.logical_entity_definition,
        entity.logical_entity_type,
@@ -215,6 +217,7 @@ _LOGICAL_ATTRIBUTES_SQL: LiteralString = """
 SELECT attribute.logical_attribute_id,
        attribute.workflow_run_id,
        attribute.logical_entity_id,
+       entity.logical_entity_schema_name,
        entity.logical_entity_name,
        attribute.logical_attribute_name,
        attribute.logical_attribute_data_type,
@@ -260,6 +263,7 @@ _LOGICAL_ATTRIBUTE_DETAIL_SQL: LiteralString = """
 SELECT attribute.logical_attribute_id,
        attribute.workflow_run_id,
        attribute.logical_entity_id,
+       entity.logical_entity_schema_name,
        entity.logical_entity_name,
        attribute.logical_attribute_name,
        attribute.logical_attribute_definition,
@@ -361,12 +365,14 @@ SELECT relationship.logical_relationship_id,
        relationship.workflow_run_id,
        relationship.logical_relationship_from_entity_id
            AS from_logical_entity_id,
+       from_entity.logical_entity_schema_name AS from_logical_entity_schema_name,
        from_entity.logical_entity_name AS from_logical_entity_name,
        relationship.logical_relationship_from_attribute_id
            AS from_logical_attribute_id,
        from_attribute.logical_attribute_name AS from_logical_attribute_name,
        relationship.logical_relationship_to_entity_id
            AS to_logical_entity_id,
+       to_entity.logical_entity_schema_name AS to_logical_entity_schema_name,
        to_entity.logical_entity_name AS to_logical_entity_name,
        relationship.logical_relationship_to_attribute_id
            AS to_logical_attribute_id,
@@ -431,12 +437,14 @@ SELECT relationship.logical_relationship_id,
        relationship.workflow_run_id,
        relationship.logical_relationship_from_entity_id
            AS from_logical_entity_id,
+       from_entity.logical_entity_schema_name AS from_logical_entity_schema_name,
        from_entity.logical_entity_name AS from_logical_entity_name,
        relationship.logical_relationship_from_attribute_id
            AS from_logical_attribute_id,
        from_attribute.logical_attribute_name AS from_logical_attribute_name,
        relationship.logical_relationship_to_entity_id
            AS to_logical_entity_id,
+       to_entity.logical_entity_schema_name AS to_logical_entity_schema_name,
        to_entity.logical_entity_name AS to_logical_entity_name,
        relationship.logical_relationship_to_attribute_id
            AS to_logical_attribute_id,
@@ -549,6 +557,7 @@ _LOGICAL_SUBMODEL_ENTITIES_SQL: LiteralString = """
 SELECT membership.logical_entity_submodel_id,
        membership.workflow_run_id,
        entity.logical_entity_id,
+       entity.logical_entity_schema_name,
        entity.logical_entity_name,
        entity.logical_entity_type,
        entity.logical_entity_status,

@@ -1,6 +1,6 @@
 {
   "workflow": "code_generation",
-  "note": "Synthetic schema example, not a model-quality evaluation or executed SQL. Actual generation requires selected real guide/documents.",
+  "note": "Applied Entity-owned Mapping supplies the Code input. Planned target coordinates use Model GDS placement and the Entity schema/name. Artifacts are owned by that Entity.",
   "inputs": {
     "target_metadata": {
       "tenant_code": "NWA",
@@ -26,7 +26,10 @@
           "is_active": true,
           "is_locked": false
         }
-      ]
+      ],
+      "modeled_entity_type": "logical_entity",
+      "modeled_entity_schema_name": "silver_crm",
+      "modeled_entity_name": "Customer"
     },
     "source_metadata": [
       {
@@ -66,8 +69,7 @@
     "source_systems": [
       {
         "system_code": "CRM",
-        "system_name": "CRM",
-        "dependency_order": 10
+        "system_name": "CRM"
       }
     ],
     "object_transformations": [
@@ -78,22 +80,15 @@
           "entity_name": "Customer",
           "definition": "Customer identity.",
           "classification": "entity",
-          "grain": null
+          "grain": null,
+          "entity_schema_name": "silver"
         },
         "transformation": {
-          "source_objects": [
-            {
-              "tenant_code": "NWA",
-              "system_code": "CRM",
-              "connection_code": "crm_bronze",
-              "object_schema": "bronze_crm",
-              "object_name": "customer",
-              "alias": "c"
-            }
-          ],
           "steps": [
-            "Read northwind.bronze_crm.customer as c at its documented customer grain. No joins, filtering, grouping or deduplication apply.",
-            "Produce one row per customer using the bound Attribute transformations in target order. Runtime handles target loading."
+            {
+              "name": "customers",
+              "source": "customer_source"
+            }
           ]
         },
         "source_system_code": "CRM"
@@ -104,25 +99,16 @@
         "target_attribute_name": "CustomerID",
         "target_attribute_ordinal_position": 1,
         "transformation": {
-          "source_attributes": [
-            {
-              "tenant_code": "NWA",
-              "system_code": "CRM",
-              "connection_code": "crm_bronze",
-              "object_schema": "bronze_crm",
-              "object_name": "customer",
-              "attribute_name": "customer_id"
-            }
-          ],
-          "transformation": "Return c.customer_id unchanged as BIGINT. Source and target are non-null BIGINT; no cast or default is needed."
+          "expression": "CAST(customer_id AS BIGINT)"
         },
         "source_system_code": "CRM",
         "modeled_entity_type": "logical_entity",
-        "modeled_entity_name": "Customer"
+        "modeled_entity_name": "Customer",
+        "modeled_entity_schema_name": "silver"
       }
     ],
     "target_ref": "target_1",
-    "sql_generation_guide": "Generate Databricks SQL from applied Object steps and Attribute transformations using successive CREATE OR REPLACE TEMPORARY VIEW statements and one final target-column SELECT. Qualify physical relations. Runtime owns target loading."
+    "sql_generation_guide": "Generate Databricks SQL using exact applied transformations and qualified physical names."
   },
   "candidate": {
     "artifacts": [
@@ -138,13 +124,8 @@
     ]
   },
   "validations": [
-    "Every target_ref resolves to a frozen target and every frozen target is covered.",
-    "Artifact file names are valid and unique within target; reject paths and dot names.",
-    "System assignments are known and cover every target's frozen System exactly once.",
-    "Validate artifact_role: transformations assign Systems; support assigns none.",
-    "Validate exact schema and bounds; parse SQL-only Databricks statements and reject fences/control garbage.",
-    "Derive stored natural identities, bindings, assignments and provenance; preserve generated-code locks.",
-    "Validate combined candidate/Change Set limits and effective Model graph before staging/apply.",
-    "Repair against frozen scope. Parsing is not execution or complete semantic relation/column checking."
-  ]
+    "Inputs and candidate match the runtime JSON schemas.",
+    "Backend rechecks authorization, revision, typed ownership, source evidence, and current Mapping/Code digests."
+  ],
+  "output_schema_source": "web_app/backend/gds_workbench_api/features/code_generation/candidate.py:CodeGenerationCandidateValidator.output_schema"
 }

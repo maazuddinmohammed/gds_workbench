@@ -25,13 +25,11 @@ from gds_workbench_api.prompt_rendering import PromptComponentTemplates
 from pydantic import JsonValue
 
 from tests.mcp.model_test_fixtures import (
-    attribute_binding,
     dimensional_attribute,
     dimensional_entity,
     logical_attribute,
     logical_entity,
     model_details,
-    object_binding,
     snapshot_from_graph,
 )
 
@@ -58,7 +56,8 @@ def mapping_preparation(
                 workflow_execution_mode=execution_mode,
                 modeled_entity_type=modeled_entity_type,
                 selected_scope_digest="a" * 64,
-                selected_object_ids=(501,),
+                selected_object_ids=(),
+                selected_entity_ids=(201,),
                 selection=AgentRunSelection(
                     sdk_code="openai_agents_sdk",
                     provider_code="microsoft_foundry",
@@ -84,7 +83,7 @@ def mapping_preparation(
                 ),
             ),
             "actor_principal_id": 77,
-            "pair": {"target_object_id": 501, "source_system_id": 31},
+            "pair": {"modeled_entity_id": 201, "source_system_id": 31},
             "operation": operation,
             "coverage_mode": "selected_targets",
             "route": route,
@@ -95,160 +94,158 @@ def mapping_preparation(
         },
         strict=False,
     )
-    context = MappingRunContext.model_validate(
-        {
-            "workflow_run_id": 1048,
-            "model_id": 18,
-            "model_revision": 7,
-            "correlation_id": "33333333-3333-3333-3333-333333333333",
-            "pair": {"target_object_id": 501, "source_system_id": 31},
-            "modeled_entity_type": modeled_entity_type,
-            "route": route,
-            "output_template_selections": {
-                "mapping_object": None,
-                "mapping_attribute": None,
-            },
-            "source_system": {
-                "system_id": 31,
-                "system_code": "CRM",
-                "system_name": "CRM",
-                "system_description": None,
-                "is_active": True,
-            },
-            "dependency": {
-                "mapping_source_system_dependency_id": 71,
-                "dependency_order": 0,
-                "status": "active",
-                "is_locked": True,
-            },
-            "dependency_graph": {
-                "nodes": [
-                    {
-                        "mapping_source_system_dependency_id": 71,
-                        "source_system_id": 31,
-                        "dependency_order": 0,
-                        "status": "active",
-                        "is_locked": True,
-                    }
-                ],
-                "edges": [],
-                "malformed_reference_count": 0,
-            },
-            "target_dependency_graph": {
-                "nodes": [
-                    {
-                        "target_object_id": 501,
-                        "dependency_order": 0,
-                        "status": "active",
-                        "has_locked_headers": locked,
-                        "has_unlocked_headers": not locked,
-                    }
-                ],
-                "edges": [],
-                "malformed_reference_count": 0,
-                "mixed_order_target_count": 0,
-            },
-            "output_templates": {"ids": [], "definitions": []},
-            "target": physical_object(
-                object_id=501,
-                system_id=41,
-                system_code="GDS",
-                connection_id=61,
-                connection_code="lakehouse",
-                schema="gold_crm" if dimensional else "silver_crm",
-                name="Customer",
-                zone="gold" if dimensional else "silver",
-                attribute_id=901,
-                attribute_name="CustomerID",
-                global_store=True,
-            ),
-            "sources": [
+    context_document: dict[str, Any] = {
+        "workflow_run_id": 1048,
+        "model_id": 18,
+        "model_revision": 7,
+        "correlation_id": "33333333-3333-3333-3333-333333333333",
+        "pair": {"modeled_entity_id": 201, "source_system_id": 31},
+        "modeled_entity_type": modeled_entity_type,
+        "route": route,
+        "output_template_selections": {
+            "mapping_object": None,
+            "mapping_attribute": None,
+        },
+        "source_system": {
+            "system_id": 31,
+            "system_code": "CRM",
+            "system_name": "CRM",
+            "system_description": None,
+            "is_active": True,
+        },
+        "target_dependency_graph": {
+            "nodes": [
                 {
-                    "source_mapping_id": 301,
                     "modeled_entity_id": 201,
-                    "role": "support",
-                    "rationale": "Authoritative CRM feed.",
-                    "mapping_order": 1,
-                    "is_locked": False,
-                    "object": physical_object(
-                        object_id=401,
-                        system_id=31,
-                        system_code="CRM",
-                        connection_id=51,
-                        connection_code="crm_bronze",
-                        schema="silver_crm" if dimensional else "bronze_crm",
-                        name="customer",
-                        zone="silver" if dimensional else "bronze",
-                        attribute_id=801,
-                        attribute_name="customer_id",
-                        global_store=dimensional,
-                    ),
+                    "dependency_order": 0,
+                    "status": "active",
+                    "has_locked_headers": locked,
+                    "has_unlocked_headers": not locked,
                 }
             ],
-            "headers": [
-                {
-                    "model_object_binding_id": 111,
-                    "mapping_object_id": 101 if existing else None,
-                    "modeled_entity": {
-                        "entity_id": 201,
-                        "entity_name": "Customer",
-                        "entity_definition": "A customer.",
-                        "entity_kind": "core",
-                        "grain": "One row per customer.",
-                        "dependency_order": 0,
-                        "status": "active",
-                        "is_locked": False,
-                        "attributes": [
-                            {
-                                "attribute_id": 701,
-                                "attribute_name": "CustomerID",
-                                "attribute_definition": "Stable customer key.",
-                                "attribute_data_type": "BIGINT",
-                                "is_nullable": False,
-                                "ordinal_position": 1,
-                                "is_audit_column": False,
-                                "status": "active",
-                                "is_locked": False,
-                            }
-                        ],
-                    },
-                    "object_dependency_order": 0,
-                    "transformation_document": (
-                        {"kind": "direct", "logic": "existing"} if existing else None
-                    ),
+            "edges": [],
+            "malformed_reference_count": 0,
+            "mixed_order_target_count": 0,
+        },
+        "output_templates": {"ids": [], "definitions": []},
+        "target": physical_object(
+            object_id=501,
+            system_id=41,
+            system_code="GDS",
+            connection_id=61,
+            connection_code="lakehouse",
+            schema="gold_crm" if dimensional else "silver_crm",
+            name="Customer",
+            zone="gold" if dimensional else "silver",
+            attribute_id=901,
+            attribute_name="CustomerID",
+            global_store=True,
+        ),
+        "sources": [
+            {
+                "source_mapping_id": 301,
+                "modeled_entity_id": 201,
+                "role": "support",
+                "rationale": "Authoritative CRM feed.",
+                "mapping_order": 1,
+                "is_locked": False,
+                "object": physical_object(
+                    object_id=401,
+                    system_id=31,
+                    system_code="CRM",
+                    connection_id=51,
+                    connection_code="crm_bronze",
+                    schema="silver_crm" if dimensional else "bronze_crm",
+                    name="customer",
+                    zone="silver" if dimensional else "bronze",
+                    attribute_id=801,
+                    attribute_name="customer_id",
+                    global_store=dimensional,
+                ),
+            }
+        ],
+        "headers": [
+            {
+                "modeled_entity_id": 201,
+                "mapping_object_id": 101 if existing else None,
+                "modeled_entity": {
+                    "entity_id": 201,
+                    "entity_name": "Customer",
+                    "entity_definition": "A customer.",
+                    "entity_kind": "core",
+                    "grain": "One row per customer.",
+                    "dependency_order": 0,
                     "status": "active",
-                    "is_locked": locked,
-                    "agent_run_id": None,
-                    "workflow_run_id": None,
-                    "output_template_id": None,
-                    "attribute_mappings": [
+                    "is_locked": False,
+                    "attributes": [
                         {
-                            "mapping_attribute_id": 601 if existing else None,
-                            "modeled_attribute_id": 701,
-                            "target_attribute_id": 901,
-                            "transformation_document": (
-                                {"kind": "direct", "logic": "existing"}
-                                if existing
-                                else None
-                            ),
+                            "attribute_id": 701,
+                            "attribute_name": "CustomerID",
+                            "attribute_definition": "Stable customer key.",
+                            "attribute_data_type": "BIGINT",
+                            "is_nullable": False,
+                            "ordinal_position": 1,
+                            "is_audit_column": False,
                             "status": "active",
-                            "is_locked": locked,
-                            "agent_run_id": None,
-                            "workflow_run_id": None,
-                            "output_template_id": None,
+                            "is_locked": False,
                         }
                     ],
+                },
+                "object_dependency_order": 0,
+                "transformation_document": (
+                    {"kind": "direct", "logic": "existing"} if existing else None
+                ),
+                "status": "active",
+                "is_locked": locked,
+                "agent_run_id": None,
+                "workflow_run_id": None,
+                "output_template_id": None,
+                "attribute_mappings": [
+                    {
+                        "mapping_attribute_id": 601 if existing else None,
+                        "modeled_attribute_id": 701,
+                        "transformation_document": (
+                            {"kind": "direct", "logic": "existing"}
+                            if existing
+                            else None
+                        ),
+                        "status": "active",
+                        "is_locked": locked,
+                        "agent_run_id": None,
+                        "workflow_run_id": None,
+                        "output_template_id": None,
+                    }
+                ],
+            }
+        ],
+        "authoring": {
+            "model_name": "Customer Model",
+            "naming_instructions": "Use PascalCase names.",
+            "audit_columns_template": None,
+            "technical_columns_template": None,
+        },
+    }
+    header_document = context_document["headers"][0]
+    modeled_document = header_document["modeled_entity"]
+    modeled_document["entity_type"] = modeled_entity_type
+    modeled_document["entity_schema_name"] = "gold" if dimensional else "silver"
+    context_document["target"] = dict(modeled_document)
+    if dimensional:
+        context_document["sources"][0]["object"] = {
+            **modeled_document,
+            "entity_type": "logical_entity",
+            "entity_id": 401,
+            "entity_schema_name": "silver",
+            "entity_name": "CustomerInput",
+            "attributes": [
+                {
+                    **modeled_document["attributes"][0],
+                    "attribute_id": 801,
+                    "attribute_name": "customer_id",
                 }
             ],
-            "authoring": {
-                "model_name": "Customer Model",
-                "naming_instructions": "Use PascalCase names.",
-                "audit_columns_template": None,
-                "technical_columns_template": None,
-            },
-        },
-        strict=False,
-    )
+        }
+    context = MappingRunContext.model_validate(context_document, strict=False)
     if attribute_count != 1:
         header = context.headers[0]
         modeled = header.modeled_entity.attributes[0]
@@ -262,9 +259,9 @@ def mapping_preparation(
                         "attributes": tuple(
                             target.model_copy(
                                 update={
-                                    "attribute_id": 901 + index,
+                                    "attribute_id": 701 + index,
                                     "attribute_name": name,
-                                    "attribute_ordinal_position": index + 1,
+                                    "ordinal_position": index + 1,
                                 }
                             )
                             for index, name in enumerate(names)
@@ -292,7 +289,6 @@ def mapping_preparation(
                                 child.model_copy(
                                     update={
                                         "modeled_attribute_id": 701 + index,
-                                        "target_attribute_id": 901 + index,
                                         "mapping_attribute_id": 601 + index
                                         if existing
                                         else None,
@@ -385,28 +381,40 @@ def physical_object(
 def mapping_validation_preparation(
     plan: MappingRunPlan, context: MappingRunContext
 ) -> MappingPreparation:
-    """Canonical frozen graph for the synthetic Mapping fixture, including bindings and history."""
+    """Canonical frozen graph for the synthetic Mapping fixture, including Mapping and history."""
     header = context.headers[0]
     entity = header.modeled_entity
     dimensional = plan.modeled_entity_type == "dimensional_entity"
     layer = "dimensional" if dimensional else "logical"
     source = context.sources[0].object
-    source_key = PhysicalObjectKey.model_validate(
-        source.model_dump(), extra="ignore"
-    ).model_dump()
-    target_key = PhysicalObjectKey.model_validate(
-        context.target.model_dump(), extra="ignore"
-    ).model_dump()
-    target_tuple = tuple(target_key.values())
+    source_key: dict[str, object] = (
+        PhysicalObjectKey.model_validate(
+            source.model_dump(), extra="ignore"
+        ).model_dump()
+        if not dimensional
+        else {
+            "tenant_code": "NWA",
+            "system_code": "CRM",
+            "connection_code": "crm_bronze",
+            "object_schema": "bronze_crm",
+            "object_name": "customer",
+        }
+    )
     source_attribute: dict[str, object] = {
         **source_key,
-        "attribute_name": source.attributes[0].attribute_name,
+        "attribute_name": "customer_id",
     }
+    logical_key = {
+        "logical_entity_schema_name": "silver",
+        "logical_entity_name": "CustomerInput",
+    }
+    logical_attribute_key = {**logical_key, "logical_attribute_name": "customer_id"}
     entity_record = (
         dimensional_entity(entity.entity_name, "dimension")
         if dimensional
         else logical_entity(entity.entity_name, "core", source_key)
     )
+    entity_record[layer + "_entity_schema_name"] = entity.entity_schema_name
     entity_record["submodels"] = []
     support: dict[str, Any] = {
         "support_source_type": "object",
@@ -417,6 +425,9 @@ def mapping_validation_preparation(
         "is_locked": False,
     }
     if dimensional:
+        support.pop("source_object")
+        support["support_source_type"] = "logical_entity"
+        support["source_logical_entity"] = logical_key
         support["source_role"] = "support"
     entity_record["sources"] = [support]
     attributes: list[dict[str, object]] = []
@@ -434,6 +445,7 @@ def mapping_validation_preparation(
                 primary=index == 1,
             )
         )
+        record[layer + "_entity_schema_name"] = entity.entity_schema_name
         record[layer + "_attribute_ordinal_position"] = index
         record["sources"] = [
             {
@@ -445,44 +457,38 @@ def mapping_validation_preparation(
                 "is_locked": False,
             }
         ]
+        if dimensional:
+            record["sources"] = [
+                {
+                    "support_source_type": "logical_attribute",
+                    "source_logical_attribute": logical_attribute_key,
+                    "source_order": 1,
+                    "rationale": "Logical lineage.",
+                    "status": "active",
+                    "is_locked": False,
+                }
+            ]
         attributes.append(record)
     graph: dict[ModelChangeSetDataset, list[dict[str, object]]] = {
         "model_details": [model_details(context.authoring.model_name)],
-        "model_input_scope": []
-        if dimensional
-        else [{**source_key, "is_active": True, "model_input_scope_is_locked": False}],
+        "model_input_scope": [
+            {**source_key, "is_active": True, "model_input_scope_is_locked": False}
+        ],
         cast(ModelChangeSetDataset, layer + "_entity"): [entity_record],
         cast(ModelChangeSetDataset, layer + "_attribute"): attributes,
-        "model_object_binding": [
-            object_binding(
-                plan.modeled_entity_type, entity.entity_name, cast(Any, target_tuple)
-            )
-        ],
-        "model_attribute_binding": [
-            attribute_binding(
-                plan.modeled_entity_type,
-                entity.entity_name,
-                attribute.attribute_name,
-                target.attribute_name,
-            )
-            for attribute, target in zip(
-                entity.attributes, context.target.attributes, strict=True
-            )
-        ],
-        "mapping_dependency": [
-            {
-                "modeled_entity_type": plan.modeled_entity_type,
-                "source_system_code": context.source_system.system_code,
-                "source_system_dependency_order": context.dependency.dependency_order,
-                "mapping_source_system_dependency_status": context.dependency.status,
-                "mapping_source_system_dependency_is_locked": context.dependency.is_locked,
-            }
-        ]
-        if context.dependency is not None
-        else [],
     }
+    if dimensional:
+        input_entity = logical_entity("CustomerInput", "core", source_key)
+        input_entity["submodels"] = []
+        graph["logical_entity"] = [input_entity]
+        graph["logical_attribute"] = [
+            logical_attribute(
+                "CustomerInput", "customer_id", 1, source_attribute, primary=True
+            )
+        ]
     identity = {
         "modeled_entity_type": plan.modeled_entity_type,
+        "modeled_entity_schema_name": entity.entity_schema_name,
         "modeled_entity_name": entity.entity_name,
         "source_system_code": context.source_system.system_code,
         "output_template_code": None,
@@ -513,48 +519,16 @@ def mapping_validation_preparation(
         update={"model_id": plan.model_id, "model_revision": plan.model_revision}
     )
     source_objects = frozenset(
-        {tuple(value.casefold() for value in source_key.values())}
+        {tuple(str(value).casefold() for value in source_key.values())}
     )
-    target_objects = frozenset(
-        {tuple(value.casefold() for value in target_key.values())}
-    )
-    source_attributes = frozenset(
-        (*key, attribute.attribute_name.casefold())
-        for key in source_objects
-        for attribute in source.attributes
-    )
-    target_attributes = frozenset(
-        (*key, attribute.attribute_name.casefold())
-        for key in target_objects
-        for attribute in context.target.attributes
-    )
+    source_attributes = frozenset((*key, "customer_id") for key in source_objects)
     scope = PhysicalModelCatalog(
         model_tenant_code="NWA",
         active_system_codes=frozenset({"crm", "gds"}),
-        objects=cast(Any, source_objects | target_objects),
-        attributes=cast(Any, source_attributes | target_attributes),
-        model_input_objects=cast(Any, frozenset() if dimensional else source_objects),
-        model_input_attributes=cast(
-            Any, frozenset() if dimensional else source_attributes
-        ),
-        dimensional_source_objects=cast(
-            Any, source_objects if dimensional else frozenset()
-        ),
-        dimensional_source_attributes=cast(
-            Any, source_attributes if dimensional else frozenset()
-        ),
-        logical_mapping_target_objects=cast(
-            Any, frozenset() if dimensional else target_objects
-        ),
-        logical_mapping_target_attributes=cast(
-            Any, frozenset() if dimensional else target_attributes
-        ),
-        dimensional_mapping_target_objects=cast(
-            Any, target_objects if dimensional else frozenset()
-        ),
-        dimensional_mapping_target_attributes=cast(
-            Any, target_attributes if dimensional else frozenset()
-        ),
+        objects=cast(Any, source_objects),
+        attributes=cast(Any, source_attributes),
+        model_input_objects=cast(Any, source_objects),
+        model_input_attributes=cast(Any, source_attributes),
     )
     return MappingPreparation(
         plan=plan,

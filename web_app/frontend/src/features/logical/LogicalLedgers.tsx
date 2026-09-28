@@ -58,7 +58,7 @@ export function LogicalEntitiesLedger({
       header: "Logical Entity",
       cell: ({ row }) => (
         <span className="endpoint-cell">
-          <strong>{row.original.logical_entity_name}</strong>
+          <strong>{row.original.logical_entity_schema_name}.{row.original.logical_entity_name}</strong>
           <span>{humanize(row.original.logical_entity_type)}</span>
         </span>
       ),
@@ -336,7 +336,7 @@ export function LogicalRelationshipsLedger({
       header: "From",
       cell: ({ row }) => (
         <span className="endpoint-cell">
-          <strong>{row.original.from_logical_entity_name}</strong>
+          <strong>{row.original.from_logical_entity_schema_name}.{row.original.from_logical_entity_name}</strong>
           <span>{row.original.from_logical_attribute_name}</span>
         </span>
       ),
@@ -346,7 +346,7 @@ export function LogicalRelationshipsLedger({
       header: "To",
       cell: ({ row }) => (
         <span className="endpoint-cell">
-          <strong>{row.original.to_logical_entity_name}</strong>
+          <strong>{row.original.to_logical_entity_schema_name}.{row.original.to_logical_entity_name}</strong>
           <span>{row.original.to_logical_attribute_name}</span>
         </span>
       ),

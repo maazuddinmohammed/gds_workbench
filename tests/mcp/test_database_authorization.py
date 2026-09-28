@@ -4,12 +4,11 @@ from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 import pytest
-from psycopg.errors import InvalidParameterValue
-
 from gds_etl_workbench.application.authorization import (
     AuthorizationService,
     ResolvedPrincipal,
 )
+from gds_etl_workbench.application.tenants import query_visible_tenants
 from gds_etl_workbench.domain.authorization import (
     ActorKind,
     RequestPrincipal,
@@ -21,7 +20,7 @@ from gds_etl_workbench.domain.errors import (
     TenantNotFoundError,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_etl_workbench.application.tenants import query_visible_tenants
+from psycopg.errors import InvalidParameterValue
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres
@@ -499,12 +498,13 @@ def test_logical_entity_source_accepts_an_assertion_record(
             """
             INSERT INTO workflow.logical_entity (
                 model_id,
+                logical_entity_schema_name,
                 logical_entity_name,
                 logical_entity_definition,
                 logical_entity_type,
                 logical_entity_grain
             )
-            VALUES (%s, 'Order', 'A customer order.', 'transaction', 'One order')
+            VALUES (%s, 'silver', 'Order', 'A customer order.', 'transaction', 'One order')
             RETURNING logical_entity_id
             """,
             (model_id,),
@@ -555,12 +555,13 @@ def test_logical_attribute_source_accepts_an_assertion_record(
             """
             INSERT INTO workflow.logical_entity (
                 model_id,
+                logical_entity_schema_name,
                 logical_entity_name,
                 logical_entity_definition,
                 logical_entity_type,
                 logical_entity_grain
             )
-            VALUES (%s, 'Order', 'A customer order.', 'transaction', 'One order')
+            VALUES (%s, 'silver', 'Order', 'A customer order.', 'transaction', 'One order')
             RETURNING logical_entity_id
             """,
             (model_id,),
@@ -634,11 +635,12 @@ def test_dimensional_entity_source_accepts_an_assertion_record(
             """
             INSERT INTO workflow.dimensional_entity (
                 model_id,
+                dimensional_entity_schema_name,
                 dimensional_entity_name,
                 dimensional_entity_definition,
                 dimensional_entity_type
             )
-            VALUES (%s, 'Customer', 'Reusable customer dimension.', 'dimension')
+            VALUES (%s, 'gold', 'Customer', 'Reusable customer dimension.', 'dimension')
             RETURNING dimensional_entity_id
             """,
             (model_id,),
@@ -657,7 +659,7 @@ def test_dimensional_entity_source_accepts_an_assertion_record(
             VALUES (%s, %s, 'assertion', %s, 'business_basis',
                     'The assertion establishes the reusable Dimension.')
             RETURNING support_source_type,
-                      source_object_id,
+                      source_logical_entity_id,
                       modeling_assertion_record_id
             """,
             (
@@ -669,7 +671,7 @@ def test_dimensional_entity_source_accepts_an_assertion_record(
 
     assert source == {
         "support_source_type": "assertion",
-        "source_object_id": None,
+        "source_logical_entity_id": None,
         "modeling_assertion_record_id": assertion_record_id,
     }
 
@@ -690,11 +692,12 @@ def test_dimensional_attribute_source_accepts_an_assertion_record(
             """
             INSERT INTO workflow.dimensional_entity (
                 model_id,
+                dimensional_entity_schema_name,
                 dimensional_entity_name,
                 dimensional_entity_definition,
                 dimensional_entity_type
             )
-            VALUES (%s, 'Customer', 'Reusable customer dimension.', 'dimension')
+            VALUES (%s, 'gold', 'Customer', 'Reusable customer dimension.', 'dimension')
             RETURNING dimensional_entity_id
             """,
             (model_id,),
@@ -732,8 +735,8 @@ def test_dimensional_attribute_source_accepts_an_assertion_record(
                     'The assertion establishes the analytical Attribute.')
             RETURNING support_source_type,
                       dimensional_entity_source_mapping_id,
-                      source_object_id,
-                      source_attribute_id,
+                      source_logical_entity_id,
+                      source_logical_attribute_id,
                       modeling_assertion_record_id
             """,
             (
@@ -747,8 +750,8 @@ def test_dimensional_attribute_source_accepts_an_assertion_record(
     assert source == {
         "support_source_type": "assertion",
         "dimensional_entity_source_mapping_id": None,
-        "source_object_id": None,
-        "source_attribute_id": None,
+        "source_logical_entity_id": None,
+        "source_logical_attribute_id": None,
         "modeling_assertion_record_id": assertion_record_id,
     }
 
@@ -1864,8 +1867,9 @@ def _seed_model_assertion(
     tenant_id = _seed_private_tenant(connection, tenant_code)
     model = connection.execute(
         """
-        INSERT INTO model.model (tenant_id, model_name)
-        VALUES (%s, %s)
+        INSERT INTO model.model (tenant_id, model_name, logical_schemas, dimensional_schemas)
+        VALUES (%s, %s, '[{"schema_name":"silver","description":null}]'::JSONB,
+                '[{"schema_name":"gold","description":null}]'::JSONB)
         RETURNING model_id
         """,
         (tenant_id, model_name),

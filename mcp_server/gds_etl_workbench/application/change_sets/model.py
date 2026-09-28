@@ -63,7 +63,6 @@ READ_SECTION_COLUMNS = (
     "conceptual_document",
     "logical_document",
     "dimensional_document",
-    "model_binding_document",
     "mapping_document",
     "code_generation_document",
     "validation_document",
@@ -96,19 +95,13 @@ SELECT model_tenant.tenant_code AS model_tenant_code,
 # separate governed selectors still restrict new work to current eligibility.
 _MODEL_OBJECT_ELIGIBILITY_SQL: LiteralString = """
 SELECT object_id,
-       is_model_input_eligible,
-       is_dimensional_source_eligible,
-       is_logical_mapping_target_eligible,
-       is_dimensional_mapping_target_eligible
+       is_model_input_eligible
   FROM workflow.list_model_object_eligibility(%s)
 """
 
 _MODEL_ATTRIBUTE_ELIGIBILITY_SQL: LiteralString = """
 SELECT attribute_id,
-       is_model_input_eligible,
-       is_dimensional_source_eligible,
-       is_logical_mapping_target_eligible,
-       is_dimensional_mapping_target_eligible
+       is_model_input_eligible
   FROM workflow.list_model_attribute_eligibility(%s)
 """
 
@@ -545,12 +538,7 @@ async def load_model_physical_scope(
                 if isinstance(attribute_id, int):
                     attribute_keys_by_id[attribute_id] = attribute_key
 
-    eligibility_flags = (
-        "is_model_input_eligible",
-        "is_dimensional_source_eligible",
-        "is_logical_mapping_target_eligible",
-        "is_dimensional_mapping_target_eligible",
-    )
+    eligibility_flags = ("is_model_input_eligible",)
     eligible_objects: dict[str, set[tuple[str, str, str, str, str]]] = {
         flag: set() for flag in eligibility_flags
     }
@@ -578,22 +566,6 @@ async def load_model_physical_scope(
         attributes=frozenset(attributes),
         model_input_objects=frozenset(eligible_objects["is_model_input_eligible"]),
         model_input_attributes=frozenset(eligible_attributes["is_model_input_eligible"]),
-        dimensional_source_objects=frozenset(eligible_objects["is_dimensional_source_eligible"]),
-        dimensional_source_attributes=frozenset(
-            eligible_attributes["is_dimensional_source_eligible"]
-        ),
-        logical_mapping_target_objects=frozenset(
-            eligible_objects["is_logical_mapping_target_eligible"]
-        ),
-        logical_mapping_target_attributes=frozenset(
-            eligible_attributes["is_logical_mapping_target_eligible"]
-        ),
-        dimensional_mapping_target_objects=frozenset(
-            eligible_objects["is_dimensional_mapping_target_eligible"]
-        ),
-        dimensional_mapping_target_attributes=frozenset(
-            eligible_attributes["is_dimensional_mapping_target_eligible"]
-        ),
         other_model_names=frozenset(
             normalize_model_key_value(other_model["model_name"]) for other_model in other_model_rows
         ),

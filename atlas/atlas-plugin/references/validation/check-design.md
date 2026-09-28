@@ -77,4 +77,4 @@ Keep concrete substitutions and diagnostic variants separate from saved definiti
 
 Keep the concise coverage proposal and actual findings in the existing task and Workbench review. No second handoff ledger or invented result dataset is needed. Fix a bad test here; an ambiguous business rule returns to Mapping. Group freshness must reflect reviewed input changes, not just rewritten descriptions.
 
-Source: existing GDS `references/workflows/validation.md`, the Mapping/Code consumer contracts and the source pointers in [Validation records](../model/validation.md). These are documentation rules; automation of additional semantic checks remains implementation work.
+Sources: the [Mapping consumer contract](../model/mapping-documents.md#complete-context-for-coding-and-validation), [Generated Code records](../model/generated-code.md) and the source pointers in [Validation records](../model/validation.md). These are documentation rules; automation of additional semantic checks remains implementation work.

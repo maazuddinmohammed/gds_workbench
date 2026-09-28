@@ -1,6 +1,5 @@
 import { ModelRecordTools } from "./features/model_record_review/ModelRecordEditor";
 import { modelLayerSearch } from "./shared/ModelLayerTabs";
-import { ModelTargetsScreen } from "./features/model_targets/ModelTargetsScreen";
 import {
   QueryClient,
   QueryClientProvider,
@@ -66,6 +65,7 @@ import { TenantHomeScreen } from "./features/tenants/TenantHomeScreen";
 import { WorkflowModels } from "./features/models/WorkflowModels";
 import { ModelsLedgerScreen } from "./features/models/ModelsLedgerScreen";
 import { ModelOverviewScreen } from "./features/models/ModelOverviewScreen";
+import { ModelSettingsScreen } from "./features/models/ModelSettingsScreen";
 import { ModelRouteFrame } from "./features/models/ModelRouteFrame";
 import { ModelInputScopeScreen } from "./features/model_input_scope/ModelInputScopeScreen";
 import { TenantRouteFrame } from "./app/TenantRouteFrame";
@@ -82,7 +82,6 @@ interface RouterContext {
 
 interface MappingRouteSearch {
   layer?: "logical" | "dimensional";
-  view?: "dependencies" | "objects";
 }
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({
@@ -144,8 +143,6 @@ const tenantMappingModelRoute = createRoute({
   component: TenantMappingModel,
   validateSearch: (search: Record<string, unknown>): MappingRouteSearch => ({
     ...(search.layer === "logical" || search.layer === "dimensional" ? { layer: search.layer } : {}),
-    ...(search.view === "attributes" ? { view: "objects" }
-      : search.view === "objects" || search.view === "dependencies" ? { view: search.view } : {}),
   }),
 });
 
@@ -217,6 +214,12 @@ const tenantPromptTemplateRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/prompts/templates/$promptTemplateId",
   component: TenantPromptTemplate,
+});
+
+const tenantModelSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tenants/$tenantId/models/$modelId/settings",
+  component: TenantModelSettings,
 });
 
 const tenantModelPromptSettingsRoute = createRoute({
@@ -311,13 +314,6 @@ const tenantModelLogicalRoute = createRoute({
   component: ModelLogical,
 });
 
-const tenantModelTargetsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/targets",
-  validateSearch: (search: Record<string, unknown>): { layer: "logical" | "dimensional" } => ({ layer: search.layer === "dimensional" ? "dimensional" : "logical" }),
-  component: ModelTargets,
-});
-
 const tenantModelLogicalEntityRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/logical/entities/$entityId",
@@ -385,6 +381,7 @@ const routeTree = rootRoute.addChildren([
   tenantValidationCheckRoute,
   tenantPromptsRoute,
   tenantPromptTemplateRoute,
+  tenantModelSettingsRoute,
   tenantModelPromptSettingsRoute,
   tenantModelRoute,
   tenantModelInputScopeRoute,
@@ -400,7 +397,6 @@ const routeTree = rootRoute.addChildren([
   tenantModelConceptualObjectRoute,
   tenantModelConceptualRelationshipRoute,
   tenantModelLogicalRoute,
-  tenantModelTargetsRoute,
   tenantModelLogicalEntityRoute,
   tenantModelLogicalAttributeRoute,
   tenantModelLogicalRelationshipRoute,
@@ -537,7 +533,7 @@ function TenantMappingModel() {
   const { tenantId, modelId } = tenantMappingModelRoute.useParams();
   const numericTenantId = Number(tenantId);
   const numericModelId = Number(modelId);
-  const { view, layer = "logical" } = tenantMappingModelRoute.useSearch();
+  const { layer = "logical" } = tenantMappingModelRoute.useSearch();
   return (
     <WorkspaceModelRouteFrame
       api={api}
@@ -555,7 +551,6 @@ function TenantMappingModel() {
           model={model}
           hasTenantLock={home.lock.owned_by_current_principal === true}
           hasAppPermission={canAuthorModels(home.tenant.effective_role)}
-          {...(view ? { initialView: view } : {})}
         />
       )}
     </WorkspaceModelRouteFrame>
@@ -809,6 +804,15 @@ function TenantPromptTemplate() {
       )}
     </TenantRouteFrame>
   );
+}
+
+function TenantModelSettings() {
+  const { api } = rootRoute.useRouteContext();
+  const { tenantId, modelId } = tenantModelSettingsRoute.useParams();
+  return <ModelRouteFrame api={api} tenantId={Number(tenantId)} modelId={Number(modelId)}
+    activeStage="settings" loadingLabel="Loading Model Settings">
+    {({ home, model }) => <ModelSettingsScreen key={`${tenantId}:${modelId}`} api={api} home={home} model={model} />}
+  </ModelRouteFrame>;
 }
 
 function TenantModelPromptSettings() {
@@ -1173,14 +1177,6 @@ function ConceptualDetailRoute({
   );
 }
 
-function ModelTargets() {
-  const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantModelTargetsRoute.useParams();
-  const { layer } = tenantModelTargetsRoute.useSearch();
-  return <ModelRouteFrame api={api} tenantId={Number(tenantId)} modelId={Number(modelId)} activeStage="targets" loadingLabel="Loading target registration">
-    {({ home, model }) => <ModelTargetsScreen api={api} tenantId={Number(tenantId)} model={model} layer={layer} hasTenantLock={home.lock.owned_by_current_principal === true} />}
-  </ModelRouteFrame>;
-}
 
 function ModelLogical() {
   const { api } = rootRoute.useRouteContext();

@@ -101,6 +101,13 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
         foreach ($value in $Values) { [void]$normalized.Add((Normalize-Value 'model' 'value' $value)) }
         return ConvertTo-StableJson @($normalized)
     }
+    function Get-QLogicalIdentity($Record, [string]$Prefix = '') {
+        return Get-QTuple @((Get-Property $Record ($Prefix + 'logical_entity_schema_name')), (Get-Property $Record ($Prefix + 'logical_entity_name')))
+    }
+    function Get-QModeledIdentity($Dataset, $Record, [string]$Prefix = '') {
+        if ($Dataset.StartsWith('logical', [StringComparison]::Ordinal)) { return Get-QLogicalIdentity $Record $Prefix }
+        return Normalize-Value 'model' 'value' (Get-Property $Record ($Prefix + 'conceptual_object_name'))
+    }
     function Get-QPhysical($Record, [bool]$Attribute = $false, [string]$Prefix = '') {
         $fields = @($objectFields)
         if ($Attribute) { $fields += 'attribute_name' }
@@ -192,6 +199,27 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
         }
         $changes[$dataset] = @($changed)
     }
+    foreach ($analysis in @(Get-QRows 'analysis_result' | Where-Object { (Get-Active $_) -eq $true })) {
+        $inferred = Get-Property $analysis 'inferred_cardinality'
+        if (@('one_to_one', 'one_to_many', 'many_to_one', 'many_to_many') -cnotcontains $inferred) { continue }
+        $counts = @(@('source_non_null', 'source_distinct', 'target_non_null', 'target_distinct',
+            'source_missing_target', 'unused_target', 'duplicate_target_key') | ForEach-Object { Get-Property $analysis ('validation_' + $_ + '_count') })
+        $validCounts = $counts.Count -eq 7
+        foreach ($count in $counts) { if (-not (Test-SafeJsonInteger $count $true)) { $validCounts = $false } }
+        $policy = Get-Property $analysis 'validation_policy_version'
+        if (-not $validCounts -or $policy -isnot [string] -or $policy -cnotmatch '^\d+\.\d+\.\d+$') { continue }
+        $sourceCount, $sourceDistinct, $targetCount, $targetDistinct, $missing, $unused, $duplicates = $counts
+        $expected = if ($missing -eq 0 -and $duplicates -eq 0) { 'supported' } else { 'unsupported' }
+        if ($sourceCount -le 0 -or $targetCount -le 0 -or $sourceDistinct -le 0 -or $targetDistinct -le 0 -or
+            $sourceDistinct -gt $sourceCount -or $targetDistinct -gt $targetCount -or $missing -gt $sourceDistinct -or $unused -gt $targetDistinct -or
+            ($sourceDistinct - $missing) -ne ($targetDistinct - $unused) -or $duplicates -ne ($targetCount - $targetDistinct) -or
+            (Get-Property $analysis 'validation_result') -cne $expected) { continue }
+        $sourceMultiplicity = if ($sourceCount -gt $sourceDistinct) { 'many' } else { 'one' }
+        $targetMultiplicity = if ($targetCount -gt $targetDistinct) { 'many' } else { 'one' }
+        if ($inferred -cne ($sourceMultiplicity + '_to_' + $targetMultiplicity)) {
+            Add-QIssue $warnings 'analysis_inferred_cardinality_mismatch' 'analysis_result' (Get-QKeyObject 'analysis_result' $analysis) 'Inferred cardinality differs from measured endpoint uniqueness. Review population scope and grain; preserve both conclusions.'
+        }
+    }
     $entities = @(Get-QRows 'logical_entity' | Where-Object { (Get-Active $_) -eq $true })
     $concepts = @(Get-QRows 'conceptual_object' | Where-Object { (Get-Active $_) -eq $true })
     $attributes = @(Get-QRows 'logical_attribute' | Where-Object { (Get-Active $_) -eq $true })
@@ -202,27 +230,28 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
     $attributesByEntity = @{}
     $attributeIndex = @{}
     foreach ($record in $entities) {
-        $name = Normalize-Value 'model' 'value' $record.logical_entity_name
+        $name = Get-QLogicalIdentity $record
         $entityNames[$name] = $record
         $attributesByEntity[$name] = New-Object Collections.ArrayList
     }
     foreach ($record in $concepts) { $conceptNames[(Normalize-Value 'model' 'value' $record.conceptual_object_name)] = $record }
     foreach ($record in $attributes) {
-        $name = Normalize-Value 'model' 'value' $record.logical_entity_name
+        $name = Get-QLogicalIdentity $record
         if ($attributesByEntity.ContainsKey($name)) { [void]$attributesByEntity[$name].Add($record) }
-        $attributeIndex[(Get-QTuple @($record.logical_entity_name, $record.logical_attribute_name))] = $record
+        $attributeIndex[(Get-QTuple @($record.logical_entity_schema_name, $record.logical_entity_name, $record.logical_attribute_name))] = $record
     }
-    function Get-QEntityAttributes($Name) {
-        $normalized = Normalize-Value 'model' 'value' $Name
+    function Get-QEntityAttributes($Record, [string]$Prefix = '') {
+        $normalized = Get-QLogicalIdentity $Record $Prefix
         if ($attributesByEntity.ContainsKey($normalized)) { return $attributesByEntity[$normalized] }
     }
     function Get-QEndpointLineage($Relationship, $Endpoint) {
         $entity = Get-Property $Relationship ($Endpoint + '_logical_entity_name')
         $name = Get-Property $Relationship ($Endpoint + '_logical_attribute_name')
-        $attribute = $attributeIndex[(Get-QTuple @($entity, $name))]
+        $schema = Get-Property $Relationship ($Endpoint + '_logical_entity_schema_name')
+        $attribute = $attributeIndex[(Get-QTuple @($schema, $entity, $name))]
         if (Get-Property $attribute 'logical_attribute_is_surrogate_key') {
             $set = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
-            foreach ($candidate in @(Get-QEntityAttributes $entity)) {
+            foreach ($candidate in @(Get-QEntityAttributes $Relationship ($Endpoint + '_'))) {
                 if (Get-Property $candidate 'logical_attribute_is_natural_key') {
                     foreach ($source in (Get-QLineage $candidate)) { [void]$set.Add($source) }
                 }
@@ -254,15 +283,15 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
         [void]$affected[$Dataset].Add((Get-QKey $Dataset $Record))
         $entityDataset = if ($Dataset -ceq 'conceptual_relationship') { 'conceptual_object' } else { 'logical_entity' }
         foreach ($endpoint in @('from', 'to')) {
-            [void]$affected[$entityDataset].Add((Normalize-Value 'model' 'value' (Get-Property $Record ($endpoint + '_' + $entityDataset + '_name'))))
+            [void]$affected[$entityDataset].Add((Get-QModeledIdentity $Dataset $Record ($endpoint + '_')))
         }
     }
     foreach ($dataset in $entityDatasets) {
         foreach ($record in $changes[$dataset]) {
-            [void]$affected[$dataset].Add((Normalize-Value 'model' 'value' (Get-Property $record ($dataset + '_name'))))
+            [void]$affected[$dataset].Add((Get-QModeledIdentity $dataset $record))
         }
     }
-    foreach ($record in $changes['logical_attribute']) { [void]$affected.logical_entity.Add((Normalize-Value 'model' 'value' $record.logical_entity_name)) }
+    foreach ($record in $changes['logical_attribute']) { [void]$affected.logical_entity.Add((Get-QLogicalIdentity $record)) }
     foreach ($dataset in $relationshipDatasets) { foreach ($record in $changes[$dataset]) { Add-QAffectedRelationship $dataset $record } }
     $changedEvidence = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     foreach ($dataset in @('analysis_result', 'modeling_assertion_record', 'modeling_assertion_document')) {
@@ -307,7 +336,7 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
             }
             $isAffected = $false
             foreach ($endpoint in @('from', 'to')) {
-                if ($affectedEntitySeeds[$entityDataset].Contains((Normalize-Value 'model' 'value' (Get-Property $record ($endpoint + '_' + $entityDataset + '_name'))))) { $isAffected = $true }
+                if ($affectedEntitySeeds[$entityDataset].Contains((Get-QModeledIdentity $dataset $record ($endpoint + '_')))) { $isAffected = $true }
             }
             foreach ($analysis in $changes['analysis_result']) {
                 if (Get-QAnalysisAlignment $dataset $record $analysis) { $isAffected = $true; break }
@@ -320,7 +349,7 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
         foreach ($entry in $decisionEntities) {
             $dataset = Get-Property $entry 'dataset'
             if ($entityDatasets -ccontains $dataset -and (Test-QReferencesChanged $entry)) {
-                [void]$affected[$dataset].Add((Normalize-Value 'model' 'value' (Get-Property (Get-Property $entry 'key') ($dataset + '_name'))))
+                [void]$affected[$dataset].Add((Get-QModeledIdentity $dataset (Get-Property $entry 'key')))
             }
         }
     }
@@ -329,10 +358,10 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
     foreach ($dataset in $entityDatasets) {
         foreach ($record in @(Get-QRows $dataset | Where-Object { (Get-Active $_) -eq $true })) {
             $name = Get-Property $record ($dataset + '_name')
-            if (-not $affected[$dataset].Contains((Normalize-Value 'model' 'value' $name))) { continue }
+            if (-not $affected[$dataset].Contains((Get-QModeledIdentity $dataset $record))) { continue }
             $entry = [ordered]@{ dataset = $dataset; key = Get-QKeyObject $dataset $record }
             if ($dataset -ceq 'logical_entity') {
-                $natural = @(Get-QEntityAttributes $name | Where-Object { Get-Property $_ 'logical_attribute_is_natural_key' })
+                $natural = @(Get-QEntityAttributes $record | Where-Object { Get-Property $_ 'logical_attribute_is_natural_key' })
                 $entry['identity_attributes'] = @($natural | ForEach-Object { $_.logical_attribute_name })
                 $entry['identity_mode'] = if ($natural.Count -gt 0) { 'natural' } else { 'append_only' }
             }
@@ -351,12 +380,12 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
     $template = [ordered]@{ schema_version = '1.0'; entities = @($templateEntities); relationships = @($templateRelationships) }
     $required = $templateEntities.Count -gt 0 -or $templateRelationships.Count -gt 0
     $adjacency = [ordered]@{}
-    foreach ($record in $entities) { $adjacency[(Normalize-Value 'model' 'value' $record.logical_entity_name)] = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal) }
+    foreach ($record in $entities) { $adjacency[(Get-QLogicalIdentity $record)] = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal) }
     $selfEdges = 0
     $crossEdges = 0
     foreach ($relationship in $logical) {
-        $from = Normalize-Value 'model' 'value' $relationship.from_logical_entity_name
-        $to = Normalize-Value 'model' 'value' $relationship.to_logical_entity_name
+        $from = Get-QLogicalIdentity $relationship 'from_'
+        $to = Get-QLogicalIdentity $relationship 'to_'
         if ($from -ceq $to) { $selfEdges++ }
         else {
             $crossEdges++
@@ -376,7 +405,7 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
             $queue.RemoveAt($queue.Count - 1)
             if ($visited.Contains($next) -or -not $adjacency.Contains($next)) { continue }
             [void]$visited.Add($next)
-            [void]$component.Add($entityNames[$next].logical_entity_name)
+            [void]$component.Add($entityNames[$next].logical_entity_schema_name + '.' + $entityNames[$next].logical_entity_name)
             foreach ($neighbor in $adjacency[$next]) { [void]$queue.Add($neighbor) }
         }
         [void]$components.Add(@(Get-QSorted @($component)))
@@ -386,8 +415,8 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
     $singleObject = @($entities | Where-Object { (Get-QSupports $_).Count -eq 1 }).Count
     $sourceObjects = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     foreach ($record in @($entities) + @($concepts)) { foreach ($source in (Get-QSupports $record)) { [void]$sourceObjects.Add($source) } }
-    $isolatedEntities = @($entities | Where-Object { $adjacency[(Normalize-Value 'model' 'value' $_.logical_entity_name)].Count -eq 0 } | ForEach-Object { $_.logical_entity_name })
-    $entitiesWithoutNaturalKey = @($entities | Where-Object { @(Get-QEntityAttributes $_.logical_entity_name | Where-Object { Get-Property $_ 'logical_attribute_is_natural_key' }).Count -eq 0 } | ForEach-Object { $_.logical_entity_name })
+    $isolatedEntities = @($entities | Where-Object { $adjacency[(Get-QLogicalIdentity $_)].Count -eq 0 } | ForEach-Object { $_.logical_entity_schema_name + '.' + $_.logical_entity_name })
+    $entitiesWithoutNaturalKey = @($entities | Where-Object { @(Get-QEntityAttributes $_ | Where-Object { Get-Property $_ 'logical_attribute_is_natural_key' }).Count -eq 0 } | ForEach-Object { $_.logical_entity_schema_name + '.' + $_.logical_entity_name })
     $componentExamples = New-Object Collections.ArrayList
     $remainingComponentNames = 200
     foreach ($component in $components) {
@@ -450,12 +479,12 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
         $hasEdge = $false
         foreach ($edge in $logical) {
             foreach ($orientation in @('forward', 'reverse')) {
-                $left = if ($orientation -ceq 'forward') { $edge.from_logical_entity_name } else { $edge.to_logical_entity_name }
-                $right = if ($orientation -ceq 'forward') { $edge.to_logical_entity_name } else { $edge.from_logical_entity_name }
+                $left = if ($orientation -ceq 'forward') { Get-QLogicalIdentity $edge 'from_' } else { Get-QLogicalIdentity $edge 'to_' }
+                $right = if ($orientation -ceq 'forward') { Get-QLogicalIdentity $edge 'to_' } else { Get-QLogicalIdentity $edge 'from_' }
                 $leftMatches = $false
                 $rightMatches = $false
-                foreach ($source in (Get-QSupports $entityNames[(Normalize-Value 'model' 'value' $left)])) { if ($from.Contains($source)) { $leftMatches = $true; break } }
-                foreach ($source in (Get-QSupports $entityNames[(Normalize-Value 'model' 'value' $right)])) { if ($to.Contains($source)) { $rightMatches = $true; break } }
+                foreach ($source in (Get-QSupports $entityNames[$left])) { if ($from.Contains($source)) { $leftMatches = $true; break } }
+                foreach ($source in (Get-QSupports $entityNames[$right])) { if ($to.Contains($source)) { $rightMatches = $true; break } }
                 if ($leftMatches -and $rightMatches) { $hasEdge = $true; break }
             }
             if ($hasEdge) { break }
@@ -586,9 +615,10 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
                                     foreach ($endpoint in @('from', 'to')) {
                                         $name = Get-Property $record ($endpoint + '_logical_entity_name')
                                         $attributeName = Get-Property $record ($endpoint + '_logical_attribute_name')
-                                        $endpointAttribute = $attributeIndex[(Get-QTuple @($name, $attributeName))]
+                                        $schema = Get-Property $record ($endpoint + '_logical_entity_schema_name')
+                                        $endpointAttribute = $attributeIndex[(Get-QTuple @($schema, $name, $attributeName))]
                                         if ((Get-Property $endpointAttribute 'logical_attribute_is_surrogate_key') -and
-                                            @(Get-QEntityAttributes $name | Where-Object { Get-Property $_ 'logical_attribute_is_natural_key' }).Count -gt 1) { $compositeAnalysis = $true }
+                                            @(Get-QEntityAttributes $record ($endpoint + '_') | Where-Object { Get-Property $_ 'logical_attribute_is_natural_key' }).Count -gt 1) { $compositeAnalysis = $true }
                                     }
                                 }
                                 $cardinality = Get-Property $record ($dataset + '_cardinality')
@@ -610,7 +640,7 @@ function Get-ModelingQuality($States, $Decisions, $NoteFiles = @{}, $MetadataSta
                     Add-QIssue $errors 'analysis_composite_identity' $dataset $entryKey 'Individual-Attribute Analysis cannot prove lookup of a composite natural identity. Cite an applicable business Assertion or retained business decision note for the complete lookup; do not treat component counts as tuple proof.'
                 }
                 if ($dataset -ceq 'logical_entity') {
-                    $naturalNames = @(Get-QEntityAttributes $record.logical_entity_name | Where-Object { Get-Property $_ 'logical_attribute_is_natural_key' } | ForEach-Object { Normalize-Value 'model' 'value' $_.logical_attribute_name })
+                    $naturalNames = @(Get-QEntityAttributes $record | Where-Object { Get-Property $_ 'logical_attribute_is_natural_key' } | ForEach-Object { Normalize-Value 'model' 'value' $_.logical_attribute_name })
                     $natural = @(Get-QSorted $naturalNames)
                     $identityAttributes = Get-Property $entry 'identity_attributes'
                     $declared = $null

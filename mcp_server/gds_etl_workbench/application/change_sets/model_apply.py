@@ -30,15 +30,12 @@ from gds_etl_workbench.domain.modeling_records import (
     LogicalRelationshipRecord,
     LogicalSubmodelRecord,
     MappingAttributeRecord,
-    MappingDependencyRecord,
     MappingObjectRecord,
-    ModelAttributeBindingRecord,
     ModelDetailsRecord,
     ModelingAssertionDocumentRecord,
     ModelingAssertionRecordRecord,
     ModelingRecord,
     ModelInputScopeRecord,
-    ModelObjectBindingRecord,
     PhysicalAttributeKey,
     PhysicalObjectKey,
     ProfilingProfileRecord,
@@ -52,6 +49,8 @@ _UPDATE_MODEL_DETAILS_SQL: LiteralString = """
 UPDATE model.model
    SET model_name = %s,
        model_description = %s,
+       logical_schemas = %s,
+       dimensional_schemas = %s,
        silver_model_naming_instructions = %s,
        silver_model_audit_columns_template = %s,
        gold_model_naming_instructions = %s,
@@ -217,6 +216,7 @@ INSERT INTO workflow.analysis_result AS current_result (
     to_object_id,
     to_attribute_id,
     relationship_kind,
+    inferred_cardinality,
     relationship_confidence,
     relationship_basis,
     validation_policy_version,
@@ -233,7 +233,7 @@ INSERT INTO workflow.analysis_result AS current_result (
     analysis_result_is_locked
 )
 VALUES (
-    %s, NULL, %s, NULL, NULL, %s, %s, %s, %s, %s, %s,
+    %s, NULL, %s, NULL, NULL, %s, %s, %s, %s, %s, %s, %s,
     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 )
 ON CONFLICT ON CONSTRAINT uq_analysis_result_identity DO UPDATE
@@ -250,6 +250,7 @@ ON CONFLICT ON CONSTRAINT uq_analysis_result_identity DO UPDATE
        END,
        from_object_id = EXCLUDED.from_object_id,
        to_object_id = EXCLUDED.to_object_id,
+       inferred_cardinality = EXCLUDED.inferred_cardinality,
        relationship_confidence = EXCLUDED.relationship_confidence,
        relationship_basis = EXCLUDED.relationship_basis,
        validation_policy_version = CASE
@@ -530,117 +531,6 @@ UPDATE workflow.conceptual_support
 RETURNING conceptual_support_id
 """
 
-_UPSERT_MODEL_OBJECT_BINDING_SQL: LiteralString = """
-INSERT INTO workflow.model_object_binding (
-    model_id,
-    object_id,
-    modeled_entity_type,
-    logical_entity_id,
-    dimensional_entity_id,
-    agent_run_id,
-    workflow_run_id,
-    model_object_binding_status,
-    model_object_binding_is_locked
-)
-VALUES (%s, %s, %s, %s, %s, NULL, %s, %s, %s)
-ON CONFLICT ON CONSTRAINT uq_model_object_binding_model_object DO UPDATE
-   SET modeled_entity_type = EXCLUDED.modeled_entity_type,
-       logical_entity_id = EXCLUDED.logical_entity_id,
-       dimensional_entity_id = EXCLUDED.dimensional_entity_id,
-       agent_run_id = NULL,
-       workflow_run_id = EXCLUDED.workflow_run_id,
-       model_object_binding_status = EXCLUDED.model_object_binding_status,
-       model_object_binding_is_locked = EXCLUDED.model_object_binding_is_locked,
-       updated_time = CURRENT_TIMESTAMP,
-       updated_by = CURRENT_USER
-RETURNING model_object_binding_id,
-          object_id
-"""
-
-_FIND_MODEL_OBJECT_BINDING_SQL: LiteralString = """
-SELECT binding.model_object_binding_id,
-       binding.object_id
-  FROM workflow.model_object_binding AS binding
-  LEFT JOIN workflow.logical_entity AS logical_entity
-    ON logical_entity.logical_entity_id = binding.logical_entity_id
-   AND logical_entity.model_id = binding.model_id
-  LEFT JOIN workflow.dimensional_entity AS dimensional_entity
-    ON dimensional_entity.dimensional_entity_id = binding.dimensional_entity_id
-   AND dimensional_entity.model_id = binding.model_id
- WHERE binding.model_id = %s
-   AND binding.modeled_entity_type = %s
-   AND lower(btrim(
-       CASE binding.modeled_entity_type
-           WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-           ELSE dimensional_entity.dimensional_entity_name
-       END
-   )) = lower(btrim(%s))
- ORDER BY binding.model_object_binding_id
- LIMIT 1
- FOR UPDATE OF binding
-"""
-
-_RESOLVE_BOUND_ATTRIBUTE_SQL: LiteralString = """
-SELECT attribute.attribute_id
-  FROM workflow.model_object_binding AS binding
-  JOIN core.attribute AS attribute
-    ON attribute.object_id = binding.object_id
-   AND lower(btrim(attribute.attribute_name)) = lower(btrim(%s))
-   AND attribute.is_active
- WHERE binding.model_object_binding_id = %s
-   AND binding.model_id = %s
-"""
-
-_UPSERT_MODEL_ATTRIBUTE_BINDING_SQL: LiteralString = """
-INSERT INTO workflow.model_attribute_binding (
-    model_object_binding_id,
-    logical_attribute_id,
-    dimensional_attribute_id,
-    attribute_id,
-    agent_run_id,
-    workflow_run_id,
-    model_attribute_binding_status,
-    model_attribute_binding_is_locked
-)
-VALUES (%s, %s, %s, %s, NULL, %s, %s, %s)
-ON CONFLICT ON CONSTRAINT uq_model_attribute_binding_target DO UPDATE
-   SET logical_attribute_id = EXCLUDED.logical_attribute_id,
-       dimensional_attribute_id = EXCLUDED.dimensional_attribute_id,
-       agent_run_id = NULL,
-       workflow_run_id = EXCLUDED.workflow_run_id,
-       model_attribute_binding_status = EXCLUDED.model_attribute_binding_status,
-       model_attribute_binding_is_locked = EXCLUDED.model_attribute_binding_is_locked,
-       updated_time = CURRENT_TIMESTAMP,
-       updated_by = CURRENT_USER
-RETURNING model_attribute_binding_id
-"""
-
-_FIND_MODEL_ATTRIBUTE_BINDING_SQL: LiteralString = """
-SELECT attribute_binding.model_attribute_binding_id
-  FROM workflow.model_attribute_binding AS attribute_binding
-  JOIN workflow.model_object_binding AS object_binding
-    ON object_binding.model_object_binding_id =
-       attribute_binding.model_object_binding_id
-  LEFT JOIN workflow.logical_attribute AS logical_attribute
-    ON logical_attribute.logical_attribute_id =
-       attribute_binding.logical_attribute_id
-  LEFT JOIN workflow.dimensional_attribute AS dimensional_attribute
-    ON dimensional_attribute.dimensional_attribute_id =
-       attribute_binding.dimensional_attribute_id
- WHERE object_binding.model_id = %s
-   AND object_binding.modeled_entity_type = %s
-   AND object_binding.model_object_binding_id = %s
-   AND lower(btrim(
-       CASE object_binding.modeled_entity_type
-           WHEN 'logical_entity' THEN logical_attribute.logical_attribute_name
-           ELSE dimensional_attribute.dimensional_attribute_name
-       END
-   )) = lower(btrim(%s))
- ORDER BY attribute_binding.model_attribute_binding_id
- LIMIT 1
- FOR UPDATE OF attribute_binding
-"""
-
 _RESOLVE_OUTPUT_TEMPLATE_SQL: LiteralString = """
 SELECT output_template_id
   FROM application.output_template
@@ -649,36 +539,12 @@ SELECT output_template_id
    AND is_active
 """
 
-_UPSERT_MAPPING_DEPENDENCY_SQL: LiteralString = """
-INSERT INTO workflow.mapping_source_system_dependency (
-    model_id,
-    modeled_entity_type,
-    source_system_id,
-    source_system_dependency_order,
-    agent_run_id,
-    workflow_run_id,
-    mapping_source_system_dependency_status,
-    mapping_source_system_dependency_is_locked
-)
-VALUES (%s, %s, %s, %s, NULL, %s, %s, %s)
-ON CONFLICT ON CONSTRAINT uq_mapping_source_dependency_binding DO UPDATE
-   SET source_system_dependency_order = EXCLUDED.source_system_dependency_order,
-       agent_run_id = NULL,
-       workflow_run_id = EXCLUDED.workflow_run_id,
-       mapping_source_system_dependency_status =
-           EXCLUDED.mapping_source_system_dependency_status,
-       mapping_source_system_dependency_is_locked =
-           EXCLUDED.mapping_source_system_dependency_is_locked,
-       updated_time = CURRENT_TIMESTAMP,
-       updated_by = CURRENT_USER
-RETURNING mapping_source_system_dependency_id
-"""
-
 _FIND_MAPPING_OBJECT_SQL: LiteralString = """
 SELECT mapping_object_id
   FROM workflow.mapping_object
  WHERE model_id = %s
-   AND model_object_binding_id = %s
+   AND modeled_entity_type = %s
+   AND coalesce(logical_entity_id, dimensional_entity_id) = %s
    AND source_system_id = %s
  FOR UPDATE
 """
@@ -686,7 +552,9 @@ SELECT mapping_object_id
 _INSERT_MAPPING_OBJECT_SQL: LiteralString = """
 INSERT INTO workflow.mapping_object (
     model_id,
-    model_object_binding_id,
+    modeled_entity_type,
+    logical_entity_id,
+    dimensional_entity_id,
     source_system_id,
     output_template_id,
     object_dependency_order,
@@ -696,7 +564,7 @@ INSERT INTO workflow.mapping_object (
     object_mapping_status,
     object_mapping_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s, NULL, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, %s, %s)
 RETURNING mapping_object_id
 """
 
@@ -719,14 +587,19 @@ _FIND_MAPPING_ATTRIBUTE_SQL: LiteralString = """
 SELECT mapping_attribute_id
   FROM workflow.mapping_attribute
  WHERE mapping_object_id = %s
-   AND model_attribute_binding_id = %s
+   AND coalesce(logical_attribute_id, dimensional_attribute_id) = %s
  FOR UPDATE
 """
 
 _INSERT_MAPPING_ATTRIBUTE_SQL: LiteralString = """
 INSERT INTO workflow.mapping_attribute (
     mapping_object_id,
-    model_attribute_binding_id,
+    model_id,
+    modeled_entity_type,
+    logical_entity_id,
+    dimensional_entity_id,
+    logical_attribute_id,
+    dimensional_attribute_id,
     output_template_id,
     attribute_mapping_transformation_document,
     agent_run_id,
@@ -734,7 +607,7 @@ INSERT INTO workflow.mapping_attribute (
     attribute_mapping_status,
     attribute_mapping_is_locked
 )
-VALUES (%s, %s, %s, %s, NULL, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, %s, %s)
 RETURNING mapping_attribute_id
 """
 
@@ -755,21 +628,27 @@ RETURNING mapping_attribute_id
 _RESOLVE_CODE_INPUT_SQL: LiteralString = """
 SELECT btrim(context.code_input_digest::TEXT) AS code_input_digest
   FROM workflow.list_code_generation_target_context(%s, %s, %s) AS context
- WHERE context.object_id = %s
+ WHERE context.modeled_entity_id = %s
+   AND lower(btrim(context.modeled_entity_schema_name)) = lower(btrim(%s))
    AND lower(btrim(context.modeled_entity_name)) = lower(btrim(%s))
 """
 
 _FIND_GENERATED_CODE_SQL: LiteralString = """
 SELECT generated_code_id
   FROM workflow.generated_code
- WHERE model_object_binding_id = %s
+ WHERE model_id = %s
+   AND modeled_entity_type = %s
+   AND coalesce(logical_entity_id, dimensional_entity_id) = %s
    AND lower(btrim(artifact_name)) = lower(btrim(%s))
  FOR UPDATE
 """
 
 _INSERT_GENERATED_CODE_SQL: LiteralString = """
 INSERT INTO workflow.generated_code (
-    model_object_binding_id,
+    model_id,
+    modeled_entity_type,
+    logical_entity_id,
+    dimensional_entity_id,
     artifact_name,
     artifact_type,
     generated_code_content,
@@ -779,7 +658,7 @@ INSERT INTO workflow.generated_code (
     generated_code_status,
     generated_code_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, NULL, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, %s, %s)
 RETURNING generated_code_id
 """
 
@@ -834,6 +713,7 @@ RETURNING generated_code_source_system_id
 
 _VALIDATION_TARGET_CONTEXT_SQL: LiteralString = """
 SELECT context.modeled_entity_type,
+       context.modeled_entity_schema_name,
        context.modeled_entity_name,
        btrim(context.code_input_digest::TEXT) AS code_input_digest,
        context.source_context
@@ -844,6 +724,7 @@ SELECT context.modeled_entity_type,
   ) AS context
 UNION ALL
 SELECT context.modeled_entity_type,
+       context.modeled_entity_schema_name,
        context.modeled_entity_name,
        btrim(context.code_input_digest::TEXT) AS code_input_digest,
        context.source_context
@@ -855,41 +736,29 @@ SELECT context.modeled_entity_type,
 """
 
 _VALIDATION_GENERATED_CODE_SQL: LiteralString = """
-SELECT binding.modeled_entity_type,
-       CASE binding.modeled_entity_type
-           WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-           ELSE dimensional_entity.dimensional_entity_name
-       END AS modeled_entity_name,
+SELECT entity.modeled_entity_type,
+       entity.modeled_entity_schema_name,
+       entity.modeled_entity_name,
        generated.artifact_name,
        generated.artifact_type,
        generated.generated_code_digest,
        generated.generated_code_status,
-       coalesce(
-           array_agg(system.system_code ORDER BY lower(system.system_code))
-               FILTER (
-                   WHERE assignment.generated_code_source_system_status = 'active'
-                     AND system.is_active
-               ),
-           ARRAY[]::VARCHAR[]
-       ) AS source_system_codes
+       coalesce(array_agg(system.system_code ORDER BY lower(system.system_code))
+           FILTER (WHERE assignment.generated_code_source_system_status = 'active'
+                     AND system.is_active), ARRAY[]::VARCHAR[]) AS source_system_codes
   FROM workflow.generated_code AS generated
-  JOIN workflow.model_object_binding AS binding
-    ON binding.model_object_binding_id = generated.model_object_binding_id
-   AND binding.model_id = %s
-  LEFT JOIN workflow.logical_entity AS logical_entity
-    ON logical_entity.logical_entity_id = binding.logical_entity_id
-   AND logical_entity.model_id = binding.model_id
-  LEFT JOIN workflow.dimensional_entity AS dimensional_entity
-    ON dimensional_entity.dimensional_entity_id = binding.dimensional_entity_id
-   AND dimensional_entity.model_id = binding.model_id
+  JOIN workflow.modeled_entity AS entity
+    ON entity.model_id = generated.model_id
+   AND entity.modeled_entity_type = generated.modeled_entity_type
+   AND entity.modeled_entity_id = coalesce(
+       generated.logical_entity_id, generated.dimensional_entity_id
+   )
   LEFT JOIN workflow.generated_code_source_system AS assignment
     ON assignment.generated_code_id = generated.generated_code_id
-  LEFT JOIN core.system AS system
-    ON system.system_id = assignment.source_system_id
- GROUP BY binding.modeled_entity_type,
-          logical_entity.logical_entity_name,
-          dimensional_entity.dimensional_entity_name,
-          generated.generated_code_id
+  LEFT JOIN core.system AS system ON system.system_id = assignment.source_system_id
+ WHERE generated.model_id = %s
+ GROUP BY entity.modeled_entity_type, entity.modeled_entity_schema_name,
+          entity.modeled_entity_name, generated.generated_code_id
 """
 
 _FIND_VALIDATION_GROUP_SQL: LiteralString = """
@@ -1013,26 +882,24 @@ class ModelMaterializer:
     _assertion_record_ids: dict[str, int] = field(default_factory=dict[str, int])
     _conceptual_object_ids: dict[str, int] = field(default_factory=dict[str, int])
     _logical_submodel_ids: dict[str, int] = field(default_factory=dict[str, int])
-    _logical_entity_ids: dict[str, int] = field(default_factory=dict[str, int])
-    _logical_attribute_ids: dict[tuple[str, str], int] = field(
+    _logical_entity_ids: dict[tuple[str, str], int] = field(
         default_factory=dict[tuple[str, str], int]
+    )
+    _logical_attribute_ids: dict[tuple[str, str, str], int] = field(
+        default_factory=dict[tuple[str, str, str], int]
     )
     _dimensional_submodel_ids: dict[str, int] = field(default_factory=dict[str, int])
-    _dimensional_entity_ids: dict[str, int] = field(default_factory=dict[str, int])
-    _dimensional_attribute_ids: dict[tuple[str, str], int] = field(
+    _dimensional_entity_ids: dict[tuple[str, str], int] = field(
         default_factory=dict[tuple[str, str], int]
     )
-    _model_object_bindings: dict[tuple[str, str], tuple[int, int]] = field(
-        default_factory=dict[tuple[str, str], tuple[int, int]]
-    )
-    _model_attribute_bindings: dict[tuple[str, str, str], int] = field(
+    _dimensional_attribute_ids: dict[tuple[str, str, str], int] = field(
         default_factory=dict[tuple[str, str, str], int]
     )
-    _mapping_object_ids: dict[tuple[str, str, str], int] = field(
-        default_factory=dict[tuple[str, str, str], int]
+    _mapping_object_ids: dict[tuple[str, str, str, str], int] = field(
+        default_factory=dict[tuple[str, str, str, str], int]
     )
-    _generated_code_ids: dict[tuple[str, str, str], int] = field(
-        default_factory=dict[tuple[str, str, str], int]
+    _generated_code_ids: dict[tuple[str, str, str, str], int] = field(
+        default_factory=dict[tuple[str, str, str, str], int]
     )
     _output_template_ids: dict[tuple[str, str], int] = field(
         default_factory=dict[tuple[str, str], int]
@@ -1109,46 +976,8 @@ class ModelMaterializer:
         action_count += await self._apply_conceptual_relationships(
             records.get("conceptual_relationship", ())
         )
-        object_bindings = tuple(
-            _as(record, ModelObjectBindingRecord)
-            for record in records.get("model_object_binding", ())
-        )
-        attribute_bindings = tuple(
-            _as(record, ModelAttributeBindingRecord)
-            for record in records.get("model_attribute_binding", ())
-        )
         action_count += await self._apply_logical(records)
-        # Dimensional physical sources reference Logical Silver bindings. Each
-        # layer's bindings must exist after its entities and before its consumers.
-        action_count += await self._apply_model_object_bindings(
-            tuple(
-                record
-                for record in object_bindings
-                if record.modeled_entity_type == "logical_entity"
-            )
-        )
-        action_count += await self._apply_model_attribute_bindings(
-            tuple(
-                record
-                for record in attribute_bindings
-                if record.modeled_entity_type == "logical_entity"
-            )
-        )
         action_count += await self._apply_dimensional(records)
-        action_count += await self._apply_model_object_bindings(
-            tuple(
-                record
-                for record in object_bindings
-                if record.modeled_entity_type == "dimensional_entity"
-            )
-        )
-        action_count += await self._apply_model_attribute_bindings(
-            tuple(
-                record
-                for record in attribute_bindings
-                if record.modeled_entity_type == "dimensional_entity"
-            )
-        )
         action_count += await self._apply_mapping(records)
         action_count += await self._apply_generated_code(records.get("generated_code", ()))
         action_count += await self._apply_generated_code_source_systems(
@@ -1166,6 +995,8 @@ class ModelMaterializer:
                 (
                     record.model_name,
                     record.model_description,
+                    Jsonb([item.model_dump(mode="json") for item in record.logical_schemas]),
+                    Jsonb([item.model_dump(mode="json") for item in record.dimensional_schemas]),
                     record.silver_model_naming_instructions,
                     (
                         None
@@ -1280,6 +1111,7 @@ class ModelMaterializer:
                     to_object_id,
                     to_attribute_id,
                     record.relationship_kind,
+                    record.inferred_cardinality,
                     record.relationship_confidence,
                     record.relationship_basis,
                     record.validation_policy_version,
@@ -1785,6 +1617,7 @@ RETURNING {config.submodel_id}
     async def _upsert_entity(self, config: LayerConfig, record: Any) -> int:
         name_field = f"{config.layer}_entity_name"
         name = getattr(record, name_field)
+        schema_name = getattr(record, f"{config.layer}_entity_schema_name")
         existing = await self.transaction.fetch_one(
             cast(
                 LiteralString,
@@ -1792,11 +1625,12 @@ RETURNING {config.submodel_id}
 SELECT {config.entity_id}
   FROM {config.entity_table}
  WHERE model_id = %s
+   AND lower(btrim({config.layer}_entity_schema_name)) = lower(btrim(%s))
    AND lower(btrim({name_field})) = lower(btrim(%s))
  FOR UPDATE
 """,
             ),
-            (self.model_id, name),
+            (self.model_id, schema_name, name),
         )
         fields = config.entity_fields
         values = tuple(getattr(record, field) for field in fields)
@@ -1831,7 +1665,9 @@ RETURNING {config.entity_id}
                 (self.workflow_run_id, *values, existing[config.entity_id]),
             )
         assert row is not None
-        self._entity_cache(config)[normalize_model_key_value(name)] = row[config.entity_id]
+        self._entity_cache(config)[
+            (normalize_model_key_value(schema_name), normalize_model_key_value(name))
+        ] = row[config.entity_id]
         return row[config.entity_id]
 
     async def _upsert_membership(
@@ -1903,7 +1739,17 @@ RETURNING {id_field}
             )
 
     async def _upsert_entity_source(self, config: LayerConfig, entity_id: int, source: Any) -> int:
-        if source.support_source_type == "object":
+        source_column = (
+            "source_object_id" if config.layer == "logical" else "source_logical_entity_id"
+        )
+        source_type = "object" if config.layer == "logical" else "logical_entity"
+        if source.support_source_type == "logical_entity":
+            key = source.source_logical_entity
+            source_object_id = await self.resolve_entity(
+                LOGICAL, key.logical_entity_schema_name, key.logical_entity_name
+            )
+            assertion_record_id = None
+        elif source.support_source_type == "object":
             source_object_id, _ = await self.resolve_object(source.source_object)
             assertion_record_id = None
         else:
@@ -1922,7 +1768,7 @@ SELECT {id_field}
    AND {config.entity_id} = %s
    AND support_source_type = %s
    AND (
-       (%s = 'object' AND source_object_id = %s)
+       (%s = '{source_type}' AND {source_column} = %s)
        OR (%s = 'assertion' AND modeling_assertion_record_id = %s)
    )
  ORDER BY {id_field}
@@ -1945,7 +1791,7 @@ SELECT {id_field}
             "workflow_run_id",
             config.entity_id,
             "support_source_type",
-            "source_object_id",
+            source_column,
             "modeling_assertion_record_id",
         ]
         values: list[object] = [
@@ -2003,8 +1849,9 @@ RETURNING {id_field}
 
     async def _upsert_attribute(self, config: LayerConfig, record: Any) -> tuple[int, int]:
         entity_name = getattr(record, f"{config.layer}_entity_name")
+        schema_name = getattr(record, f"{config.layer}_entity_schema_name")
         attribute_name = getattr(record, f"{config.layer}_attribute_name")
-        entity_id = await self.resolve_entity(config, entity_name)
+        entity_id = await self.resolve_entity(config, schema_name, entity_name)
         existing = await self.transaction.fetch_one(
             cast(
                 LiteralString,
@@ -2055,7 +1902,11 @@ RETURNING {config.attribute_id}
             )
         assert row is not None
         self._attribute_cache(config)[
-            (normalize_model_key_value(entity_name), normalize_model_key_value(attribute_name))
+            (
+                normalize_model_key_value(schema_name),
+                normalize_model_key_value(entity_name),
+                normalize_model_key_value(attribute_name),
+            )
         ] = row[config.attribute_id]
         return row[config.attribute_id], entity_id
 
@@ -2067,12 +1918,34 @@ RETURNING {config.attribute_id}
         attribute_id: int,
         source: Any,
     ) -> None:
+        object_column = (
+            "source_object_id" if config.layer == "logical" else "source_logical_entity_id"
+        )
+        attribute_column = (
+            "source_attribute_id" if config.layer == "logical" else "source_logical_attribute_id"
+        )
+        source_type = "attribute" if config.layer == "logical" else "logical_attribute"
         entity_source_mapping_id = None
-        if source.support_source_type == "attribute":
+        if source.support_source_type == "logical_attribute":
+            key = source.source_logical_attribute
+            source_object_id = await self.resolve_entity(
+                LOGICAL, key.logical_entity_schema_name, key.logical_entity_name
+            )
+            source_attribute_id = await self.resolve_modeled_attribute(
+                LOGICAL,
+                key.logical_entity_schema_name,
+                key.logical_entity_name,
+                key.logical_attribute_name,
+            )
+            entity_source_mapping_id = await self._find_entity_source(
+                config, entity_id, source_object_id
+            )
+            assertion_record_id = None
+        elif source.support_source_type == "attribute":
             source_object_id, source_attribute_id, _ = await self.resolve_attribute(
                 source.source_attribute
             )
-            entity_source_mapping_id = await self._find_entity_object_source(
+            entity_source_mapping_id = await self._find_entity_source(
                 config, entity_id, source_object_id
             )
             assertion_record_id = None
@@ -2093,7 +1966,7 @@ SELECT {id_field}
    AND {config.attribute_id} = %s
    AND support_source_type = %s
    AND (
-       (%s = 'attribute' AND source_attribute_id = %s)
+       (%s = '{source_type}' AND {attribute_column} = %s)
        OR (%s = 'assertion' AND modeling_assertion_record_id = %s)
    )
  ORDER BY {id_field}
@@ -2127,8 +2000,8 @@ INSERT INTO {config.attribute_source_table} (
     {config.entity_id},
     {config.attribute_id},
     support_source_type,
-    source_object_id,
-    source_attribute_id,
+    {object_column},
+    {attribute_column},
     modeling_assertion_record_id,
     {order_field},
     {rationale_field},
@@ -2182,10 +2055,14 @@ RETURNING {id_field}
                 ),
             )
 
-    async def _find_entity_object_source(
+    async def _find_entity_source(
         self, config: LayerConfig, entity_id: int, source_object_id: int
     ) -> int:
         id_field = f"{config.layer}_entity_source_mapping_id"
+        source_column = (
+            "source_object_id" if config.layer == "logical" else "source_logical_entity_id"
+        )
+        source_type = "object" if config.layer == "logical" else "logical_entity"
         row = await self.transaction.fetch_one(
             cast(
                 LiteralString,
@@ -2194,8 +2071,8 @@ SELECT {id_field}
   FROM {config.entity_source_table}
  WHERE model_id = %s
    AND {config.entity_id} = %s
-   AND support_source_type = 'object'
-   AND source_object_id = %s
+   AND support_source_type = '{source_type}'
+   AND {source_column} = %s
  ORDER BY {id_field}
  LIMIT 1
 """,
@@ -2203,9 +2080,7 @@ SELECT {id_field}
             (self.model_id, entity_id, source_object_id),
         )
         if row is None:
-            raise InvalidRequestError(
-                "A physical Attribute source requires its Entity Object source."
-            )
+            raise InvalidRequestError("An Attribute source requires its parent Entity source.")
         return row[id_field]
 
     async def _upsert_layer_relationship(self, config: LayerConfig, record: Any) -> None:
@@ -2213,13 +2088,15 @@ SELECT {id_field}
         from_attribute_name = getattr(record, f"from_{config.layer}_attribute_name")
         to_entity_name = getattr(record, f"to_{config.layer}_entity_name")
         to_attribute_name = getattr(record, f"to_{config.layer}_attribute_name")
-        from_entity_id = await self.resolve_entity(config, from_entity_name)
-        to_entity_id = await self.resolve_entity(config, to_entity_name)
+        from_schema = getattr(record, f"from_{config.layer}_entity_schema_name")
+        to_schema = getattr(record, f"to_{config.layer}_entity_schema_name")
+        from_entity_id = await self.resolve_entity(config, from_schema, from_entity_name)
+        to_entity_id = await self.resolve_entity(config, to_schema, to_entity_name)
         from_attribute_id = await self.resolve_modeled_attribute(
-            config, from_entity_name, from_attribute_name
+            config, from_schema, from_entity_name, from_attribute_name
         )
         to_attribute_id = await self.resolve_modeled_attribute(
-            config, to_entity_name, to_attribute_name
+            config, to_schema, to_entity_name, to_attribute_name
         )
         relationship_name = getattr(record, f"{config.layer}_relationship_name")
         if config.layer == "logical":
@@ -2331,9 +2208,9 @@ SELECT {config.submodel_id}
         cache[normalized] = row[config.submodel_id]
         return row[config.submodel_id]
 
-    async def resolve_entity(self, config: LayerConfig, name: str) -> int:
+    async def resolve_entity(self, config: LayerConfig, schema_name: str, name: str) -> int:
         cache = self._entity_cache(config)
-        normalized = normalize_model_key_value(name)
+        normalized = (normalize_model_key_value(schema_name), normalize_model_key_value(name))
         if normalized in cache:
             return cache[normalized]
         row = await self.transaction.fetch_one(
@@ -2343,12 +2220,13 @@ SELECT {config.submodel_id}
 SELECT {config.entity_id}
   FROM {config.entity_table}
  WHERE model_id = %s
+   AND lower(btrim({config.layer}_entity_schema_name)) = lower(btrim(%s))
    AND lower(btrim({config.layer}_entity_name)) = lower(btrim(%s))
  ORDER BY {config.entity_id}
  LIMIT 1
 """,
             ),
-            (self.model_id, name),
+            (self.model_id, schema_name, name),
         )
         if row is None:
             raise InvalidRequestError(f"A referenced {config.layer} Entity was not found.")
@@ -2356,10 +2234,14 @@ SELECT {config.entity_id}
         return row[config.entity_id]
 
     async def resolve_modeled_attribute(
-        self, config: LayerConfig, entity_name: str, attribute_name: str
+        self, config: LayerConfig, schema_name: str, entity_name: str, attribute_name: str
     ) -> int:
         cache = self._attribute_cache(config)
-        key = (normalize_model_key_value(entity_name), normalize_model_key_value(attribute_name))
+        key = (
+            normalize_model_key_value(schema_name),
+            normalize_model_key_value(entity_name),
+            normalize_model_key_value(attribute_name),
+        )
         if key in cache:
             return cache[key]
         row = await self.transaction.fetch_one(
@@ -2372,13 +2254,14 @@ SELECT attribute.{config.attribute_id}
     ON entity.{config.entity_id} = attribute.{config.entity_id}
    AND entity.model_id = attribute.model_id
  WHERE attribute.model_id = %s
+   AND lower(btrim(entity.{config.layer}_entity_schema_name)) = lower(btrim(%s))
    AND lower(btrim(entity.{config.layer}_entity_name)) = lower(btrim(%s))
    AND lower(btrim(attribute.{config.layer}_attribute_name)) = lower(btrim(%s))
  ORDER BY attribute.{config.attribute_id}
  LIMIT 1
 """,
             ),
-            (self.model_id, entity_name, attribute_name),
+            (self.model_id, schema_name, entity_name, attribute_name),
         )
         if row is None:
             raise InvalidRequestError(f"A referenced {config.layer} Attribute was not found.")
@@ -2392,137 +2275,17 @@ SELECT attribute.{config.attribute_id}
             else self._dimensional_submodel_ids
         )
 
-    def _entity_cache(self, config: LayerConfig) -> dict[str, int]:
+    def _entity_cache(self, config: LayerConfig) -> dict[tuple[str, str], int]:
         return (
             self._logical_entity_ids if config.layer == "logical" else self._dimensional_entity_ids
         )
 
-    def _attribute_cache(self, config: LayerConfig) -> dict[tuple[str, str], int]:
+    def _attribute_cache(self, config: LayerConfig) -> dict[tuple[str, str, str], int]:
         return (
             self._logical_attribute_ids
             if config.layer == "logical"
             else self._dimensional_attribute_ids
         )
-
-    async def _apply_model_object_bindings(
-        self,
-        records: tuple[ModelingRecord, ...],
-    ) -> int:
-        for raw in records:
-            record = _as(raw, ModelObjectBindingRecord)
-            object_id, _ = await self.resolve_object(record)
-            config = LOGICAL if record.modeled_entity_type == "logical_entity" else DIMENSIONAL
-            modeled_entity_id = await self.resolve_entity(config, record.modeled_entity_name)
-            logical_entity_id = (
-                modeled_entity_id if record.modeled_entity_type == "logical_entity" else None
-            )
-            dimensional_entity_id = (
-                modeled_entity_id if record.modeled_entity_type == "dimensional_entity" else None
-            )
-            row = await self.transaction.fetch_one(
-                _UPSERT_MODEL_OBJECT_BINDING_SQL,
-                (
-                    self.model_id,
-                    object_id,
-                    record.modeled_entity_type,
-                    logical_entity_id,
-                    dimensional_entity_id,
-                    self.workflow_run_id,
-                    record.model_object_binding_status,
-                    record.model_object_binding_is_locked,
-                ),
-            )
-            if row is None:
-                raise InvalidRequestError("Model Object Binding could not be materialized.")
-            self._model_object_bindings[_entity_binding_key(record)] = (
-                row["model_object_binding_id"],
-                row["object_id"],
-            )
-        return len(records)
-
-    async def _apply_model_attribute_bindings(
-        self,
-        records: tuple[ModelingRecord, ...],
-    ) -> int:
-        for raw in records:
-            record = _as(raw, ModelAttributeBindingRecord)
-            model_object_binding_id, _ = await self.resolve_model_object_binding(record)
-            config = LOGICAL if record.modeled_entity_type == "logical_entity" else DIMENSIONAL
-            modeled_attribute_id = await self.resolve_modeled_attribute(
-                config,
-                record.modeled_entity_name,
-                record.modeled_attribute_name,
-            )
-            attribute_row = await self.transaction.fetch_one(
-                _RESOLVE_BOUND_ATTRIBUTE_SQL,
-                (record.attribute_name, model_object_binding_id, self.model_id),
-            )
-            if attribute_row is None:
-                raise InvalidRequestError(
-                    "A target Attribute for the Model Attribute Binding was not found."
-                )
-            logical_attribute_id = (
-                modeled_attribute_id if record.modeled_entity_type == "logical_entity" else None
-            )
-            dimensional_attribute_id = (
-                modeled_attribute_id if record.modeled_entity_type == "dimensional_entity" else None
-            )
-            row = await self.transaction.fetch_one(
-                _UPSERT_MODEL_ATTRIBUTE_BINDING_SQL,
-                (
-                    model_object_binding_id,
-                    logical_attribute_id,
-                    dimensional_attribute_id,
-                    attribute_row["attribute_id"],
-                    self.workflow_run_id,
-                    record.model_attribute_binding_status,
-                    record.model_attribute_binding_is_locked,
-                ),
-            )
-            if row is None:
-                raise InvalidRequestError("Model Attribute Binding could not be materialized.")
-            self._model_attribute_bindings[_attribute_binding_key(record)] = row[
-                "model_attribute_binding_id"
-            ]
-        return len(records)
-
-    async def resolve_model_object_binding(self, record: Any) -> tuple[int, int]:
-        key = _entity_binding_key(record)
-        cached = self._model_object_bindings.get(key)
-        if cached is not None:
-            return cached
-        row = await self.transaction.fetch_one(
-            _FIND_MODEL_OBJECT_BINDING_SQL,
-            (self.model_id, record.modeled_entity_type, record.modeled_entity_name),
-        )
-        if row is None:
-            raise InvalidRequestError("A referenced Model Object Binding was not found.")
-        resolved = (row["model_object_binding_id"], row["object_id"])
-        self._model_object_bindings[key] = resolved
-        return resolved
-
-    async def resolve_model_attribute_binding(
-        self,
-        record: MappingAttributeRecord,
-    ) -> int:
-        key = _attribute_binding_key(record)
-        cached = self._model_attribute_bindings.get(key)
-        if cached is not None:
-            return cached
-        model_object_binding_id, _ = await self.resolve_model_object_binding(record)
-        row = await self.transaction.fetch_one(
-            _FIND_MODEL_ATTRIBUTE_BINDING_SQL,
-            (
-                self.model_id,
-                record.modeled_entity_type,
-                model_object_binding_id,
-                record.modeled_attribute_name,
-            ),
-        )
-        if row is None:
-            raise InvalidRequestError("A referenced Model Attribute Binding was not found.")
-        self._model_attribute_bindings[key] = row["model_attribute_binding_id"]
-        return row["model_attribute_binding_id"]
 
     async def resolve_output_template(
         self,
@@ -2546,25 +2309,6 @@ SELECT attribute.{config.attribute_id}
 
     async def _apply_mapping(self, records: dict[str, tuple[ModelingRecord, ...]]) -> int:
         action_count = 0
-        mapping_workflow_run_id = (
-            None if self._mapping_policy is None else self._mapping_policy.workflow_run_id
-        )
-        for raw in records.get("mapping_dependency", ()):
-            record = _as(raw, MappingDependencyRecord)
-            source_system_id = await self.resolve_system(record.source_system_code)
-            await self.transaction.fetch_one(
-                _UPSERT_MAPPING_DEPENDENCY_SQL,
-                (
-                    self.model_id,
-                    record.modeled_entity_type,
-                    source_system_id,
-                    record.source_system_dependency_order,
-                    mapping_workflow_run_id,
-                    record.mapping_source_system_dependency_status,
-                    record.mapping_source_system_dependency_is_locked,
-                ),
-            )
-            action_count += 1
         for raw in records.get("mapping_object", ()):
             record = _as(raw, MappingObjectRecord)
             await self._upsert_mapping_object(record)
@@ -2581,24 +2325,28 @@ SELECT attribute.{config.attribute_id}
         )
         for raw in records:
             record = _as(raw, GeneratedCodeRecord)
-            model_object_binding_id, object_id = await self.resolve_model_object_binding(record)
+            config = LOGICAL if record.modeled_entity_type == "logical_entity" else DIMENSIONAL
+            entity_id = await self.resolve_entity(
+                config, record.modeled_entity_schema_name, record.modeled_entity_name
+            )
             context = await self.transaction.fetch_one(
                 _RESOLVE_CODE_INPUT_SQL,
                 (
                     self.model_id,
                     record.modeled_entity_type,
                     record.artifact_type,
-                    object_id,
+                    entity_id,
+                    record.modeled_entity_schema_name,
                     record.modeled_entity_name,
                 ),
             )
             if context is None:
                 raise InvalidRequestError(
-                    "Generated Code requires complete active Mapping for its Binding."
+                    "Generated Code requires complete active Mapping for its Entity."
                 )
             existing = await self.transaction.fetch_one(
                 _FIND_GENERATED_CODE_SQL,
-                (model_object_binding_id, record.artifact_name),
+                (self.model_id, record.modeled_entity_type, entity_id, record.artifact_name),
             )
             values = (
                 record.artifact_name,
@@ -2612,7 +2360,13 @@ SELECT attribute.{config.attribute_id}
             if existing is None:
                 row = await self.transaction.fetch_one(
                     _INSERT_GENERATED_CODE_SQL,
-                    (model_object_binding_id, *values),
+                    (
+                        self.model_id,
+                        record.modeled_entity_type,
+                        entity_id if config.layer == "logical" else None,
+                        entity_id if config.layer == "dimensional" else None,
+                        *values,
+                    ),
                 )
             else:
                 row = await self.transaction.fetch_one(
@@ -2672,10 +2426,13 @@ SELECT attribute.{config.attribute_id}
         cached = self._generated_code_ids.get(key)
         if cached is not None:
             return cached
-        model_object_binding_id, _ = await self.resolve_model_object_binding(record)
+        config = LOGICAL if record.modeled_entity_type == "logical_entity" else DIMENSIONAL
+        entity_id = await self.resolve_entity(
+            config, record.modeled_entity_schema_name, record.modeled_entity_name
+        )
         row = await self.transaction.fetch_one(
             _FIND_GENERATED_CODE_SQL,
-            (model_object_binding_id, record.artifact_name),
+            (self.model_id, record.modeled_entity_type, entity_id, record.artifact_name),
         )
         if row is None:
             raise InvalidRequestError("A referenced Generated Code artifact was not found.")
@@ -2703,7 +2460,7 @@ SELECT attribute.{config.attribute_id}
             )
             self._validation_generated_code_rows = tuple(rows)
 
-        contexts: dict[tuple[str, str], dict[str, object]] = {}
+        contexts: dict[tuple[str, str, str], dict[str, object]] = {}
         mapping_entries: list[dict[str, object]] = []
         for row in self._validation_target_context_rows:
             source_context = row.get("source_context")
@@ -2725,15 +2482,15 @@ SELECT attribute.{config.attribute_id}
                 continue
             entity_type = str(row["modeled_entity_type"])
             entity_name = normalize_model_key_value(str(row["modeled_entity_name"]))
-            target = _normalized_target_document(typed_source_context.get("target"))
+            schema_name = normalize_model_key_value(str(row["modeled_entity_schema_name"]))
             code_input_digest = str(row["code_input_digest"]).strip()
             entry: dict[str, object] = {
                 "modeled_entity_type": entity_type,
                 "modeled_entity_name": entity_name,
-                "target": target,
+                "modeled_entity_schema_name": schema_name,
                 "code_input_digest": code_input_digest,
             }
-            contexts[(entity_type, entity_name)] = entry
+            contexts[(entity_type, schema_name, entity_name)] = entry
             mapping_entries.append(entry)
         mapping_context_digest = _context_entries_digest(mapping_entries)
         if mapping_context_digest is None:
@@ -2752,6 +2509,7 @@ SELECT attribute.{config.attribute_id}
                 continue
             entity_key = (
                 str(row["modeled_entity_type"]),
+                normalize_model_key_value(str(row["modeled_entity_schema_name"])),
                 normalize_model_key_value(str(row["modeled_entity_name"])),
             )
             context = contexts.get(entity_key)
@@ -2887,7 +2645,10 @@ SELECT attribute.{config.attribute_id}
         return row["validation_group_id"]
 
     async def _upsert_mapping_object(self, record: MappingObjectRecord) -> int:
-        model_object_binding_id, _ = await self.resolve_model_object_binding(record)
+        config = LOGICAL if record.modeled_entity_type == "logical_entity" else DIMENSIONAL
+        entity_id = await self.resolve_entity(
+            config, record.modeled_entity_schema_name, record.modeled_entity_name
+        )
         source_system_id = await self.resolve_system(record.source_system_code)
         if self._mapping_policy is None:
             output_template_id = await self.resolve_output_template(
@@ -2900,7 +2661,7 @@ SELECT attribute.{config.attribute_id}
             mapping_workflow_run_id = self._mapping_policy.workflow_run_id
         existing = await self.transaction.fetch_one(
             _FIND_MAPPING_OBJECT_SQL,
-            (self.model_id, model_object_binding_id, source_system_id),
+            (self.model_id, record.modeled_entity_type, entity_id, source_system_id),
         )
         transformation = (
             None
@@ -2912,7 +2673,9 @@ SELECT attribute.{config.attribute_id}
                 _INSERT_MAPPING_OBJECT_SQL,
                 (
                     self.model_id,
-                    model_object_binding_id,
+                    record.modeled_entity_type,
+                    entity_id if config.layer == "logical" else None,
+                    entity_id if config.layer == "dimensional" else None,
                     source_system_id,
                     output_template_id,
                     record.object_dependency_order,
@@ -2943,7 +2706,16 @@ SELECT attribute.{config.attribute_id}
 
     async def _upsert_mapping_attribute(self, record: MappingAttributeRecord) -> int:
         mapping_object_id = await self.resolve_mapping_object(record)
-        model_attribute_binding_id = await self.resolve_model_attribute_binding(record)
+        config = LOGICAL if record.modeled_entity_type == "logical_entity" else DIMENSIONAL
+        entity_id = await self.resolve_entity(
+            config, record.modeled_entity_schema_name, record.modeled_entity_name
+        )
+        attribute_id = await self.resolve_modeled_attribute(
+            config,
+            record.modeled_entity_schema_name,
+            record.modeled_entity_name,
+            record.modeled_attribute_name,
+        )
         if self._mapping_policy is None:
             output_template_id = await self.resolve_output_template(
                 record.output_template_code,
@@ -2955,7 +2727,7 @@ SELECT attribute.{config.attribute_id}
             mapping_workflow_run_id = self._mapping_policy.workflow_run_id
         existing = await self.transaction.fetch_one(
             _FIND_MAPPING_ATTRIBUTE_SQL,
-            (mapping_object_id, model_attribute_binding_id),
+            (mapping_object_id, attribute_id),
         )
         transformation = (
             None
@@ -2967,7 +2739,12 @@ SELECT attribute.{config.attribute_id}
                 _INSERT_MAPPING_ATTRIBUTE_SQL,
                 (
                     mapping_object_id,
-                    model_attribute_binding_id,
+                    self.model_id,
+                    record.modeled_entity_type,
+                    entity_id if config.layer == "logical" else None,
+                    entity_id if config.layer == "dimensional" else None,
+                    attribute_id if config.layer == "logical" else None,
+                    attribute_id if config.layer == "dimensional" else None,
                     output_template_id,
                     transformation,
                     mapping_workflow_run_id,
@@ -2996,13 +2773,17 @@ SELECT attribute.{config.attribute_id}
         cached = self._mapping_object_ids.get(key)
         if cached is not None:
             return cached
-        model_object_binding_id, _ = await self.resolve_model_object_binding(record)
+        config = LOGICAL if record.modeled_entity_type == "logical_entity" else DIMENSIONAL
+        entity_id = await self.resolve_entity(
+            config, record.modeled_entity_schema_name, record.modeled_entity_name
+        )
         source_system_id = await self.resolve_system(record.source_system_code)
         row = await self.transaction.fetch_one(
             _FIND_MAPPING_OBJECT_SQL,
             (
                 self.model_id,
-                model_object_binding_id,
+                record.modeled_entity_type,
+                entity_id,
                 source_system_id,
             ),
         )
@@ -3035,26 +2816,12 @@ def _digest(value: object) -> str:
     ).hexdigest()
 
 
-def _entity_binding_key(record: Any) -> tuple[str, str]:
-    return (
-        record.modeled_entity_type,
-        normalize_model_key_value(record.modeled_entity_name),
-    )
-
-
-def _attribute_binding_key(record: Any) -> tuple[str, str, str]:
-    return (
-        record.modeled_entity_type,
-        normalize_model_key_value(record.modeled_entity_name),
-        normalize_model_key_value(record.modeled_attribute_name),
-    )
-
-
 def _mapping_key(
     record: MappingObjectRecord | MappingAttributeRecord,
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, str]:
     return (
         record.modeled_entity_type,
+        normalize_model_key_value(record.modeled_entity_schema_name),
         normalize_model_key_value(record.modeled_entity_name),
         normalize_model_key_value(record.source_system_code),
     )
@@ -3062,28 +2829,13 @@ def _mapping_key(
 
 def _artifact_key(
     record: GeneratedCodeRecord | GeneratedCodeSourceSystemRecord,
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, str]:
     return (
         record.modeled_entity_type,
+        normalize_model_key_value(record.modeled_entity_schema_name),
         normalize_model_key_value(record.modeled_entity_name),
         normalize_model_key_value(record.artifact_name),
     )
-
-
-def _normalized_target_document(raw: object) -> dict[str, str]:
-    if not isinstance(raw, dict):
-        raise InvalidRequestError("The server-derived Mapping target is invalid.")
-    document = cast(dict[str, object], raw)
-    fields = (
-        "tenant_code",
-        "system_code",
-        "connection_code",
-        "object_schema",
-        "object_name",
-    )
-    if any(not isinstance(document.get(field), str) for field in fields):
-        raise InvalidRequestError("The server-derived Mapping target is incomplete.")
-    return {field: normalize_model_key_value(cast(str, document[field])) for field in fields}
 
 
 def _context_entries_digest(entries: list[dict[str, object]]) -> str | None:

@@ -81,6 +81,8 @@ function ModelOverviewView({
         </div>
         <div className="model-overview-facts" aria-label="Model facts">
           <DetailFact label="Revision" value={`r${model.model_revision}`} />
+          <DetailFact label="Logical schemas" value={model.logical_schemas.map((item) => item.schema_name).join(", ") || "None configured"} />
+          <DetailFact label="Dimensional schemas" value={model.dimensional_schemas.map((item) => item.schema_name).join(", ") || "None configured"} />
           <DetailFact label="Status" value={model.is_active ? "Active" : "Archived"} />
           <DetailFact label="Updated" value={formatDateTime(model.updated_at) ?? "—"} />
         </div>

@@ -1,3 +1,4 @@
+import type { LogicalTransport } from "../logical/api";
 import type { ModelTargetsTransport } from "../model_targets/api";
 import type { ModelRecordHistoryApi } from "../model_record_review/api";
 import type { HttpRequest } from "../../core/http";
@@ -19,6 +20,7 @@ export interface DimensionalFilters {
 export interface DimensionalObject {
   dimensional_entity_id: number;
   workflow_run_id: number | null;
+  dimensional_entity_schema_name: string;
   dimensional_entity_name: string;
   dimensional_entity_type: "fact" | "dimension" | "bridge";
   dimensional_fact_type:
@@ -52,13 +54,10 @@ export interface DimensionalSubmodelMembership {
   updated_at: string;
 }
 
-export interface DimensionalPhysicalObjectReference {
-  object_id: number;
-  tenant_code: string;
-  system_code: string;
-  connection_code: string;
-  object_schema: string;
-  object_name: string;
+export interface DimensionalLogicalEntityReference {
+  logical_entity_id: number;
+  logical_entity_schema_name: string;
+  logical_entity_name: string;
 }
 
 export interface DimensionalAssertionReference {
@@ -83,9 +82,9 @@ interface DimensionalObjectSourceBase {
   updated_at: string;
 }
 
-export interface DimensionalPhysicalObjectSource extends DimensionalObjectSourceBase {
-  support_source_type: "object";
-  source_object: DimensionalPhysicalObjectReference;
+export interface DimensionalLogicalEntitySource extends DimensionalObjectSourceBase {
+  support_source_type: "logical_entity";
+  source_logical_entity: DimensionalLogicalEntityReference;
 }
 
 export interface DimensionalAssertionSource extends DimensionalObjectSourceBase {
@@ -93,7 +92,7 @@ export interface DimensionalAssertionSource extends DimensionalObjectSourceBase 
   assertion_record: DimensionalAssertionReference;
 }
 
-export type DimensionalObjectSource = DimensionalPhysicalObjectSource | DimensionalAssertionSource;
+export type DimensionalObjectSource = DimensionalLogicalEntitySource | DimensionalAssertionSource;
 
 export interface DimensionalObjectDetail extends DimensionalObject {
   dimensional_entity_definition: string;
@@ -111,6 +110,7 @@ export interface DimensionalAttribute {
   dimensional_attribute_id: number;
   workflow_run_id: number | null;
   dimensional_entity_id: number;
+  dimensional_entity_schema_name: string;
   dimensional_entity_name: string;
   dimensional_attribute_name: string;
   dimensional_attribute_data_type: string;
@@ -143,9 +143,9 @@ export interface DimensionalAttributePage {
   next_cursor: string | null;
 }
 
-export interface DimensionalPhysicalAttributeReference extends DimensionalPhysicalObjectReference {
-  attribute_id: number;
-  attribute_name: string;
+export interface DimensionalLogicalAttributeReference extends DimensionalLogicalEntityReference {
+  logical_attribute_id: number;
+  logical_attribute_name: string;
 }
 
 interface DimensionalAttributeSourceBase {
@@ -159,10 +159,10 @@ interface DimensionalAttributeSourceBase {
   updated_at: string;
 }
 
-export interface DimensionalPhysicalAttributeSource extends DimensionalAttributeSourceBase {
+export interface DimensionalLogicalAttributeSource extends DimensionalAttributeSourceBase {
   dimensional_entity_source_mapping_id: number;
-  support_source_type: "attribute";
-  source_attribute: DimensionalPhysicalAttributeReference;
+  support_source_type: "logical_attribute";
+  source_logical_attribute: DimensionalLogicalAttributeReference;
 }
 
 export interface DimensionalAttributeAssertionSource extends DimensionalAttributeSourceBase {
@@ -171,7 +171,7 @@ export interface DimensionalAttributeAssertionSource extends DimensionalAttribut
 }
 
 export type DimensionalAttributeSource =
-  | DimensionalPhysicalAttributeSource
+  | DimensionalLogicalAttributeSource
   | DimensionalAttributeAssertionSource;
 
 export interface DimensionalAttributeDetail extends DimensionalAttribute {
@@ -189,10 +189,12 @@ export interface DimensionalRelationship {
   dimensional_relationship_id: number;
   workflow_run_id: number | null;
   from_dimensional_entity_id: number;
+  from_dimensional_entity_schema_name: string;
   from_dimensional_entity_name: string;
   from_dimensional_attribute_id: number;
   from_dimensional_attribute_name: string;
   to_dimensional_entity_id: number;
+  to_dimensional_entity_schema_name: string;
   to_dimensional_entity_name: string;
   to_dimensional_attribute_id: number;
   to_dimensional_attribute_name: string;
@@ -260,7 +262,7 @@ export interface DimensionalTransport {
   ) => Promise<DimensionalRelationshipDetail>;
 }
 
-export type DimensionalApi = DimensionalTransport & Pick<ModelTargetsTransport, "readTargetOptions" | "exportModelTargets"> & ModelRecordHistoryApi
+export type DimensionalApi = Pick<LogicalTransport, "listLogicalEntities"> & DimensionalTransport & Pick<ModelTargetsTransport, "readTargetOptions" | "exportModelTargets"> & ModelRecordHistoryApi
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"

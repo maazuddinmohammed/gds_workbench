@@ -226,6 +226,8 @@ def _context_bundle(
             "model_details": {
                 "model_name": "Customer Model",
                 "model_description": None,
+                "logical_schemas": [{"schema_name": "silver", "description": None}],
+                "dimensional_schemas": [{"schema_name": "gold", "description": None}],
                 "silver_model_naming_instructions": "Use business language.",
                 "silver_model_audit_columns_template": {
                     "schema_version": "1.0",
@@ -294,7 +296,7 @@ def _candidate(*, source_name: str = "customer_raw") -> JsonValue:
             ],
             "entities": [
                 {
-                    "logical_entity_name": "Customer",
+                    "logical_entity_schema_name": "silver", "logical_entity_name": "Customer",
                     "logical_entity_definition": "One customer.",
                     "logical_entity_type": "core",
                     "logical_entity_type_detail": None,
@@ -324,7 +326,7 @@ def _candidate(*, source_name: str = "customer_raw") -> JsonValue:
             ],
             "attributes": [
                 {
-                    "logical_entity_name": "Customer",
+                    "logical_entity_schema_name": "silver", "logical_entity_name": "Customer",
                     "logical_attribute_name": "Customer Id",
                     "logical_attribute_definition": "Customer identifier.",
                     "logical_attribute_data_type": "bigint",
@@ -411,38 +413,24 @@ def _validation_context(
     snapshot = snapshot_from_graph(records).model_copy(
         update={"model_id": context.model_id, "model_revision": context.model_revision}
     )
-    target_objects = frozenset(
-        tuple(
-            str(value).casefold()
-            for value in PhysicalObjectKey.model_validate(item, extra="ignore")
-            .model_dump()
-            .values()
-        )
-        for item in records.get("model_object_binding", [])
-    )
-    target_attributes = frozenset(
-        (*key, str(attribute["attribute_name"]).casefold())
-        for key in target_objects
-        for attribute in records.get("model_attribute_binding", [])
-    )
     physical_scope = PhysicalModelCatalog(
         model_tenant_code="NWA",
         active_system_codes=frozenset({"crm"}),
-        objects=cast(Any, source_objects | target_objects),
-        attributes=cast(Any, source_attributes | target_attributes),
+        objects=cast(Any, source_objects),
+        attributes=cast(Any, source_attributes),
         model_input_objects=cast(Any, source_objects),
         model_input_attributes=cast(Any, source_attributes),
-        dimensional_source_objects=frozenset(),
-        dimensional_source_attributes=frozenset(),
-        logical_mapping_target_objects=cast(Any, target_objects),
-        logical_mapping_target_attributes=cast(Any, target_attributes),
-        dimensional_mapping_target_objects=frozenset(),
-        dimensional_mapping_target_attributes=frozenset(),
+
+
+
+
+
+
     )
     return replace(bundle, snapshot=snapshot, physical_scope=physical_scope)
 
 
-def _bound_context_bundle(mode: str) -> AgentContextBundle:
+def _mapped_context_bundle(mode: str) -> AgentContextBundle:
     bundle = _context_bundle(mode=mode)
     bundle = replace(
         bundle,
@@ -459,30 +447,10 @@ def _bound_context_bundle(mode: str) -> AgentContextBundle:
         "logical_submodel": candidate["submodels"],
         "logical_entity": candidate["entities"],
         "logical_attribute": candidate["attributes"],
-        "model_object_binding": [
-            {
-                "tenant_code": "NWA",
-                "system_code": "CRM",
-                "connection_code": "TARGET",
-                "object_schema": "silver",
-                "object_name": "customer",
-                "modeled_entity_type": "logical_entity",
-                "modeled_entity_name": "Customer",
-                "model_object_binding_status": "active",
-                "model_object_binding_is_locked": False,
-            }
-        ],
-        "model_attribute_binding": [
-            {
-                "modeled_entity_type": "logical_entity",
-                "modeled_entity_name": "Customer",
-                "modeled_attribute_name": "Customer Id",
-                "attribute_name": "customer_id",
-                "model_attribute_binding_status": "active",
-                "model_attribute_binding_is_locked": False,
-            }
-        ],
+        "mapping_object": [{"modeled_entity_type": "logical_entity", "modeled_entity_schema_name": "silver", "modeled_entity_name": "Customer", "source_system_code": "CRM", "output_template_code": None, "object_dependency_order": 0, "mapping_transformation_document": {"kind":"select"}, "object_mapping_status": "active", "object_mapping_is_locked": False}],
+        "mapping_attribute": [{"modeled_entity_type": "logical_entity", "modeled_entity_schema_name": "silver", "modeled_entity_name": "Customer", "modeled_attribute_name": "Customer Id", "source_system_code": "CRM", "output_template_code": None, "attribute_mapping_transformation_document": {"kind":"direct"}, "attribute_mapping_status": "active", "attribute_mapping_is_locked": False}],
     }
+
     bundle = _validation_context(bundle, graph=graph)
     assert bundle.snapshot is not None and bundle.physical_scope is not None
     assert validate_future_graph(
@@ -1046,8 +1014,8 @@ async def test_validation_repair_keeps_original_context_then_hands_off_once() ->
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
-async def test_full_graph_binding_failure_is_repaired_before_handoff(mode: str) -> None:
-    bundle = _bound_context_bundle(mode)
+async def test_full_graph_mapping_failure_is_repaired_before_handoff(mode: str) -> None:
+    bundle = _mapped_context_bundle(mode)
     invalid = cast(dict[str, list[dict[str, object]]], _candidate())
     invalid["entities"][0]["logical_entity_status"] = "inactive"
     corrected = cast(dict[str, list[dict[str, object]]], _candidate())
@@ -1084,8 +1052,13 @@ async def test_full_graph_binding_failure_is_repaired_before_handoff(mode: str) 
         },
         {
             "code": "candidate.active_dependency_invalid",
-            "path": ["model_object_binding", "modeled_entity_name"],
-            "message": "Active Object Binding requires an active modeled Entity.",
+            "path": ["mapping_object", "mapping_transformation_document"],
+            "message": "Active Mapping Object requires active Entity and transformation.",
+        },
+        {
+            "code": "candidate.active_dependency_invalid",
+            "path": ["mapping_attribute", "modeled_attribute_name"],
+            "message": "Active Mapping Attribute requires active Mapping and modeled Attribute.",
         },
     ]
     if mode == "tool_assisted":
@@ -1095,7 +1068,7 @@ async def test_full_graph_binding_failure_is_repaired_before_handoff(mode: str) 
             bundle.tool_catalog.invoke(
                 "get_agent_context_dataset",
                 {
-                    "dataset": "read_only_model_object_binding",
+                    "dataset": "read_only_mapping_object",
                     "offset": 0,
                     "limit": 1,
                 },
@@ -1103,12 +1076,8 @@ async def test_full_graph_binding_failure_is_repaired_before_handoff(mode: str) 
         )
         assert page["items"][0]["modeled_entity_name"] == "Customer"
     else:
-        assert (
-            repaired["original_context"]["read_only_dependencies"][0]["record"][
-                "modeled_entity_name"
-            ]
-            == "Customer"
-        )
+        dependencies = repaired["original_context"]["read_only_dependencies"]
+        assert any(item["dataset"] == "mapping_object" and item["record"]["modeled_entity_name"] == "Customer" for item in dependencies)
     assert len(handoff.calls) == 1
     assert bundle.snapshot is not None and bundle.physical_scope is not None
     assert validate_future_graph(
@@ -1131,7 +1100,7 @@ async def test_full_graph_binding_failure_is_repaired_before_handoff(mode: str) 
 
 @pytest.mark.asyncio
 async def test_post_policy_graph_failure_retains_canonical_rejected_draft() -> None:
-    bundle = _bound_context_bundle("one_shot")
+    bundle = _mapped_context_bundle("one_shot")
     assert bundle.snapshot is not None
     details = _context_bundle().context.model_details
     context = bundle.context.model_copy(update={"model_details": details})
@@ -1165,12 +1134,12 @@ async def test_post_policy_graph_failure_retains_canonical_rejected_draft() -> N
     issues = cast(dict[str, Any], agent.requests[1].context)["repair"][
         "validation_issues"
     ]
-    assert any(issue["path"][0] == "model_attribute_binding" for issue in issues)
+    assert any(issue["path"][0] == "mapping_attribute" for issue in issues)
     assert handoff.calls == []
     assert len(handoff.retained) == 1
     retained = handoff.retained[0]
     assert retained["failure_code"] == "agent_candidate_validation_failed"
-    assert retained["issues"][0].dataset == "model_attribute_binding"
+    assert retained["issues"][0].dataset == "mapping_attribute"
     attributes = next(
         change
         for change in retained["changes"]

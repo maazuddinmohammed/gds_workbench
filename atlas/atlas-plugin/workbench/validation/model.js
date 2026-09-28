@@ -17,7 +17,7 @@
   const ATTRIBUTE_FIELDS = [...OBJECT_FIELDS, "attribute_name"];
 
   function normalized(value) { return core.normalize("model", "value", value); }
-  function tuple(values) { return core.stableStringify(values.map(normalized)); }
+  function tuple(values) { return core.stableStringify(values.map(value => normalized(value ?? null))); }
   function physicalKey(record, attribute = false) {
     return tuple((attribute ? ATTRIBUTE_FIELDS : OBJECT_FIELDS).map((field) => record?.[field]));
   }
@@ -32,7 +32,8 @@
     const name = record?.modeled_entity_name ?? record?.[
       type === "logical_entity" ? "logical_entity_name" : "dimensional_entity_name"
     ];
-    return tuple([type, name]);
+    const schema = record?.modeled_entity_schema_name ?? record?.[`${type}_schema_name`];
+    return tuple([type, schema, name]);
   }
   function attributeKey(record) {
     let type = record?.modeled_entity_type;
@@ -44,13 +45,14 @@
     const attribute = record?.modeled_attribute_name ?? record?.[
       type === "logical_entity" ? "logical_attribute_name" : "dimensional_attribute_name"
     ];
-    return tuple([type, entity, attribute]);
+    const schema = record?.modeled_entity_schema_name ?? record?.[`${type}_schema_name`];
+    return tuple([type, schema, entity, attribute]);
   }
   function mappingObjectKey(record) {
-    return tuple([record.modeled_entity_type, record.modeled_entity_name, record.source_system_code]);
+    return tuple([record.modeled_entity_type, record.modeled_entity_schema_name, record.modeled_entity_name, record.source_system_code]);
   }
   function artifactKey(record) {
-    return tuple([record.modeled_entity_type, record.modeled_entity_name, record.artifact_name]);
+    return tuple([record.modeled_entity_type, record.modeled_entity_schema_name, record.modeled_entity_name, record.artifact_name]);
   }
   function validationGroupKey(record) {
     return tuple([record.tenant_code, record.system_code, record.validation_group_name]);
@@ -137,6 +139,11 @@
     if (record?.support_source_type === "assertion") {
       return tuple(["assertion", record.assertion_record?.modeling_assertion_record_key]);
     }
+    if (record?.support_source_type === "logical_entity") return tuple(["logical_entity",
+      record.source_logical_entity?.logical_entity_schema_name, record.source_logical_entity?.logical_entity_name]);
+    if (record?.support_source_type === "logical_attribute") return tuple(["logical_attribute",
+      record.source_logical_attribute?.logical_entity_schema_name, record.source_logical_attribute?.logical_entity_name,
+      record.source_logical_attribute?.logical_attribute_name]);
     const source = record?.support_source_type === "attribute"
       ? record.source_attribute : record?.source_object;
     return tuple([record?.support_source_type, ...(record?.support_source_type === "attribute"
@@ -235,49 +242,11 @@
       .map((record) => physicalKey(record, true)));
     const activeAttributeKeys = new Set(attributes.filter((record) => record.is_active !== false &&
       activeObjectKeys.has(physicalKey(record))).map((record) => physicalKey(record, true)));
-    const byZone = (zone) => new Set(objects
-      .filter((record) => record.is_active !== false && normalized(record.zone_code) === zone)
-      .map((record) => physicalKey(record)));
-    const logicalTargets = byZone("silver");
-    const dimensionalTargets = byZone("gold");
     const inputObjects = new Set(objects
       .filter((record) => record.is_active !== false &&
         ["source", "bronze"].includes(normalized(record.zone_code)))
       .map((record) => physicalKey(record)));
 
-    const baseline = (name) => records(model, name, "baseline");
-    const activeLogicalEntities = new Set(baseline("logical_entity")
-      .filter((record) => active(record, "logical_entity_status")).map(entityKey));
-    const activeDependencies = new Set(baseline("mapping_dependency")
-      .filter((record) => active(record, "mapping_source_system_dependency_status") &&
-        systems.some((system) => normalized(system.system_code) === normalized(record.source_system_code)))
-      .map((record) => tuple([record.modeled_entity_type, record.source_system_code])));
-    const activeObjectBindings = new Map(baseline("model_object_binding")
-      .filter((record) => record.modeled_entity_type === "logical_entity" &&
-        active(record, "model_object_binding_status") && logicalTargets.has(physicalKey(record)))
-      .map((record) => [entityKey(record), physicalKey(record)]));
-    const activeMappingObjects = baseline("mapping_object").filter((record) =>
-      record.modeled_entity_type === "logical_entity" && active(record, "object_mapping_status") &&
-      record.mapping_transformation_document !== null &&
-      activeLogicalEntities.has(entityKey(record)) &&
-      activeDependencies.has(tuple([record.modeled_entity_type, record.source_system_code])) &&
-      activeObjectBindings.has(entityKey(record)));
-    const dimensionalSourceObjects = new Set(activeMappingObjects.map((record) =>
-      activeObjectBindings.get(entityKey(record))));
-    const activeAttributeBindings = new Map(baseline("model_attribute_binding")
-      .filter((record) => record.modeled_entity_type === "logical_entity" &&
-        active(record, "model_attribute_binding_status"))
-      .map((record) => {
-        const object = activeObjectBindings.get(entityKey(record));
-        return [attributeKey(record), object ? tuple([...JSON.parse(object), record.attribute_name]) : null];
-      }).filter(([, target]) => target && activeAttributeKeys.has(target)));
-    const mappedAttributes = new Set(baseline("mapping_attribute")
-      .filter((record) => active(record, "attribute_mapping_status") &&
-        record.attribute_mapping_transformation_document !== null &&
-        activeMappingObjects.some((parent) => mappingObjectKey(parent) === mappingObjectKey(record)))
-      .map(attributeKey));
-    const dimensionalSourceAttributes = new Set([...activeAttributeBindings]
-      .filter(([key]) => mappedAttributes.has(key)).map(([, target]) => target));
 
     return {
       tenant: normalized(context.tenantCode),
@@ -287,12 +256,6 @@
       attributes: attributeKeys,
       inputObjects,
       inputAttributes: attributesFor(activeAttributeKeys, inputObjects),
-      dimensionalSourceObjects,
-      dimensionalSourceAttributes,
-      logicalTargets,
-      logicalTargetAttributes: attributesFor(activeAttributeKeys, logicalTargets),
-      dimensionalTargets,
-      dimensionalTargetAttributes: attributesFor(activeAttributeKeys, dimensionalTargets),
     };
   }
 
@@ -312,91 +275,6 @@
 
   function sameSet(left, right) {
     return left.size === right.size && [...left].every((value) => right.has(value));
-  }
-
-  function validateBindings(model, catalog, issues, historical) {
-    const entityTargets = new Map();
-    const allEntityTargets = new Map();
-    const retainedEntities = new Set();
-    const retainedAttributes = new Set();
-    const usedObjects = new Set();
-    for (const record of records(model, "model_object_binding")) {
-      const entity = entityKey(record);
-      const target = physicalKey(record);
-      const retained = historical.get("model_object_binding")?.has(record);
-      if (retained) retainedEntities.add(entity);
-      const eligible = retained ? catalog.objects : record.modeled_entity_type === "logical_entity"
-        ? catalog.logicalTargets : catalog.dimensionalTargets;
-      if (!eligible.has(target)) scopeIssue(issues, "model_object_binding", "object_name",
-        "Bound target Object is not eligible for its modeled layer.");
-      allEntityTargets.set(entity, target);
-      if (!active(record, "model_object_binding_status")) continue;
-      if (usedObjects.has(target)) issue(issues, "binding_target_conflict",
-        "model_object_binding", "object_name",
-        "An active physical Object can bind to only one modeled Entity.");
-      usedObjects.add(target);
-      entityTargets.set(entity, target);
-    }
-    const attributeTargets = new Map();
-    const allAttributeTargets = new Map();
-    const usedAttributes = new Set();
-    for (const record of records(model, "model_attribute_binding")) {
-      const entity = entityKey(record);
-      const object = allEntityTargets.get(entity);
-      if (!object) {
-        issue(issues, "reference_not_found", "model_attribute_binding", "model_object_binding",
-          "Referenced record is not present in the future Model graph.");
-        continue;
-      }
-      const target = tuple([...JSON.parse(object), record.attribute_name]);
-      allAttributeTargets.set(attributeKey(record), target);
-      const retained = historical.get("model_attribute_binding")?.has(record) &&
-        retainedEntities.has(entity);
-      const eligible = retained ? catalog.attributes : record.modeled_entity_type === "logical_entity"
-        ? catalog.logicalTargetAttributes : catalog.dimensionalTargetAttributes;
-      if (!eligible.has(target)) scopeIssue(issues, "model_attribute_binding", "attribute_name",
-        "Bound target Attribute is not eligible for its modeled layer.");
-      if (!active(record, "model_attribute_binding_status")) continue;
-      if (!entityTargets.has(entity)) {
-        issue(issues, "inactive_parent", "model_attribute_binding", "modeled_entity_name",
-          "An active Attribute Binding requires an active Object Binding.");
-        continue;
-      }
-      if (usedAttributes.has(target)) issue(issues, "binding_target_conflict",
-        "model_attribute_binding", "attribute_name",
-        "An active physical Attribute can bind to only one modeled Attribute.");
-      usedAttributes.add(target);
-      attributeTargets.set(attributeKey(record), target);
-      if (retained && catalog.attributes.has(target)) retainedAttributes.add(target);
-    }
-    const activeAttributes = new Set([
-      ...records(model, "logical_attribute")
-        .filter((record) => active(record, "logical_attribute_status")).map(attributeKey),
-      ...records(model, "dimensional_attribute")
-        .filter((record) => active(record, "dimensional_attribute_status")).map(attributeKey),
-    ]);
-    for (const [entity, object] of entityTargets) {
-      const entityParts = JSON.parse(entity);
-      const belongs = (key) => JSON.parse(key).slice(0, 2)
-        .every((part, index) => part === entityParts[index]);
-      const modeled = new Set([...attributeTargets].filter(([key]) => belongs(key)).map(([key]) => key));
-      const expectedModeled = new Set([...activeAttributes].filter(belongs));
-      if (!sameSet(modeled, expectedModeled)) issue(issues, "binding_coverage_missing",
-        "model_attribute_binding", "modeled_attribute_name",
-        "An active Object Binding requires one active Binding for every active modeled Attribute.");
-      const eligible = entityParts[0] === "logical_entity"
-        ? catalog.logicalTargetAttributes : catalog.dimensionalTargetAttributes;
-      const expectedPhysical = new Set([...eligible].filter((key) =>
-        core.stableStringify(JSON.parse(key).slice(0, 5)) === object));
-      for (const target of retainedAttributes) if (
-        core.stableStringify(JSON.parse(target).slice(0, 5)) === object) expectedPhysical.add(target);
-      const boundPhysical = new Set([...attributeTargets]
-        .filter(([key]) => belongs(key)).map(([, target]) => target));
-      if (!sameSet(boundPhysical, expectedPhysical)) issue(issues, "binding_coverage_missing",
-        "model_attribute_binding", "attribute_name",
-        "An active Object Binding requires one active Binding for every active physical Attribute.");
-    }
-    return { entityTargets, attributeTargets, allEntityTargets, allAttributeTargets };
   }
 
   function validatePhysicalScope(model, catalog) {
@@ -459,45 +337,7 @@
             ? "Logical source Object is not in active Model Input Scope."
             : "Logical source Attribute is not in active Model Input Scope.");
 
-    const bindings = validateBindings(model, catalog, issues, historical);
-    for (const name of ["mapping_object", "mapping_attribute", "generated_code",
-      "generated_code_source_system"]) {
-      for (const record of records(model, name)) {
-        if (retained(name, record)) continue;
-        const isAttribute = name === "mapping_attribute";
-        const target = isAttribute ? bindings.allAttributeTargets.get(attributeKey(record)) :
-          bindings.allEntityTargets.get(entityKey(record));
-        const eligible = record.modeled_entity_type === "logical_entity"
-          ? (isAttribute ? catalog.logicalTargetAttributes : catalog.logicalTargets)
-          : (isAttribute ? catalog.dimensionalTargetAttributes : catalog.dimensionalTargets);
-        if (target && !eligible.has(target)) scopeIssue(issues, name,
-          isAttribute ? "model_attribute_binding" : "model_object_binding",
-          `New or changed authoring requires an eligible active physical target ${
-            isAttribute ? "Attribute" : "Object"}.`);
-      }
-    }
-    const dimensionalObjects = new Set(catalog.dimensionalSourceObjects);
-    const dimensionalAttributes = new Set(catalog.dimensionalSourceAttributes);
-    for (const record of records(model, "mapping_object")) {
-      if (active(record, "object_mapping_status") && record.modeled_entity_type === "logical_entity") {
-        const target = bindings.entityTargets.get(entityKey(record));
-        if (target && catalog.logicalTargets.has(target)) dimensionalObjects.add(target);
-      }
-    }
-    for (const record of records(model, "mapping_attribute")) {
-      if (active(record, "attribute_mapping_status") && record.modeled_entity_type === "logical_entity") {
-        const target = bindings.attributeTargets.get(attributeKey(record));
-        if (target && catalog.logicalTargetAttributes.has(target)) dimensionalAttributes.add(target);
-      }
-    }
-    for (const name of ["dimensional_entity", "dimensional_attribute"])
-      for (const record of records(model, name))
-        for (const source of record.sources || []) requireSource(source, name,
-          retained(name, record) ? catalog.objects : dimensionalObjects,
-          retained(name, record) ? catalog.attributes : dimensionalAttributes,
-          "Dimensional source requires an active Silver Logical contribution.");
-
-    for (const name of ["mapping_dependency", "mapping_object", "mapping_attribute",
+    for (const name of ["mapping_object", "mapping_attribute",
       "generated_code_source_system"])
       for (const record of records(model, name)) requireSystem(catalog, record.source_system_code,
         name, "source_system_code", issues);
@@ -567,9 +407,9 @@
       const submodels = new Set(records(model, `${layer}_submodel`)
         .map((record) => normalized(record[`${layer}_submodel_name`])));
       const entities = new Set(records(model, `${layer}_entity`)
-        .map((record) => normalized(record[`${layer}_entity_name`])));
+        .map((record) => tuple([record[`${layer}_entity_schema_name`], record[`${layer}_entity_name`]])));
       const attributes = new Set(records(model, `${layer}_attribute`).map((record) =>
-        tuple([record[`${layer}_entity_name`], record[`${layer}_attribute_name`]])));
+        tuple([record[`${layer}_entity_schema_name`], record[`${layer}_entity_name`], record[`${layer}_attribute_name`]])));
       for (const record of records(model, `${layer}_entity`)) {
         if ((record.submodels || []).some((item) => !submodels.has(normalized(item.submodel_name))))
           issue(issues, "reference_not_found", `${layer}_entity`, "submodel_name",
@@ -578,7 +418,7 @@
           `${layer}_entity`, assertions, issues);
       }
       for (const record of records(model, `${layer}_attribute`)) {
-        if (!entities.has(normalized(record[`${layer}_entity_name`]))) issue(issues,
+        if (!entities.has(tuple([record[`${layer}_entity_schema_name`], record[`${layer}_entity_name`]]))) issue(issues,
           "reference_not_found", `${layer}_attribute`, `${layer}_entity_name`,
           "Referenced record is not present in the future Model graph.");
         for (const source of record.sources || []) validateAssertionSource(source, layer,
@@ -586,7 +426,7 @@
       }
       for (const record of records(model, `${layer}_relationship`)) {
         const endpoints = ["from", "to"].map((prefix) => tuple([
-          record[`${prefix}_${layer}_entity_name`], record[`${prefix}_${layer}_attribute_name`],
+          record[`${prefix}_${layer}_entity_schema_name`], record[`${prefix}_${layer}_entity_name`], record[`${prefix}_${layer}_attribute_name`],
         ]));
         if (endpoints.some((endpoint) => !attributes.has(endpoint))) issue(issues,
           "reference_not_found", `${layer}_relationship`, `${layer}_attribute_name`,
@@ -601,48 +441,46 @@
       ...records(model, "logical_attribute").map(attributeKey),
       ...records(model, "dimensional_attribute").map(attributeKey),
     ]);
-    const objectBindings = new Set(records(model, "model_object_binding").map(entityKey));
-    const attributeBindings = new Set(records(model, "model_attribute_binding").map(attributeKey));
-    for (const record of records(model, "model_object_binding"))
-      if (!entities.has(entityKey(record))) issue(issues, "reference_not_found",
-        "model_object_binding", "modeled_entity_name",
-        "Referenced record is not present in the future Model graph.");
-    for (const record of records(model, "model_attribute_binding")) {
-      if (!objectBindings.has(entityKey(record))) issue(issues, "reference_not_found",
-        "model_attribute_binding", "model_object_binding",
-        "Referenced record is not present in the future Model graph.");
-      if (!attributes.has(attributeKey(record))) issue(issues, "reference_not_found",
-        "model_attribute_binding", "modeled_attribute_name",
-        "Referenced record is not present in the future Model graph.");
-    }
-    const dependencies = new Set(records(model, "mapping_dependency")
-      .map((record) => tuple([record.modeled_entity_type, record.source_system_code])));
     const mappings = new Set(records(model, "mapping_object").map(mappingObjectKey));
     for (const record of records(model, "mapping_object")) {
-      if (!objectBindings.has(entityKey(record))) issue(issues, "reference_not_found",
-        "mapping_object", "model_object_binding",
+      if (!entities.has(entityKey(record))) issue(issues, "reference_not_found",
+        "mapping_object", "modeled_entity_name",
         "Referenced record is not present in the future Model graph.");
-      if (!dependencies.has(tuple([record.modeled_entity_type, record.source_system_code])))
-        issue(issues, "reference_not_found", "mapping_object", "mapping_dependency",
-          "Referenced record is not present in the future Model graph.");
     }
     for (const record of records(model, "mapping_attribute")) {
       if (!mappings.has(mappingObjectKey(record))) issue(issues, "reference_not_found",
         "mapping_attribute", "mapping_object",
         "Referenced record is not present in the future Model graph.");
-      if (!attributeBindings.has(attributeKey(record))) issue(issues, "reference_not_found",
-        "mapping_attribute", "model_attribute_binding",
+      if (!attributes.has(attributeKey(record))) issue(issues, "reference_not_found",
+        "mapping_attribute", "modeled_attribute_name",
         "Referenced record is not present in the future Model graph.");
     }
     const artifacts = new Set(records(model, "generated_code").map(artifactKey));
     for (const record of records(model, "generated_code"))
-      if (!objectBindings.has(entityKey(record))) issue(issues, "reference_not_found",
-        "generated_code", "model_object_binding",
+      if (!entities.has(entityKey(record))) issue(issues, "reference_not_found",
+        "generated_code", "modeled_entity_name",
         "Referenced record is not present in the future Model graph.");
     for (const record of records(model, "generated_code_source_system"))
       if (!artifacts.has(artifactKey(record))) issue(issues, "reference_not_found",
         "generated_code_source_system", "generated_code",
         "Referenced record is not present in the future Model graph.");
+    const logicalEntities = new Map(records(model, "logical_entity").map((record) => [entityKey(record), record]));
+    const logicalAttributes = new Map(records(model, "logical_attribute").map((record) => [attributeKey(record), record]));
+    for (const layer of ["entity", "attribute"]) for (const record of records(model, `dimensional_${layer}`)) {
+      for (const source of record.sources || []) {
+        const isAttribute = source.support_source_type === "logical_attribute";
+        if (!isAttribute && source.support_source_type !== "logical_entity") continue;
+        const target = isAttribute ? source.source_logical_attribute : source.source_logical_entity;
+        const found = isAttribute ? logicalAttributes.get(attributeKey(target)) : logicalEntities.get(entityKey(target));
+        const field = isAttribute ? "logical_attribute" : "logical_entity";
+        if (!found) issue(issues, "reference_not_found", `dimensional_${layer}`, field,
+          "Referenced Logical design is not present in the future Model graph.");
+        else if (active(record, `dimensional_${layer}_status`) && active(source) &&
+            (!active(found, `${field}_status`) || !active(logicalEntities.get(entityKey(target)), "logical_entity_status")))
+          issue(issues, "active_dependency_invalid", `dimensional_${layer}`, field,
+            "Active Dimensional support requires active Logical Entity and Attribute definitions.");
+      }
+    }
     const groups = new Set(records(model, "validation_group").map(validationGroupKey));
     for (const record of records(model, "validation_check"))
       if (!groups.has(validationGroupKey(record))) issue(issues, "reference_not_found",
@@ -689,41 +527,25 @@
         if (!active(record, `${layer}_relationship_status`)) continue;
         if (["from", "to"].some((prefix) => {
           const entity = record[`${prefix}_${layer}_entity_name`];
-          return !activeEntities.has(tuple([`${layer}_entity`, entity])) ||
+          const schema = record[`${prefix}_${layer}_entity_schema_name`];
+          return !activeEntities.has(tuple([`${layer}_entity`, schema, entity])) ||
             !activeAttributes.has(tuple([
-              `${layer}_entity`, entity, record[`${prefix}_${layer}_attribute_name`],
+              `${layer}_entity`, schema, entity, record[`${prefix}_${layer}_attribute_name`],
             ]));
         })) invalid(`${layer}_relationship`, `${layer}_attribute_name`,
           `Active ${label} Relationship requires active endpoint Attributes and Entities.`);
       }
     }
-    const objectBindings = new Set(records(model, "model_object_binding")
-      .filter((record) => active(record, "model_object_binding_status")).map(entityKey));
-    const attributeBindings = new Set(records(model, "model_attribute_binding")
-      .filter((record) => active(record, "model_attribute_binding_status")).map(attributeKey));
-    for (const entity of objectBindings) if (!activeEntities.has(entity)) invalid(
-      "model_object_binding", "modeled_entity_name",
-      "Active Object Binding requires an active modeled Entity.");
-    for (const attribute of attributeBindings) {
-      const entity = core.stableStringify(JSON.parse(attribute).slice(0, 2));
-      if (!activeAttributes.has(attribute) || !objectBindings.has(entity)) invalid(
-        "model_attribute_binding", "modeled_attribute_name",
-        "Active Attribute Binding requires active modeled and Object bindings.");
-    }
-    const dependencies = new Set(records(model, "mapping_dependency")
-      .filter((record) => active(record, "mapping_source_system_dependency_status"))
-      .map((record) => tuple([record.modeled_entity_type, record.source_system_code])));
     const activeMappings = new Set();
     const mappingSystems = new Map();
     for (const record of records(model, "mapping_object")) {
       if (!active(record, "object_mapping_status")) continue;
       const entity = entityKey(record);
       const system = normalized(record.source_system_code);
-      if (!objectBindings.has(entity) ||
-          !dependencies.has(tuple([record.modeled_entity_type, record.source_system_code])) ||
+      if (!activeEntities.has(entity) ||
           record.mapping_transformation_document === null) {
         invalid("mapping_object", "mapping_transformation_document",
-          "Active Mapping Object requires active Binding, dependency, and transformation.");
+          "Active Mapping Object requires an active Entity and transformation.");
         continue;
       }
       activeMappings.add(mappingObjectKey(record));
@@ -734,23 +556,23 @@
     for (const record of records(model, "mapping_attribute")) {
       if (!active(record, "attribute_mapping_status")) continue;
       if (!activeMappings.has(mappingObjectKey(record)) ||
-          !attributeBindings.has(attributeKey(record)) ||
+          !activeAttributes.has(attributeKey(record)) ||
           record.attribute_mapping_transformation_document === null) {
-        invalid("mapping_attribute", "model_attribute_binding",
-          "Active Mapping Attribute requires active Mapping and Attribute Binding.");
+        invalid("mapping_attribute", "modeled_attribute_name",
+          "Active Mapping Attribute requires active Mapping and modeled Attribute.");
         continue;
       }
-      const [type, entity, attribute] = JSON.parse(attributeKey(record));
-      activeMappingAttributes.add(tuple([type, entity, record.source_system_code, attribute]));
+      const [type, schema, entity, attribute] = JSON.parse(attributeKey(record));
+      activeMappingAttributes.add(tuple([type, schema, entity, record.source_system_code, attribute]));
     }
     for (const [entity, systems] of mappingSystems) {
-      const names = [...attributeBindings].filter((attribute) =>
-        core.stableStringify(JSON.parse(attribute).slice(0, 2)) === entity)
-        .map((attribute) => JSON.parse(attribute)[2]);
+      const names = [...activeAttributes].filter((attribute) =>
+        core.stableStringify(JSON.parse(attribute).slice(0, 3)) === entity)
+        .map((attribute) => JSON.parse(attribute)[3]);
       for (const system of systems) if (names.some((name) =>
         !activeMappingAttributes.has(tuple([...JSON.parse(entity), system, name])))) invalid(
         "mapping_attribute", "modeled_attribute_name",
-        "Active Mapping must cover every active bound target Attribute per System.");
+        "Active Mapping must cover every active modeled Attribute per System.");
     }
     const artifacts = new Map(records(model, "generated_code")
       .filter((record) => active(record, "generated_code_status"))
@@ -758,9 +580,9 @@
     const assignments = new Map();
     const codeAuthoringEntities = new Set(["generated_code", "generated_code_source_system"]
       .flatMap((dataset) => records(model, dataset, "pending")).map(entityKey));
-    for (const record of artifacts.values()) if (!objectBindings.has(entityKey(record))) invalid(
-      "generated_code", "model_object_binding",
-      "Active Code artifact requires an active Object Binding.");
+    for (const record of artifacts.values()) if (!activeEntities.has(entityKey(record))) invalid(
+      "generated_code", "modeled_entity_name",
+      "Active Code artifact requires an active modeled Entity.");
     for (const record of records(model, "generated_code_source_system")) {
       if (!active(record, "generated_code_source_system_status")) continue;
       const entity = entityKey(record);

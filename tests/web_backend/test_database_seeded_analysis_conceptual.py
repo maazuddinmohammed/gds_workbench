@@ -23,12 +23,19 @@ from gds_workbench_api.features.workflows.authoring.plan import (
     FrozenAgentStage,
     WorkflowExecutionMode,
 )
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import get_prompt_input_contract
-from gds_workbench_api.prompt_rendering import PromptComponentTemplates, PromptVariableDefinition
+from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+    get_prompt_input_contract,
+)
+from gds_workbench_api.prompt_rendering import (
+    PromptComponentTemplates,
+    PromptVariableDefinition,
+)
 from jsonschema import Draft202012Validator
 
 from tests.mcp.conftest import DisposablePostgres
-from tests.mcp.conftest import bootstrap_postgres_database as bootstrap_postgres_database
+from tests.mcp.conftest import (
+    bootstrap_postgres_database as bootstrap_postgres_database,
+)
 from tests.mcp.test_database_global_prompt_seed import (
     REFERENCE_SEED,
     _apply_sql,
@@ -181,7 +188,9 @@ async def test_installed_defaults_execute_inside_real_authoring_paths(
 
     def checked_render(**kwargs: Any) -> Any:
         identity = template_ids.get(id(kwargs["templates"]))
-        assert identity is not None, "Executor must render the actual installed frozen stage."
+        assert identity is not None, (
+            "Executor must render the actual installed frozen stage."
+        )
         assert kwargs["variables"] == stage_by_identity[identity].variables
         for variable in kwargs["variables"]:
             contract = get_prompt_input_contract(
@@ -192,10 +201,12 @@ async def test_installed_defaults_execute_inside_real_authoring_paths(
             )
             if contract is not None:
                 validator = cast(Any, Draft202012Validator(contract.value_schema))
-                assert validator.is_valid(contract.example), "Invalid documented input example."
-                assert validator.is_valid(kwargs["resolver_values"][variable.resolver_key]), (
-                    "Actual stage input must satisfy its documented schema."
+                assert validator.is_valid(contract.example), (
+                    "Invalid documented input example."
                 )
+                assert validator.is_valid(
+                    kwargs["resolver_values"][variable.resolver_key]
+                ), "Actual stage input must satisfy its documented schema."
         result = original_render(**kwargs)
         assert not result.warning_codes and not result.unknown_placeholders
         rendered[identity] = prompt_fingerprint(
@@ -208,11 +219,19 @@ async def test_installed_defaults_execute_inside_real_authoring_paths(
             self.delegate = delegate
 
         async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
-            workflow = "analysis" if request.workflow == "analysis_inference" else request.workflow
+            workflow = (
+                "analysis"
+                if request.workflow == "analysis_inference"
+                else request.workflow
+            )
             identity = (workflow, request.execution_mode, request.stage)
-            assert identity in rendered, "Only real seeded renders may reach the provider."
+            assert identity in rendered, (
+                "Only real seeded renders may reach the provider."
+            )
             fingerprint = prompt_fingerprint(
-                request.system_prompt, request.instruction_prompt, request.tool_instruction
+                request.system_prompt,
+                request.instruction_prompt,
+                request.tool_instruction,
             )
             assert fingerprint == rendered[identity]
             assert not any(
@@ -224,11 +243,16 @@ async def test_installed_defaults_execute_inside_real_authoring_paths(
                 )
             )
             seen.add(identity)
-            if isinstance(request.context, dict) and request.context.get("repair") is not None:
+            if (
+                isinstance(request.context, dict)
+                and request.context.get("repair") is not None
+            ):
                 repaired.add(identity)
             return await self.delegate.execute(request)
 
-    def seeded_service(*, agent: Any, plan: AgentRunPlan | None = None, **kwargs: Any) -> Any:
+    def seeded_service(
+        *, agent: Any, plan: AgentRunPlan | None = None, **kwargs: Any
+    ) -> Any:
         original_plan = plan or module._plan()
         mode = original_plan.workflow_execution_mode
         assert mode is not None
@@ -271,7 +295,9 @@ async def test_installed_defaults_execute_inside_real_authoring_paths(
         assert len(handoff.calls) == 1 and lifecycle.failed is None
         assert bool(agent.requests[0].allowed_tool_names) == (case == "tool_assisted")
     mode = "one_shot" if case == "repair" else case
-    expected = {(family, mode, stage.stage_code) for stage in installed_stages[(family, mode)]}
+    expected = {
+        (family, mode, stage.stage_code) for stage in installed_stages[(family, mode)]
+    }
     assert seen == expected
     if case == "repair":
         assert repaired
@@ -304,7 +330,9 @@ async def test_installed_mapping_defaults_execute(
             if contract is not None:
                 validator = cast(Any, Draft202012Validator(contract.value_schema))
                 assert validator.is_valid(contract.example)
-                assert validator.is_valid(kwargs["resolver_values"][variable.resolver_key])
+                assert validator.is_valid(
+                    kwargs["resolver_values"][variable.resolver_key]
+                )
         result = original_render(**kwargs)
         assert not result.warning_codes and not result.unknown_placeholders
         seen.add(stage.stage_code)
@@ -313,7 +341,9 @@ async def test_installed_mapping_defaults_execute(
     def seeded_executor(preparation: Any, agent: Any, policy: Any = None) -> Any:
         agent_plan = preparation.plan.agent_plan.model_copy(update={"stages": stages})
         preparation = preparation.model_copy(
-            update={"plan": preparation.plan.model_copy(update={"agent_plan": agent_plan})}
+            update={
+                "plan": preparation.plan.model_copy(update={"agent_plan": agent_plan})
+            }
         )
         return original_executor(preparation, agent, policy)
 
@@ -337,19 +367,21 @@ async def test_installed_sql_defaults_with_repository_projection(
 
     from tests.web_backend import test_code_generation_executor as code
     from tests.web_backend.test_code_generation_context import _row
-    from tests.web_backend.test_database_mapping_source_context import _seed_mapping_scope
+    from tests.web_backend.test_database_mapping_source_context import (
+        _seed_mapping_scope,
+    )
 
     scope = _seed_mapping_scope(web_postgres_database, dimensional=False)
     with web_postgres_database.connect_owner() as connection:
         row = connection.execute(
             "SELECT * FROM workflow.list_code_generation_target_context("
             "%s, 'logical_entity', NULL) "
-            "WHERE object_id = %s",
-            (scope.plan.model_id, scope.plan.pair.target_object_id),
+            "WHERE modeled_entity_id = %s",
+            (scope.plan.model_id, scope.plan.pair.modeled_entity_id),
         ).fetchone()
     assert row is not None
     source = row["source_context"]
-    supplied = _row(scope.plan.pair.target_object_id)
+    supplied = _row(scope.plan.pair.modeled_entity_id)
     supplied.update(
         source_context=source,
         source_system_count=len(source["source_systems"]),
@@ -358,7 +390,11 @@ async def test_installed_sql_defaults_with_repository_projection(
     )
     stages = installed_stages[("code_generation", None)]
     plan = code._plan().model_copy(
-        update={"stages": stages, "selected_object_ids": (scope.plan.pair.target_object_id,)}
+        update={
+            "stages": stages,
+            "selected_object_ids": (),
+            "selected_entity_ids": (scope.plan.pair.modeled_entity_id,),
+        }
     )
     context = _assemble_context(plan=plan, rows=[supplied])
     original_render = stage_runner.render_prompt
@@ -377,7 +413,9 @@ async def test_installed_sql_defaults_with_repository_projection(
             if contract is not None:
                 validator = cast(Any, Draft202012Validator(contract.value_schema))
                 assert validator.is_valid(contract.example)
-                assert validator.is_valid(kwargs["resolver_values"][variable.resolver_key])
+                assert validator.is_valid(
+                    kwargs["resolver_values"][variable.resolver_key]
+                )
         result = original_render(**kwargs)
         assert not result.warning_codes and not result.unknown_placeholders
         renders += 1
@@ -403,7 +441,9 @@ async def test_installed_sql_defaults_with_repository_projection(
 
         async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
             self.requests.append(request)
-            return AgentExecutionResult(candidate=responses.pop(0), turn_count=1, tool_call_count=0)
+            return AgentExecutionResult(
+                candidate=responses.pop(0), turn_count=1, tool_call_count=0
+            )
 
     agent = Provider()
     service, _, _, handoff, no_op, _ = code._service(
@@ -436,15 +476,17 @@ async def test_installed_validation_defaults_with_repository_context(
     from gds_workbench_api.features.validation.context import _assemble_context
 
     from tests.web_backend import test_validation_executor as validation
-    from tests.web_backend.test_database_mapping_source_context import _seed_mapping_scope
+    from tests.web_backend.test_database_mapping_source_context import (
+        _seed_mapping_scope,
+    )
     from tests.web_backend.test_validation_context import _applied_row
 
     scope = _seed_mapping_scope(web_postgres_database, dimensional=False)
     with web_postgres_database.connect_owner() as connection:
         row = connection.execute(
             "SELECT * FROM workflow.list_code_generation_target_context("
-            "%s, 'logical_entity', NULL) WHERE object_id = %s",
-            (scope.plan.model_id, scope.plan.pair.target_object_id),
+            "%s, 'logical_entity', NULL) WHERE modeled_entity_id = %s",
+            (scope.plan.model_id, scope.plan.pair.modeled_entity_id),
         ).fetchone()
     assert row is not None
     system_code = row["source_context"]["source_systems"][0]["system_code"]
@@ -456,6 +498,7 @@ async def test_installed_validation_defaults_with_repository_context(
         [
             {
                 "modeled_entity_type": row["modeled_entity_type"],
+                "modeled_entity_schema_name": "silver",
                 "modeled_entity_name": row["modeled_entity_name"],
                 "artifact_name": "customer.sql",
                 "artifact_type": "sql_file",
@@ -471,7 +514,9 @@ async def test_installed_validation_defaults_with_repository_context(
     applied = _applied_row() | {"system_code": system_code}
     context = _assemble_context(
         plan=plan,
-        system_rows=[{"tenant_code": "acme", "system_code": system_code, "selection_order": 1}],
+        system_rows=[
+            {"tenant_code": "acme", "system_code": system_code, "selection_order": 1}
+        ],
         target_rows=[row],
         applied_rows=[applied],
     )
@@ -491,7 +536,9 @@ async def test_installed_validation_defaults_with_repository_context(
             if contract is not None:
                 validator = cast(Any, Draft202012Validator(contract.value_schema))
                 assert validator.is_valid(contract.example)
-                assert validator.is_valid(kwargs["resolver_values"][variable.resolver_key])
+                assert validator.is_valid(
+                    kwargs["resolver_values"][variable.resolver_key]
+                )
         result = original_render(**kwargs)
         assert not result.warning_codes and not result.unknown_placeholders
         renders += 1

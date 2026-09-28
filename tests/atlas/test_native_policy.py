@@ -109,3 +109,58 @@ foreach ($case in $cases) {
         assert sorted(normalized, key=lambda issue: json.dumps(issue, sort_keys=True)) == sorted(
             case["expected"], key=lambda issue: json.dumps(issue, sort_keys=True)
         ), f"Policy parity case {index}"
+
+
+def test_native_entity_record_rules_match_javascript(tmp_path: Path) -> None:
+    powershell = (
+        os.environ.get("ATLAS_POWERSHELL") or shutil.which("powershell.exe") or shutil.which("pwsh")
+    )
+    if powershell is None:
+        pytest.skip("PowerShell is not installed")
+    module = HELPER.parent.parent / "workbench" / "validation" / "common.js"
+    suite = REPOSITORY_ROOT / "tests" / "atlas" / "entity-record-validation.test.mjs"
+    captured = tmp_path / "schema-cases.json"
+    capture = tmp_path / "capture.cjs"
+    capture.write_text("""
+const fs = require('node:fs');
+const {pathToFileURL} = require('node:url');
+const api = require(process.argv[2]), evaluate = api.validateSchema, cases = [];
+api.validateSchema = (value, schema) => {
+  const expected = evaluate(value, schema);
+  cases.push(JSON.parse(JSON.stringify({value, schema, expected})));
+  return expected;
+};
+process.on('exit', () => fs.writeFileSync(process.argv[4], JSON.stringify(cases)));
+import(pathToFileURL(process.argv[3]).href);
+""")
+    result = subprocess.run(
+        ["node", str(capture), str(module), str(suite), str(captured)],
+        cwd=REPOSITORY_ROOT, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    cases = json.loads(captured.read_text())
+    assert len(cases) == 11
+    source = HELPER.with_suffix(".ps1").read_text()
+    prefix = source[: source.rindex("\ntry {\n    $options = Parse-Options $RemainingArguments")]
+    library = tmp_path / "helper-library.ps1"
+    helper_root = str(HELPER.parent).replace("'", "''")
+    library.write_text(prefix.replace("$PSScriptRoot", f"'{helper_root}'"))
+    runner = tmp_path / "run.ps1"
+    runner.write_text("""
+param([string]$Library, [string]$CasesPath, [string]$Output)
+. $Library -Command 'test-library'
+$cases = ConvertFrom-GdsJson ([IO.File]::ReadAllText($CasesPath))
+$results = New-Object Collections.ArrayList
+foreach ($case in $cases) {
+    [void]$results.Add(@(Get-SchemaIssues -Value $case.value -Schema $case.schema))
+}
+[IO.File]::WriteAllText($Output, (ConvertTo-GdsJson @($results)), $script:Utf8NoBom)
+""")
+    output = tmp_path / "results.json"
+    result = subprocess.run(
+        [powershell, "-NoProfile", "-File", str(runner), str(library), str(captured), str(output)],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    actual = json.loads(output.read_text())
+    assert actual == [case["expected"] for case in cases]

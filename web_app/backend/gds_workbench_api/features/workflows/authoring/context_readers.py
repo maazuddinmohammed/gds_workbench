@@ -40,8 +40,13 @@ def workflow_reader_specs(workflow: str) -> ReaderSpecs:
     if workflow == "dimensional":
         specs.pop("get_source_context")
         specs.pop("get_object_relationships")
-        specs["get_objects"] = ("object_context", "object_keys", OBJECT_FIELDS)
-        specs["get_logical_bindings"] = ("logical_bindings", "object_keys", OBJECT_FIELDS)
+        specs.pop("get_objects")
+        specs.pop("get_object_details")
+        specs["get_selected_logical_entities"] = (
+            "selected_logical_entities",
+            "logical_entity_keys",
+            model_key_fields("logical", "entity"),
+        )
     if workflow in {"conceptual", "logical"}:
         for kind in ("object", "relationship"):
             specs[f"list_conceptual_{kind}s"] = (
@@ -67,14 +72,18 @@ def workflow_reader_specs(workflow: str) -> ReaderSpecs:
                 None
                 if kind == "submodel"
                 else "object_keys"
-                if kind == "entity"
-                else f"{family}_entity_names"
+                if kind == "entity" and workflow != "dimensional"
+                else f"{family}_entity_keys"
             )
-            fields = OBJECT_FIELDS if kind == "entity" else (f"{family}_entity_name",)
+            fields = (
+                OBJECT_FIELDS if selector == "object_keys" else model_key_fields(family, "entity")
+            )
             specs[f"list_{family}_{plural}"] = (f"{family}_{kind}_list", selector, fields)
             get_selector = (
-                f"{family}_{kind}_names"
-                if kind in {"submodel", "entity"}
+                f"{family}_submodel_names"
+                if kind == "submodel"
+                else f"{family}_entity_keys"
+                if kind == "entity"
                 else "attribute_keys"
                 if kind == "attribute"
                 else "relationship_keys"
@@ -117,6 +126,21 @@ def reader_definitions(
                 "required": list(fields),
                 "additionalProperties": False,
             }
+            if selector == "source_keys":
+                key_schema = {
+                    "anyOf": [
+                        key_schema,
+                        {
+                            "type": "object",
+                            "properties": {
+                                name: {"type": "string", "minLength": 1, "pattern": r"\S"}
+                                for name in ("entity_type", "entity_schema_name", "entity_name")
+                            },
+                            "required": ["entity_type", "entity_schema_name", "entity_name"],
+                            "additionalProperties": False,
+                        },
+                    ]
+                }
             if selector.endswith("_names") or selector == "assertion_keys":
                 key_schema = {"type": "string", "minLength": 1, "pattern": r"\S"}
             properties[selector] = (
@@ -141,8 +165,8 @@ def reader_definitions(
             and name.startswith("list_")
         ):
             description += (
-                " Silver filters match approved Logical bindings."
-                if workflow == "dimensional" and name == "list_logical_entities"
+                " Entity filters use the complete schema-qualified Entity key."
+                if workflow == "dimensional"
                 else " Physical filters match own direct supports/sources only."
             )
         contract = contracts.get(variable, {})
@@ -418,13 +442,6 @@ class FrozenContextReaders:
                     else full_name + "s"
                 )
                 full_rows = self._values[full_name]
-                if self.workflow == "dimensional" and tool == "list_logical_entities":
-                    names = {
-                        r["logical_entity_name"]
-                        for r in self._values["logical_bindings"]
-                        if natural_key(r) in wanted
-                    }
-                    return [r for r in rows if r["logical_entity_name"] in names]
                 matched: list[dict[str, Any]] = []
                 for compact, full in zip(rows, full_rows, strict=True):
                     supports = full.get("supports", full.get("sources", []))
@@ -436,8 +453,12 @@ class FrozenContextReaders:
                         matched.append(compact)
                 return matched
             return [r for r in rows if natural_key(r) in wanted]
-        if tool.startswith("list_") and selector and selector.endswith("_entity_names"):
-            family = selector.removesuffix("_entity_names")
+        if tool == "get_selected_logical_entities":
+            if not wanted <= {natural_key(r["entity"], fields) for r in rows}:
+                self._invalid()
+            return [r for r in rows if natural_key(r["entity"], fields) in wanted]
+        if tool.startswith("list_") and selector and selector.endswith("_entity_keys"):
+            family = selector.removesuffix("_entity_keys")
             if not wanted <= {natural_key(r, fields) for r in self._values[f"{family}_entities"]}:
                 self._invalid()
             if variable.endswith("relationship_list"):
@@ -445,7 +466,7 @@ class FrozenContextReaders:
                     r
                     for r in rows
                     if any(
-                        natural_key({fields[0]: r[f"{side}_{family}_entity_name"]}, fields)
+                        natural_key({field: r[f"{side}_{field}"] for field in fields}, fields)
                         in wanted
                         for side in ("from", "to")
                     )

@@ -15,6 +15,10 @@ describe("Model Analysis", () => {
     const ledger = await screen.findByRole("table", { name: "Analysis findings" });
     expect(within(ledger).getByText("customer_raw")).toBeVisible();
     expect(within(ledger).getByText("invoice_raw")).toBeVisible();
+    expect(within(ledger).getByRole("columnheader", { name: "Inferred cardinality" })).toBeVisible();
+    expect(within(ledger).getByRole("columnheader", { name: "Observed cardinality" })).toBeVisible();
+    expect(within(ledger).getByText("Many to one")).toBeVisible();
+    expect(within(ledger).getByText("Not validated")).toBeVisible();
     expect(screen.getByRole("button", { name: "Lock selected" })).toBeDisabled();
 
     await user.selectOptions(screen.getByLabelText("Object endpoint"), "501");
@@ -45,6 +49,9 @@ describe("Model Analysis", () => {
     await user.click(screen.getByRole("link", { name: "Open finding 81" }));
     expect(await screen.findByRole("heading", { name: /customer_raw.*invoice_raw/i })).toBeVisible();
     expect(screen.getByText("Matched customer identifier semantics.")).toBeVisible();
+    expect(screen.getByText("Inferred cardinality: many to one")).toBeVisible();
+    expect(screen.getByText(/Observed cardinality: many to many/)).toBeVisible();
+    expect(screen.getByText(/Recorded counts differ from the inferred cardinality/)).toHaveTextContent("This does not block modeling.");
     expect(screen.getByText("2 missing targets")).toBeVisible();
     expect(screen.getByText("Locked")).toBeVisible();
   });
@@ -365,6 +372,8 @@ function analysisFetchStub(options: {
         ...(options.detailResult !== undefined ? {
           validation_result: options.detailResult,
           validation_state: options.detailResult === null ? "unvalidated" : "validated",
+          observed_cardinality: options.detailResult === null ? null : analysisDetailPayload.observed_cardinality,
+          cardinality_mismatch: options.detailResult !== null,
           evidence: options.detailResult === null ? null : { ...analysisDetailPayload.evidence, result: options.detailResult },
         } : {}),
       });
@@ -489,7 +498,7 @@ const modelPayload = {
   model_description: "Cross-system customer domain",
   model_revision: 18,
   model_input_scope_object_count: 2,
-  silver_model_naming_instructions: null,
+  logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
   gold_model_technical_columns_template: null,
@@ -531,9 +540,6 @@ function scopeObject(objectId: number, objectName: string, systemCode: string) {
     attribute_count: 12,
     batch_attribute_name: "batch_id",
     is_model_input_eligible: true,
-    is_dimensional_source_eligible: false,
-    is_logical_mapping_target_eligible: false,
-    is_dimensional_mapping_target_eligible: false,
     created_at: "2026-08-24T12:00:00Z",
     updated_at: "2026-08-24T12:00:00Z",
   };
@@ -574,6 +580,9 @@ const analysisFindingPayload = {
   to_endpoint: toEndpoint,
   relationship_kind: "reference",
   relationship_confidence: "high",
+  inferred_cardinality: "many_to_one",
+  observed_cardinality: null,
+  cardinality_mismatch: false,
   validation_state: "unvalidated",
   validation_result: null,
   status: "active",
@@ -586,6 +595,8 @@ const analysisDetailPayload = {
   validation_state: "validated",
   validation_result: "supported",
   relationship_basis: "Matched customer identifier semantics.",
+  observed_cardinality: "many_to_many",
+  cardinality_mismatch: true,
   relationship_basis_truncated: false,
   evidence: {
     validation_policy_version: "1.0.0",

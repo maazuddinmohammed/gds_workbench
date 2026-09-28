@@ -105,20 +105,21 @@ def create_mcp_server(
         description="Governed GDS context, Snapshot, and Change Set workflows.",
         instructions=(
             "This server exposes governed reads, Snapshots, Tenant Locks, Change Sets, and "
-            "bounded Databricks SQL. Clients own interaction and workflow orchestration. "
-            "The server derives identity and authorization and enforces Tenant Lock ownership, "
-            "revision fencing, idempotency, validation, dependency order, and audit. "
-            "Lock override and Apply are separate high-impact operations that require explicit "
+            "bounded Databricks SQL. Clients own interaction and workflow orchestration. The "
+            "server derives identity and authorization and enforces Tenant Lock ownership, "
+            "revision fencing, idempotency, validation, dependency order, and audit. Lock "
+            "override and Apply are separate high-impact operations that require explicit "
             "approval before invocation. Model Input Scope must Apply before Profiling or model "
-            "development. Metadata registration must Apply before Model Binding; Binding must "
-            "Apply before Mapping; Mapping must Apply before Code or Validation. For Model work, "
-            "a Model revision mismatch requires a fresh Snapshot and reassessment without "
-            "auto-merge. Metadata has no Tenant-wide revision; current state is protected by the "
+            "development. Mapping must Apply before Code or Validation. Mapping and Code "
+            "reference schema-qualified Logical or Dimensional Entities. Target export and "
+            "metadata registration are optional downstream handoff steps. For Model work, a "
+            "Model revision mismatch requires a fresh Snapshot and reassessment without auto- "
+            "merge. Metadata has no Tenant-wide revision; current state is protected by the "
             "Tenant Lock and server validation. Summarize safe results; never copy credentials, "
-            "signed URLs, raw rows, prompts, or raw tool output into chat. Requested generated-"
-            "artifact previews remain allowed. "
-            "execute_databricks_sql defaults to environment_code=dev, requires qualified "
-            "persistent relations, and permits only reads or unqualified temporary objects."
+            "signed URLs, raw rows, prompts, or raw tool output into chat. Requested generated- "
+            "artifact previews remain allowed. execute_databricks_sql defaults to "
+            "environment_code=dev, requires qualified persistent relations, and permits only "
+            "reads or unqualified temporary objects."
         ),
         lifespan=lifespan,
         middleware=[audit],

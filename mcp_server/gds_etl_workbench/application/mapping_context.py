@@ -5,18 +5,25 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, cast
 
-_DOCUMENT_FIELDS = {
-    "modeling_assertion_details",
-    "modeling_assertion_source_location",
-    "transformation",
-    "transformation_document",
-    "mapping_transformation_document",
-    "attribute_mapping_transformation_document",
-    "audit_columns_template",
-    "technical_columns_template",
-    "example",
-    "validation_comparison_value",
-}
+OPAQUE_CONTEXT_DOCUMENT_FIELDS = frozenset(
+    {
+        "modeling_assertion_details",
+        "modeling_assertion_source_location",
+        "transformation",
+        "transformation_document",
+        "mapping_transformation_document",
+        "attribute_mapping_transformation_document",
+        "audit_columns_template",
+        "technical_columns_template",
+        "example",
+        "validation_comparison_value",
+    }
+)
+
+
+def is_internal_context_field(name: str) -> bool:
+    """Keep payload and schema projections on the same metadata boundary."""
+    return name.endswith("_id") or name in {"ids", "schema_digest", "schema_digest_is_valid"}
 
 
 def without_internal_fields(value: Any) -> Any:
@@ -25,10 +32,11 @@ def without_internal_fields(value: Any) -> Any:
     if not isinstance(value, dict):
         return deepcopy(value)
     return {
-        name: deepcopy(item) if name in _DOCUMENT_FIELDS else without_internal_fields(item)
+        name: deepcopy(item)
+        if name in OPAQUE_CONTEXT_DOCUMENT_FIELDS
+        else without_internal_fields(item)
         for name, item in cast(dict[str, Any], value).items()
-        if not name.endswith("_id")
-        and name not in {"ids", "schema_digest", "schema_digest_is_valid"}
+        if not is_internal_context_field(name)
     }
 
 
@@ -59,6 +67,7 @@ def project_mapping_inputs(context: dict[str, Any]) -> dict[str, Any]:
                 **without_internal_fields(row),
                 "source_system_code": systems[row["source_system_id"]],
                 "modeled_entity_type": entity["entity_type"],
+                "modeled_entity_schema_name": entity["entity_schema_name"],
                 "modeled_entity_name": entity["entity_name"],
             }
         )
@@ -110,6 +119,18 @@ def mapping_context_issues(values: dict[str, Any]) -> list[str]:
 
     target = values["target_metadata"]
     sources = {key(row["object"]): row["object"] for row in values["source_metadata"]}
+    modeled_sources = {
+        layer: {
+            (
+                obj[f"{layer}_entity_schema_name"].strip().casefold(),
+                obj[f"{layer}_entity_name"].strip().casefold(),
+            ): obj
+            for row in values["source_metadata"]
+            if f"{layer}_entity_name" in (obj := row["object"])
+        }
+        for layer in ("logical", "dimensional")
+    }
+    dimensional = target.get("modeled_entity_type") == "dimensional_entity"
     sources[key(target)] = target
     issues: set[str] = set()
     for obj in sources.values():
@@ -141,45 +162,97 @@ def mapping_context_issues(values: dict[str, Any]) -> list[str]:
             issues.add("mapping_document_not_canonical")
             continue
         document = cast(dict[str, Any], document)
-        if "source_objects" not in document:
+        required_sources = "source_logical_entities" if dimensional else "source_objects"
+        if required_sources not in document:
             issues.add("mapping_document_not_canonical")
-            continue
-        if document["source_objects"] is None:
-            continue
-        if not isinstance(document["source_objects"], list):
-            issues.add("mapping_document_not_canonical")
-            continue
-        for reference in cast(list[Any], document["source_objects"]):
-            if (
-                not isinstance(reference, dict)
-                or key(cast(dict[str, Any], reference)) not in sources
+        for source_field in (
+            "source_objects",
+            "source_logical_entities",
+            "source_dimensional_entities",
+        ):
+            references = document.get(source_field)
+            if references is None:
+                continue
+            if not isinstance(references, list):
+                issues.add("mapping_document_not_canonical")
+                continue
+            if references and (
+                (dimensional and source_field == "source_objects")
+                or (not dimensional and source_field == "source_dimensional_entities")
             ):
                 issues.add("mapping_source_object_missing_or_ineligible")
+                continue
+            for reference in cast(list[Any], references):
+                if not isinstance(reference, dict):
+                    issues.add("mapping_source_object_missing_or_ineligible")
+                    continue
+                reference = cast(dict[str, Any], reference)
+                layer = (
+                    "dimensional" if source_field == "source_dimensional_entities" else "logical"
+                )
+                eligible = (
+                    (
+                        str(reference.get(f"{layer}_entity_schema_name", "")).strip().casefold(),
+                        str(reference.get(f"{layer}_entity_name", "")).strip().casefold(),
+                    )
+                    in modeled_sources[layer]
+                    if source_field != "source_objects"
+                    else key(reference) in sources
+                )
+                if not eligible:
+                    issues.add("mapping_source_object_missing_or_ineligible")
     for row in values["attribute_transformations"]:
         document = row.get("transformation")
         if not isinstance(document, dict):
             issues.add("mapping_document_not_canonical")
             continue
         document = cast(dict[str, Any], document)
-        references = document.get("source_attributes")
-        if references is None:
-            continue  # Canonical generated/constant columns may have no source.
-        if not isinstance(references, list):
-            issues.add("mapping_document_not_canonical")
-            continue
-        for reference in cast(list[Any], references):
-            obj = (
-                sources.get(key(cast(dict[str, Any], reference)))
-                if isinstance(reference, dict)
-                else None
-            )
-            if obj is None or not any(
-                str(attribute.get("attribute_name", "")).strip().casefold()
-                == str(cast(dict[str, Any], reference).get("attribute_name", "")).strip().casefold()
-                for attribute in obj.get("attributes", [])
-                if attribute.get("is_active", True)
+        for source_field in (
+            "source_attributes",
+            "source_logical_attributes",
+            "source_dimensional_attributes",
+        ):
+            references = document.get(source_field)
+            if references is None:
+                continue  # Generated/constant columns may have no source.
+            if not isinstance(references, list):
+                issues.add("mapping_document_not_canonical")
+                continue
+            if references and (
+                (dimensional and source_field == "source_attributes")
+                or (not dimensional and source_field == "source_dimensional_attributes")
             ):
                 issues.add("mapping_source_attribute_missing_or_ineligible")
+                continue
+            modeled = source_field != "source_attributes"
+            layer = "dimensional" if source_field == "source_dimensional_attributes" else "logical"
+            for reference in cast(list[Any], references):
+                if not isinstance(reference, dict):
+                    issues.add("mapping_source_attribute_missing_or_ineligible")
+                    continue
+                reference = cast(dict[str, Any], reference)
+                obj = (
+                    modeled_sources[layer].get(
+                        (
+                            str(reference.get(f"{layer}_entity_schema_name", ""))
+                            .strip()
+                            .casefold(),
+                            str(reference.get(f"{layer}_entity_name", "")).strip().casefold(),
+                        )
+                    )
+                    if modeled
+                    else sources.get(key(reference))
+                )
+                attribute_name = reference.get(
+                    f"{layer}_attribute_name" if modeled else "attribute_name", ""
+                )
+                if obj is None or not any(
+                    str(attribute.get("attribute_name", "")).strip().casefold()
+                    == str(attribute_name).strip().casefold()
+                    for attribute in obj.get("attributes", [])
+                    if attribute.get("is_active", True)
+                ):
+                    issues.add("mapping_source_attribute_missing_or_ineligible")
     expected = {
         (row["system_code"].strip().casefold(), attribute["attribute_name"].strip().casefold())
         for row in values["source_systems"]

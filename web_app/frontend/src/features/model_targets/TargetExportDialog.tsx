@@ -17,15 +17,13 @@ export function TargetExportButton(props: ExportProps) {
 
 export function TargetExportDialog({ api, tenantId, modelId, modelRevision, layer, entityIds, onClose }: ExportProps & { onClose: () => void }) {
   const options = useQuery({ queryKey: ["model-target-options", tenantId, modelId], queryFn: () => api.readTargetOptions(tenantId, modelId) });
-  const [schema, setSchema] = useState("");
   const [exportRevision] = useState(modelRevision);
   const dialog = useRef<HTMLElement>(null);
-  const schemaInput = useRef<HTMLInputElement>(null);
+  const exportButton = useRef<HTMLButtonElement>(null);
   const zone = layer === "logical" ? "Silver" : "Gold";
   const download = useMutation({
     mutationFn: () => api.exportModelTargets(tenantId, modelId, {
       layer, ...(entityIds ? { entity_ids: entityIds } : {}), expected_model_revision: exportRevision,
-      object_schema: schema.trim(),
     }),
     onSuccess: (result) => {
       const url = URL.createObjectURL(result.blob);
@@ -36,7 +34,7 @@ export function TargetExportDialog({ api, tenantId, modelId, modelRevision, laye
   });
   useEffect(() => {
     const previous = document.activeElement;
-    schemaInput.current?.focus();
+    exportButton.current?.focus();
     return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
   }, []);
   const stale = exportRevision !== modelRevision || (options.data !== undefined && exportRevision !== options.data.model_revision);
@@ -54,13 +52,12 @@ export function TargetExportDialog({ api, tenantId, modelId, modelRevision, laye
       </header>
       <form className="target-export-form" onSubmit={(event) => { event.preventDefault(); if (!stale) download.mutate(); }}>
         <p>{entityIds ? `${entityIds.length} selected ${entityIds.length === 1 ? "Entity" : "Entities"}` : "All active Entities"} · Objects and Attributes workbook.</p>
-        <label>Target schema<input ref={schemaInput} required maxLength={400} value={schema} disabled={download.isPending} onChange={(event) => { setSchema(event.target.value); download.reset(); }} /></label>
-        <p className="field-help">Upload this workbook in Metadata, then bind the registered {zone} Objects in Target Binding.</p>
+        <p className="field-help">Each Entity uses its saved schema. Upload this workbook in Metadata when ready for registration.</p>
         {options.isPending ? <p aria-busy="true">Checking target connection…</p> : options.isError ? <p role="alert">Could not load export settings. Close and retry.</p> : !options.data?.placement ? <p role="alert">Configure this Tenant’s GDS Connection before export.</p> : null}
         {stale ? <p role="alert">Model revision changed. Close and refresh before export.</p> : null}
         {download.isError ? <p role="alert">{targetError(download.error)}</p> : null}
         {download.isSuccess ? <p role="status">Workbook downloaded. Continue with Metadata registration.</p> : null}
-        <button className="button button-primary" type="submit" disabled={download.isPending || stale || !schema.trim() || !options.data?.placement || options.isFetching || options.isError || (entityIds !== undefined && entityIds.length > 200)}>{download.isPending ? "Preparing workbook…" : "Download XLSX"}</button>
+        <button ref={exportButton} className="button button-primary" type="submit" disabled={download.isPending || stale || !options.data?.placement || options.isFetching || options.isError || (entityIds !== undefined && entityIds.length > 200)}>{download.isPending ? "Preparing workbook…" : "Download XLSX"}</button>
       </form>
     </section>
   </div>;

@@ -1291,6 +1291,7 @@ async def test_model_stage_batch_reassembles_generated_code_json_fragments(
     record: dict[str, object] = {
         "generated_code_is_locked": False,
         "modeled_entity_type": "logical_entity",
+        "modeled_entity_schema_name": "silver",
         "modeled_entity_name": "FragmentedCode",
         "artifact_name": "FragmentedCode.sql",
         "artifact_type": "sql_file",
@@ -1934,9 +1935,6 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
         "dimensional_entity": 2,
         "dimensional_attribute": 3,
         "dimensional_relationship": 1,
-        "model_object_binding": 4,
-        "model_attribute_binding": 6,
-        "mapping_dependency": 1,
         "mapping_object": 1,
         "mapping_attribute": 2,
         "generated_code": 1,
@@ -2162,6 +2160,10 @@ def _seed_model_foundation(
             ).fetchone(),
             "connection_id",
         )
+        connection.execute(
+            "UPDATE core.tenant SET gds_connection_id = %s WHERE tenant_id = %s",
+            (gds_connection_id, tenant_id),
+        )
         physical_objects = (
             (
                 source_connection_id,
@@ -2232,8 +2234,10 @@ def _seed_model_foundation(
         model_id = _required_id(
             connection.execute(
                 """
-            INSERT INTO model.model (tenant_id, model_name)
-            VALUES (%s, 'Model Tool Round Trip')
+            INSERT INTO model.model (tenant_id, model_name, logical_schemas, dimensional_schemas)
+            VALUES (%s, 'Model Tool Round Trip',
+                '[{"schema_name":"silver","description":null}]'::JSONB,
+                '[{"schema_name":"gold","description":null}]'::JSONB)
             RETURNING model_id
             """,
                 (tenant_id,),
@@ -2395,6 +2399,7 @@ async def _assert_focused_reads(client: Client, model_id: int) -> None:
         {
             "model_id": model_id,
             "modeled_entity_type": "logical_entity",
+            "modeled_entity_schema_name": "silver",
             "modeled_entity_name": "Order",
             "component": "source_systems",
         },
@@ -2406,6 +2411,7 @@ async def _assert_focused_reads(client: Client, model_id: int) -> None:
     bound_request = {
         "model_id": model_id,
         "modeled_entity_type": "logical_entity",
+        "modeled_entity_schema_name": "silver",
         "modeled_entity_name": "Order",
         "component": "target_metadata",
         "expected_model_revision": mapping_result["model_revision"],
@@ -2436,9 +2442,6 @@ async def _assert_focused_reads(client: Client, model_id: int) -> None:
         "dimensional_entity": 2,
         "dimensional_attribute": 3,
         "dimensional_relationship": 1,
-        "model_object_binding": 4,
-        "model_attribute_binding": 6,
-        "mapping_dependency": 1,
         "mapping_object": 1,
         "mapping_attribute": 2,
     }

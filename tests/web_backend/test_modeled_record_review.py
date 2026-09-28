@@ -69,21 +69,7 @@ def test_all_result_lifecycle_transitions_preserve_graph_and_content(
         assert status == ("inactive" if action == "deactivate" else "active")
 
 
-def test_dependency_retirement_does_not_cascade_into_mapping_or_code() -> None:
-    prepared = prepare_model_record_review(
-        review_graph(complete_model_graph()),
-        physical_scope=complete_physical_scope(),
-        dataset="mapping_dependency",
-        record_ids=[1],
-        action="deactivate",
-    )
-    assert prepared.validation.valid
-    assert [(item.dataset, item.record_id) for item in prepared.decisions] == [
-        ("mapping_dependency", 1)
-    ]
-
-
-def test_bound_attribute_retirement_includes_binding_mapping_code_and_validation() -> None:
+def test_attribute_retirement_includes_mapping_code_and_validation() -> None:
     review = review_graph(complete_model_graph())
     prepared = prepare_model_record_review(
         review,
@@ -96,8 +82,6 @@ def test_bound_attribute_retirement_includes_binding_mapping_code_and_validation
     assert {d.dataset for d in prepared.decisions} >= {
         "logical_attribute",
         "logical_relationship",
-        "model_object_binding",
-        "model_attribute_binding",
         "mapping_object",
         "mapping_attribute",
         "generated_code",
@@ -110,7 +94,7 @@ def test_bound_attribute_retirement_includes_binding_mapping_code_and_validation
         for d in prepared.decisions
     )
     graph = complete_model_graph()
-    graph["model_attribute_binding"][0]["model_attribute_binding_is_locked"] = True
+    graph["mapping_attribute"][0]["attribute_mapping_is_locked"] = True
     blocked = prepare_model_record_review(
         review_graph(graph),
         physical_scope=complete_physical_scope(),
@@ -129,7 +113,7 @@ def test_stale_code_review_preserves_assignments_and_authoring_still_rejects() -
     )
 
     graph = complete_model_graph()
-    for dataset in ("mapping_dependency", "mapping_object", "mapping_attribute"):
+    for dataset in ("mapping_object", "mapping_attribute"):
         graph[cast(ModelChangeSetDataset, dataset)] += [
             {**row, "source_system_code": "CRM"}
             for row in graph[cast(ModelChangeSetDataset, dataset)]
@@ -157,7 +141,7 @@ def test_stale_code_review_preserves_assignments_and_authoring_still_rejects() -
 
 def test_partial_code_retirement_previews_the_bundle_and_reactivation_requires_coverage() -> None:
     graph = complete_model_graph()
-    for dataset in ("mapping_dependency", "mapping_object", "mapping_attribute"):
+    for dataset in ("mapping_object", "mapping_attribute"):
         name = cast(ModelChangeSetDataset, dataset)
         graph[name] += [{**row, "source_system_code": "CRM"} for row in graph[name]]
     graph["generated_code"].append({**graph["generated_code"][0], "artifact_name": "crm.sql"})
@@ -230,8 +214,12 @@ def test_clear_layer_selects_every_active_record_and_required_dependents(
         for record_id, row in records.items()
         if review_lifecycle(row, cast(ModelReviewDataset, dataset))[1] == "active"
     }
-    if layer != "conceptual":
-        assert any(item.dataset == "model_object_binding" for item in prepared.decisions)
+    for record_id, row in review.records_by_id["mapping_object"].items():
+        if row.model_dump()["modeled_entity_type"] == f"{layer}_entity":
+            assert any(
+                item.dataset == "mapping_object" and item.record_id == record_id
+                for item in prepared.decisions
+            )
 
 
 def test_clear_layer_includes_records_beyond_the_ledger_page_and_blocks_locked_children() -> None:
@@ -254,28 +242,32 @@ def test_clear_layer_includes_records_beyond_the_ledger_page_and_blocks_locked_c
     assert any(issue.code == "record_locked" for issue in prepared.validation.issues)
 
 
-def test_removing_logical_output_traces_persisted_dimensional_silver_lineage() -> None:
+def test_removing_logical_output_traces_persisted_dimensional_entity_lineage() -> None:
     graph = complete_model_graph()
-    binding = graph["model_object_binding"][0]
+    logical = graph["logical_entity"][0]
     graph["dimensional_entity"][0]["sources"] = [
         {
-            "support_source_type": "object",
-            "source_object": {
-                field: binding[field]
-                for field in (
-                    "tenant_code",
-                    "system_code",
-                    "connection_code",
-                    "object_schema",
-                    "object_name",
-                )
+            "support_source_type": "logical_entity",
+            "source_logical_entity": {
+                "logical_entity_schema_name": logical["logical_entity_schema_name"],
+                "logical_entity_name": logical["logical_entity_name"],
             },
             "source_role": "fact input",
-            "rationale": "Registered Silver input.",
+            "rationale": "Applied Logical Entity input.",
             "status": "active",
             "is_locked": False,
         }
     ]
+    dimensional_key = {
+        "modeled_entity_type": "dimensional_entity",
+        "modeled_entity_schema_name": "gold",
+        "modeled_entity_name": "SalesFact",
+    }
+    graph["mapping_object"].append({**graph["mapping_object"][0], **dimensional_key})
+    graph["mapping_attribute"].extend(
+        {**graph["mapping_attribute"][0], **dimensional_key, "modeled_attribute_name": name}
+        for name in ("SalesKey", "CustomerKey")
+    )
     prepared = prepare_model_record_review(
         review_graph(graph),
         physical_scope=complete_physical_scope(),
@@ -288,7 +280,7 @@ def test_removing_logical_output_traces_persisted_dimensional_silver_lineage() -
         item.dataset == "dimensional_entity" and item.record_id == 1 for item in prepared.decisions
     )
     assert any(
-        item.dataset == "model_object_binding"
+        item.dataset == "mapping_object"
         and item.original.model_dump()["modeled_entity_name"] == "SalesFact"
         for item in prepared.decisions
     )

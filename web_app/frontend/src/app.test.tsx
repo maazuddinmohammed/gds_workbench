@@ -404,7 +404,7 @@ describe("Models ledger", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Enter a Model name");
     expect(posted).toBe(0);
     await user.type(name, "  Customer 360  ");
-    await user.type(within(dialog).getByRole("textbox", { name: /Description/ }), "Customer domain");
+    await user.type(within(dialog).getByRole("textbox", { name: "Description Optional" }), "Customer domain");
     await user.click(within(dialog).getByText("Silver settings"));
     const template = within(dialog).getByRole("textbox", { name: /Silver audit columns template/ });
     await user.click(template);
@@ -426,7 +426,7 @@ describe("Models ledger", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/tenants/7/models/18"));
     expect(posted).toBe(2);
     const command = JSON.parse(String(fetcher.mock.calls.filter(([input, init]) => String(input) === "/api/v1/tenants/7/models" && init?.method === "POST")[1]?.[1]?.body));
-    expect(command).toMatchObject({ model_name: "Customer 361", model_description: "Customer domain", silver_model_naming_instructions: "Use snake case.", silver_model_audit_columns_template: { columns: [{ name: "created_at", type: "timestamp" }] }, default_agent_model_code: null, default_max_turns: null });
+    expect(command).toMatchObject({ model_name: "Customer 361", model_description: "Customer domain", logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: "Use snake case.", silver_model_audit_columns_template: { columns: [{ name: "created_at", type: "timestamp" }] }, default_agent_model_code: null, default_max_turns: null });
     expect(Object.keys(command).some((key) => /tenant|principal|revision/.test(key))).toBe(false);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -458,6 +458,13 @@ describe("Models ledger", () => {
     await user.click(await screen.findByRole("button", { name: "Create Model" }));
     const dialog = screen.getByRole("dialog");
     await user.type(within(dialog).getByRole("textbox", { name: /Model name/ }), "New model");
+    await user.click(within(dialog).getByText("Logical schemas", { exact: true }));
+    const logicalSchemas = within(within(dialog).getByText("Logical schemas", { exact: true }).closest("details")!);
+    await user.type(logicalSchemas.getByRole("textbox", { name: "Schema name" }), " silver_shared ");
+    await user.type(logicalSchemas.getByRole("textbox", { name: "Description" }), " Shared logical design ");
+    await user.click(within(dialog).getByText("Dimensional schemas", { exact: true }));
+    const dimensionalSchemas = within(within(dialog).getByText("Dimensional schemas", { exact: true }).closest("details")!);
+    await user.type(dimensionalSchemas.getByRole("textbox", { name: "Schema name" }), "gold_analytics");
     await user.click(within(dialog).getByText("Gold settings"));
     await user.type(within(dialog).getByRole("textbox", { name: "Gold naming instructions" }), "Use business names.");
     for (const label of ["Gold technical columns template", "Gold audit columns template"]) {
@@ -480,12 +487,15 @@ describe("Models ledger", () => {
     await user.click(submit);
     expect(await screen.findByRole("alert")).toHaveTextContent("Acquire the Tenant Lock");
     expect(command).toMatchObject({
+      logical_schemas: [{ schema_name: "silver_shared", description: "Shared logical design" }],
+      dimensional_schemas: [{ schema_name: "gold_analytics", description: null }],
       model_name: "New model", gold_model_naming_instructions: "Use business names.",
       gold_model_technical_columns_template: { columns: [] }, gold_model_audit_columns_template: { columns: [] },
       default_agent_sdk_code: "openai_agents_sdk", default_agent_provider_code: "microsoft_foundry", default_agent_model_code: "foundry-primary",
       default_reasoning_effort_code: "medium", default_max_turns: 12, default_validation_retry_count: 2,
     });
     expect(turns).toHaveValue(12);
+    expect(logicalSchemas.getByRole("textbox", { name: "Schema name" })).toHaveValue(" silver_shared ");
   });
 
   it("lists active Models and keeps Open links inside the active Tenant", async () => {
@@ -674,7 +684,7 @@ describe("Active Scope", () => {
     expect(within(drawer).getByText("Source or Bronze input").parentElement).toHaveTextContent(
       "Eligible",
     );
-    expect(within(drawer).getByText("Dimensional source").parentElement).toHaveTextContent("Not eligible");
+    expect(within(drawer).queryByText("Dimensional source")).not.toBeInTheDocument();
 
     await user.click(within(drawer).getByRole("button", { name: "Close object details" }));
 
@@ -864,7 +874,7 @@ const modelDetailPayload = {
   model_description: "Cross-system customer domain",
   model_revision: 18,
   model_input_scope_object_count: 25,
-  silver_model_naming_instructions: "Use business names.",
+  logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: "Use business names.",
   silver_model_audit_columns_template: { columns: ["created_at"] },
   gold_model_naming_instructions: null,
   gold_model_technical_columns_template: null,
@@ -937,9 +947,6 @@ const modelInputScopePayload = {
       batch_attribute_name: "batch_id",
       attribute_count: 12,
       is_model_input_eligible: true,
-      is_dimensional_source_eligible: false,
-      is_logical_mapping_target_eligible: false,
-      is_dimensional_mapping_target_eligible: false,
       created_at: "2026-08-24T14:00:00Z",
       updated_at: "2026-08-24T14:00:00Z",
     },

@@ -9,9 +9,9 @@ Write complete changed records as JSON arrays under `model-change-set/<dataset>.
 | Dataset | Natural key within the Model |
 |---|---|
 | `dimensional_submodel` | `dimensional_submodel_name` |
-| `dimensional_entity` | `dimensional_entity_name` |
-| `dimensional_attribute` | `dimensional_entity_name` + `dimensional_attribute_name` |
-| `dimensional_relationship` | Both Entity/Attribute endpoints + `dimensional_relationship_kind` + nullable `dimensional_relationship_role_name` |
+| `dimensional_entity` | `dimensional_entity_schema_name` + `dimensional_entity_name` |
+| `dimensional_attribute` | `dimensional_entity_schema_name` + `dimensional_entity_name` + `dimensional_attribute_name` |
+| `dimensional_relationship` | Both schema-qualified Entity/Attribute endpoints + `dimensional_relationship_kind` + nullable `dimensional_relationship_role_name` |
 
 Relationship **name is not its key**. Role and kind are key components; changing them changes identity. Use shared normalization and preserve existing spelling. Below, **name** is a nonblank string ≤255 characters, **text** is a nonblank string, **status** is `active`, `inactive` or `deprecated`, and **confidence** is `low`, `medium` or `high`. All dataset fields are required, including nullable fields.
 
@@ -28,6 +28,7 @@ Relationship **name is not its key**. Role and kind are key components; changing
 
 | Field | Accepted value / meaning |
 |---|---|
+| `dimensional_entity_schema_name` | Required configured Dimensional schema name; part of Entity identity. |
 | `dimensional_entity_name` | Name; Entity identity. |
 | `dimensional_entity_definition` | Text defining the business meaning. |
 | `dimensional_entity_type` | `fact`, `dimension` or `bridge`. |
@@ -38,12 +39,13 @@ Relationship **name is not its key**. Role and kind are key components; changing
 | `dimensional_entity_status` | Status. |
 | `dimensional_entity_is_locked` | Boolean. |
 | `submodels` | Array of membership records below; `[]` is valid. |
-| `sources` | Array of Entity/Object or Entity/Assertion sources below; `[]` is valid. |
+| `sources` | Array of Entity/Logical Entity or Entity/Assertion sources below; `[]` is valid. |
 
 ## Dimensional Attribute fields
 
 | Field | Accepted value / meaning |
 |---|---|
+| `dimensional_entity_schema_name` | Required configured Dimensional schema name; part of Entity identity. |
 | `dimensional_entity_name` | Name of the parent Dimensional Entity. |
 | `dimensional_attribute_name` | Name; Attribute identity within its Entity. |
 | `dimensional_attribute_definition` | Text defining meaning, units and relevant behavior. |
@@ -61,7 +63,7 @@ Relationship **name is not its key**. Role and kind are key components; changing
 | `dimensional_attribute_confidence` | Confidence. |
 | `dimensional_attribute_status` | Status. |
 | `dimensional_attribute_is_locked` | Boolean. |
-| `sources` | Array of physical Attribute or Assertion sources below; `[]` is valid. |
+| `sources` | Array of Logical Attribute or Assertion sources below; `[]` is valid. |
 
 The key role is one value, not several flags. Explain additional identity/grain meaning in the definition; do not invent `is_primary_key`, `is_natural_key` or `is_surrogate_key` fields. Multiple business-key Attributes describe a complete tuple. A generated surrogate does not by itself establish business grain. A `bridge_weight` is not a `measure` for these schema rules: its three measure-policy fields must be null; explain allocation semantics in its definition.
 
@@ -71,8 +73,10 @@ The key role is one value, not several flags. Explain additional identity/grain 
 |---|---|
 | `dimensional_relationship_name` | Name; readable association label, outside the natural key. |
 | `dimensional_relationship_definition` | Text describing the association. |
+| `from_dimensional_entity_schema_name` | Required configured Dimensional schema name; part of Entity identity. |
 | `from_dimensional_entity_name` | Name of the from Entity. |
 | `from_dimensional_attribute_name` | Name of its from Attribute. |
+| `to_dimensional_entity_schema_name` | Required configured Dimensional schema name; part of Entity identity. |
 | `to_dimensional_entity_name` | Name of the to Entity. |
 | `to_dimensional_attribute_name` | Name of its to Attribute. |
 | `dimensional_relationship_kind` | Nonblank string ≤50 characters; reuse the Model's established relationship vocabulary, not an invented enum. |
@@ -101,9 +105,9 @@ Each source variant contains its one matching source field plus all applicable c
 
 | Field | Accepted value / meaning |
 |---|---|
-| `support_source_type` | Entity: `object` or `assertion`. Attribute: `attribute` or `assertion`. |
-| `source_object` | Only Entity/Object variant: complete physical Object key below. |
-| `source_attribute` | Only Attribute/Attribute variant: complete physical Attribute key below. |
+| `support_source_type` | Entity: `logical_entity` or `assertion`. Attribute: `logical_attribute` or `assertion`. |
+| `source_logical_entity` | Only Logical Entity variant: schema-qualified Logical Entity key below. |
+| `source_logical_attribute` | Only Logical Attribute variant: schema-qualified Logical Attribute key below. |
 | `assertion_record` | Only Assertion variant: object containing `modeling_assertion_record_key`. |
 | `source_role` | Required only on Entity sources, including Assertions: name describing the contribution. Not a fixed enum. |
 | `source_order` | Positive integer or null; source ordering, not a unique identifier. |
@@ -111,22 +115,21 @@ Each source variant contains its one matching source field plus all applicable c
 | `status` | Status. |
 | `is_locked` | Boolean; independent nested source lock. |
 
-Physical Object key: `tenant_code`, `system_code`, `connection_code` (nonblank strings ≤100), `object_schema`, `object_name` (nonblank strings ≤400). Physical Attribute key adds `attribute_name` (nonblank string ≤400). Assertion key is 1–100 characters matching `[A-Za-z][A-Za-z0-9_.-]{0,99}`; see [Assertions](assertions.md).
+Logical Entity key: `logical_entity_schema_name` (nonblank string ≤400) and `logical_entity_name` (name). Logical Attribute key adds `logical_attribute_name` (name). Assertion key is 1–100 characters matching `[A-Za-z][A-Za-z0-9_.-]{0,99}`; see [Assertions](assertions.md).
 
-Use actual physical placement keys from [Object ownership](../metadata/tables/object.md#ownership-and-physical-identity), not the Model Tenant/source owner. No modeled Logical Entity/Attribute, Conceptual Object or Dimensional Entity source variant exists. Applied Logical lineage resolves through its registered Silver Objects/Attributes.
+Sources refer directly to the current Model's applied Logical design. Target registration and Logical Mapping are separate downstream readiness concerns.
 
-Within one parent, each source type + normalized physical/Assertion key is unique **regardless role or order**. Do not duplicate a source merely to assign a second role; describe its complete contribution once. Source arrays record provenance, not transformation SQL or join aliases.
+Within one parent, each source type + normalized Logical/Assertion key is unique **regardless role or order**. Do not duplicate a source merely to assign a second role; describe its complete contribution once. Source arrays record provenance, not transformation SQL or join aliases.
 
 ## Scope and current enforcement
 
-- New/changed physical sources must be eligible active **Silver Logical contributions**. They are not Source/Bronze Model Input Scope entries and are not Gold targets.
-- Object eligibility requires the current Model's active Logical Object Binding, active Object Mapping with a non-null document, active source-System dependency and active originating System, plus active physical metadata. Attribute eligibility additionally requires its active Attribute Binding/Mapping and non-null Attribute document.
-- An Attribute's physical source requires a matching Object source on its parent Dimensional Entity. Apply enforces that relationship; the shared graph validator does not fully catch its absence. Check it locally first.
+- New/changed Logical sources must belong to the current Model and resolve by schema/name. Active support requires active Logical Entities and Attributes.
+- An Attribute's Logical source requires matching Logical Entity support on its parent Dimensional Entity.
 - Assertions must exist and apply to `dimensional`. Follow shared evidence/state rules; an Attribute's Assertion does not require a duplicate Assertion source on its Entity.
 - Empty sources/memberships are valid. Generated calendars, constants and other justified standalone structures need no fake source or compulsory Assertion. Explain their generation/business meaning; attach a real applicable Assertion only when useful.
 - Attributes require real parents; active Attributes require active Entities. Active relationships require active endpoint Attributes and Entities. Membership references must resolve; existing reference checks alone do not require an active Submodel for an active membership.
 - Preserve locked records and nested members. Apply retains omitted nested sources/memberships; preserve complete arrays so the local effective graph represents what will remain.
-- The workflow starts from applied Logical Mapping. The generic Dimensional Snapshot catalog has no blanket applied-section prerequisite, and the Change Set validator can recognize eligible Logical bindings/mappings from the same effective batch. Do not confuse this capability with permission to bypass the workflow's reviewed upstream baseline.
+- The workflow starts from applied Logical Entities and Attributes. Physical registration and Logical Mapping are not prerequisites for Dimensional design.
 
 ## Additional Atlas checks and unresolved capabilities
 
@@ -146,7 +149,7 @@ No dedicated SCD type, effective-date, current-row, unknown-member, late-arrival
 
 ## Complete synthetic records
 
-These examples illustrate record shapes, not a complete new table build. Assume complete existing Customer/SalesLine graphs, configured keys/audits and active Silver Logical contributions where referenced. New tables must include all columns from [keys and audit columns](keys-and-audit.md). The physical Tenant below is the synthetic GDS Connection owner, not a substituted source owner.
+These examples illustrate record shapes, not a complete new table build. Assume complete existing Customer/SalesLine graphs, configured keys/audits and active Logical contributions where referenced. New tables must include all columns from [keys and audit columns](keys-and-audit.md).
 
 `model-change-set/dimensional_submodel.json`:
 
@@ -159,7 +162,7 @@ These examples illustrate record shapes, not a complete new table build. Assume 
 ```json
 [
   {
-    "dimensional_entity_name": "SalesLine",
+    "dimensional_entity_schema_name": "gold", "dimensional_entity_name": "SalesLine",
     "dimensional_entity_definition": "A completed sale line available for product and customer analysis.",
     "dimensional_entity_type": "fact",
     "dimensional_fact_type": "transaction",
@@ -169,17 +172,17 @@ These examples illustrate record shapes, not a complete new table build. Assume 
     "dimensional_entity_status": "active",
     "dimensional_entity_is_locked": false,
     "submodels": [{"submodel_name":"Sales","membership_status":"active","membership_is_locked":false}],
-    "sources": [{"support_source_type":"object","source_object":{"tenant_code":"demo_platform","system_code":"gds","connection_code":"lakehouse","object_schema":"silver","object_name":"OrderLine"},"source_role":"SalesEvents","source_order":1,"rationale":"Synthetic completed order lines supply the fact grain and line measures.","status":"active","is_locked":false}]
+    "sources": [{"support_source_type":"logical_entity","source_logical_entity":{"logical_entity_schema_name":"silver","logical_entity_name":"OrderLine"},"source_role":"SalesEvents","source_order":1,"rationale":"Synthetic completed order lines supply the fact grain and line measures.","status":"active","is_locked":false}]
   }
 ]
 ```
 
-`model-change-set/dimensional_attribute.json`; assumes its Entity/Object source above and existing preceding Attributes:
+`model-change-set/dimensional_attribute.json`; assumes its Logical Entity source above and existing preceding Attributes:
 
 ```json
 [
   {
-    "dimensional_entity_name": "SalesLine",
+    "dimensional_entity_schema_name": "gold", "dimensional_entity_name": "SalesLine",
     "dimensional_attribute_name": "Quantity",
     "dimensional_attribute_definition": "Number of units sold on this completed order line, in the governed common unit.",
     "dimensional_attribute_data_type": "DECIMAL(18,4)",
@@ -196,7 +199,7 @@ These examples illustrate record shapes, not a complete new table build. Assume 
     "dimensional_attribute_confidence": "high",
     "dimensional_attribute_status": "active",
     "dimensional_attribute_is_locked": false,
-    "sources": [{"support_source_type":"attribute","source_attribute":{"tenant_code":"demo_platform","system_code":"gds","connection_code":"lakehouse","object_schema":"silver","object_name":"OrderLine","attribute_name":"Quantity"},"source_order":1,"rationale":"Preserves the governed line quantity.","status":"active","is_locked":false}]
+    "sources": [{"support_source_type":"logical_attribute","source_logical_attribute":{"logical_entity_schema_name":"silver","logical_entity_name":"OrderLine","logical_attribute_name":"Quantity"},"source_order":1,"rationale":"Preserves the governed line quantity.","status":"active","is_locked":false}]
   }
 ]
 ```
@@ -208,9 +211,9 @@ These examples illustrate record shapes, not a complete new table build. Assume 
   {
     "dimensional_relationship_name": "PurchasedByCustomer",
     "dimensional_relationship_definition": "A completed SalesLine belongs to its purchasing Customer.",
-    "from_dimensional_entity_name": "SalesLine",
+    "from_dimensional_entity_schema_name": "gold", "from_dimensional_entity_name": "SalesLine",
     "from_dimensional_attribute_name": "CustomerKey",
-    "to_dimensional_entity_name": "Customer",
+    "to_dimensional_entity_schema_name": "gold", "to_dimensional_entity_name": "Customer",
     "to_dimensional_attribute_name": "CustomerKey",
     "dimensional_relationship_kind": "FactToDimension",
     "dimensional_relationship_cardinality": "many_to_one",

@@ -112,7 +112,8 @@ def test_existing_code_and_validation_resolvers_use_canonical_prompt_evidence(
         sql_generation_guide_version_id=1 if is_code else None,
         sql_generation_guide_digest="b" * 64 if is_code else None,
         selected_scope_digest="c" * 64,
-        selected_object_ids=(1,) if is_code else (),
+        selected_object_ids=(),
+        selected_entity_ids=(1,) if is_code else (),
         selected_system_codes=() if is_code else ("CRM",),
         selection=AgentRunSelection(
             sdk_code="openai_agents_sdk",
@@ -161,7 +162,7 @@ def test_contract_examples_and_projected_context_have_exact_schema(
     )
 
 
-def test_mapping_joins_names_from_real_bindings_and_keeps_document_business_keys() -> (
+def test_mapping_joins_names_from_modeled_attributes_and_keeps_document_business_keys() -> (
     None
 ):
     raw = deepcopy(FIXTURE["mapping"])
@@ -173,15 +174,14 @@ def test_mapping_joins_names_from_real_bindings_and_keeps_document_business_keys
     values = project_downstream_inputs("mapping", raw)
     result = values["existing_mapping"][0]["attribute_mappings"][0]
     assert result["modeled_attribute_name"] == "CustomerID"
-    assert result["target_attribute_name"] == "CustomerID"
     assert "modeled_attribute_id" not in result and "target_attribute_id" not in result
     assert result["transformation_document"] == child["transformation_document"]
     result["transformation_document"]["customer_id"] = 10
     assert child["transformation_document"]["customer_id"] == 42
 
 
-@pytest.mark.parametrize("broken", ["modeled_attribute_id", "target_attribute_id"])
-def test_mapping_broken_binding_is_not_resolved_by_similar_names(broken: str) -> None:
+@pytest.mark.parametrize("broken", ["modeled_attribute_id"])
+def test_mapping_unknown_attribute_is_not_resolved_by_similar_names(broken: str) -> None:
     raw = deepcopy(FIXTURE["mapping"])
     raw["headers"][0]["attribute_mappings"][0][broken] = 999_999
     with pytest.raises(InvalidRequestError):

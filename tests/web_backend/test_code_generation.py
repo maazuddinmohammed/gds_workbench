@@ -17,7 +17,6 @@ from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 from gds_workbench_api.features.code_generation import (
     CodeGenerationTargetFilters,
-    CodeGenerationTargetObjectReference,
     CodeGenerationTargetPage,
     CodeGenerationTargetSummary,
     CodeMappingSupport,
@@ -57,23 +56,7 @@ class StaticCodeGenerationService:
             model_revision=4,
             items=(
                 CodeGenerationTargetSummary(
-                    target=CodeGenerationTargetObjectReference(
-                        object_id=501,
-                        source_tenant_id=7,
-                        source_tenant_code="ACME",
-                        source_tenant_name="Acme",
-                        tenant_id=7,
-                        tenant_code="ACME",
-                        tenant_name="Acme",
-                        system_id=32,
-                        system_code="GDS",
-                        system_name="Global Data Store",
-                        connection_id=21,
-                        connection_code="SILVER",
-                        object_schema="silver_crm",
-                        object_name="customer",
-                        zone_code="silver",
-                    ),
+                    target=ModeledEntityReference(entity_type="logical_entity", entity_id=501, entity_schema_name="silver", entity_name="customer"),
                     entity_type="logical_entity",
                     mapping_supports=(
                         CodeMappingSupport(
@@ -81,7 +64,7 @@ class StaticCodeGenerationService:
                             source=ModeledEntityReference(
                                 entity_type="logical_entity",
                                 entity_id=101,
-                                entity_name="Customer",
+                                entity_schema_name="silver", entity_name="customer",
                             ),
                             source_system=SourceSystemReference(
                                 system_id=31,
@@ -200,7 +183,7 @@ class StaticCodeGenerationService:
             model_id=model_id,
             generated_sql_artifact_id=901,
         )
-        second_target = detail.target.model_copy(update={"object_id": 502, "object_name": "order"})
+        second_target = detail.target.model_copy(update={"entity_id": 502, "entity_name": "order"})
         second_sql = "SELECT order_id\nFROM silver_crm.order;\n"
         return (
             SqlArtifactDownload(
@@ -260,8 +243,7 @@ def test_code_generation_targets_are_target_object_first_and_filterable() -> Non
         source_system_code="crm",
     )
     item = response.json()["items"][0]
-    assert item["target"]["object_name"] == "customer"
-    assert item["target"]["system_code"] == "GDS"
+    assert item["target"]["entity_name"] == "customer"
     assert item["entity_type"] == "logical_entity"
     assert item["mapping_supports"] == [
         {
@@ -269,7 +251,7 @@ def test_code_generation_targets_are_target_object_first_and_filterable() -> Non
             "source": {
                 "entity_type": "logical_entity",
                 "entity_id": 101,
-                "entity_name": "Customer",
+                "entity_schema_name": "silver", "entity_name": "customer",
             },
             "source_system": {
                 "system_id": 31,
@@ -286,9 +268,6 @@ def test_code_generation_targets_are_target_object_first_and_filterable() -> Non
         "ERP",
     ]
     assert item["source_system_count"] == 2
-    assert item["target"]["tenant_code"] == "ACME"
-    assert item["target"]["system_code"] == "GDS"
-    assert item["target"]["source_tenant_code"] == "ACME"
     assert item["artifacts"][0]["generated_sql_artifact_id"] == 901
     assert item["artifacts"][0]["artifact_name"] == "customer.sql"
     assert item["artifacts"][0]["artifact_is_current"] is True
@@ -309,9 +288,9 @@ def test_generated_sql_artifact_detail_returns_only_stored_sql_and_safe_provenan
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["target"]["object_name"] == "customer"
+    assert payload["target"]["entity_name"] == "customer"
     assert payload["entity_type"] == "logical_entity"
-    assert payload["mapping_supports"][0]["source"]["entity_name"] == "Customer"
+    assert payload["mapping_supports"][0]["source"]["entity_name"] == "customer"
     assert payload["artifact_is_current"] is True
     assert [system["system_code"] for system in payload["source_systems"]] == [
         "CRM",
@@ -592,23 +571,7 @@ class CodeTargetTransaction:
         )
         return [
             {
-                "target": {
-                    "object_id": 501,
-                    "source_tenant_id": 7,
-                    "source_tenant_code": "ACME",
-                    "source_tenant_name": "Acme",
-                    "tenant_id": 7,
-                    "tenant_code": "ACME",
-                    "tenant_name": "Acme",
-                    "system_id": 32,
-                    "system_code": "GDS",
-                    "system_name": "Global Data Store",
-                    "connection_id": 21,
-                    "connection_code": "SILVER",
-                    "object_schema": "silver_crm",
-                    "object_name": "customer",
-                    "zone_code": "silver",
-                },
+                "target": {"entity_id": 501, "entity_type": "logical_entity", "entity_schema_name": "silver", "entity_name": "customer"},
                 "entity_type": "logical_entity",
                 "mapping_supports": [
                     {
@@ -616,7 +579,7 @@ class CodeTargetTransaction:
                         "source": {
                             "entity_type": "logical_entity",
                             "entity_id": 101,
-                            "entity_name": "Customer",
+                            "entity_schema_name": "silver", "entity_name": "customer",
                         },
                         "source_system": {
                             "system_id": 31,
@@ -698,10 +661,9 @@ async def test_database_code_targets_require_complete_active_sql_mapping() -> No
     )
 
     assert page.model_revision == 4
-    assert page.items[0].target.object_id == 501
-    assert page.items[0].target.tenant_code == "ACME"
-    assert page.items[0].target.system_code == "GDS"
-    assert page.items[0].target.source_tenant_code == "ACME"
+    assert page.items[0].target.entity_id == 501
+    assert page.items[0].target.entity_schema_name == "silver"
+    assert page.items[0].target.entity_schema_name == "silver"
     assert [system.system_code for system in page.items[0].source_systems] == [
         "CRM",
         "ERP",
@@ -739,23 +701,7 @@ class SqlArtifactTransaction:
                 "generated_sql_artifact_id": 901,
                 "artifact_name": "customer.sql",
                 "model_id": 18,
-                "target": {
-                    "object_id": 501,
-                    "source_tenant_id": 7,
-                    "source_tenant_code": "ACME",
-                    "source_tenant_name": "Acme",
-                    "tenant_id": 7,
-                    "tenant_code": "ACME",
-                    "tenant_name": "Acme",
-                    "system_id": 32,
-                    "system_code": "GDS",
-                    "system_name": "Global Data Store",
-                    "connection_id": 21,
-                    "connection_code": "SILVER",
-                    "object_schema": "silver_crm",
-                    "object_name": "customer",
-                    "zone_code": "silver",
-                },
+                "target": {"entity_id": 501, "entity_type": "logical_entity", "entity_schema_name": "silver", "entity_name": "customer"},
                 "entity_type": "logical_entity",
                 "source_systems": [
                     {
@@ -776,7 +722,7 @@ class SqlArtifactTransaction:
                         "source": {
                             "entity_type": "logical_entity",
                             "entity_id": 101,
-                            "entity_name": "Customer",
+                            "entity_schema_name": "silver", "entity_name": "customer",
                         },
                         "source_system": {
                             "system_id": 31,
@@ -867,10 +813,10 @@ async def test_database_sql_artifact_is_authorized_and_read_from_persistence() -
         generated_sql_artifact_id=901,
     )
 
-    assert detail.target.object_name == "customer"
+    assert detail.target.entity_name == "customer"
     assert detail.artifact_is_current is True
     assert [system.system_code for system in detail.source_systems] == ["CRM", "ERP"]
-    assert detail.mapping_supports[0].source.entity_name == "Customer"
+    assert detail.mapping_supports[0].source.entity_name == "customer"
     assert detail.guide is not None
     assert detail.guide.sql_generation_guide_digest == "d" * 64
     assert detail.generator is not None
@@ -1109,23 +1055,7 @@ class SqlDownloadTransaction:
                 {
                     "generated_sql_artifact_id": artifact_id,
                     "artifact_name": f"{object_name}.sql",
-                    "target": {
-                        "object_id": object_id,
-                        "source_tenant_id": 7,
-                        "source_tenant_code": "ACME",
-                        "source_tenant_name": "Acme",
-                        "tenant_id": 7,
-                        "tenant_code": "ACME",
-                        "tenant_name": "Acme",
-                        "system_id": 32,
-                        "system_code": "GDS",
-                        "system_name": "Global Data Store",
-                        "connection_id": 21,
-                        "connection_code": "SILVER",
-                        "object_schema": "silver_crm",
-                        "object_name": object_name,
-                        "zone_code": "silver",
-                    },
+                    "target": {"entity_id": object_id, "entity_type": "logical_entity", "entity_schema_name": "silver", "entity_name": object_name},
                     "entity_type": "logical_entity",
                     "generated_sql": sql,
                     "generated_sql_byte_count": len(sql.encode()),
@@ -1166,7 +1096,7 @@ async def test_database_selected_sql_download_reads_exact_persisted_artifacts() 
     )
 
     assert [item.generated_sql_artifact_id for item in artifacts] == [901, 902]
-    assert artifacts[0].target.object_name == "customer"
+    assert artifacts[0].target.entity_name == "customer"
     assert artifacts[1].generated_sql.endswith("silver_crm.order;\n")
 
 

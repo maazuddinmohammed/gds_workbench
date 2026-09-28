@@ -19,6 +19,7 @@ def write_snapshot_manifest(
     catalog_path = snapshot / "catalog.json"
     catalog_document = json.loads(catalog_path.read_text())
     if kind == "model":
+        catalog_document["schema_version"] = "2.0"
         catalog_document["model"] = {
             "model_id": model_id,
             "model_name": model_name,
@@ -40,6 +41,7 @@ def write_snapshot_manifest(
         )
     catalog = next(member for member in members if member["path"] == "catalog.json")
     manifest = {
+        "schema_version": "2.0",
         "snapshot_kind": kind,
         "snapshot_id": snapshot_id,
         "catalog": {"path": "catalog.json", "sha256": catalog["sha256"]},
@@ -57,9 +59,7 @@ def write_snapshot_manifest(
 def archive_snapshot(snapshot: Path, archive: Path) -> bytes:
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:
         for file in sorted(path for path in snapshot.rglob("*") if path.is_file()):
-            output.write(
-                file, (Path(snapshot.name) / file.relative_to(snapshot)).as_posix()
-            )
+            output.write(file, (Path(snapshot.name) / file.relative_to(snapshot)).as_posix())
     return archive.read_bytes()
 
 
@@ -227,14 +227,18 @@ def write_model_snapshot(session: Path) -> None:
         {
             "name": "logical_entity",
             "row_count": 0,
-            "canonical_key": ["logical_entity_name"],
+            "canonical_key": ["logical_entity_schema_name", "logical_entity_name"],
             "rows_file": "data/logical_entity.jsonl",
             "schema_file": "schemas/logical_entity.schema.json",
         },
         {
             "name": "logical_attribute",
             "row_count": 0,
-            "canonical_key": ["logical_entity_name", "logical_attribute_name"],
+            "canonical_key": [
+                "logical_entity_schema_name",
+                "logical_entity_name",
+                "logical_attribute_name",
+            ],
             "rows_file": "data/logical_attribute.jsonl",
             "schema_file": "schemas/logical_attribute.schema.json",
         },
@@ -248,11 +252,7 @@ def write_model_snapshot(session: Path) -> None:
         )
     )
     for dataset in datasets:
-        rows = (
-            '{"model_purpose":"Current purpose"}\n'
-            if dataset["name"] == "model_details"
-            else ""
-        )
+        rows = '{"model_purpose":"Current purpose"}\n' if dataset["name"] == "model_details" else ""
         (snapshot / dataset["rows_file"]).write_text(rows)
     (snapshot / "schemas" / "model_details.schema.json").write_text(
         json.dumps(
@@ -269,8 +269,11 @@ def write_model_snapshot(session: Path) -> None:
         json.dumps(
             {
                 "type": "object",
-                "properties": {"logical_entity_name": {"type": "string"}},
-                "required": ["logical_entity_name"],
+                "properties": {
+                    "logical_entity_schema_name": {"type": "string"},
+                    "logical_entity_name": {"type": "string"},
+                },
+                "required": ["logical_entity_schema_name", "logical_entity_name"],
                 "x-gds-change-set-eligible": True,
             }
         )
@@ -280,6 +283,7 @@ def write_model_snapshot(session: Path) -> None:
             {
                 "type": "object",
                 "properties": {
+                    "logical_entity_schema_name": {"type": "string"},
                     "logical_entity_name": {"type": "string"},
                     "logical_attribute_name": {"type": "string"},
                     "logical_attribute_is_nullable": {"type": "boolean"},
@@ -289,6 +293,7 @@ def write_model_snapshot(session: Path) -> None:
                     "sources": {"type": "array", "items": {"type": "object"}},
                 },
                 "required": [
+                    "logical_entity_schema_name",
                     "logical_entity_name",
                     "logical_attribute_name",
                     "logical_attribute_is_nullable",

@@ -494,6 +494,7 @@ class ValidationWorkflow:
             or plan.model_workflow != "validation"
             or plan.workflow_execution_mode is not None
             or plan.selected_object_ids
+            or plan.selected_entity_ids
             or not plan.selected_system_codes
             or len(plan.stages) != 1
             or plan.stages[0].stage_code != "validation_generation"

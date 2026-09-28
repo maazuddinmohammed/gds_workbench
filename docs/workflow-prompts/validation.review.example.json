@@ -1,6 +1,6 @@
 {
   "workflow": "validation",
-  "note": "Synthetic schema example, not a model-quality evaluation or executed SQL. Actual generation requires selected real guide/documents.",
+  "note": "Validation remains Model/System-owned. It consumes Mapping and Code for schema-qualified modeled Entities.",
   "inputs": {
     "system_ref": "system_1",
     "system_scope": {
@@ -36,7 +36,10 @@
                 "is_active": true,
                 "is_locked": false
               }
-            ]
+            ],
+            "modeled_entity_type": "logical_entity",
+            "modeled_entity_schema_name": "silver_crm",
+            "modeled_entity_name": "Customer"
           },
           "source_metadata": [
             {
@@ -76,8 +79,7 @@
           "source_systems": [
             {
               "system_code": "CRM",
-              "system_name": "CRM",
-              "dependency_order": 10
+              "system_name": "CRM"
             }
           ],
           "object_transformations": [
@@ -88,7 +90,8 @@
                 "entity_name": "Customer",
                 "definition": "Customer identity.",
                 "classification": "entity",
-                "grain": null
+                "grain": null,
+                "entity_schema_name": "silver"
               },
               "transformation": {
                 "steps": [
@@ -110,10 +113,12 @@
               },
               "source_system_code": "CRM",
               "modeled_entity_type": "logical_entity",
-              "modeled_entity_name": "Customer"
+              "modeled_entity_name": "Customer",
+              "modeled_entity_schema_name": "silver"
             }
           ]
-        }
+        },
+        "modeled_entity_schema_name": "silver"
       }
     ],
     "current_code": [
@@ -127,7 +132,8 @@
         "generated_code_is_locked": false,
         "source_system_codes": [
           "CRM"
-        ]
+        ],
+        "modeled_entity_schema_name": "silver"
       }
     ],
     "applied_groups": [
@@ -184,13 +190,8 @@
     ]
   },
   "validations": [
-    "Exact system_ref resolves to frozen scope; combined run covers all selected Systems once.",
-    "Group names are unique within System; Check names within Group, using normalized keys.",
-    "Validate schema, severity/operator/type enums and operator/operand combinations.",
-    "Validate typed scalars/lists, homogeneous nonempty lists, date/time forms and Query B requirements.",
-    "Validate governed Databricks SQL/qualification. Scalar one-row/one-column shape is an execution check.",
-    "Preserve locked Groups/Checks; retire omitted unlocked active definitions under existing complete-ledger reconciliation.",
-    "Validate count/byte bounds and active Group-parent references in the effective Model graph.",
-    "Repair before staging; server-side ownership, scope, Tenant Lock and revision fences remain authoritative."
-  ]
+    "Inputs and candidate match the runtime JSON schemas.",
+    "Backend rechecks authorization, revision, typed ownership, source evidence, and current Mapping/Code digests."
+  ],
+  "output_schema_source": "web_app/backend/gds_workbench_api/features/validation/candidate.py:ValidationSystemCandidateValidator.output_schema"
 }

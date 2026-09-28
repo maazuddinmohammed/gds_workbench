@@ -29,7 +29,7 @@ CREATE_MODEL_SQL: LiteralString = """
     SELECT *
       FROM application.create_model(
           %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
-          %s::VARCHAR, %s::VARCHAR, %s::TEXT, %s::JSONB,
+          %s::VARCHAR, %s::VARCHAR, '[]'::JSONB, '[]'::JSONB, %s::TEXT, %s::JSONB,
           %s::TEXT, %s::JSONB, %s::JSONB,
           %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR,
           %s::INTEGER, %s::INTEGER
@@ -40,7 +40,7 @@ UPDATE_MODEL_SQL: LiteralString = """
     SELECT *
       FROM application.update_model(
           %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT, %s::BIGINT,
-          %s::VARCHAR, %s::VARCHAR, %s::TEXT, %s::JSONB,
+          %s::VARCHAR, %s::VARCHAR, '[]'::JSONB, '[]'::JSONB, %s::TEXT, %s::JSONB,
           %s::TEXT, %s::JSONB, %s::JSONB,
           %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR,
           %s::INTEGER, %s::INTEGER

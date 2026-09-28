@@ -69,6 +69,7 @@ LOGICAL = LayerConfig(
         "logical_submodel_is_locked",
     ),
     entity_fields=(
+        "logical_entity_schema_name",
         "logical_entity_name",
         "logical_entity_definition",
         "logical_entity_type",
@@ -114,6 +115,7 @@ DIMENSIONAL = LayerConfig(
         "dimensional_submodel_is_locked",
     ),
     entity_fields=(
+        "dimensional_entity_schema_name",
         "dimensional_entity_name",
         "dimensional_entity_definition",
         "dimensional_entity_type",
@@ -183,10 +185,10 @@ SELECT submodel.{config.submodel_id},
 
 
 def entities_sql(config: LayerConfig, *, historical: bool = False) -> LiteralString:
+    if config.layer == "dimensional":
+        return _dimensional_records_sql(attributes=False, historical=historical)
     selected = _select_fields("entity", config.entity_fields)
-    eligibility_field = (
-        "is_model_input_eligible" if config.layer == "logical" else "is_dimensional_source_eligible"
-    )
+    eligibility_field = "is_model_input_eligible"
     role_field = (
         f"'source_role', source.{config.entity_source_role_column},"
         if config.entity_source_role_column is not None
@@ -196,7 +198,7 @@ def entities_sql(config: LayerConfig, *, historical: bool = False) -> LiteralStr
     object_scope = (
         """
     SELECT model.model_id, object.object_id,
-           TRUE AS is_model_input_eligible, TRUE AS is_dimensional_source_eligible
+           TRUE AS is_model_input_eligible
       FROM requested_model
       JOIN model.model AS model USING (model_id)
       JOIN core.object AS object ON object.source_tenant_id = model.tenant_id
@@ -340,6 +342,7 @@ SELECT entity.{config.entity_id},
        )
    )
  ORDER BY entity.{config.layer}_entity_dependency_order,
+          lower(entity.{config.layer}_entity_schema_name),
           lower(entity.{config.layer}_entity_name),
           entity.{config.entity_id}
  LIMIT %s OFFSET %s
@@ -348,14 +351,14 @@ SELECT entity.{config.entity_id},
 
 
 def attributes_sql(config: LayerConfig, *, historical: bool = False) -> LiteralString:
+    if config.layer == "dimensional":
+        return _dimensional_records_sql(attributes=True, historical=historical)
     selected = _select_fields("attribute", config.attribute_fields)
-    eligibility_field = (
-        "is_model_input_eligible" if config.layer == "logical" else "is_dimensional_source_eligible"
-    )
+    eligibility_field = "is_model_input_eligible"
     attribute_scope = (
         """
     SELECT model.model_id, object.object_id, attribute.attribute_id,
-           TRUE AS is_model_input_eligible, TRUE AS is_dimensional_source_eligible
+           TRUE AS is_model_input_eligible
       FROM requested_model
       JOIN model.model AS model USING (model_id)
       JOIN core.object AS object ON object.source_tenant_id = model.tenant_id
@@ -385,6 +388,7 @@ eligible_attributes AS MATERIALIZED (
 )
 SELECT attribute.{config.attribute_id},
        attribute.{config.entity_id},
+       entity.{config.layer}_entity_schema_name,
        entity.{config.layer}_entity_name,
        {selected},
        COALESCE((
@@ -480,7 +484,8 @@ SELECT attribute.{config.attribute_id},
        cardinality(%s::BIGINT[]) = 0
        OR attribute.{config.entity_id} = ANY(%s::BIGINT[])
    )
- ORDER BY lower(entity.{config.layer}_entity_name),
+ ORDER BY lower(entity.{config.layer}_entity_schema_name),
+          lower(entity.{config.layer}_entity_name),
           attribute.{config.layer}_attribute_ordinal_position,
           attribute.{config.attribute_id}
  LIMIT %s OFFSET %s
@@ -496,6 +501,7 @@ def relationships_sql(config: LayerConfig) -> LiteralString:
 SELECT relationship.{config.relationship_id},
        relationship.{config.layer}_relationship_from_entity_id
            AS from_{config.layer}_entity_id,
+       from_entity.{config.layer}_entity_schema_name AS from_{config.layer}_entity_schema_name,
        from_entity.{config.layer}_entity_name AS from_{config.layer}_entity_name,
        relationship.{config.layer}_relationship_from_attribute_id
            AS from_{config.layer}_attribute_id,
@@ -503,6 +509,7 @@ SELECT relationship.{config.relationship_id},
            AS from_{config.layer}_attribute_name,
        relationship.{config.layer}_relationship_to_entity_id
            AS to_{config.layer}_entity_id,
+       to_entity.{config.layer}_entity_schema_name AS to_{config.layer}_entity_schema_name,
        to_entity.{config.layer}_entity_name AS to_{config.layer}_entity_name,
        relationship.{config.layer}_relationship_to_attribute_id
            AS to_{config.layer}_attribute_id,
@@ -539,6 +546,147 @@ SELECT relationship.{config.relationship_id},
           relationship.{config.layer}_relationship_to_entity_id,
           lower(relationship.{config.layer}_relationship_name),
           relationship.{config.relationship_id}
+ LIMIT %s OFFSET %s
+""",
+    )
+
+
+def _dimensional_records_sql(*, attributes: bool, historical: bool) -> LiteralString:
+    """Read modeled Logical lineage without requiring physical target registration."""
+    kind = "attribute" if attributes else "entity"
+    record = "attribute" if attributes else "entity"
+    source_kind = "logical_attribute" if attributes else "logical_entity"
+    fields = _select_fields(
+        record, DIMENSIONAL.attribute_fields if attributes else DIMENSIONAL.entity_fields
+    )
+    identity = (
+        "attribute.dimensional_attribute_id, attribute.dimensional_entity_id, "
+        "entity.dimensional_entity_schema_name, entity.dimensional_entity_name,"
+        if attributes
+        else "entity.dimensional_entity_id,"
+    )
+    memberships = (
+        ""
+        if attributes
+        else """
+       COALESCE((
+           SELECT jsonb_agg(jsonb_build_object(
+               'entity_submodel_id', membership.dimensional_entity_submodel_id,
+               'submodel_id', submodel.dimensional_submodel_id,
+               'submodel_name', submodel.dimensional_submodel_name,
+               'membership_status', membership.dimensional_entity_submodel_status,
+               'membership_is_locked', membership.dimensional_entity_submodel_is_locked
+           ) ORDER BY lower(submodel.dimensional_submodel_name))
+           FROM workflow.dimensional_entity_submodel AS membership
+           JOIN workflow.dimensional_submodel AS submodel
+             ON submodel.dimensional_submodel_id = membership.dimensional_submodel_id
+            AND submodel.model_id = membership.model_id
+           WHERE membership.model_id = entity.model_id
+             AND membership.dimensional_entity_id = entity.dimensional_entity_id
+       ), '[]'::JSONB) AS submodels,
+"""
+    )
+    role = "" if attributes else "'source_role', source.dimensional_entity_source_role,"
+    key_attribute = (
+        ",'logical_attribute_id', logical_attribute.logical_attribute_id, "
+        "'logical_attribute_name', logical_attribute.logical_attribute_name"
+        if attributes
+        else ""
+    )
+    source_attribute_join = (
+        ""
+        if not attributes
+        else """
+             LEFT JOIN workflow.logical_attribute AS logical_attribute
+               ON logical_attribute.logical_attribute_id = source.source_logical_attribute_id
+              AND logical_attribute.logical_entity_id = source.source_logical_entity_id
+              AND logical_attribute.model_id = source.model_id
+"""
+    )
+    active_source = (
+        "TRUE"
+        if historical
+        else (
+            "logical_entity.logical_entity_status = 'active'"
+            + (" AND logical_attribute.logical_attribute_status = 'active'" if attributes else "")
+        )
+    )
+    from_records = (
+        "workflow.dimensional_attribute AS attribute JOIN workflow.dimensional_entity AS entity "
+        "ON entity.dimensional_entity_id = attribute.dimensional_entity_id "
+        "AND entity.model_id = attribute.model_id"
+        if attributes
+        else "workflow.dimensional_entity AS entity"
+    )
+    selection = (
+        "attribute.dimensional_entity_id = ANY(%s::BIGINT[])"
+        if attributes
+        else """
+       EXISTS (SELECT 1 FROM workflow.dimensional_entity_source_mapping AS selected_source
+                WHERE selected_source.model_id = entity.model_id
+                  AND selected_source.dimensional_entity_id = entity.dimensional_entity_id
+                  AND selected_source.support_source_type = 'logical_entity'
+                  AND selected_source.source_logical_entity_id = ANY(%s::BIGINT[]))
+"""
+    )
+    order = (
+        "lower(entity.dimensional_entity_schema_name), lower(entity.dimensional_entity_name), "
+        "attribute.dimensional_attribute_ordinal_position, attribute.dimensional_attribute_id"
+        if attributes
+        else "entity.dimensional_entity_dependency_order, "
+        "lower(entity.dimensional_entity_schema_name), "
+        "lower(entity.dimensional_entity_name), entity.dimensional_entity_id"
+    )
+    return cast(
+        LiteralString,
+        f"""
+SELECT {identity}
+       {fields},
+       {memberships}
+       COALESCE((
+           SELECT jsonb_agg(
+               jsonb_build_object(
+                   '{kind}_source_mapping_id', source.dimensional_{kind}_source_mapping_id,
+                   'support_source_type', source.support_source_type,
+                   {role}
+                   'source_order', source.dimensional_{kind}_source_mapping_order,
+                   'rationale', source.dimensional_{kind}_source_mapping_rationale,
+                   'status', source.dimensional_{kind}_source_mapping_status,
+                   'is_locked', source.dimensional_{kind}_source_mapping_is_locked
+               ) || CASE source.support_source_type
+                   WHEN '{source_kind}' THEN jsonb_build_object(
+                       'source_{source_kind}', jsonb_build_object(
+                           'logical_entity_id', logical_entity.logical_entity_id,
+                           'logical_entity_schema_name', logical_entity.logical_entity_schema_name,
+                           'logical_entity_name', logical_entity.logical_entity_name
+                           {key_attribute}
+                       )
+                   ) ELSE jsonb_build_object(
+                       'assertion_record', jsonb_build_object(
+                           'modeling_assertion_record_id',
+                           assertion_record.modeling_assertion_record_id,
+                           'modeling_assertion_record_key',
+                           assertion_record.modeling_assertion_record_key
+                       )
+                   ) END ORDER BY source.dimensional_{kind}_source_mapping_id
+           )
+             FROM workflow.dimensional_{kind}_source_mapping AS source
+             LEFT JOIN workflow.logical_entity AS logical_entity
+               ON logical_entity.logical_entity_id = source.source_logical_entity_id
+              AND logical_entity.model_id = source.model_id
+             {source_attribute_join}
+             LEFT JOIN model.modeling_assertion_record AS assertion_record
+               ON assertion_record.modeling_assertion_record_id =
+                   source.modeling_assertion_record_id
+              AND assertion_record.model_id = source.model_id
+            WHERE source.model_id = {record}.model_id
+              AND source.dimensional_{kind}_id = {record}.dimensional_{kind}_id
+              AND (source.support_source_type = 'assertion' OR ({active_source}))
+       ), '[]'::JSONB) AS sources
+  FROM {from_records}
+ WHERE {record}.model_id = %s
+   AND (cardinality(%s::BIGINT[]) = 0 OR {selection})
+ ORDER BY {order}
  LIMIT %s OFFSET %s
 """,
     )

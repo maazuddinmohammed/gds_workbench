@@ -1,6 +1,6 @@
-# Atlas 0.1.2 local verification
+# Atlas 0.1.2 historical verification
 
-Verified 16 September 2026. Packages rebuilt locally; nothing deployed, published or executed against live Databricks.
+Verified 16 September 2026. This records that earlier source state, including retired components; its counts and compatibility conclusions are not verification of the current packages. Packages were rebuilt locally; nothing was deployed, published or executed against live Databricks. Use the [release verification scenarios](development/release-verification.md) for current checks.
 
 ## Changes
 
@@ -47,12 +47,12 @@ Native tests ran with PowerShell 7.5.2. Windows CI now includes profiling import
 
 See the [validation code index](development/validation-index.md) for modular rule implementations. Static graph checks expose missing connections; they do not prove business semantics.
 
-## Packages
+## Current packages
 
 - [Atlas plugin 0.1.2](dist/atlas-agent-plugin-0.1.2.zip)
-- [MCP backend update](../mcp_server/dist/gds-mcp-appservice-atlas-0.1.2.zip)
-- [Compatible Stage Runner 0.1.1](dist/atlas-stage-runner-0.1.1.vsix) — unchanged; no extension reinstall required for this release.
+- [MCP backend](../mcp_server/dist/gds-mcp-appservice-0.2.0.zip)
+- [Stage Runner 0.1.1](dist/atlas-stage-runner-0.1.1.vsix)
 
-The legacy GDS ZIP and checked-in Databricks UI/notebook upload packages were also rebuilt from current sources. The superseded Atlas 0.1.1 plugin ZIP was removed.
+These canonical local artifacts replace older archive variants. They may contain changes made after the historical verification above; check them against current source and tests before release.
 
-Deploy the MCP update to remove its DBML tool and enable compact responses. Installing Atlas alone does not update the server. Existing installations still require the separate [backend compatibility review](../docs/atlas-backend-compatibility.md).
+Installing Atlas alone does not update the server. Current setup instructions are in the [Atlas README](README.md) and [MCP README](../mcp_server/README.md). Publication or deployment requires separate approval.

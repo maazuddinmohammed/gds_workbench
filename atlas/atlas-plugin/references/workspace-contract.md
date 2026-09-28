@@ -35,7 +35,7 @@ Keep the primary Tenant and single active Model fixed. When Model-derived work c
 - Keep server Change Sets, locks, revisions, approvals and receipts independent per owner. Workbench can navigate owners; it must never combine their files into one Stage request or imply atomic Apply.
 - If owner Snapshots disagree about a shared physical record, resolve its authoritative ownership/version before using it. Never select a winner by folder or overlay order.
 - The same task can reference several owner batches. Approval may be collected together if each reviewed owner/digest is explicit, but partial success stays visible. Dependent work waits for every required upstream Apply.
-- Model-derived selection does not grant another Tenant's write access or broader Binding eligibility. Missing authorization leaves that owner unresolved while independent work can continue.
+- Model-derived selection does not grant another Tenant's write access or runtime authorization. Missing authorization leaves that owner unresolved while independent work can continue.
 
 ## Session
 

@@ -21,7 +21,11 @@ from gds_etl_workbench.application.mapping_context import (
     mapping_context_issues,
     project_mapping_inputs,
 )
-from gds_etl_workbench.application.model_read import POLICY, authorize_model_read
+from gds_etl_workbench.application.model_read import (
+    POLICY,
+    authorize_model_read,
+    require_model_source_access,
+)
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation
 
@@ -39,7 +43,8 @@ SELECT code_input_digest,
        octet_length(source_context::TEXT) AS context_bytes,
        CASE WHEN octet_length(source_context::TEXT) <= %s THEN source_context END AS source_context
   FROM workflow.list_code_generation_target_context(%s, %s, NULL)
- WHERE lower(btrim(modeled_entity_name)) = lower(btrim(%s))
+ WHERE lower(btrim(modeled_entity_schema_name)) = lower(btrim(%s))
+   AND lower(btrim(modeled_entity_name)) = lower(btrim(%s))
  LIMIT 2
 """
 
@@ -68,6 +73,7 @@ def mapping_context_page(
     model_revision: int,
     entity_type: str,
     entity_name: str,
+    entity_schema_name: str,
     component: MappingComponent,
     source_system_codes: list[str],
     page_size: int,
@@ -111,6 +117,7 @@ def mapping_context_page(
                 model_revision,
                 digest,
                 entity_type,
+                entity_schema_name.strip().casefold(),
                 entity_name.strip().casefold(),
                 component,
                 sorted(wanted),
@@ -185,7 +192,10 @@ def register_read_mapping_context_tool(
         ctx: Context[None],
         model_id: Annotated[int, Field(gt=0)],
         modeled_entity_type: Literal["logical_entity", "dimensional_entity"],
-        modeled_entity_name: Annotated[str, Field(min_length=1, max_length=255, pattern=r"\S")],
+        modeled_entity_schema_name: Annotated[
+            str, Field(min_length=1, max_length=400, pattern=r"\S")
+        ],
+        modeled_entity_name: Annotated[str, Field(min_length=1, max_length=400, pattern=r"\S")],
         component: MappingComponent,
         source_system_codes: Annotated[list[str], Field(max_length=200)] | None = None,
         expected_model_revision: Annotated[int | None, Field(gt=0)] = None,
@@ -210,12 +220,16 @@ def register_read_mapping_context_tool(
                     raise InvalidRequestError(
                         "Model revision changed; refresh the Mapping context."
                     )
+                await require_model_source_access(
+                    transaction, model.model_id, model.readable_source_tenant_ids
+                )
                 rows = await transaction.fetch_all(
                     _SQL,
                     (
                         _MAX_CONTEXT_BYTES,
                         model.model_id,
                         modeled_entity_type,
+                        modeled_entity_schema_name,
                         modeled_entity_name,
                     ),
                 )
@@ -224,7 +238,7 @@ def register_read_mapping_context_tool(
                         "The target has no bounded complete eligible Mapping context."
                     )
                 context = rows[0]["source_context"]
-                if context.get("consumer_context_version") != "atlas-1":
+                if context.get("consumer_context_version") != "entity-3":
                     raise InvalidRequestError(
                         "The Mapping reader requires the Atlas backend upgrade."
                     )
@@ -240,6 +254,7 @@ def register_read_mapping_context_tool(
                 model_revision=model.model_revision,
                 entity_type=modeled_entity_type,
                 entity_name=modeled_entity_name,
+                entity_schema_name=modeled_entity_schema_name,
                 component=component,
                 source_system_codes=source_system_codes or [],
                 page_size=page_size,

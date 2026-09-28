@@ -14,7 +14,8 @@ Connection placement. Source and Bronze retain their originating Source Tenant.
 Silver/Gold retain the metadata/user-selected Source Tenant. For new model
 targets, the Model Tenant is the default proposal, not a physical-registration
 invariant. Source Tenant does not enumerate contributing Tenants or Systems.
-Current Model Binding separately restricts target Source Tenant to Model Tenant.
+Model authoring owns Logical and Dimensional Entities independently of physical
+registration. Generated executable coordinates use the Model Tenant's GDS placement.
 _Avoid_: Connection owner, source System, GDS Connection
 
 **Physical Object Placement**:
@@ -75,8 +76,8 @@ server-derived audit metadata and no raw input, output, prompt, or secret.
 _Avoid_: Transcript, request dump, tool output log
 
 **Model**:
-The governed aggregate owned by one Tenant, containing input scope, bindings,
-policy, effective Sections, and one current revision. Source/Bronze inputs may
+The governed aggregate owned by one Tenant, containing input scope, schema
+configuration, policy, effective Sections, and one current revision. Source/Bronze inputs may
 belong to several readable Source Tenants; target ownership stays with the Model
 Tenant. Source access is rechecked on Model reads and changes, including retained
 historical scope.
@@ -86,7 +87,7 @@ _Avoid_: Project, workspace model
 The server-owned active set of physical Source or Bronze input Objects that a
 Model can use. A Source Object may be used directly when it is accessible
 through a foreign catalog and Bronze is skipped. Model-produced Silver and Gold
-targets use Model Object Bindings; they are not inputs. Selected Scope controls
+Entities are Model-owned outputs; they are not physical inputs. Selected Scope controls
 which eligible inputs participate. Show existing scope first, then resolve the
 Source Tenants, Source or Bronze choice, Systems, and Objects to add or refine.
 Use Object.source_tenant_id for source ownership. Neither placement nor a Bronze
@@ -95,8 +96,10 @@ explicitly before transformation.
 _Avoid_: Selection, source list
 
 **Selected Scope**:
-The explicit subset of eligible Model Input Scope Objects chosen for one Section
-workflow. It never changes Model Input Scope membership.
+The explicit eligible Objects or modeled Entities chosen for one Section
+workflow. Physical-input workflows select Model Input Scope Objects. Dimensional
+authoring selects Logical Entities; Mapping and Code select Entities in their
+modeled layer. Selection never changes Model Input Scope membership.
 _Avoid_: Model Input Scope, source list
 
 **Attribute Profile**:
@@ -136,7 +139,7 @@ _Avoid_: Object Enrichment, AI-generated type inference
 The registered links from originating Source Objects and Attributes to the
 Bronze Objects and Attributes they supply. These links establish source
 provenance for Metadata Enrichment.
-_Avoid_: Model Binding, Logical Mapping, name-based source guess
+_Avoid_: Logical Mapping, name-based source guess
 
 **Modeling Assertion**:
 One Model-owned structured business statement or reporting requirement derived
@@ -147,7 +150,7 @@ _Avoid_: Modeling Evidence, fact, transient context
 
 **Section**:
 One versioned part of a Model change: Model Input Scope, Profiling, Assertion,
-Analysis, Conceptual, Logical, Dimensional, Model Binding, Mapping, Code
+Analysis, Conceptual, Logical, Dimensional, Mapping, Code
 Generation, or Validation.
 _Avoid_: Phase document, payload type
 
@@ -204,7 +207,7 @@ _Avoid_: GDS placement business context, repeated per-Object business context
 **GDS Context**:
 The actual GDS Tenant, System, Connection, and zone associated with the selected
 physical Object, with the registered zone description.
-_Avoid_: Source business context, Model Binding target
+_Avoid_: Source business context, modeled Entity identity
 
 **Physical Metadata Natural Key**:
 The code-and-name identity of a registered physical record: Tenant, System, and
@@ -232,33 +235,34 @@ endpoints; status and lock remain properties of the same saved finding. Viewing
 one relationship from both Objects does not create separate findings.
 _Avoid_: New relationship candidates, measured relationship validation, separate directional records
 
+**Model Schema Configuration**:
+The Model-owned `logical_schemas` and `dimensional_schemas` lists, each containing
+schema names and optional descriptions. A layer requires configured schemas before
+authoring Entities. Schema names are part of Entity identity; changing a schema
+name is an identity change. Configuration does not register or deploy schemas.
+_Avoid_: Physical metadata, Connection selection
+
+**Modeled Entity Identity**:
+The Model, modeled layer, schema name, and Entity name together identify a Logical
+or Dimensional Entity. An Attribute adds its name under that Entity. Relationships,
+source support, Mapping, and Code retain this complete identity. Equal Entity names
+in different schemas are distinct records.
+_Avoid_: Unqualified Entity name, registered Object ID, Model Binding
+
+**Entity-owned Mapping and Code**:
+Mapping references a Logical or Dimensional Entity and its modeled Attributes
+directly. Code Artifacts belong to the same Entity. Neither depends on physical
+Object registration or a separate Binding Section. Same-Model and parent-Entity
+constraints protect every typed reference. See [ADR 012](docs/adr/012-entity-owned-mapping-and-code.md).
+_Avoid_: Physical target binding, automatic deployment
+
 **Target Registration**:
-The governed establishment of Silver or Gold Object and Attribute metadata for
-a future Model Object Binding through a Metadata Change Set. It neither deploys
-targets nor describes source transformations.
-_Avoid_: Target deployment, Mapping
-
-**Model Object Binding**:
-The Model-owned identity binding from one modeled Entity to one
-already-registered physical target Object: Logical to Silver or Dimensional to
-Gold.
-_Avoid_: Mapping, Model Input Scope, target deployment, Model Realization
-
-**Model Attribute Binding**:
-The Model-owned identity binding from one modeled Attribute to one
-already-registered physical target Attribute under a Model Object Binding.
-Every target Attribute, including audit, technical, or constant-valued
-Attributes, has a corresponding modeled Attribute and Model Attribute Binding.
-_Avoid_: Mapping Attribute, Attribute Realization
-
-**Model Binding**:
-The Workflow Target that creates Logical-to-Silver or Dimensional-to-Gold Model
-Object and Model Attribute Bindings after the physical target metadata has been
-applied. It uses a Model Change Set and never registers metadata or describes
-source transformations. In the standard path, the agent deterministically
-resolves the exact Target Registration intent against a fresh Metadata Snapshot;
-a missing or ambiguous target blocks the binding.
-_Avoid_: Target Registration, Mapping, Model Realization
+The optional operational handoff that exports applied Logical or Dimensional
+Entity definitions into governed Silver or Gold Object and Attribute metadata.
+Metadata Change Set validation and Apply remain separate from Model authoring.
+Registration prepares physical metadata for Process and orchestration; it does
+not deploy tables or execute generated Code.
+_Avoid_: Mapping prerequisite, Model Binding, target deployment
 
 **Pending Record**:
 One complete proposed record that inserts, updates, reactivates, or explicitly
@@ -276,9 +280,14 @@ _Avoid_: Analysis Result, validated relationship
 
 **Analysis Result**:
 A Model-owned finding about a relationship between real physical Attributes,
-identified by complete natural keys and described by its kind, confidence, and
-supporting explanation. Separately measured validation evidence can support or
-challenge the finding; inference alone does not prove the relationship.
+identified by complete natural keys and described by its kind, inferred
+cardinality, confidence, and supporting explanation. `inferred_cardinality`
+describes multiplicity from the from endpoint to the to endpoint; it may remain
+unknown. Generation supplies it explicitly and explains it in
+`relationship_basis`. Separately measured validation evidence can support or
+challenge the finding; inference alone does not prove the relationship. Observed
+cardinality is derived from measured counts without replacing the inference.
+Disagreement is a review warning, not an automatic correction or rejection.
 Locked and unlocked findings can both provide context for later inference;
 generation cannot override a locked finding.
 _Avoid_: Grain note, normalization note, proven foreign key
@@ -306,35 +315,40 @@ in-scope physical Objects, Attributes, Profiles, Analysis Results, Assertions,
 and confirmed user knowledge. Grain, identifiers, functional dependencies,
 history, and relationships drive its structure. Neither a physical Object nor a
 Conceptual Object implies one Logical Entity. It is also the complete modeled
-contract for its Silver target binding, including audit and constant-valued
-Attributes when those columns exist physically.
+contract for its planned Silver output, including audit, technical, and
+constant-valued Attributes required by the Model policy. Each Entity belongs to a
+configured Logical schema; physical registration is a later handoff.
 _Avoid_: Conceptual decomposition, physical copy
 
 **Dimensional Model**:
 An optional business-process and grain-oriented Model layer containing Facts,
-Dimensions, Bridges, Attributes, and Relationships. Its physical inputs are
-eligible Silver Objects with active Model Object Bindings populated through
-applied Logical Mapping.
+Dimensions, Bridges, Attributes, and Relationships. It selects applied active
+Logical Entities and references their Attributes directly, with Assertion support
+where relevant. Each Entity belongs to a configured Dimensional schema. Logical
+Mapping provides transformation context when authoring Dimensional Mapping.
 _Avoid_: Mandatory Logical projection, Mapping prerequisite
 
 **Logical Mapping**:
-The target-oriented transformation rules that populate the Silver Object in an
-active Logical Model Object Binding from bounded Source or Bronze Objects. It
-does not create the binding.
+The transformation rules owned by a Logical Entity that describe its planned
+Silver output from bounded Source or Bronze Objects. Attribute transformations
+reference the Logical Entity's modeled Attributes.
 _Avoid_: Logical Section, Silver deployment
 
 **Mapping generation selection**:
-One modeled layer, selected target Object–Source System pairs, and selected bound
-Attributes. Object selection includes unlocked Attributes by default. Existing
-Mapping locks and deselections preserve records; a locked Object protects all its
-Attributes. The run freezes this selection, authors each pair independently, and
-combines successful results into one draft for explicit Apply. System dependency
-order is maintained manually in the web UI for orchestration only. Target choices
-cross bound Objects with all active business Systems represented in Model Input
-Scope; Bronze provenance comes from ingestion lineage. Saved Entity source links
-are evidence, not eligibility gates. Each pair produces complete actionable
-Attribute coverage or an explicit no-applicable-source run outcome. See ADR 008.
-_Avoid_: Attribute-only top-level workflow, agent-created System ordering
+One modeled layer, selected Entity–Source System pairs, and selected modeled
+Attributes. Entity selection includes unlocked Attributes by default. Existing
+Mapping locks and deselections preserve records; a locked Entity Mapping protects
+all its Attribute Mappings. A Run freezes Entity identity and Attribute selection,
+authors each pair independently, and combines successful results into one draft
+for explicit Apply. Source-System order is not Mapping configuration; Process
+Group dependency order and Process execution order define the runtime schedule.
+Target choices cross active Entities with business Systems represented in Model
+Input Scope; Bronze provenance comes from ingestion lineage. Logical Mapping uses
+eligible scoped Source/Bronze inputs. Dimensional Mapping uses applied Logical
+Entities with an active Logical Mapping for that System. Saved source links provide
+evidence. Each pair produces complete actionable Attribute coverage or an explicit
+no-applicable-source outcome. See ADR 012 for the current ownership contract.
+_Avoid_: Attribute-only top-level workflow, Mapping System ordering
 
 **Mapping Transformation Document**:
 The flexible JSON transformation description for a Mapping Object or Attribute.
@@ -345,9 +359,10 @@ unless the user requests another format.
 _Avoid_: Hard-coded Mapping package schema, executable code
 
 **Dimensional Mapping**:
-The target-oriented transformation rules that populate the Gold Object in an
-active Dimensional Model Object Binding from eligible Silver Objects. It does
-not create the binding.
+The transformation rules owned by a Dimensional Entity that describe its planned
+Gold output from eligible Logical Entities and their Attributes. Source references
+use Logical schema, Entity, and Attribute keys; physical Silver registration is
+unnecessary for authoring.
 _Avoid_: Dimensional Section, Gold deployment
 
 **Stage Batch**:
@@ -438,7 +453,7 @@ _Avoid_: Automatic repair, error dump, raw prompt
 
 **Code Artifact**:
 One Model-owned SQL file, Python file, or Python notebook generated for one
-bound target Object. A target may have multiple Code Artifacts, distinguished
+Logical or Dimensional Entity. An Entity may have multiple Code Artifacts, distinguished
 by Artifact Name. It is proposed and applied through the Code Generation
 Section. Its content and digest are Model state; applying it never executes or
 deploys the artifact. It has no separate domain-size cap; transport batching
@@ -449,8 +464,7 @@ from its exact content; neither is authored by the agent or user.
 _Avoid_: Process, deployment, executed code
 
 **Artifact Name**:
-The file name that distinguishes Code Artifacts for the same bound target
-Object. The external deployment path is supplied later through Process metadata.
+The file name that distinguishes Code Artifacts for the same modeled Entity. The external deployment path is supplied later through Process metadata.
 _Avoid_: Artifact key, deployment path, Process executable
 
 **Code Handoff**:
@@ -467,8 +481,8 @@ this runtime.
 _Avoid_: GDS Workbench, Code Generation, MCP execution
 
 **Mapping Code Generation**:
-The Workflow Target that creates one or more Code Artifacts per selected bound
-target Object from applied Mapping, then hands the Candidate to a
+The Workflow Target that creates one or more Code Artifacts per selected modeled
+Entity from applied Mapping, then hands the Candidate to a
 governed Model Change Set. Apply advances the Model revision. Generation never
 executes or deploys code.
 _Avoid_: Mapping Section, local-only code, code execution
@@ -550,9 +564,8 @@ _Avoid_: Separate Workbench schema, display-only compatibility
 Plugin instructions for one GDS Workflow Target that explain required context,
 field ownership and population, coverage loops, validation expectations,
 blockers, review handoff, and the next eligible target. Guides cover metadata,
-Profiling, Analysis, Conceptual, Logical, Dimensional, Target Registration,
-Model Binding, Mapping, Code Generation, Validation Authoring, and later Process
-registration without replacing authoritative server validation.
+Profiling, Analysis, Conceptual, Logical, Dimensional, Mapping, Code Generation,
+Validation Authoring, and optional Target and Process registration without replacing authoritative server validation.
 _Avoid_: Prompt dump, duplicate database policy, optional workflow decoration
 
 **Default Model Naming**:
@@ -576,11 +589,13 @@ _Avoid_: Client mode, audience hint
 
 **Model Snapshot**:
 The immutable, bounded Model context archive returned through MCP for one workflow.
+The Model payload uses schema version 2.0 with schema-qualified Entity keys and no
+Binding datasets. Metadata and transport envelopes retain their own versions.
 _Avoid_: Dump, export
 
 **Metadata Snapshot**:
 An immutable, bounded Source Tenant metadata archive containing registered
-physical metadata regardless of Model Object Binding. It is delivered outside the
+physical metadata independently of Model authoring. It is delivered outside the
 MCP tool result so an agent can inspect it without filling its context.
 _Avoid_: Model Snapshot, metadata dump, workflow snapshot
 
@@ -615,8 +630,9 @@ invalid, including on unchanged Code.
 Human result lifecycle updates use owned record IDs and change only lock/status
 fields. Preview lists the complete dependent changes; Apply confirms that exact
 plan under Model revision, Tenant Lock and idempotency fences. Status changes
-never implicitly unlock dependencies or invent bindings, transformations, SQL or
+never implicitly unlock dependencies or invent transformations, SQL or
 System assignments. Retiring Code retires the target's applied Code bundle;
 reactivation must restore complete System coverage. Lock/unlock may preserve
 stale Code without reauthoring it. Inactive history remains readable even when
-its former Mapping or Binding is no longer eligible for a new workflow run.
+its former Entity or Mapping is no longer eligible for a new workflow run. Frozen
+Run Entity selections retain identity independently of live Entity rows.

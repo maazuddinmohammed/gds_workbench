@@ -57,7 +57,7 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 
 ## Execution behavior
 
-Agreed scheduling design; the [Process Group dependency-order field](process-group.md#dependency-order) still needs implementation.
+Agreed scheduling design; the [Process Group dependency-order field](process-group.md#dependency-order) is stored in Metadata. The external orchestration framework owns execution.
 
 1. Start with the selected Silver Process Groups. All their work must succeed before the selected Gold Process Groups start.
 2. Within the current Zone phase, take groups at the lowest remaining dependency order across the selected Systems.
@@ -72,7 +72,7 @@ Shared executable means the same runnable artifact, not merely two files in the 
 
 Preserve all Process registrations and target references. Metadata authoring records the intended schedule; orchestration performs execution and stage-local reuse. Do not delete repeated registrations, enforce global executable uniqueness or cache success across stages. Exact artifact matching and any differing invocation context come from the framework contract; do not invent additional authoring restrictions.
 
-These are runtime scheduling rules, not existing database or offline-validator guarantees. Atlas-compatible contracts include Process Group dependency order; orchestration must consume that field according to this schedule. Model mapping_dependency source_system_dependency_order is separate and is not a substitute for the new field.
+These are runtime scheduling rules, not database or offline-validator guarantees. Metadata contracts include Process Group dependency order; orchestration must consume that field according to this schedule. Mapping contains transformation dependencies and business precedence, while Process Groups and Processes configure execution stages.
 
 ## Validation checklist
 

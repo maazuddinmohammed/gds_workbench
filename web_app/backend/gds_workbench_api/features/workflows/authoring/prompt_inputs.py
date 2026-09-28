@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from copy import deepcopy
 from functools import cache
 from typing import Annotated, Any, Literal, cast
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
+    ModelSchemaDefinition,
     ProfilingProfileRecord,
 )
 from gds_etl_workbench.domain.snapshots.model import (
@@ -34,7 +34,7 @@ from pydantic import (
 from gds_workbench_api.features.metadata_enrichment.contracts import EvidenceMethod
 
 from .agent_execution import LocalAgentToolDefinition
-from .context import SelectedObjectContext
+from .context import SelectedLogicalEntityContext, SelectedObjectContext
 from .context_contracts import workflow_input_contracts
 from .plan import AgentRunPlan, FrozenAgentStage
 from .tool_configuration import registered_tool_definitions
@@ -64,6 +64,7 @@ type _ContextDataset = Literal[
     "model_details",
     "selected_object",
     "selected_attribute",
+    "selected_logical_entity",
     "profiling_profile",
     "analysis_result",
     "modeling_assertion_document",
@@ -78,12 +79,8 @@ type _ContextDataset = Literal[
     "dimensional_entity",
     "dimensional_attribute",
     "dimensional_relationship",
-    "mapping_dependency",
     "mapping_object",
     "mapping_attribute",
-    "read_only_model_object_binding",
-    "read_only_model_attribute_binding",
-    "read_only_mapping_dependency",
     "read_only_mapping_object",
     "read_only_mapping_attribute",
     "read_only_generated_code",
@@ -127,6 +124,9 @@ class _EvidenceManifest(_PromptInput):
 _AUTHORING_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "model_brief": TypeAdapter(_ModelBrief),
     "selected_metadata": TypeAdapter(list[SelectedObjectContext]),
+    "selected_logical_entities": TypeAdapter(list[SelectedLogicalEntityContext]),
+    "logical_schemas": TypeAdapter(list[ModelSchemaDefinition]),
+    "dimensional_schemas": TypeAdapter(list[ModelSchemaDefinition]),
     "profile_evidence": TypeAdapter(list[ProfilingProfileRecord]),
     "applied_relationships": TypeAdapter(list[AnalysisResultRecord]),
     "modeling_assertions": TypeAdapter(AssertionSection),
@@ -311,25 +311,36 @@ _LOGICAL_INPUTS["applied_logical"] = (
     "Applied Logical Submodels, Entities, Attributes and Relationships, including nested source "
     "mappings, memberships, lifecycle state and locks. Preserve compatible history and explicit "
     "audit columns. read_only_dependencies separately constrains their existing downstream "
-    "Bindings and outputs; this stage cannot modify those records. Null means no applied "
+    "Mapping and Code outputs; this stage cannot modify those records. Null means no applied "
     "Logical section is available.",
     {"submodels": [], "entities": [], "attributes": [], "relationships": []},
+)
+_LOGICAL_INPUTS["logical_schemas"] = (
+    "one_shot",
+    "model_details.logical_schemas",
+    "Allowed Logical schema names with placement descriptions. Every Entity must use one.",
+    [{"schema_name": "silver", "description": "Operational entities."}],
 )
 _DIMENSIONAL_INPUTS = {
     name: definition for name, definition in _LOGICAL_INPUTS.items() if name != "applied_conceptual"
 }
-_SILVER_EXAMPLE = deepcopy(cast(list[dict[str, Any]], _ANALYSIS_INPUTS["selected_metadata"][3]))
-for _selected in _SILVER_EXAMPLE:
-    _selected["object"].update(object_schema="silver", zone_code="silver")
-    for _attribute in _selected["attributes"]:
-        _attribute["object_schema"] = "silver"
-_DIMENSIONAL_INPUTS["selected_metadata"] = (
+_DIMENSIONAL_INPUTS.pop("logical_schemas", None)
+_DIMENSIONAL_INPUTS["dimensional_schemas"] = (
     "one_shot",
-    "selected_objects",
-    "Eligible physical Silver Objects and exact Attributes established by applied Logical "
-    "Mapping and active Bindings. These are the source of Gold modeling, not direct Bronze "
-    "scope. Use recorded inferred types, nullability and descriptions; no sample rows are sent.",
-    cast(JsonValue, _SILVER_EXAMPLE),
+    "model_details.dimensional_schemas",
+    "Allowed Dimensional schema names with placement descriptions. Every Entity must use one.",
+    [{"schema_name": "gold", "description": "Analytical entities."}],
+)
+_DIMENSIONAL_INPUTS.pop("selected_metadata", None)
+_DIMENSIONAL_INPUTS["selected_logical_entities"] = (
+    "one_shot",
+    "selected_logical_entities",
+    "Frozen selected Logical Entities and active Attributes, including schema, data types, "
+    "grain, source lineage and lifecycle. Reference these exact schema-qualified identities "
+    "when generating Dimensional sources.",
+    cast(
+        JsonValue, workflow_input_contracts("dimensional")["selected_logical_entities"]["example"]
+    ),
 )
 _DIMENSIONAL_INPUTS["model_identity"] = (
     "tool_assisted",
@@ -344,7 +355,7 @@ _DIMENSIONAL_INPUTS["applied_logical"] = (
     "one_shot",
     "applied.logical",
     "Applied upstream Logical Entities, Attributes, Relationships and source supports. "
-    "Use them to understand eligible Silver meaning and grain. This stage cannot alter the "
+    "Use them to understand selected Logical meaning and grain. This stage cannot alter the "
     "Logical layer or infer that every Logical Entity is eligible for this selection.",
     _LOGICAL_INPUTS["applied_logical"][3],
 )
@@ -353,25 +364,25 @@ _DIMENSIONAL_INPUTS["applied_dimensional"] = (
     "applied.dimensional",
     "Applied Dimensional Submodels, Entities, Attributes and Relationships with exact sources, "
     "lifecycle and locks. Preserve compatible history; read_only_dependencies constrains "
-    "current downstream Bindings and outputs. The candidate cannot change those dependencies.",
+    "current downstream Mapping and Code. The candidate cannot change those dependencies.",
     {"submodels": [], "entities": [], "attributes": [], "relationships": []},
 )
 _DIMENSIONAL_INPUTS["applied_mapping"] = (
     "one_shot",
     "applied.mapping",
-    "Applied Mapping dependencies, Object and Attribute transformations. Inspect the "
+    "Applied Mapping Object and Attribute transformations. Inspect the "
     "modeled_entity_type before interpreting upstream Logical versus downstream Dimensional "
     "records. Mapping gives lineage and transformation meaning, not newly measured values. "
     "It is evidence only; this workflow does not author Mapping.",
-    {"dependencies": [], "objects": [], "attributes": []},
+    {"objects": [], "attributes": []},
 )
 _DIMENSIONAL_INPUTS["gold_technical_policy"] = (
     "one_shot",
     "model_details.gold_model_technical_columns_template",
     "Frozen required Gold technical policy: dimension surrogate-key naming/type, role-aware "
     "fact/bridge foreign-key names, and Type2 validity columns. Follow these exact templates "
-    "and nullability rules. Required columns must remain compatible with existing Bindings; "
-    "do not add unsupported history behavior that would require inventing a Binding.",
+    "and nullability rules. Required columns must remain compatible with saved Entities and "
+    "their Mapping and Code outputs.",
     {
         "schema_version": "1.0",
         "dimension_surrogate_key": {
@@ -510,11 +521,10 @@ def _mapping_inputs(
     from gds_workbench_api.features.mapping.preparation_contracts import (
         ExistingMappingHeader,
         MappingAuthoringPolicy,
-        MappingDependencyGraph,
+        MappingModeledEntity,
         MappingOperation,
         MappingOutputTemplateInventory,
         MappingPairIdentity,
-        MappingPhysicalObject,
         MappingReadiness,
         MappingRoute,
         MappingSource,
@@ -540,9 +550,6 @@ def _mapping_inputs(
                 Literal[
                     "run",
                     "source_system",
-                    "source_system_dependency",
-                    "source_dependency_node",
-                    "source_dependency_edge",
                     "target_dependency_node",
                     "target_dependency_edge",
                     "target",
@@ -574,7 +581,7 @@ def _mapping_inputs(
                     "workflow_run_id": 1048,
                     "model_id": 18,
                     "model_revision": 7,
-                    "pair": {"target_object_id": 501, "source_system_id": 31},
+                    "pair": {"modeled_entity_id": 201, "source_system_id": 31},
                 },
             ),
             "evidence_datasets": (
@@ -615,14 +622,12 @@ def _mapping_inputs(
                         "modeled_attribute_id": 701,
                         "output_template_id": None,
                         "status": "active",
-                        "target_attribute_id": 901,
                         "transformation_document": None,
                         "workflow_run_id": None,
                     }
                 ],
                 "is_locked": False,
                 "mapping_object_id": None,
-                "model_object_binding_id": 111,
                 "modeled_entity": {
                     "attributes": [
                         {
@@ -645,17 +650,20 @@ def _mapping_inputs(
                     "grain": "One row per customer.",
                     "is_locked": False,
                     "status": "active",
+                    "entity_type": "logical_entity",
+                    "entity_schema_name": "silver_crm",
                 },
                 "object_dependency_order": 0,
                 "output_template_id": None,
                 "status": "active",
                 "transformation_document": None,
                 "workflow_run_id": None,
+                "modeled_entity_id": 201,
             }
         ],
         "mapping_route": "logical_to_silver",
         "operation": "build",
-        "pair_identity": {"source_system_id": 31, "target_object_id": 501},
+        "pair_identity": {"source_system_id": 31, "modeled_entity_id": 201},
         "readiness": {
             "headers": [
                 {
@@ -668,25 +676,12 @@ def _mapping_inputs(
                         }
                     ],
                     "mapping_object_id": None,
-                    "model_object_binding_id": 111,
+                    "modeled_entity_id": 201,
                 }
             ],
             "issues": [],
             "operation": "build",
             "ready": True,
-        },
-        "source_dependencies": {
-            "edges": [],
-            "malformed_reference_count": 0,
-            "nodes": [
-                {
-                    "dependency_order": 0,
-                    "is_locked": True,
-                    "mapping_source_system_dependency_id": 71,
-                    "source_system_id": 31,
-                    "status": "active",
-                }
-            ],
         },
         "source_evidence": [
             {
@@ -751,7 +746,7 @@ def _mapping_inputs(
                     "has_locked_headers": False,
                     "has_unlocked_headers": True,
                     "status": "active",
-                    "target_object_id": 501,
+                    "modeled_entity_id": 201,
                 }
             ],
         },
@@ -759,37 +754,26 @@ def _mapping_inputs(
             "attributes": [
                 {
                     "attribute_data_type": "BIGINT",
-                    "attribute_description": None,
-                    "attribute_id": 901,
-                    "attribute_inferred_data_type": None,
+                    "attribute_definition": "Stable customer key.",
+                    "attribute_id": 701,
                     "attribute_name": "CustomerID",
-                    "attribute_nullability": False,
-                    "attribute_ordinal_position": 1,
-                    "is_active": True,
+                    "is_audit_column": False,
+                    "is_locked": False,
+                    "is_nullable": False,
+                    "ordinal_position": 1,
+                    "status": "active",
                 }
             ],
-            "batch_attribute_name": None,
-            "connection_code": "lakehouse",
-            "connection_id": 61,
-            "connection_is_active": True,
-            "is_active": True,
-            "is_global_data_store": True,
+            "dependency_order": 0,
+            "entity_definition": "A customer.",
+            "entity_id": 201,
+            "entity_kind": "core",
+            "entity_name": "Customer",
+            "grain": "One row per customer.",
             "is_locked": False,
-            "object_description": None,
-            "object_id": 501,
-            "object_name": "Customer",
-            "object_schema": "silver_crm",
-            "scope_is_active": True,
-            "scope_is_locked": False,
-            "source_tenant_id": 7,
-            "system_code": "GDS",
-            "system_id": 41,
-            "system_is_active": True,
-            "tenant_catalog": "northwind",
-            "tenant_code": "NWA",
-            "tenant_id": 7,
-            "tenant_is_active": True,
-            "zone_code": "silver",
+            "status": "active",
+            "entity_type": "logical_entity",
+            "entity_schema_name": "silver_crm",
         },
         "template_guidance": {"definitions": [], "ids": []},
     }
@@ -797,7 +781,7 @@ def _mapping_inputs(
         "pair_identity": (
             TypeAdapter(MappingPairIdentity),
             "run.pair",
-            "Frozen physical target Object and source System IDs. They identify this call, "
+            "Frozen modeled Entity and source System IDs. They identify this call, "
             "not editable output fields.",
             examples["pair_identity"],
         ),
@@ -817,25 +801,24 @@ def _mapping_inputs(
             examples["operation"],
         ),
         "target_metadata": (
-            TypeAdapter(MappingPhysicalObject),
+            TypeAdapter(MappingModeledEntity),
             "target",
-            "Complete selected target Object and Attributes. Preserve exact physical names "
-            "and nullability. attribute_inferred_data_type describes actual source meaning; "
-            "attribute_data_type describes storage. They are distinct.",
+            "Selected modeled Entity, schema and Attributes. Preserve the schema-qualified "
+            "Entity identity, Attribute names, types and nullability.",
             examples["target_metadata"],
         ),
         "source_evidence": (
             TypeAdapter(Annotated[list[MappingSource], Field(max_length=128)]),
             "sources",
-            "Complete eligible source Objects, columns, inferred types, descriptions, roles "
-            "and rationale. Use exact physical identities. SourceTenant ownership differs "
-            "from placement Tenant; IDs are not business joins.",
+            "Eligible physical sources for Logical Mapping or Logical Entity/Attribute "
+            "sources for Dimensional Mapping, including descriptions, roles and rationale. "
+            "Use their complete natural keys; IDs are not business joins.",
             examples["source_evidence"],
         ),
         "existing_mapping": (
             TypeAdapter(Annotated[list[ExistingMappingHeader], Field(min_length=1, max_length=1)]),
             "headers",
-            "Existing header, modeled Entity/Attributes and their target bindings and "
+            "Existing header, owning modeled Entity/Attributes and their "
             "transformation documents. Preserve locked/preserved records. A null document is "
             "unauthored, not an empty executable transformation.",
             examples["existing_mapping"],
@@ -844,8 +827,7 @@ def _mapping_inputs(
             TypeAdapter(MappingAuthoringPolicy),
             "authoring",
             "Model name, naming instructions and audit/technical templates. Apply only "
-            "recorded policy to transformation content; do not manufacture physical columns "
-            "or bindings.",
+            "recorded policy to transformation content; use existing modeled Attributes.",
             examples["authoring_policy"],
         ),
         "readiness": (
@@ -872,18 +854,10 @@ def _mapping_inputs(
             "a SQL credential or connection string.",
             examples["source_system"],
         ),
-        "source_dependencies": (
-            TypeAdapter(MappingDependencyGraph),
-            "source_system_dependency_graph",
-            "Existing source System dependency nodes and directed predecessor/successor "
-            "edges. Preserve acyclic order; malformed references are not permission to invent "
-            "dependencies.",
-            examples["source_dependencies"],
-        ),
         "target_dependencies": (
             TypeAdapter(MappingTargetDependencyGraph),
             "target_dependency_graph",
-            "Existing physical target dependency order and edges. Respect locked headers and "
+            "Existing Entity dependency order and edges. Respect locked headers and "
             "exact target IDs; do not infer an edge solely from similar names.",
             examples["target_dependencies"],
         ),
@@ -1270,7 +1244,12 @@ def project_prompt_input_values(
                     if not isinstance(applied, dict):
                         raise ValueError
                     value = applied[path.removeprefix("applied.")]
-                elif name in {"gold_technical_policy", "gold_audit_policy"}:
+                elif name in {
+                    "gold_technical_policy",
+                    "gold_audit_policy",
+                    "logical_schemas",
+                    "dimensional_schemas",
+                }:
                     model_details = context["model_details"]
                     if not isinstance(model_details, dict):
                         raise ValueError

@@ -25,7 +25,7 @@ SQL artifacts contain code only, without Markdown, prose or explanatory comments
 
 Distinct source files do not make overlapping identities safe. A rule needing joint System comparison cannot be replaced by separate unrelated SELECTs. Do not duplicate the same System into two active artifacts or create an extra active reconciliation/helper artifact without a supported assignment/consumer contract. Code record assignments, not filenames, identify contributing Systems.
 
-Mapping carries System/Object dependency orders; no new order property belongs on Code records. Use those orders when assessing grouping and later Process handoff. An earlier target's persisted lookup is different from a temporary result in another artifact.
+Mapping carries Object dependency order; no order property belongs on a Code record or its source-System entry. Preserve target lookup prerequisites, explicit business precedence and SQL stage order when assessing artifact grouping and later Process handoff. Process Groups and Processes own scheduling. An earlier target's persisted lookup is different from a temporary result in another artifact.
 
 ## Runtime parameters and optional preflight
 
@@ -88,6 +88,6 @@ Review with Mapping as the source of expected behavior. Formal Validation defini
 
 ## Source pointers
 
-Existing GDS: `references/workflows/code-generation.md`, `references/examples/staged-target-query.sql`, `references/examples/multi-system-target.sql` and the Mapping/code chapter of `references/orchestration-rules.md`. Backend contracts: `mcp_server/gds_etl_workbench/domain/modeling_records.py`, `application/change_sets/model_validation.py`; workflow authoring: `web_app/backend/gds_workbench_api/features/workflows/authoring/`.
+Atlas contracts: [Generated Code records](../model/generated-code.md) and [Mapping documents](../model/mapping-documents.md). Backend contracts: `mcp_server/gds_etl_workbench/domain/modeling_records.py`, `application/change_sets/model_validation.py`; workflow authoring: `web_app/backend/gds_workbench_api/features/workflows/authoring/`.
 
 Preserve confirmed Atlas runtime coordinates over incompatible catalog-qualified seed examples. Python record storage is distinct from actual authoring, download and runtime support; no Python execution contract is invented in this guide.

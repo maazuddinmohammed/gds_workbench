@@ -15,7 +15,7 @@ export type ModelStage =
   | "conceptual"
   | "logical"
   | "dimensional"
-  | "targets"
+  | "settings"
   | "settings-prompts";
 
 export function ModelWorkspaceShell({
@@ -142,22 +142,13 @@ export function ModelWorkspaceShell({
               <i>8</i><span><strong>Dimensional</strong><small>Dimensional records</small></span>
             </Link>
             <Link
-              aria-label="Target Binding"
-              className={`model-step${activeStage === "targets" ? " is-active" : ""}`}
-              to="/tenants/$tenantId/models/$modelId/targets"
-              params={{ tenantId, modelId }} search={{ layer: "logical" }}
-              title="Target Binding — Silver and Gold"
-            >
-              <i>9</i><span><strong>Target Binding</strong><small>Silver and Gold</small></span>
-            </Link>
-            <Link
               aria-label="Settings"
-              className={`model-step${activeStage === "settings-prompts" ? " is-active" : ""}`}
-              to="/tenants/$tenantId/models/$modelId/settings/prompts"
+              className={`model-step${(activeStage === "settings" || activeStage === "settings-prompts") ? " is-active" : ""}`}
+              to="/tenants/$tenantId/models/$modelId/settings"
               params={{ tenantId, modelId }}
-              title="Settings — Prompts"
+              title="Settings — Definition and Prompts"
             >
-              <i>10</i><span><strong>Settings</strong><small>Prompts</small></span>
+              <i>9</i><span><strong>Settings</strong><small>Definition and Prompts</small></span>
             </Link>
           </nav>
           <div className="model-rail-note">

@@ -26,14 +26,16 @@ Atlas preserves the verified Model Snapshot format and uses the shared [runtime]
 
 Follow catalog rows_file/schema_file paths. Archive format version 2.0, Snapshot ID, Model revision and server Change Set draft revision identify different things: file format, export, applied Model state and pending server edits. Model ID/revision belong to the Snapshot context; do not invent model_id fields on records whose schema omits them.
 
+Current Model catalogs contain 22 datasets. Mapping contains Object and Attribute records. Atlas rejects retired Binding or Mapping System-dependency datasets; refresh the Snapshot before authoring against this fresh-install release.
+
 ## Targeted reading and local changes
 
-1. Verify Model/Tenant identity and installed revision. Select only relevant sections, such as logical, dimensional, model_binding, mapping, code_generation or validation; the catalog is the full inventory.
+1. Verify Model/Tenant identity and installed revision. Select only relevant sections, such as logical, dimensional, mapping, code_generation or validation; the catalog is the full inventory.
 2. Read the affected schemas and exact records, including their pending versions and required dependencies. Workflows specify which Metadata Snapshot records are also needed.
 3. Use canonical keys and their published Model normalization. Update complete effective records, preserving unaffected nested members. Avoid copying baseline content over earlier pending edits.
 4. Accumulate related records in the Model Change Set and validate the effective graph. Omitted applied records remain unchanged; the draft is not a replacement for the entire Model.
 
-Logical and Dimensional datasets are distinct. Shared Binding/Mapping/Code datasets use modeled_entity_type=logical_entity or dimensional_entity; filter by that discriminator when relevant. Model details is a singleton with an empty canonical key, not a missing-key error. Follow the dataset schema in both cases.
+Logical and Dimensional datasets are distinct. Shared Mapping/Code datasets use modeled_entity_type=logical_entity or dimensional_entity; filter by that discriminator when relevant. Model details is a singleton with an empty canonical key, not a missing-key error. Follow the dataset schema in both cases.
 
 Use the bounded read/write [helper contracts](../model/change-sets.md#atlas-helpers). `select --view effective` includes pending records; `--view snapshot` reads baseline only. Narrow truncated selections by known keys; neither view adds an offset/cursor.
 

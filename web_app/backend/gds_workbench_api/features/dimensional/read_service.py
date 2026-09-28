@@ -16,18 +16,18 @@ from gds_workbench_api.features.dimensional.read_contracts import (
     DimensionalAttributeAssertionSource,
     DimensionalAttributeDetail,
     DimensionalAttributeFilters,
+    DimensionalAttributeLogicalSource,
     DimensionalAttributeNotFoundError,
     DimensionalAttributePage,
-    DimensionalAttributePhysicalSource,
     DimensionalAttributeSource,
     DimensionalAttributeSummary,
     DimensionalDetailLimitExceededError,
+    DimensionalLogicalEntitySource,
     DimensionalObjectDetail,
     DimensionalObjectNotFoundError,
     DimensionalObjectPage,
     DimensionalObjectSource,
     DimensionalObjectSummary,
-    DimensionalPhysicalObjectSource,
     DimensionalRelationshipDetail,
     DimensionalRelationshipFilters,
     DimensionalRelationshipNotFoundError,
@@ -49,6 +49,7 @@ SELECT target_model.model_revision
 _DIMENSIONAL_OBJECTS_SQL: LiteralString = """
 SELECT entity.dimensional_entity_id,
        entity.workflow_run_id,
+       entity.dimensional_entity_schema_name,
        entity.dimensional_entity_name,
        entity.dimensional_entity_type,
        entity.dimensional_fact_type,
@@ -85,6 +86,7 @@ SELECT entity.dimensional_entity_id,
 _DIMENSIONAL_OBJECT_DETAIL_SQL: LiteralString = """
 SELECT entity.dimensional_entity_id,
        entity.workflow_run_id,
+       entity.dimensional_entity_schema_name,
        entity.dimensional_entity_name,
        entity.dimensional_entity_definition,
        entity.dimensional_entity_type,
@@ -143,12 +145,9 @@ SELECT source.dimensional_entity_source_mapping_id,
        source.dimensional_entity_source_mapping_is_locked AS is_locked,
        source.created_time AS created_at,
        source.updated_time AS updated_at,
-       source_object.object_id AS source_object_id,
-       source_placement_tenant.tenant_code AS source_tenant_code,
-       source_system.system_code AS source_system_code,
-       source_connection.connection_code AS source_connection_code,
-       source_object.object_schema AS source_object_schema,
-       source_object.object_name AS source_object_name,
+       logical_source.logical_entity_id AS source_logical_entity_id,
+       logical_source.logical_entity_schema_name AS source_logical_entity_schema_name,
+       logical_source.logical_entity_name AS source_logical_entity_name,
        assertion_record.modeling_assertion_record_id,
        assertion_record.modeling_assertion_record_key,
        assertion_document.modeling_assertion_document_name,
@@ -162,19 +161,9 @@ SELECT source.dimensional_entity_source_mapping_id,
    AND entity.model_id = source.model_id
   JOIN model.model AS target_model
     ON target_model.model_id = source.model_id
-  LEFT JOIN core.object AS source_object
-    ON source_object.object_id = source.source_object_id
-  LEFT JOIN core.connection AS source_connection
-    ON source_connection.connection_id = source_object.connection_id
-  LEFT JOIN LATERAL workflow.list_model_object_eligibility(
-      source.model_id
-  ) AS source_eligibility
-    ON source_eligibility.object_id = source.source_object_id
-   AND source_eligibility.is_dimensional_source_eligible
-  LEFT JOIN core.tenant AS source_placement_tenant
-    ON source_placement_tenant.tenant_id = source_connection.tenant_id
-  LEFT JOIN core.system AS source_system
-    ON source_system.system_id = source_connection.system_id
+  LEFT JOIN workflow.logical_entity AS logical_source
+    ON logical_source.logical_entity_id = source.source_logical_entity_id
+   AND logical_source.model_id = source.model_id
   LEFT JOIN model.modeling_assertion_record AS assertion_record
     ON assertion_record.modeling_assertion_record_id
        = source.modeling_assertion_record_id
@@ -187,10 +176,6 @@ SELECT source.dimensional_entity_source_mapping_id,
    AND target_model.model_id = %s
    AND target_model.is_active
    AND source.dimensional_entity_id = %s
-   AND (
-       source.support_source_type <> 'object'
-       OR source_eligibility.object_id IS NOT NULL
-   )
  ORDER BY source.dimensional_entity_source_mapping_id
  LIMIT %s
 """
@@ -199,6 +184,7 @@ _DIMENSIONAL_ATTRIBUTES_SQL: LiteralString = """
 SELECT attribute.dimensional_attribute_id,
        attribute.workflow_run_id,
        attribute.dimensional_entity_id,
+       entity.dimensional_entity_schema_name,
        entity.dimensional_entity_name,
        attribute.dimensional_attribute_name,
        attribute.dimensional_attribute_data_type,
@@ -248,6 +234,7 @@ _DIMENSIONAL_ATTRIBUTE_DETAIL_SQL: LiteralString = """
 SELECT attribute.dimensional_attribute_id,
        attribute.workflow_run_id,
        attribute.dimensional_entity_id,
+       entity.dimensional_entity_schema_name,
        entity.dimensional_entity_name,
        attribute.dimensional_attribute_name,
        attribute.dimensional_attribute_definition,
@@ -290,14 +277,11 @@ SELECT source.dimensional_attribute_source_mapping_id,
        source.dimensional_attribute_source_mapping_is_locked AS is_locked,
        source.created_time AS created_at,
        source.updated_time AS updated_at,
-       source_object.object_id AS source_object_id,
-       source_attribute.attribute_id AS source_attribute_id,
-       source_placement_tenant.tenant_code AS source_tenant_code,
-       source_system.system_code AS source_system_code,
-       source_connection.connection_code AS source_connection_code,
-       source_object.object_schema AS source_object_schema,
-       source_object.object_name AS source_object_name,
-       source_attribute.attribute_name AS source_attribute_name,
+       logical_source.logical_entity_id AS source_logical_entity_id,
+       logical_source.logical_entity_schema_name AS source_logical_entity_schema_name,
+       logical_source.logical_entity_name AS source_logical_entity_name,
+       logical_attribute.logical_attribute_id AS source_logical_attribute_id,
+       logical_attribute.logical_attribute_name AS source_logical_attribute_name,
        assertion_record.modeling_assertion_record_id,
        assertion_record.modeling_assertion_record_key,
        assertion_document.modeling_assertion_document_name,
@@ -312,23 +296,13 @@ SELECT source.dimensional_attribute_source_mapping_id,
    AND attribute.model_id = source.model_id
   JOIN model.model AS target_model
     ON target_model.model_id = source.model_id
-  LEFT JOIN core.object AS source_object
-    ON source_object.object_id = source.source_object_id
-  LEFT JOIN core.attribute AS source_attribute
-    ON source_attribute.attribute_id = source.source_attribute_id
-   AND source_attribute.object_id = source.source_object_id
-  LEFT JOIN core.connection AS source_connection
-    ON source_connection.connection_id = source_object.connection_id
-  LEFT JOIN LATERAL workflow.list_model_attribute_eligibility(
-      source.model_id
-  ) AS source_eligibility
-    ON source_eligibility.object_id = source.source_object_id
-   AND source_eligibility.attribute_id = source.source_attribute_id
-   AND source_eligibility.is_dimensional_source_eligible
-  LEFT JOIN core.tenant AS source_placement_tenant
-    ON source_placement_tenant.tenant_id = source_connection.tenant_id
-  LEFT JOIN core.system AS source_system
-    ON source_system.system_id = source_connection.system_id
+  LEFT JOIN workflow.logical_entity AS logical_source
+    ON logical_source.logical_entity_id = source.source_logical_entity_id
+   AND logical_source.model_id = source.model_id
+  LEFT JOIN workflow.logical_attribute AS logical_attribute
+    ON logical_attribute.logical_attribute_id = source.source_logical_attribute_id
+   AND logical_attribute.logical_entity_id = source.source_logical_entity_id
+   AND logical_attribute.model_id = source.model_id
   LEFT JOIN model.modeling_assertion_record AS assertion_record
     ON assertion_record.modeling_assertion_record_id
        = source.modeling_assertion_record_id
@@ -341,10 +315,6 @@ SELECT source.dimensional_attribute_source_mapping_id,
    AND target_model.model_id = %s
    AND target_model.is_active
    AND source.dimensional_attribute_id = %s
-   AND (
-       source.support_source_type <> 'attribute'
-       OR source_eligibility.attribute_id IS NOT NULL
-   )
  ORDER BY source.dimensional_attribute_source_mapping_id
  LIMIT %s
 """
@@ -354,6 +324,7 @@ SELECT relationship.dimensional_relationship_id,
        relationship.workflow_run_id,
        relationship.dimensional_relationship_from_entity_id
            AS from_dimensional_entity_id,
+       from_entity.dimensional_entity_schema_name AS from_dimensional_entity_schema_name,
        from_entity.dimensional_entity_name AS from_dimensional_entity_name,
        relationship.dimensional_relationship_from_attribute_id
            AS from_dimensional_attribute_id,
@@ -361,6 +332,7 @@ SELECT relationship.dimensional_relationship_id,
            AS from_dimensional_attribute_name,
        relationship.dimensional_relationship_to_entity_id
            AS to_dimensional_entity_id,
+       to_entity.dimensional_entity_schema_name AS to_dimensional_entity_schema_name,
        to_entity.dimensional_entity_name AS to_dimensional_entity_name,
        relationship.dimensional_relationship_to_attribute_id
            AS to_dimensional_attribute_id,
@@ -428,6 +400,7 @@ SELECT relationship.dimensional_relationship_id,
        relationship.workflow_run_id,
        relationship.dimensional_relationship_from_entity_id
            AS from_dimensional_entity_id,
+       from_entity.dimensional_entity_schema_name AS from_dimensional_entity_schema_name,
        from_entity.dimensional_entity_name AS from_dimensional_entity_name,
        relationship.dimensional_relationship_from_attribute_id
            AS from_dimensional_attribute_id,
@@ -435,6 +408,7 @@ SELECT relationship.dimensional_relationship_id,
            AS from_dimensional_attribute_name,
        relationship.dimensional_relationship_to_entity_id
            AS to_dimensional_entity_id,
+       to_entity.dimensional_entity_schema_name AS to_dimensional_entity_schema_name,
        to_entity.dimensional_entity_name AS to_dimensional_entity_name,
        relationship.dimensional_relationship_to_attribute_id
            AS to_dimensional_attribute_id,
@@ -875,18 +849,15 @@ def _normalize_object_source(row: Mapping[str, object]) -> DimensionalObjectSour
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
-    if row["support_source_type"] == "object":
-        return DimensionalPhysicalObjectSource.model_validate(
+    if row["support_source_type"] == "logical_entity":
+        return DimensionalLogicalEntitySource.model_validate(
             {
                 **common,
-                "support_source_type": "object",
-                "source_object": {
-                    "object_id": row["source_object_id"],
-                    "tenant_code": row["source_tenant_code"],
-                    "system_code": row["source_system_code"],
-                    "connection_code": row["source_connection_code"],
-                    "object_schema": row["source_object_schema"],
-                    "object_name": row["source_object_name"],
+                "support_source_type": "logical_entity",
+                "source_logical_entity": {
+                    "logical_entity_id": row["source_logical_entity_id"],
+                    "logical_entity_schema_name": row["source_logical_entity_schema_name"],
+                    "logical_entity_name": row["source_logical_entity_name"],
                 },
             },
             strict=False,
@@ -922,21 +893,18 @@ def _normalize_attribute_source(row: Mapping[str, object]) -> DimensionalAttribu
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
-    if row["support_source_type"] == "attribute":
-        return DimensionalAttributePhysicalSource.model_validate(
+    if row["support_source_type"] == "logical_attribute":
+        return DimensionalAttributeLogicalSource.model_validate(
             {
                 **common,
                 "dimensional_entity_source_mapping_id": row["dimensional_entity_source_mapping_id"],
-                "support_source_type": "attribute",
-                "source_attribute": {
-                    "object_id": row["source_object_id"],
-                    "attribute_id": row["source_attribute_id"],
-                    "tenant_code": row["source_tenant_code"],
-                    "system_code": row["source_system_code"],
-                    "connection_code": row["source_connection_code"],
-                    "object_schema": row["source_object_schema"],
-                    "object_name": row["source_object_name"],
-                    "attribute_name": row["source_attribute_name"],
+                "support_source_type": "logical_attribute",
+                "source_logical_attribute": {
+                    "logical_entity_id": row["source_logical_entity_id"],
+                    "logical_entity_schema_name": row["source_logical_entity_schema_name"],
+                    "logical_entity_name": row["source_logical_entity_name"],
+                    "logical_attribute_id": row["source_logical_attribute_id"],
+                    "logical_attribute_name": row["source_logical_attribute_name"],
                 },
             },
             strict=False,

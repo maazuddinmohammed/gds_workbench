@@ -6,7 +6,7 @@ Owns the exact `analysis_result` fields. The finding-relationships reference own
 
 Natural key: all six `from_*` fields, all six `to_*` fields and `relationship_kind`. Preserve direction and exact registered names. Each endpoint identifies one real physical Attribute. Different Attributes on the same Object are allowed; identical normalized endpoints are not.
 
-All non-validation fields below are required. The nine validation fields are nullable/default-null but form one complete group when measured evidence is supplied.
+Agents explicitly supply all non-validation fields below. The backend defaults omitted `inferred_cardinality` to `unknown`; this compatibility default is not a substitute for assessing it during generation. The nine validation fields are nullable/default-null but form one complete group when measured evidence is supplied.
 
 | Field | Accepted value / meaning |
 |---|---|
@@ -23,6 +23,7 @@ All non-validation fields below are required. The nine validation fields are nul
 | `to_object_name` | Registered to Object name; nonblank string, 1–400 characters. |
 | `to_attribute_name` | Registered to Attribute name; nonblank string, 1–400 characters. |
 | `relationship_kind` | Nonblank text, 1–100 characters, identifying the kind of finding; not an enum or a cardinality field. Reuse an applicable established term. Default ordinary foreign-key/category lookups to `reference`; explain categorical/string semantics in the basis. This vocabulary is guidance, not a new enum. |
+| `inferred_cardinality` | `one_to_one`, `one_to_many`, `many_to_one`, `many_to_many` or `unknown`, read from the from endpoint to the to endpoint. Infer from metadata, grain and business rules; use `unknown` when those do not establish multiplicity. Independent of measured validation. |
 | `relationship_confidence` | `low`, `medium` or `high`; judgment confidence, not an execution result. |
 | `relationship_basis` | Nonblank explanation of business meaning, direction, evidence, material limits and conclusion. Distinguish declarations, agent inference and actual measurements. |
 | `validation_policy_version` | Null or version string matching `digits.digits.digits`, at most 50 characters. Current deterministic lookup policy is `1.0.0`; do not invent a measured-policy claim. |
@@ -39,7 +40,9 @@ All non-validation fields below are required. The nine validation fields are nul
 
 ## Evidence integrity
 
-Leave **all nine `validation_*` fields null** for inference or declarations without a complete applicable deterministic result. Put the relationship, inferred cardinality and basis in `relationship_basis`; a clear metadata-based conclusion may be supported and high-confidence without SQL. Do not set **validation_result** to supported without executed evidence. Preserve valid existing evidence only if it still applies to the unchanged endpoints, interpretation and measurement scope. The record shape is identical for inferred and measured findings.
+Leave **all nine `validation_*` fields null** for inference or declarations without a complete applicable deterministic result. Set `inferred_cardinality` explicitly and explain the relationship and cardinality in `relationship_basis`; a clear metadata-based conclusion may be supported and high-confidence without SQL. Do not set **validation_result** to supported without executed evidence. Preserve valid existing evidence only if it still applies to the unchanged endpoints, interpretation and measurement scope. The record shape is identical for inferred and measured findings.
+
+Observed cardinality is derived separately from nonempty measured endpoint counts. It describes uniqueness in that population, not the intended business rule. A known inference that differs from observed uniqueness produces a review warning; preserve both values and investigate scope, grain or sparse data. Validation never replaces `inferred_cardinality`.
 
 When adding executed evidence, supply all nine fields from one complete measurement under the recorded query scope. Let S/SD be source non-null/distinct counts; T/TD target non-null/distinct counts; M missing; U unused; D duplicate-target extras.
 
@@ -59,7 +62,7 @@ Null-key rows are excluded from these counts. The probe returns their separate c
 ## Scope and representational limits
 
 - Backend validation checks new/changed endpoints against effective active Model Input Scope. Atlas relationship analysis additionally requires **active applied Input Scope** before evidence work; pending scope additions do not satisfy that workflow prerequisite. Retained historical records are not permission to create new out-of-scope findings.
-- The record has no cardinality or optionality field. Record the supported interpretation in the basis/evidence; later Conceptual/Logical records own their explicit cardinality fields.
+- `inferred_cardinality` belongs to this physical Attribute pair. Later Conceptual/Logical relationships assess their own grains and cardinality; do not copy it blindly. Optionality has no dedicated Analysis field and stays in the basis/evidence.
 - The record has one Attribute per endpoint, with no composite arrays. Keep composite-key/dependency measurements together in task evidence; never claim their component pairs were independently proven.
 - Grain, normalization and new reference-domain candidates without two real endpoints belong in analysis notes. Do not invent a reference Object or dummy Attribute to fit this dataset.
 - No Model ID, source Tenant code/ID, database IDs, batch fields, query SQL/hashes, measured-at, validation digest or workflow-run fields are accepted. Server-owned digests/IDs are not authoring inputs.
@@ -67,7 +70,7 @@ Null-key rows are excluded from these counts. The probe returns their separate c
 
 ## Complete synthetic inferred example
 
-Illustrates `model-change-set/analysis_result.json` without SQL. Replace the synthetic endpoints with eligible registered keys and the explanation with actual context. All 26 fields are present; measurement fields are null.
+Illustrates `model-change-set/analysis_result.json` without SQL. Replace the synthetic endpoints with eligible registered keys and the explanation with actual context. All 27 fields are present; measurement fields are null.
 
 ```json
 [
@@ -85,6 +88,7 @@ Illustrates `model-change-set/analysis_result.json` without SQL. Replace the syn
     "to_object_name": "customer",
     "to_attribute_name": "customer_id",
     "relationship_kind": "reference",
+    "inferred_cardinality": "many_to_one",
     "relationship_confidence": "high",
     "relationship_basis": "Synthetic metadata inference: Orders represents customer orders and its customer_id identifies the Customer in the same CRM domain. Infer Orders to Customer as many-to-one from these roles. SQL was not run; mandatory participation is unspecified.",
     "validation_policy_version": null,

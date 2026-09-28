@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Literal
 
 from gds_etl_workbench.domain.errors import WorkbenchError
+from gds_etl_workbench.domain.modeling_records import ModelSchemaDefinition
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 type ModelStatus = Literal["active", "archived"]
@@ -49,6 +50,8 @@ class ModelDetail(BaseModel):
     model_description: str | None = Field(default=None, max_length=2000)
     model_revision: int = Field(gt=0)
     model_input_scope_object_count: int = Field(ge=0)
+    logical_schemas: tuple[ModelSchemaDefinition, ...] = ()
+    dimensional_schemas: tuple[ModelSchemaDefinition, ...] = ()
     silver_model_naming_instructions: str | None = None
     silver_model_audit_columns_template: JsonValue | None = None
     gold_model_naming_instructions: str | None = None

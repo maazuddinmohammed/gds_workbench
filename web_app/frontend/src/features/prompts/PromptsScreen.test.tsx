@@ -590,7 +590,7 @@ const modelDetail = {
   model_description: "Governed customer model",
   model_revision: 18,
   model_input_scope_object_count: 4,
-  silver_model_naming_instructions: null,
+  logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
   gold_model_technical_columns_template: null,

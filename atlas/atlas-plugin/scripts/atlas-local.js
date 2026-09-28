@@ -158,7 +158,9 @@ function loadSnapshotRoot(root, session, area, bindSession = true, selectedOwner
   if (catalog.snapshot_kind !== area || manifest.snapshot_kind !== area) {
     fail(`Snapshot kind must match ${area}.`);
   }
+  if (area === "model" && (manifest.schema_version !== "2.0" || catalog.schema_version !== "2.0")) fail("Model Snapshot schema version 2.0 is required.");
   if (!Array.isArray(catalog.sections)) fail("Snapshot catalog sections are invalid.");
+  if (area === "model" && !workbenchCore.isEntityOwnedModelCatalog(catalog)) fail("Legacy Model Snapshot contract; fetch a new Entity-owned Model Snapshot.");
 
   const datasets = [];
   const byName = new Map();
@@ -639,7 +641,7 @@ function sameAppliedRecord(local, server, schema, root = schema, recordType = ""
         if (!item || Array.isArray(item) || typeof item !== "object") return null;
         if (collection === "submodels") return typeof item.submodel_name === "string"
           ? stableStringify(["submodel", item.submodel_name]) : null;
-        const field = {object: "source_object", attribute: "source_attribute", assertion: "assertion_record"}[item.support_source_type];
+        const field = {object: "source_object", attribute: "source_attribute", logical_entity: "source_logical_entity", logical_attribute: "source_logical_attribute", assertion: "assertion_record"}[item.support_source_type];
         return field && item[field] && typeof item[field] === "object" && !Array.isArray(item[field])
           ? stableStringify([item.support_source_type, item[field]]) : null;
       };

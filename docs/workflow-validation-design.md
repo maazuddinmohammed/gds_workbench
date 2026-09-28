@@ -21,13 +21,18 @@ Use complete natural keys, including each Attribute's parent Object.
 2. The complete to-Attribute key and its parent Object exist in the initial authorized scope/index.
 3. No duplicate relationships: identity is from key + to key + relationship kind within the Model.
 4. Locked relationships cannot change.
-5. Values satisfy the actual Pydantic/database contract, including confidence values and distinct endpoints.
+5. Values satisfy the actual Pydantic/database contract, including confidence, inferred cardinality and distinct endpoints.
 
 Analysis confidence accepts `low`, `medium`, and `high`; the approved generation
 policy asks for high-confidence findings. `relationship_kind` is nonblank text,
-not an enum. Analysis has no cardinality field. Status and lock values come from
-the backend; the model cannot author them. `relationship_basis` is an existing
-required field. See the [field audit](workflow-prompts/field-provenance.json).
+not an enum. Generation explicitly supplies `inferred_cardinality` as
+`one_to_one`, `one_to_many`, `many_to_one`, `many_to_many` or `unknown`, with
+reasoning in `relationship_basis`. Stored records default omitted cardinality to
+`unknown`. Measured validation remains separate; observed cardinality is derived
+from nonempty endpoint counts. A known inference that differs from observed
+uniqueness raises a review warning and neither value is changed. Status and lock
+values come from the backend; the model cannot author them. See the
+[field audit](workflow-prompts/field-provenance.json).
 
 ## Conceptual — One-shot and Tool-assisted
 

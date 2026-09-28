@@ -1,392 +1,63 @@
-"""Natural-key downstream input schemas, projected from the existing DTOs."""
+"""Approved natural-key downstream inputs matching Entity-owned context projections."""
 
-from typing import Any, cast
+from typing import Any
 
-from .context_contracts import INPUT_SHAPES
+from .mapping_input_schemas import mapping_input_schemas
 
 CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
     "mapping": {
         "mapping_route": {
-            "description": "Frozen logical_to_silver or dimensional_to_gold "
-            "route; it fixes eligible source and target "
-            "layers.",
-            "value_schema": {
-                "enum": ["logical_to_silver", "dimensional_to_gold"],
-                "type": "string",
-            },
+            "description": "logical_to_silver or dimensional_to_gold. "
+            "Source and target layers are fixed by this "
+            "route; do not invent intermediate targets.",
+            "value_schema": mapping_input_schemas()["mapping_route"],
             "example": "logical_to_silver",
         },
         "operation": {
-            "description": "Frozen build, extend or generate operation. Per-record "
-            "readiness determines exactly which transformations "
-            "are actionable.",
-            "value_schema": {"enum": ["build", "extend", "generate"], "type": "string"},
+            "description": "build authors missing transformations; extend "
+            "preserves existing authored content while adding "
+            "actionable coverage. Read readiness for the exact "
+            "per-record action.",
+            "value_schema": mapping_input_schemas()["operation"],
             "example": "build",
         },
         "target_metadata": {
-            "description": "Actual target Object natural key, physical "
-            "catalog, description, layer, lifecycle/locks "
-            "and ordered registered Attributes with type, "
-            "inferred type, nullability and descriptions. No "
-            "internal IDs.",
-            "value_schema": {
-                "$defs": {
-                    "MappingPhysicalAttribute": {
-                        "additionalProperties": False,
-                        "properties": {
-                            "attribute_name": {
-                                "maxLength": 400,
-                                "minLength": 1,
-                                "title": "Attribute Name",
-                                "type": "string",
-                            },
-                            "attribute_data_type": {
-                                "maxLength": 100,
-                                "minLength": 1,
-                                "title": "Attribute Data Type",
-                                "type": "string",
-                            },
-                            "attribute_inferred_data_type": {
-                                "anyOf": [
-                                    {"maxLength": 100, "minLength": 1, "type": "string"},
-                                    {"type": "null"},
-                                ],
-                                "title": "Attribute Inferred Data Type",
-                            },
-                            "attribute_nullability": {
-                                "title": "Attribute Nullability",
-                                "type": "boolean",
-                            },
-                            "attribute_ordinal_position": {
-                                "exclusiveMinimum": 0,
-                                "title": "Attribute Ordinal Position",
-                                "type": "integer",
-                            },
-                            "attribute_description": {
-                                "anyOf": [{"type": "string"}, {"type": "null"}],
-                                "default": None,
-                                "title": "Attribute Description",
-                            },
-                            "is_active": {"title": "Is Active", "type": "boolean"},
-                        },
-                        "required": [
-                            "attribute_name",
-                            "attribute_data_type",
-                            "attribute_inferred_data_type",
-                            "attribute_nullability",
-                            "attribute_ordinal_position",
-                            "is_active",
-                        ],
-                        "title": "MappingPhysicalAttribute",
-                        "type": "object",
-                    }
-                },
-                "additionalProperties": False,
-                "properties": {
-                    "tenant_code": {
-                        "maxLength": 100,
-                        "minLength": 1,
-                        "title": "Tenant Code",
-                        "type": "string",
-                    },
-                    "tenant_catalog": {
-                        "maxLength": 255,
-                        "minLength": 1,
-                        "title": "Tenant Catalog",
-                        "type": "string",
-                    },
-                    "tenant_is_active": {"title": "Tenant Is Active", "type": "boolean"},
-                    "system_code": {
-                        "maxLength": 100,
-                        "minLength": 1,
-                        "title": "System Code",
-                        "type": "string",
-                    },
-                    "system_is_active": {"title": "System Is Active", "type": "boolean"},
-                    "connection_code": {
-                        "maxLength": 100,
-                        "minLength": 1,
-                        "title": "Connection Code",
-                        "type": "string",
-                    },
-                    "connection_is_active": {"title": "Connection Is Active", "type": "boolean"},
-                    "is_global_data_store": {"title": "Is Global Data Store", "type": "boolean"},
-                    "object_schema": {
-                        "maxLength": 400,
-                        "minLength": 1,
-                        "title": "Object Schema",
-                        "type": "string",
-                    },
-                    "object_name": {
-                        "maxLength": 400,
-                        "minLength": 1,
-                        "title": "Object Name",
-                        "type": "string",
-                    },
-                    "object_description": {
-                        "anyOf": [{"type": "string"}, {"type": "null"}],
-                        "default": None,
-                        "title": "Object Description",
-                    },
-                    "batch_attribute_name": {
-                        "anyOf": [{"maxLength": 400, "type": "string"}, {"type": "null"}],
-                        "default": None,
-                        "title": "Batch Attribute Name",
-                    },
-                    "zone_code": {
-                        "enum": ["source", "bronze", "silver", "gold"],
-                        "title": "Zone Code",
-                        "type": "string",
-                    },
-                    "scope_is_locked": {"title": "Scope Is Locked", "type": "boolean"},
-                    "scope_is_active": {"title": "Scope Is Active", "type": "boolean"},
-                    "is_locked": {"title": "Is Locked", "type": "boolean"},
-                    "is_active": {"title": "Is Active", "type": "boolean"},
-                    "attributes": {
-                        "items": {"$ref": "#/$defs/MappingPhysicalAttribute"},
-                        "title": "Attributes",
-                        "type": "array",
-                    },
-                },
-                "required": [
-                    "tenant_code",
-                    "tenant_catalog",
-                    "tenant_is_active",
-                    "system_code",
-                    "system_is_active",
-                    "connection_code",
-                    "connection_is_active",
-                    "is_global_data_store",
-                    "object_schema",
-                    "object_name",
-                    "zone_code",
-                    "scope_is_locked",
-                    "scope_is_active",
-                    "is_locked",
-                    "is_active",
-                    "attributes",
-                ],
-                "title": "MappingPhysicalObject",
-                "type": "object",
-            },
+            "description": "Selected modeled Entity, schema and "
+            "Attributes. Preserve the schema-qualified "
+            "Entity identity, Attribute names, types and "
+            "nullability.",
+            "value_schema": mapping_input_schemas()["target_metadata"],
             "example": {
                 "attributes": [
                     {
                         "attribute_data_type": "BIGINT",
-                        "attribute_description": None,
-                        "attribute_inferred_data_type": None,
+                        "attribute_definition": "Stable customer key.",
                         "attribute_name": "CustomerID",
-                        "attribute_nullability": False,
-                        "attribute_ordinal_position": 1,
-                        "is_active": True,
+                        "is_audit_column": False,
+                        "is_locked": False,
+                        "is_nullable": False,
+                        "ordinal_position": 1,
+                        "status": "active",
                     }
                 ],
-                "batch_attribute_name": None,
-                "connection_code": "lakehouse",
-                "connection_is_active": True,
-                "is_active": True,
-                "is_global_data_store": True,
+                "dependency_order": 0,
+                "entity_definition": "A customer.",
+                "entity_kind": "core",
+                "entity_name": "Customer",
+                "grain": "One row per customer.",
                 "is_locked": False,
-                "object_description": None,
-                "object_name": "Customer",
-                "object_schema": "silver_crm",
-                "scope_is_active": True,
-                "scope_is_locked": False,
-                "system_code": "GDS",
-                "system_is_active": True,
-                "tenant_catalog": "northwind",
-                "tenant_code": "NWA",
-                "tenant_is_active": True,
-                "zone_code": "silver",
+                "status": "active",
+                "entity_type": "logical_entity",
+                "entity_schema_name": "silver_crm",
             },
         },
         "source_evidence": {
-            "description": "All candidate inputs for this System and route, each with role, "
-            "rationale, mapping_order, lock and nested "
-            "actual physical Object/Attributes. Scoped to "
-            "this frozen target/Source System pair. A candidate role means "
-            "relevance is unproven; support links provide prior evidence. "
-            "Assess all candidates before reporting no applicable source.",
-            "value_schema": {
-                "$defs": {
-                    "MappingPhysicalAttribute": {
-                        "additionalProperties": False,
-                        "properties": {
-                            "attribute_name": {
-                                "maxLength": 400,
-                                "minLength": 1,
-                                "title": "Attribute Name",
-                                "type": "string",
-                            },
-                            "attribute_data_type": {
-                                "maxLength": 100,
-                                "minLength": 1,
-                                "title": "Attribute Data Type",
-                                "type": "string",
-                            },
-                            "attribute_inferred_data_type": {
-                                "anyOf": [
-                                    {"maxLength": 100, "minLength": 1, "type": "string"},
-                                    {"type": "null"},
-                                ],
-                                "title": "Attribute Inferred Data Type",
-                            },
-                            "attribute_nullability": {
-                                "title": "Attribute Nullability",
-                                "type": "boolean",
-                            },
-                            "attribute_ordinal_position": {
-                                "exclusiveMinimum": 0,
-                                "title": "Attribute Ordinal Position",
-                                "type": "integer",
-                            },
-                            "attribute_description": {
-                                "anyOf": [{"type": "string"}, {"type": "null"}],
-                                "default": None,
-                                "title": "Attribute Description",
-                            },
-                            "is_active": {"title": "Is Active", "type": "boolean"},
-                        },
-                        "required": [
-                            "attribute_name",
-                            "attribute_data_type",
-                            "attribute_inferred_data_type",
-                            "attribute_nullability",
-                            "attribute_ordinal_position",
-                            "is_active",
-                        ],
-                        "title": "MappingPhysicalAttribute",
-                        "type": "object",
-                    },
-                    "MappingPhysicalObject": {
-                        "additionalProperties": False,
-                        "properties": {
-                            "tenant_code": {
-                                "maxLength": 100,
-                                "minLength": 1,
-                                "title": "Tenant Code",
-                                "type": "string",
-                            },
-                            "tenant_catalog": {
-                                "maxLength": 255,
-                                "minLength": 1,
-                                "title": "Tenant Catalog",
-                                "type": "string",
-                            },
-                            "tenant_is_active": {"title": "Tenant Is Active", "type": "boolean"},
-                            "system_code": {
-                                "maxLength": 100,
-                                "minLength": 1,
-                                "title": "System Code",
-                                "type": "string",
-                            },
-                            "system_is_active": {"title": "System Is Active", "type": "boolean"},
-                            "connection_code": {
-                                "maxLength": 100,
-                                "minLength": 1,
-                                "title": "Connection Code",
-                                "type": "string",
-                            },
-                            "connection_is_active": {
-                                "title": "Connection Is Active",
-                                "type": "boolean",
-                            },
-                            "is_global_data_store": {
-                                "title": "Is Global Data Store",
-                                "type": "boolean",
-                            },
-                            "object_schema": {
-                                "maxLength": 400,
-                                "minLength": 1,
-                                "title": "Object Schema",
-                                "type": "string",
-                            },
-                            "object_name": {
-                                "maxLength": 400,
-                                "minLength": 1,
-                                "title": "Object Name",
-                                "type": "string",
-                            },
-                            "object_description": {
-                                "anyOf": [{"type": "string"}, {"type": "null"}],
-                                "default": None,
-                                "title": "Object Description",
-                            },
-                            "batch_attribute_name": {
-                                "anyOf": [{"maxLength": 400, "type": "string"}, {"type": "null"}],
-                                "default": None,
-                                "title": "Batch Attribute Name",
-                            },
-                            "zone_code": {
-                                "enum": ["source", "bronze", "silver", "gold"],
-                                "title": "Zone Code",
-                                "type": "string",
-                            },
-                            "scope_is_locked": {"title": "Scope Is Locked", "type": "boolean"},
-                            "scope_is_active": {"title": "Scope Is Active", "type": "boolean"},
-                            "is_locked": {"title": "Is Locked", "type": "boolean"},
-                            "is_active": {"title": "Is Active", "type": "boolean"},
-                            "attributes": {
-                                "items": {"$ref": "#/$defs/MappingPhysicalAttribute"},
-                                "title": "Attributes",
-                                "type": "array",
-                            },
-                        },
-                        "required": [
-                            "tenant_code",
-                            "tenant_catalog",
-                            "tenant_is_active",
-                            "system_code",
-                            "system_is_active",
-                            "connection_code",
-                            "connection_is_active",
-                            "is_global_data_store",
-                            "object_schema",
-                            "object_name",
-                            "zone_code",
-                            "scope_is_locked",
-                            "scope_is_active",
-                            "is_locked",
-                            "is_active",
-                            "attributes",
-                        ],
-                        "title": "MappingPhysicalObject",
-                        "type": "object",
-                    },
-                    "MappingSource": {
-                        "additionalProperties": False,
-                        "properties": {
-                            "role": {
-                                "maxLength": 2000,
-                                "minLength": 1,
-                                "title": "Role",
-                                "type": "string",
-                            },
-                            "rationale": {
-                                "maxLength": 2000,
-                                "minLength": 1,
-                                "title": "Rationale",
-                                "type": "string",
-                            },
-                            "mapping_order": {
-                                "anyOf": [
-                                    {"exclusiveMinimum": 0, "type": "integer"},
-                                    {"type": "null"},
-                                ],
-                                "default": None,
-                                "title": "Mapping Order",
-                            },
-                            "is_locked": {"title": "Is Locked", "type": "boolean"},
-                            "object": {"$ref": "#/$defs/MappingPhysicalObject"},
-                        },
-                        "required": ["role", "rationale", "is_locked", "object"],
-                        "title": "MappingSource",
-                        "type": "object",
-                    },
-                },
-                "items": {"$ref": "#/$defs/MappingSource"},
-                "type": "array",
-            },
+            "description": "Eligible physical sources for Logical Mapping "
+            "or Logical Entity/Attribute sources for "
+            "Dimensional Mapping, including descriptions, "
+            "roles and rationale. Use their complete "
+            "natural keys; IDs are not business joins.",
+            "value_schema": mapping_input_schemas()["source_evidence"],
             "example": [
                 {
                     "is_locked": False,
@@ -427,175 +98,12 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             ],
         },
         "existing_mapping": {
-            "description": "Single existing target binding/header with "
-            "modeled Entity/Attributes, natural "
-            "Attribute-name bindings, Object/Attribute "
-            "transformation documents, dependency order, "
-            "statuses and locks. Null document means "
-            "unauthored.",
-            "value_schema": {
-                "$defs": {
-                    "ExistingMappingAttribute": {
-                        "additionalProperties": False,
-                        "properties": {
-                            "transformation_document": {
-                                "anyOf": [{"$ref": "#/$defs/JsonObject"}, {"type": "null"}],
-                                "default": None,
-                            },
-                            "status": {"$ref": "#/$defs/LifecycleStatus", "default": "active"},
-                            "is_locked": {
-                                "default": False,
-                                "title": "Is Locked",
-                                "type": "boolean",
-                            },
-                            "modeled_attribute_name": {"type": "string", "minLength": 1},
-                            "target_attribute_name": {"type": "string", "minLength": 1},
-                        },
-                        "required": ["modeled_attribute_name", "target_attribute_name"],
-                        "title": "ExistingMappingAttribute",
-                        "type": "object",
-                    },
-                    "ExistingMappingHeader": {
-                        "additionalProperties": False,
-                        "properties": {
-                            "modeled_entity": {"$ref": "#/$defs/MappingModeledEntity"},
-                            "object_dependency_order": {
-                                "minimum": 0,
-                                "title": "Object Dependency Order",
-                                "type": "integer",
-                            },
-                            "transformation_document": {
-                                "anyOf": [{"$ref": "#/$defs/JsonObject"}, {"type": "null"}],
-                                "default": None,
-                            },
-                            "status": {"$ref": "#/$defs/LifecycleStatus", "default": "active"},
-                            "is_locked": {
-                                "default": False,
-                                "title": "Is Locked",
-                                "type": "boolean",
-                            },
-                            "attribute_mappings": {
-                                "items": {"$ref": "#/$defs/ExistingMappingAttribute"},
-                                "title": "Attribute Mappings",
-                                "type": "array",
-                            },
-                        },
-                        "required": [
-                            "modeled_entity",
-                            "object_dependency_order",
-                            "attribute_mappings",
-                        ],
-                        "title": "ExistingMappingHeader",
-                        "type": "object",
-                    },
-                    "JsonObject": {
-                        "additionalProperties": {"$ref": "#/$defs/JsonValue"},
-                        "type": "object",
-                    },
-                    "JsonValue": {},
-                    "LifecycleStatus": {
-                        "enum": ["active", "inactive", "deprecated"],
-                        "type": "string",
-                    },
-                    "MappingModeledAttribute": {
-                        "additionalProperties": False,
-                        "properties": {
-                            "attribute_name": {
-                                "maxLength": 255,
-                                "minLength": 1,
-                                "title": "Attribute Name",
-                                "type": "string",
-                            },
-                            "attribute_definition": {
-                                "minLength": 1,
-                                "title": "Attribute Definition",
-                                "type": "string",
-                            },
-                            "attribute_data_type": {
-                                "maxLength": 100,
-                                "minLength": 1,
-                                "title": "Attribute Data Type",
-                                "type": "string",
-                            },
-                            "is_nullable": {"title": "Is Nullable", "type": "boolean"},
-                            "ordinal_position": {
-                                "exclusiveMinimum": 0,
-                                "title": "Ordinal Position",
-                                "type": "integer",
-                            },
-                            "is_audit_column": {"title": "Is Audit Column", "type": "boolean"},
-                            "status": {"$ref": "#/$defs/LifecycleStatus"},
-                            "is_locked": {"title": "Is Locked", "type": "boolean"},
-                        },
-                        "required": [
-                            "attribute_name",
-                            "attribute_definition",
-                            "attribute_data_type",
-                            "is_nullable",
-                            "ordinal_position",
-                            "is_audit_column",
-                            "status",
-                            "is_locked",
-                        ],
-                        "title": "MappingModeledAttribute",
-                        "type": "object",
-                    },
-                    "MappingModeledEntity": {
-                        "additionalProperties": False,
-                        "properties": {
-                            "entity_name": {
-                                "maxLength": 255,
-                                "minLength": 1,
-                                "title": "Entity Name",
-                                "type": "string",
-                            },
-                            "entity_definition": {
-                                "minLength": 1,
-                                "title": "Entity Definition",
-                                "type": "string",
-                            },
-                            "entity_kind": {
-                                "maxLength": 50,
-                                "minLength": 1,
-                                "title": "Entity Kind",
-                                "type": "string",
-                            },
-                            "grain": {
-                                "anyOf": [{"type": "string"}, {"type": "null"}],
-                                "default": None,
-                                "title": "Grain",
-                            },
-                            "dependency_order": {
-                                "minimum": 0,
-                                "title": "Dependency Order",
-                                "type": "integer",
-                            },
-                            "status": {"$ref": "#/$defs/LifecycleStatus"},
-                            "is_locked": {"title": "Is Locked", "type": "boolean"},
-                            "attributes": {
-                                "items": {"$ref": "#/$defs/MappingModeledAttribute"},
-                                "title": "Attributes",
-                                "type": "array",
-                            },
-                        },
-                        "required": [
-                            "entity_name",
-                            "entity_definition",
-                            "entity_kind",
-                            "dependency_order",
-                            "status",
-                            "is_locked",
-                            "attributes",
-                        ],
-                        "title": "MappingModeledEntity",
-                        "type": "object",
-                    },
-                },
-                "items": {"$ref": "#/$defs/ExistingMappingHeader"},
-                "maxItems": 1,
-                "minItems": 1,
-                "type": "array",
-            },
+            "description": "Existing header, owning modeled "
+            "Entity/Attributes and their transformation "
+            "documents. Preserve locked/preserved "
+            "records. A null document is unauthored, not "
+            "an empty executable transformation.",
+            "value_schema": mapping_input_schemas()["existing_mapping"],
             "example": [
                 {
                     "attribute_mappings": [
@@ -604,7 +112,6 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "status": "active",
                             "transformation_document": None,
                             "modeled_attribute_name": "CustomerID",
-                            "target_attribute_name": "CustomerID",
                         }
                     ],
                     "is_locked": False,
@@ -628,6 +135,8 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                         "grain": "One row per customer.",
                         "is_locked": False,
                         "status": "active",
+                        "entity_type": "logical_entity",
+                        "entity_schema_name": "silver_crm",
                     },
                     "object_dependency_order": 0,
                     "status": "active",
@@ -636,43 +145,11 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             ],
         },
         "authoring_policy": {
-            "description": "Model name, effective naming instructions and "
-            "configured audit/technical column templates; "
-            "do not invent physical columns.",
-            "value_schema": {
-                "$defs": {
-                    "JsonObject": {
-                        "additionalProperties": {"$ref": "#/$defs/JsonValue"},
-                        "type": "object",
-                    },
-                    "JsonValue": {},
-                },
-                "additionalProperties": False,
-                "properties": {
-                    "model_name": {
-                        "maxLength": 255,
-                        "minLength": 1,
-                        "title": "Model Name",
-                        "type": "string",
-                    },
-                    "naming_instructions": {
-                        "anyOf": [{"type": "string"}, {"type": "null"}],
-                        "default": None,
-                        "title": "Naming Instructions",
-                    },
-                    "audit_columns_template": {
-                        "anyOf": [{"$ref": "#/$defs/JsonObject"}, {"type": "null"}],
-                        "default": None,
-                    },
-                    "technical_columns_template": {
-                        "anyOf": [{"$ref": "#/$defs/JsonObject"}, {"type": "null"}],
-                        "default": None,
-                    },
-                },
-                "required": ["model_name"],
-                "title": "MappingAuthoringPolicy",
-                "type": "object",
-            },
+            "description": "Model name, naming instructions and "
+            "audit/technical templates. Apply only "
+            "recorded policy to transformation content; "
+            "use existing modeled Attributes.",
+            "value_schema": mapping_input_schemas()["authoring_policy"],
             "example": {
                 "audit_columns_template": None,
                 "model_name": "Customer Model",
@@ -681,81 +158,11 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             },
         },
         "readiness": {
-            "description": "Backend-computed ready flag, operation, Object action "
-            "and Attribute actions keyed by "
-            "modeled_attribute_name; author/extend require output, "
-            "preserve requires omission, blocked prohibits "
-            "generation.",
-            "value_schema": {
-                "$defs": {
-                    "MappingAttributeReadiness": {
-                        "additionalProperties": False,
-                        "properties": {
-                            "action": {"$ref": "#/$defs/ReadinessAction"},
-                            "modeled_attribute_name": {"type": "string", "minLength": 1},
-                        },
-                        "required": ["action", "modeled_attribute_name"],
-                        "title": "MappingAttributeReadiness",
-                        "type": "object",
-                    },
-                    "MappingHeaderReadiness": {
-                        "additionalProperties": False,
-                        "properties": {
-                            "action": {"$ref": "#/$defs/ReadinessAction"},
-                            "attribute_actions": {
-                                "items": {"$ref": "#/$defs/MappingAttributeReadiness"},
-                                "title": "Attribute Actions",
-                                "type": "array",
-                            },
-                        },
-                        "required": ["action", "attribute_actions"],
-                        "title": "MappingHeaderReadiness",
-                        "type": "object",
-                    },
-                    "MappingOperation": {"enum": ["build", "extend", "generate"], "type": "string"},
-                    "MappingReadinessIssue": {
-                        "additionalProperties": False,
-                        "properties": {
-                            "code": {
-                                "pattern": "^[a-z][a-z0-9_.-]{0,99}$",
-                                "title": "Code",
-                                "type": "string",
-                            },
-                            "message": {
-                                "maxLength": 500,
-                                "minLength": 1,
-                                "title": "Message",
-                                "type": "string",
-                            },
-                        },
-                        "required": ["code", "message"],
-                        "title": "MappingReadinessIssue",
-                        "type": "object",
-                    },
-                    "ReadinessAction": {
-                        "enum": ["author", "extend", "preserve", "blocked"],
-                        "type": "string",
-                    },
-                },
-                "additionalProperties": False,
-                "properties": {
-                    "ready": {"title": "Ready", "type": "boolean"},
-                    "operation": {"$ref": "#/$defs/MappingOperation"},
-                    "headers": {
-                        "items": {"$ref": "#/$defs/MappingHeaderReadiness"},
-                        "title": "Headers",
-                        "type": "array",
-                    },
-                    "issues": {
-                        "items": {"$ref": "#/$defs/MappingReadinessIssue"},
-                        "title": "Issues",
-                        "type": "array",
-                    },
-                },
-                "required": ["ready", "operation", "headers", "issues"],
-                "title": "MappingReadiness",
-                "type": "object",
-            },
+            "description": "Backend-computed action for the Object and each "
+            "modeled Attribute. author/extend are actionable; "
+            "preserve means omit from authored output. blocked "
+            "is not permission to force a mapping.",
+            "value_schema": mapping_input_schemas()["readiness"],
             "example": {
                 "headers": [
                     {
@@ -771,36 +178,10 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             },
         },
         "source_system": {
-            "description": "Exact selected Source System code, name, "
-            "description and activity. The run supplies its "
-            "single Source Tenant; System code is scoped to "
-            "that Tenant.",
-            "value_schema": {
-                "additionalProperties": False,
-                "properties": {
-                    "system_code": {
-                        "maxLength": 100,
-                        "minLength": 1,
-                        "title": "System Code",
-                        "type": "string",
-                    },
-                    "system_name": {
-                        "maxLength": 200,
-                        "minLength": 1,
-                        "title": "System Name",
-                        "type": "string",
-                    },
-                    "system_description": {
-                        "anyOf": [{"type": "string"}, {"type": "null"}],
-                        "default": None,
-                        "title": "System Description",
-                    },
-                    "is_active": {"title": "Is Active", "type": "boolean"},
-                },
-                "required": ["system_code", "system_name", "is_active"],
-                "title": "MappingSourceSystem",
-                "type": "object",
-            },
+            "description": "Exact source System for this pair. Its "
+            "name/description supplies context, never a SQL "
+            "credential or connection string.",
+            "value_schema": mapping_input_schemas()["source_system"],
             "example": {
                 "is_active": True,
                 "system_code": "CRM",
@@ -809,138 +190,46 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             },
         },
         "object_output_template": {
-            "description": "Selected Object transformation template "
-            "by nominal code with description, typed "
-            "ordered fields, required flags and "
-            "examples; null means no selected "
-            "template. Guidance does not change the "
-            "fixed outer output schema.",
-            "value_schema": {
-                "$defs": {
-                    "JsonValue": {},
-                    "MappingOutputTemplateField": {
-                        "additionalProperties": False,
-                        "properties": {
-                            "name": {
-                                "pattern": "^[a-z][a-z0-9_]{0,99}$",
-                                "title": "Name",
-                                "type": "string",
-                            },
-                            "description": {
-                                "maxLength": 2000,
-                                "minLength": 1,
-                                "title": "Description",
-                                "type": "string",
-                            },
-                            "data_type": {
-                                "enum": [
-                                    "string",
-                                    "integer",
-                                    "number",
-                                    "boolean",
-                                    "object",
-                                    "array",
-                                ],
-                                "title": "Data Type",
-                                "type": "string",
-                            },
-                            "array_item_type": {
-                                "anyOf": [
-                                    {
-                                        "enum": [
-                                            "string",
-                                            "integer",
-                                            "number",
-                                            "boolean",
-                                            "object",
-                                        ],
-                                        "type": "string",
-                                    },
-                                    {"type": "null"},
-                                ],
-                                "title": "Array Item Type",
-                            },
-                            "example": {
-                                "anyOf": [{"$ref": "#/$defs/JsonValue"}, {"type": "null"}],
-                                "default": None,
-                            },
-                            "is_required": {"title": "Is Required", "type": "boolean"},
-                            "order": {
-                                "exclusiveMinimum": 0,
-                                "title": "Order",
-                                "type": "integer",
-                            },
-                        },
-                        "required": [
-                            "name",
-                            "description",
-                            "data_type",
-                            "array_item_type",
-                            "is_required",
-                            "order",
-                        ],
-                        "title": "MappingOutputTemplateField",
-                        "type": "object",
-                    },
-                },
-                "anyOf": [
-                    {
-                        "additionalProperties": False,
-                        "properties": {
-                            "code": {
-                                "pattern": "^[a-z][a-z0-9_.-]{0,99}$",
-                                "title": "Code",
-                                "type": "string",
-                            },
-                            "name": {
-                                "maxLength": 200,
-                                "minLength": 1,
-                                "title": "Name",
-                                "type": "string",
-                            },
-                            "description": {
-                                "anyOf": [{"maxLength": 2000, "type": "string"}, {"type": "null"}],
-                                "default": None,
-                                "title": "Description",
-                            },
-                            "target_type": {
-                                "enum": ["mapping_object", "mapping_attribute"],
-                                "title": "Target Type",
-                                "type": "string",
-                            },
-                            "is_active": {"title": "Is Active", "type": "boolean"},
-                            "fields": {
-                                "items": {"$ref": "#/$defs/MappingOutputTemplateField"},
-                                "maxItems": 500,
-                                "minItems": 1,
-                                "title": "Fields",
-                                "type": "array",
-                            },
-                        },
-                        "required": ["code", "name", "target_type", "is_active", "fields"],
-                        "title": "MappingOutputTemplate",
-                        "type": "object",
-                    },
-                    {"type": "null"},
-                ],
-            },
+            "description": "Selected Object transformation "
+            "template by nominal code with "
+            "description, typed ordered fields, "
+            "required flags and examples; null "
+            "means no selected template. Guidance "
+            "does not change the fixed outer output "
+            "schema.",
+            "value_schema": mapping_input_schemas()["object_output_template"],
             "example": {
                 "code": "mapping_object_default",
                 "name": "Default Object Mapping",
-                "description": (
-                    "Describe source Objects and ordered Object transformation steps; "
-                    "both values may be null."
-                ),
+                "description": "Describe physical inputs "
+                "or modeled input/lookup "
+                "sources and ordered Entity "
+                "transformation steps.",
                 "target_type": "mapping_object",
                 "is_active": True,
                 "fields": [
                     {
                         "name": "source_objects",
-                        "description": (
-                            "Nullable list of source Objects. Each entry has tenant_code, "
-                            "system_code, connection_code, object_schema, object_name, alias, "
-                            "in that order. The field is present and may be JSON null."
-                        ),
+                        "description": "Nullable list "
+                        "of source "
+                        "Objects. Each "
+                        "entry has "
+                        "tenant_code, "
+                        "system_code, "
+                        "connection_code, "
+                        "object_schema, "
+                        "object_name, "
+                        "alias, in that "
+                        "order. The "
+                        "field is "
+                        "present and "
+                        "may be JSON "
+                        "null. Use only "
+                        "for Logical "
+                        "Mapping; set "
+                        "null for "
+                        "Dimensional "
+                        "Mapping.",
                         "data_type": "array",
                         "array_item_type": "object",
                         "is_required": True,
@@ -957,17 +246,89 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                         ],
                     },
                     {
+                        "name": "source_logical_entities",
+                        "description": "Optional "
+                        "nullable "
+                        "Logical Entity "
+                        "sources for "
+                        "Dimensional "
+                        "input or "
+                        "Logical "
+                        "foreign-key "
+                        "lookups. Each "
+                        "entry has "
+                        "logical_entity_schema_name, "
+                        "logical_entity_name, "
+                        "alias. Use "
+                        "only frozen "
+                        "eligible "
+                        "source "
+                        "evidence.",
+                        "data_type": "array",
+                        "array_item_type": "object",
+                        "is_required": False,
+                        "order": 2,
+                        "example": [
+                            {
+                                "logical_entity_schema_name": "silver",
+                                "logical_entity_name": "Customer",
+                                "alias": "c",
+                            }
+                        ],
+                    },
+                    {
+                        "name": "source_dimensional_entities",
+                        "description": "Optional "
+                        "nullable "
+                        "Dimensional "
+                        "Entity lookup "
+                        "sources on the "
+                        "Dimensional "
+                        "route only. "
+                        "Each entry has "
+                        "dimensional_entity_schema_name, "
+                        "dimensional_entity_name, "
+                        "alias. Use "
+                        "only frozen "
+                        "eligible "
+                        "same-Model "
+                        "peer lookup "
+                        "evidence.",
+                        "data_type": "array",
+                        "array_item_type": "object",
+                        "is_required": False,
+                        "order": 3,
+                        "example": [
+                            {
+                                "dimensional_entity_schema_name": "gold",
+                                "dimensional_entity_name": "CustomerDimension",
+                                "alias": "customer_dim",
+                            }
+                        ],
+                    },
+                    {
                         "name": "steps",
-                        "description": (
-                            "Nullable ordered list of Object transformation instructions: "
-                            "Objects/tables to join, join types and column predicates, filters "
-                            "and any additional processing. The field is present and may be "
-                            "JSON null."
-                        ),
+                        "description": "Nullable "
+                        "ordered list "
+                        "of Object "
+                        "transformation "
+                        "instructions: "
+                        "Objects/tables "
+                        "to join, join "
+                        "types and "
+                        "column "
+                        "predicates, "
+                        "filters and "
+                        "any additional "
+                        "processing. "
+                        "The field is "
+                        "present and "
+                        "may be JSON "
+                        "null.",
                         "data_type": "array",
                         "array_item_type": "string",
                         "is_required": True,
-                        "order": 2,
+                        "order": 4,
                         "example": [
                             "Read customer rows from c.",
                             "Keep rows where c.is_active = true.",
@@ -982,132 +343,48 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "description, typed ordered fields, "
             "required flags and examples; null "
             "means no selected template.",
-            "value_schema": {
-                "$defs": {
-                    "JsonValue": {},
-                    "MappingOutputTemplateField": {
-                        "additionalProperties": False,
-                        "properties": {
-                            "name": {
-                                "pattern": "^[a-z][a-z0-9_]{0,99}$",
-                                "title": "Name",
-                                "type": "string",
-                            },
-                            "description": {
-                                "maxLength": 2000,
-                                "minLength": 1,
-                                "title": "Description",
-                                "type": "string",
-                            },
-                            "data_type": {
-                                "enum": [
-                                    "string",
-                                    "integer",
-                                    "number",
-                                    "boolean",
-                                    "object",
-                                    "array",
-                                ],
-                                "title": "Data Type",
-                                "type": "string",
-                            },
-                            "array_item_type": {
-                                "anyOf": [
-                                    {
-                                        "enum": [
-                                            "string",
-                                            "integer",
-                                            "number",
-                                            "boolean",
-                                            "object",
-                                        ],
-                                        "type": "string",
-                                    },
-                                    {"type": "null"},
-                                ],
-                                "title": "Array Item Type",
-                            },
-                            "example": {
-                                "anyOf": [{"$ref": "#/$defs/JsonValue"}, {"type": "null"}],
-                                "default": None,
-                            },
-                            "is_required": {"title": "Is Required", "type": "boolean"},
-                            "order": {
-                                "exclusiveMinimum": 0,
-                                "title": "Order",
-                                "type": "integer",
-                            },
-                        },
-                        "required": [
-                            "name",
-                            "description",
-                            "data_type",
-                            "array_item_type",
-                            "is_required",
-                            "order",
-                        ],
-                        "title": "MappingOutputTemplateField",
-                        "type": "object",
-                    },
-                },
-                "anyOf": [
-                    {
-                        "additionalProperties": False,
-                        "properties": {
-                            "code": {
-                                "pattern": "^[a-z][a-z0-9_.-]{0,99}$",
-                                "title": "Code",
-                                "type": "string",
-                            },
-                            "name": {
-                                "maxLength": 200,
-                                "minLength": 1,
-                                "title": "Name",
-                                "type": "string",
-                            },
-                            "description": {
-                                "anyOf": [{"maxLength": 2000, "type": "string"}, {"type": "null"}],
-                                "default": None,
-                                "title": "Description",
-                            },
-                            "target_type": {
-                                "enum": ["mapping_object", "mapping_attribute"],
-                                "title": "Target Type",
-                                "type": "string",
-                            },
-                            "is_active": {"title": "Is Active", "type": "boolean"},
-                            "fields": {
-                                "items": {"$ref": "#/$defs/MappingOutputTemplateField"},
-                                "maxItems": 500,
-                                "minItems": 1,
-                                "title": "Fields",
-                                "type": "array",
-                            },
-                        },
-                        "required": ["code", "name", "target_type", "is_active", "fields"],
-                        "title": "MappingOutputTemplate",
-                        "type": "object",
-                    },
-                    {"type": "null"},
-                ],
-            },
+            "value_schema": mapping_input_schemas()["attribute_output_template"],
             "example": {
                 "code": "mapping_attribute_default",
                 "name": "Default Attribute Mapping",
-                "description": (
-                    "Describe optional source Attributes and the target Attribute transformation."
-                ),
+                "description": "Describe physical "
+                "inputs or modeled "
+                "input/lookup sources "
+                "and the target "
+                "Attribute "
+                "transformation.",
                 "target_type": "mapping_attribute",
                 "is_active": True,
                 "fields": [
                     {
                         "name": "source_attributes",
-                        "description": (
-                            "Optional nullable list of source Attributes. Each entry has "
-                            "tenant_code, system_code, connection_code, object_schema, "
-                            "object_name, attribute_name, in that order. Omission or JSON null "
-                            "is permitted."
-                        ),
+                        "description": "Optional "
+                        "nullable "
+                        "list of "
+                        "source "
+                        "Attributes. "
+                        "Each entry "
+                        "has "
+                        "tenant_code, "
+                        "system_code, "
+                        "connection_code, "
+                        "object_schema, "
+                        "object_name, "
+                        "attribute_name, "
+                        "in that "
+                        "order. "
+                        "Omission or "
+                        "JSON null "
+                        "is "
+                        "permitted. "
+                        "Use only "
+                        "for Logical "
+                        "Mapping; "
+                        "leave null "
+                        "or absent "
+                        "for "
+                        "Dimensional "
+                        "Mapping.",
                         "data_type": "array",
                         "array_item_type": "object",
                         "is_required": False,
@@ -1124,51 +401,138 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                         ],
                     },
                     {
+                        "name": "source_logical_attributes",
+                        "description": "Optional "
+                        "nullable "
+                        "Logical "
+                        "Attribute "
+                        "sources for "
+                        "Dimensional "
+                        "input or "
+                        "Logical "
+                        "foreign-key "
+                        "lookups. "
+                        "Each entry "
+                        "has "
+                        "logical_entity_schema_name, "
+                        "logical_entity_name, "
+                        "logical_attribute_name. "
+                        "Use only "
+                        "frozen "
+                        "eligible "
+                        "source "
+                        "evidence.",
+                        "data_type": "array",
+                        "array_item_type": "object",
+                        "is_required": False,
+                        "order": 2,
+                        "example": [
+                            {
+                                "logical_entity_schema_name": "silver",
+                                "logical_entity_name": "Customer",
+                                "logical_attribute_name": "CustomerName",
+                            }
+                        ],
+                    },
+                    {
+                        "name": "source_dimensional_attributes",
+                        "description": "Optional "
+                        "nullable "
+                        "Dimensional "
+                        "Attribute "
+                        "lookup "
+                        "sources on "
+                        "the "
+                        "Dimensional "
+                        "route only. "
+                        "Each entry "
+                        "has "
+                        "dimensional_entity_schema_name, "
+                        "dimensional_entity_name, "
+                        "dimensional_attribute_name. "
+                        "Use only "
+                        "frozen "
+                        "eligible "
+                        "same-Model "
+                        "peer lookup "
+                        "evidence.",
+                        "data_type": "array",
+                        "array_item_type": "object",
+                        "is_required": False,
+                        "order": 3,
+                        "example": [
+                            {
+                                "dimensional_entity_schema_name": "gold",
+                                "dimensional_entity_name": "CustomerDimension",
+                                "dimensional_attribute_name": "CustomerKey",
+                            }
+                        ],
+                    },
+                    {
                         "name": "transformation",
-                        "description": (
-                            "Required SQL expression using available Object aliases, or precise"
-                            " implementable generation rule. Include any necessary cast, "
-                            "null/default, aggregation or self-join source-role behavior."
-                        ),
+                        "description": "Required "
+                        "SQL "
+                        "expression "
+                        "using "
+                        "available "
+                        "Object "
+                        "aliases, or "
+                        "precise "
+                        "implementable "
+                        "generation "
+                        "rule. "
+                        "Include any "
+                        "necessary "
+                        "cast, "
+                        "null/default, "
+                        "aggregation "
+                        "or "
+                        "self-join "
+                        "source-role "
+                        "behavior.",
                         "data_type": "string",
                         "array_item_type": None,
                         "is_required": True,
-                        "order": 2,
+                        "order": 4,
                         "example": "TRIM(c.customer_name)",
                     },
                 ],
             },
         },
         "mapping_support": {
-            "description": (
-                "Saved evidence scoped to this target and eligible sources: attribute_lineage "
-                "links modeled names to physical source Attributes or assertion keys, with "
-                "rationale and key roles; modeled_relationships describe conceptual join "
-                "intent, not physical join proof; source_relationships carry Analysis "
-                "confidence and measured validation when available; profiles are saved "
-                "aggregate counts, percentages and lengths, not live rows or guaranteed current "
-                "observations; assertions contain active Model/System context automatically "
-                "without requiring Entity links or matching legacy layer flags. Evaluate "
-                "relevance to this Entity; assertions are not proof of available sources. Keys "
-                "identify provenance; free-text type and statement distinguish intent from facts. "
-                "details may include notes, formula, grain, dimensions, date_basis, "
-                "exclusions, history "
-                "and acceptance_criteria when supplied. Missing details are unspecified. "
-                "Empty lists "
-                "mean no saved evidence, never permission to invent rules."
-            ),
+            "description": "Saved evidence scoped to this target and "
+            "eligible sources: attribute_lineage links "
+            "modeled names to physical source Attributes "
+            "or assertion keys, with rationale and key "
+            "roles; modeled_relationships describe "
+            "conceptual join intent, not physical join "
+            "proof; source_relationships carry Analysis "
+            "confidence and measured validation when "
+            "available; profiles are saved aggregate "
+            "counts, percentages and lengths, not live "
+            "rows or guaranteed current observations; "
+            "assertions contain active Model/System "
+            "context automatically without requiring "
+            "Entity links or matching legacy layer flags. "
+            "Evaluate relevance to this Entity; assertions "
+            "are not proof of available sources. Keys "
+            "identify provenance; free-text type and "
+            "statement distinguish intent from facts. "
+            "details may include notes, formula, grain, "
+            "dimensions, date_basis, exclusions, history "
+            "and acceptance_criteria when supplied. "
+            "Missing details are unspecified. Empty lists "
+            "mean no saved evidence, never permission to "
+            "invent rules.",
             "value_schema": {
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
-                    key: {"type": "array", "items": {"type": "object"}}
-                    for key in (
-                        "attribute_lineage",
-                        "modeled_relationships",
-                        "source_relationships",
-                        "profiles",
-                        "assertions",
-                    )
+                    "attribute_lineage": {"type": "array", "items": {"type": "object"}},
+                    "modeled_relationships": {"type": "array", "items": {"type": "object"}},
+                    "source_relationships": {"type": "array", "items": {"type": "object"}},
+                    "profiles": {"type": "array", "items": {"type": "object"}},
+                    "assertions": {"type": "array", "items": {"type": "object"}},
                 },
             },
             "example": {
@@ -1182,11 +546,9 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
     },
     "code_generation": {
         "target_metadata": {
-            "description": "Actual physical target natural key and "
-            "catalog plus ordered registered "
-            "Attributes, exact data "
-            "types/nullability, current descriptions "
-            "and locks.",
+            "description": "Owning Entity schema, name and "
+            "modeled columns with Tenant catalog "
+            "for generated SQL.",
             "value_schema": {
                 "$defs": {
                     "SqlPhysicalAttribute": {
@@ -1227,6 +589,23 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             },
                             "is_active": {"title": "Is Active", "type": "boolean"},
                             "is_locked": {"title": "Is Locked", "type": "boolean"},
+                            "fc_attribute_name": {"type": ["string", "null"]},
+                            "attribute_custom_code": {"type": ["string", "null"]},
+                            "population": {"enum": ["database", "framework", "mapping"]},
+                            "is_surrogate_key": {"type": "boolean"},
+                            "is_natural_key": {"type": "boolean"},
+                            "is_meta_data": {"type": "boolean"},
+                            "is_masking_required": {"type": "boolean"},
+                            "logical_attribute_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
+                            "dimensional_attribute_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
                         },
                         "required": [
                             "attribute_name",
@@ -1318,6 +697,17 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                         "title": "System Name",
                         "type": "string",
                     },
+                    "batch_attribute_name": {"type": ["string", "null"]},
+                    "audit_columns_template": {"type": ["object", "null"]},
+                    "technical_columns_template": {"type": ["object", "null"]},
+                    "modeled_entity_type": {"enum": ["logical_entity", "dimensional_entity"]},
+                    "modeled_entity_schema_name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 400,
+                    },
+                    "modeled_entity_name": {"type": "string", "minLength": 1, "maxLength": 400},
+                    "is_locked": {"type": "boolean"},
                 },
                 "required": [
                     "tenant_code",
@@ -1332,6 +722,9 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                     "source_tenant_name",
                     "tenant_name",
                     "system_name",
+                    "modeled_entity_type",
+                    "modeled_entity_schema_name",
+                    "modeled_entity_name",
                 ],
                 "title": "SqlTargetMetadata",
                 "type": "object",
@@ -1361,14 +754,17 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                         "is_locked": False,
                     }
                 ],
+                "modeled_entity_type": "logical_entity",
+                "modeled_entity_schema_name": "silver_crm",
+                "modeled_entity_name": "Customer",
             },
         },
         "source_metadata": {
-            "description": "Eligible physical source contributions "
-            "with source_system_code, role, "
-            "rationale, order, lock and nested "
-            "actual physical Object/Attributes. No "
-            "database IDs.",
+            "description": "Physical input coordinates and "
+            "schema-qualified modeled input or "
+            "peer lookup coordinates from the "
+            "Model Tenant GDS placement, with "
+            "contributing System.",
             "value_schema": {
                 "$defs": {
                     "SqlPhysicalAttribute": {
@@ -1409,6 +805,23 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             },
                             "is_active": {"title": "Is Active", "type": "boolean"},
                             "is_locked": {"title": "Is Locked", "type": "boolean"},
+                            "fc_attribute_name": {"type": ["string", "null"]},
+                            "attribute_custom_code": {"type": ["string", "null"]},
+                            "population": {"enum": ["database", "framework", "mapping"]},
+                            "is_surrogate_key": {"type": "boolean"},
+                            "is_natural_key": {"type": "boolean"},
+                            "is_meta_data": {"type": "boolean"},
+                            "is_masking_required": {"type": "boolean"},
+                            "logical_attribute_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
+                            "dimensional_attribute_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
                         },
                         "required": [
                             "attribute_name",
@@ -1507,6 +920,43 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "is_locked": {"title": "Is Locked", "type": "boolean"},
                             "scope_is_active": {"title": "Scope Is Active", "type": "boolean"},
                             "scope_is_locked": {"title": "Scope Is Locked", "type": "boolean"},
+                            "fc_object_schema": {"type": ["string", "null"]},
+                            "fc_object_name": {"type": ["string", "null"]},
+                            "foreign_catalog": {"type": ["string", "null"]},
+                            "batch_attribute_name": {"type": ["string", "null"]},
+                            "modeled_entity_type": {
+                                "enum": ["logical_entity", "dimensional_entity"]
+                            },
+                            "modeled_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
+                            "modeled_entity_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
+                            "logical_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
+                            "logical_entity_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
+                            "dimensional_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
+                            "dimensional_entity_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
                         },
                         "required": [
                             "tenant_code",
@@ -1567,10 +1017,10 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
         },
         "source_systems": {
             "description": "Frozen contributing Source System "
-            "codes/names in dependency_order. Codes "
-            "belong to the one Source Tenant of this "
-            "target; assign each exactly once across "
-            "transformation artifacts.",
+            "codes/names sorted by System code. Codes "
+            "belong to the one Source Tenant of "
+            "this target; assign each exactly once "
+            "across transformation artifacts.",
             "value_schema": {
                 "$defs": {
                     "SqlSourceSystem": {
@@ -1588,13 +1038,9 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 "title": "System Name",
                                 "type": "string",
                             },
-                            "dependency_order": {
-                                "minimum": 0,
-                                "title": "Dependency Order",
-                                "type": "integer",
-                            },
+                            "source_system_value": {"type": "integer", "minimum": 1},
                         },
-                        "required": ["system_code", "system_name", "dependency_order"],
+                        "required": ["system_code", "system_name"],
                         "title": "SqlSourceSystem",
                         "type": "object",
                     }
@@ -1602,7 +1048,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                 "items": {"$ref": "#/$defs/SqlSourceSystem"},
                 "type": "array",
             },
-            "example": [{"system_code": "CRM", "system_name": "CRM", "dependency_order": 10}],
+            "example": [{"system_code": "CRM", "system_name": "CRM"}],
         },
         "object_transformations": {
             "description": "Applied Object transformation "
@@ -1610,13 +1056,22 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "source_system_code, dependency "
             "order and exact modeled Entity "
             "identity, definition, "
-            "classification and grain. entity.assertions contains active Model/System assertions "
-            "without requiring Entity links: assess relevance; keys identify provenance, "
-            "text states context, "
-            "details may include notes, formula, grain, dimensions, date_basis, "
+            "classification and grain. "
+            "entity.assertions contains "
+            "active Model/System assertions "
+            "without requiring Entity "
+            "links: assess relevance; keys "
+            "identify provenance, text "
+            "states context, details may "
+            "include notes, formula, grain, "
+            "dimensions, date_basis, "
             "exclusions, history and "
-            "acceptance_criteria. Use these to interpret approved transformations and report "
-            "conflicts; never silently replace approved Mapping rules.",
+            "acceptance_criteria. Use these "
+            "to interpret approved "
+            "transformations and report "
+            "conflicts; never silently "
+            "replace approved Mapping "
+            "rules.",
             "value_schema": {
                 "$defs": {
                     "JsonValue": {},
@@ -1636,15 +1091,55 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             },
                             "assertions": {
                                 "type": "array",
-                                "items": INPUT_SHAPES["modeling_assertions"]["schema"]["$defs"][
-                                    "modeling_assertions_entry"
-                                ],
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "modeling_assertion_record_key": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                        },
+                                        "modeling_assertion_document_name": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                        },
+                                        "modeling_assertion_record_type": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                        },
+                                        "modeling_assertion_text": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                        },
+                                        "modeling_assertion_details": {"type": "object"},
+                                        "modeling_assertion_source_location": {
+                                            "type": ["object", "null"]
+                                        },
+                                        "modeling_assertion_confidence": {
+                                            "enum": ["low", "medium", "high", None]
+                                        },
+                                    },
+                                    "required": [
+                                        "modeling_assertion_record_key",
+                                        "modeling_assertion_document_name",
+                                        "modeling_assertion_record_type",
+                                        "modeling_assertion_text",
+                                        "modeling_assertion_details",
+                                        "modeling_assertion_source_location",
+                                        "modeling_assertion_confidence",
+                                    ],
+                                    "additionalProperties": False,
+                                },
                             },
                             "definition": {"title": "Definition", "type": "string"},
                             "classification": {"title": "Classification", "type": "string"},
                             "grain": {
                                 "anyOf": [{"type": "string"}, {"type": "null"}],
                                 "title": "Grain",
+                            },
+                            "entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
                             },
                         },
                         "required": [
@@ -1653,6 +1148,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "definition",
                             "classification",
                             "grain",
+                            "entity_schema_name",
                         ],
                         "title": "SqlMappedEntity",
                         "type": "object",
@@ -1695,6 +1191,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                         "definition": "Customer identity.",
                         "classification": "entity",
                         "grain": None,
+                        "entity_schema_name": "silver",
                     },
                     "transformation": {
                         "steps": [{"name": "customers", "source": "customer_source"}]
@@ -1705,14 +1202,15 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
         },
         "attribute_transformations": {
             "description": "Applied Attribute "
-            "transformation documents with "
-            "source_system_code, modeled "
-            "Entity type/name, physical "
+            "transformation documents "
+            "with source_system_code, "
+            "modeled Entity type/name, "
+            "physical "
             "target_attribute_name and "
             "target ordinal. Identity "
-            "links are resolved from real "
-            "bindings; no guessed name "
-            "matching.",
+            "links are resolved from "
+            "modeled Entity identities; "
+            "no guessed name matching.",
             "value_schema": {
                 "$defs": {
                     "JsonValue": {},
@@ -1741,6 +1239,12 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 "enum": ["logical_entity", "dimensional_entity"]
                             },
                             "modeled_entity_name": {"type": "string", "minLength": 1},
+                            "modeled_attribute_name": {"type": ["string", "null"]},
+                            "modeled_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
                         },
                         "required": [
                             "target_attribute_name",
@@ -1749,6 +1253,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "source_system_code",
                             "modeled_entity_type",
                             "modeled_entity_name",
+                            "modeled_entity_schema_name",
                         ],
                         "title": "SqlAttributeTransformation",
                         "type": "object",
@@ -1765,6 +1270,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                     "source_system_code": "CRM",
                     "modeled_entity_type": "logical_entity",
                     "modeled_entity_name": "Customer",
+                    "modeled_entity_schema_name": "silver",
                 }
             ],
         },
@@ -1783,8 +1289,8 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "and generation conventions.",
             "value_schema": {"type": "string", "minLength": 1},
             "example": "Generate Databricks SQL using exact "
-            "applied transformations and qualified "
-            "physical names.",
+            "applied transformations and "
+            "qualified physical names.",
         },
     },
     "validation": {
@@ -1812,11 +1318,12 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "example": {"tenant_code": "NWA", "system_code": "CRM"},
         },
         "mapping_evidence": {
-            "description": "Relevant applied modeled target identities "
-            "with natural-key Code-style target/source "
-            "metadata and exact applied Object/Attribute "
-            "transformations. Context is design "
-            "evidence, not measured outcomes.",
+            "description": "Relevant applied modeled target "
+            "identities with natural-key Code-style "
+            "target/source metadata and exact applied "
+            "Object/Attribute transformations. Context "
+            "is design evidence, not measured "
+            "outcomes.",
             "value_schema": {
                 "type": "array",
                 "items": {
@@ -1878,7 +1385,9 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                         },
                                         "attributes": {
                                             "items": {
-                                                "$ref": "#/$defs/target_metadata_SqlPhysicalAttribute"  # noqa: E501
+                                                "$ref": (
+                                                    "#/$defs/target_metadata_SqlPhysicalAttribute"
+                                                )
                                             },
                                             "title": "Attributes",
                                             "type": "array",
@@ -1907,6 +1416,23 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                             "title": "System Name",
                                             "type": "string",
                                         },
+                                        "batch_attribute_name": {"type": ["string", "null"]},
+                                        "audit_columns_template": {"type": ["object", "null"]},
+                                        "technical_columns_template": {"type": ["object", "null"]},
+                                        "modeled_entity_type": {
+                                            "enum": ["logical_entity", "dimensional_entity"]
+                                        },
+                                        "modeled_entity_schema_name": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 400,
+                                        },
+                                        "modeled_entity_name": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 400,
+                                        },
+                                        "is_locked": {"type": "boolean"},
                                     },
                                     "required": [
                                         "tenant_code",
@@ -1921,6 +1447,9 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                         "source_tenant_name",
                                         "tenant_name",
                                         "system_name",
+                                        "modeled_entity_type",
+                                        "modeled_entity_schema_name",
+                                        "modeled_entity_name",
                                     ],
                                     "title": "SqlTargetMetadata",
                                     "type": "object",
@@ -1935,13 +1464,18 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 },
                                 "object_transformations": {
                                     "items": {
-                                        "$ref": "#/$defs/object_transformations_SqlObjectTransformation"  # noqa: E501
+                                        "$ref": (
+                                            "#/$defs/object_transformations_SqlObjectTransformation"
+                                        )
                                     },
                                     "type": "array",
                                 },
                                 "attribute_transformations": {
                                     "items": {
-                                        "$ref": "#/$defs/attribute_transformations_SqlAttributeTransformation"  # noqa: E501
+                                        "$ref": (
+                                            "#/$defs/"
+                                            "attribute_transformations_SqlAttributeTransformation"
+                                        )
                                     },
                                     "type": "array",
                                 },
@@ -1955,8 +1489,18 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             ],
                             "additionalProperties": False,
                         },
+                        "modeled_entity_schema_name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 400,
+                        },
                     },
-                    "required": ["modeled_entity_type", "modeled_entity_name", "context"],
+                    "required": [
+                        "modeled_entity_type",
+                        "modeled_entity_name",
+                        "context",
+                        "modeled_entity_schema_name",
+                    ],
                     "additionalProperties": False,
                 },
                 "$defs": {
@@ -1998,6 +1542,23 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             },
                             "is_active": {"title": "Is Active", "type": "boolean"},
                             "is_locked": {"title": "Is Locked", "type": "boolean"},
+                            "fc_attribute_name": {"type": ["string", "null"]},
+                            "attribute_custom_code": {"type": ["string", "null"]},
+                            "population": {"enum": ["database", "framework", "mapping"]},
+                            "is_surrogate_key": {"type": "boolean"},
+                            "is_natural_key": {"type": "boolean"},
+                            "is_meta_data": {"type": "boolean"},
+                            "is_masking_required": {"type": "boolean"},
+                            "logical_attribute_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
+                            "dimensional_attribute_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
                         },
                         "required": [
                             "attribute_name",
@@ -2049,6 +1610,23 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             },
                             "is_active": {"title": "Is Active", "type": "boolean"},
                             "is_locked": {"title": "Is Locked", "type": "boolean"},
+                            "fc_attribute_name": {"type": ["string", "null"]},
+                            "attribute_custom_code": {"type": ["string", "null"]},
+                            "population": {"enum": ["database", "framework", "mapping"]},
+                            "is_surrogate_key": {"type": "boolean"},
+                            "is_natural_key": {"type": "boolean"},
+                            "is_meta_data": {"type": "boolean"},
+                            "is_masking_required": {"type": "boolean"},
+                            "logical_attribute_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
+                            "dimensional_attribute_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
                         },
                         "required": [
                             "attribute_name",
@@ -2147,6 +1725,43 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "is_locked": {"title": "Is Locked", "type": "boolean"},
                             "scope_is_active": {"title": "Scope Is Active", "type": "boolean"},
                             "scope_is_locked": {"title": "Scope Is Locked", "type": "boolean"},
+                            "fc_object_schema": {"type": ["string", "null"]},
+                            "fc_object_name": {"type": ["string", "null"]},
+                            "foreign_catalog": {"type": ["string", "null"]},
+                            "batch_attribute_name": {"type": ["string", "null"]},
+                            "modeled_entity_type": {
+                                "enum": ["logical_entity", "dimensional_entity"]
+                            },
+                            "modeled_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
+                            "modeled_entity_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
+                            "logical_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
+                            "logical_entity_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
+                            "dimensional_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
+                            "dimensional_entity_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
                         },
                         "required": [
                             "tenant_code",
@@ -2180,13 +1795,9 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 "title": "System Name",
                                 "type": "string",
                             },
-                            "dependency_order": {
-                                "minimum": 0,
-                                "title": "Dependency Order",
-                                "type": "integer",
-                            },
+                            "source_system_value": {"type": "integer", "minimum": 1},
                         },
-                        "required": ["system_code", "system_name", "dependency_order"],
+                        "required": ["system_code", "system_name"],
                         "title": "SqlSourceSystem",
                         "type": "object",
                     },
@@ -2207,15 +1818,55 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             },
                             "assertions": {
                                 "type": "array",
-                                "items": INPUT_SHAPES["modeling_assertions"]["schema"]["$defs"][
-                                    "modeling_assertions_entry"
-                                ],
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "modeling_assertion_record_key": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                        },
+                                        "modeling_assertion_document_name": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                        },
+                                        "modeling_assertion_record_type": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                        },
+                                        "modeling_assertion_text": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                        },
+                                        "modeling_assertion_details": {"type": "object"},
+                                        "modeling_assertion_source_location": {
+                                            "type": ["object", "null"]
+                                        },
+                                        "modeling_assertion_confidence": {
+                                            "enum": ["low", "medium", "high", None]
+                                        },
+                                    },
+                                    "required": [
+                                        "modeling_assertion_record_key",
+                                        "modeling_assertion_document_name",
+                                        "modeling_assertion_record_type",
+                                        "modeling_assertion_text",
+                                        "modeling_assertion_details",
+                                        "modeling_assertion_source_location",
+                                        "modeling_assertion_confidence",
+                                    ],
+                                    "additionalProperties": False,
+                                },
                             },
                             "definition": {"title": "Definition", "type": "string"},
                             "classification": {"title": "Classification", "type": "string"},
                             "grain": {
                                 "anyOf": [{"type": "string"}, {"type": "null"}],
                                 "title": "Grain",
+                            },
+                            "entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
                             },
                         },
                         "required": [
@@ -2224,6 +1875,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "definition",
                             "classification",
                             "grain",
+                            "entity_schema_name",
                         ],
                         "title": "SqlMappedEntity",
                         "type": "object",
@@ -2283,6 +1935,12 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 "enum": ["logical_entity", "dimensional_entity"]
                             },
                             "modeled_entity_name": {"type": "string", "minLength": 1},
+                            "modeled_attribute_name": {"type": ["string", "null"]},
+                            "modeled_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
                         },
                         "required": [
                             "target_attribute_name",
@@ -2291,6 +1949,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "source_system_code",
                             "modeled_entity_type",
                             "modeled_entity_name",
+                            "modeled_entity_schema_name",
                         ],
                         "title": "SqlAttributeTransformation",
                         "type": "object",
@@ -2327,6 +1986,9 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                     "is_locked": False,
                                 }
                             ],
+                            "modeled_entity_type": "logical_entity",
+                            "modeled_entity_schema_name": "silver_crm",
+                            "modeled_entity_name": "Customer",
                         },
                         "source_metadata": [
                             {
@@ -2363,9 +2025,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 "source_system_code": "CRM",
                             }
                         ],
-                        "source_systems": [
-                            {"system_code": "CRM", "system_name": "CRM", "dependency_order": 10}
-                        ],
+                        "source_systems": [{"system_code": "CRM", "system_name": "CRM"}],
                         "object_transformations": [
                             {
                                 "object_dependency_order": 10,
@@ -2375,6 +2035,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                     "definition": "Customer identity.",
                                     "classification": "entity",
                                     "grain": None,
+                                    "entity_schema_name": "silver",
                                 },
                                 "transformation": {
                                     "steps": [{"name": "customers", "source": "customer_source"}]
@@ -2390,17 +2051,19 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 "source_system_code": "CRM",
                                 "modeled_entity_type": "logical_entity",
                                 "modeled_entity_name": "Customer",
+                                "modeled_entity_schema_name": "silver",
                             }
                         ],
                     },
+                    "modeled_entity_schema_name": "silver",
                 }
             ],
         },
         "current_code": {
             "description": "Current saved Code artifacts and contributing "
             "Source System codes, with lifecycle/locks and "
-            "generated content. Empty means unavailable; no "
-            "execution success is implied.",
+            "generated content. Empty means unavailable; "
+            "no execution success is implied.",
             "value_schema": {
                 "$defs": {
                     "ValidationGeneratedCodeArtifact": {
@@ -2451,6 +2114,11 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 "title": "Source System Codes",
                                 "type": "array",
                             },
+                            "modeled_entity_schema_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400,
+                            },
                         },
                         "required": [
                             "modeled_entity_type",
@@ -2461,6 +2129,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "generated_code_status",
                             "generated_code_is_locked",
                             "source_system_codes",
+                            "modeled_entity_schema_name",
                         ],
                         "title": "ValidationGeneratedCodeArtifact",
                         "type": "object",
@@ -2479,12 +2148,13 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                     "generated_code_status": "active",
                     "generated_code_is_locked": False,
                     "source_system_codes": ["CRM"],
+                    "modeled_entity_schema_name": "silver",
                 }
             ],
         },
         "applied_groups": {
-            "description": "Existing Validation Group records, including "
-            "lifecycle, locks and exact "
+            "description": "Existing Validation Group records, "
+            "including lifecycle, locks and exact "
             "Tenant/System/Group natural identities.",
             "value_schema": {
                 "$defs": {
@@ -2551,9 +2221,10 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
         "applied_checks": {
             "description": "Existing Validation Check records, exact "
             "typed operator/operand definitions and SQL, "
-            "lifecycle/locks and Tenant/System/Group/Check "
-            "natural identities. These are definitions, "
-            "not execution results.",
+            "lifecycle/locks and "
+            "Tenant/System/Group/Check natural "
+            "identities. These are definitions, not "
+            "execution results.",
             "value_schema": {
                 "$defs": {
                     "ValidationCheckRecord": {
@@ -2739,64 +2410,3 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
         },
     },
 }
-
-
-# The applied consumer view includes registered execution coordinates and flags.
-# Keep the two workflows' repeated JSON-schema definitions in sync here.
-def _extend_sql_context_schema(schema: Any) -> None:
-    if isinstance(schema, list):
-        for child in cast(list[Any], schema):
-            _extend_sql_context_schema(child)
-    elif isinstance(schema, dict):
-        schema = cast(dict[str, Any], schema)
-        properties = schema.get("properties")
-        title = schema.get("title")
-        if isinstance(properties, dict):
-            properties = cast(dict[str, Any], properties)
-            nullable_text = {"type": ["string", "null"]}
-            if title == "SqlPhysicalAttribute":
-                properties.update(
-                    {
-                        "fc_attribute_name": nullable_text,
-                        "attribute_custom_code": nullable_text,
-                        "population": {"enum": ["database", "framework", "mapping"]},
-                        **{
-                            name: {"type": "boolean"}
-                            for name in (
-                                "is_surrogate_key",
-                                "is_natural_key",
-                                "is_meta_data",
-                                "is_masking_required",
-                            )
-                        },
-                    }
-                )
-            elif title == "SqlTargetMetadata":
-                properties.update(
-                    {
-                        "batch_attribute_name": nullable_text,
-                        "audit_columns_template": {"type": ["object", "null"]},
-                        "technical_columns_template": {"type": ["object", "null"]},
-                    }
-                )
-            elif title == "SqlSourceObject":
-                properties.update(
-                    {
-                        name: nullable_text
-                        for name in (
-                            "fc_object_schema",
-                            "fc_object_name",
-                            "foreign_catalog",
-                            "batch_attribute_name",
-                        )
-                    }
-                )
-            elif title == "SqlSourceSystem":
-                properties["source_system_value"] = {"type": "integer", "minimum": 1}
-            elif title == "SqlAttributeTransformation":
-                properties["modeled_attribute_name"] = {"type": ["string", "null"]}
-        for child in tuple(schema.values()):
-            _extend_sql_context_schema(child)
-
-
-_extend_sql_context_schema(CONTRACTS)

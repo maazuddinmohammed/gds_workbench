@@ -234,18 +234,6 @@ async def test_mapping_local_fake_completes_each_mode(
         execution_mode=mode, attribute_count=4, modeled_entity_type=layer,
     )
     assert preparation.snapshot is not None
-    preparation = preparation.model_copy(
-        update={
-            "context": preparation.context.model_copy(update={"dependency": None}),
-            "snapshot": preparation.snapshot.model_copy(
-                update={
-                    "mapping": preparation.snapshot.mapping.model_copy(
-                        update={"dependencies": ()}
-                    ),
-                }
-            ),
-        }
-    )
     service, handoff, no_op, fail = _executor(preparation, agent)
 
     from gds_etl_workbench.application.change_sets.model_validation import (
@@ -324,8 +312,8 @@ async def test_mapping_large_descriptions_reach_the_agent_unchanged(
     raw = preparation.context.model_dump(mode="json")
     long_description = "Synthetic descriptive metadata. " * 100
     raw["source_system"]["system_description"] = long_description
-    raw["target"]["object_description"] = long_description
-    raw["target"]["attributes"][0]["attribute_description"] = long_description
+    raw["target"]["entity_definition"] = long_description
+    raw["target"]["attributes"][0]["attribute_definition"] = long_description
     raw["sources"][0]["object"]["object_description"] = long_description
     attribute_description = "x" * 1_100_000
     raw["sources"][0]["object"]["attributes"][0]["attribute_description"] = attribute_description

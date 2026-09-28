@@ -4,11 +4,12 @@ Shared by Mapping authoring, Code Generation and Validation. This page owns the 
 
 ## Exact existing template
 
-Reuse `mapping_object_default` and `mapping_attribute_default` without adding inner fields. Set outer `output_template_code` to the corresponding code only when its installed active definition and target type are established; otherwise use null with this agreed shape. Existing Snapshot codes are not proof that a template is installed. Do not seed a database or create a Workflow Run to select a template.
+Reuse `mapping_object_default` and `mapping_attribute_default` using the source fields for the selected layer. Set outer `output_template_code` to the corresponding code only when its installed active definition and target type are established; otherwise use null with this agreed shape. Existing Snapshot codes are not proof that a template is installed. Do not seed a database or create a Workflow Run to select a template.
 
 | Object document field | Shape and meaning |
 |---|---|
 | `source_objects` | Required, nullable array. Each item contains `tenant_code`, `system_code`, `connection_code`, `object_schema`, `object_name`, `alias`, in that order. List actual query inputs with full physical identities. Aliases are unique; a real self-join may repeat an Object with different aliases. |
+| `source_logical_entities` | Dimensional alternative to `source_objects`: nullable array of `logical_entity_schema_name`, `logical_entity_name`, `alias`. References applied Logical design. |
 | `steps` | Required, nullable ordered array of strings. Concrete query-building steps; each substantial stage identifies its inputs, result and grain. |
 
 | Attribute document field | Shape and meaning |
@@ -18,6 +19,8 @@ Reuse `mapping_object_default` and `mapping_attribute_default` without adding in
 
 These are inner documents stored in `mapping_transformation_document` and `attribute_mapping_transformation_document`. They are not complete Change Set records. Preserve permitted nullability: null sources can describe a constant/generated value; null steps must not hide missing transformation logic. All required behavior must be understood before an active branch is ready. Preserve real custom template selections rather than silently converting existing documents.
 
+For Dimensional Attribute documents, use `source_logical_attributes` instead of `source_attributes`; each item has `logical_entity_schema_name`, `logical_entity_name`, `logical_attribute_name`. Preserve `transformation`. Logical documents keep physical sources.
+
 ## Object-level steps
 
 Use an ordered list, normally one or two sentences per step. Split distinct operations; expand only when a precise rule needs more detail. Do not paste a complete SQL query, repeat every Attribute expression or impose unnecessary stages.
@@ -26,13 +29,13 @@ Use an ordered list, normally one or two sentences per step. Split distinct oper
 2. **Joins/lookups:** give each input, join type, full key predicates and expected row effect. State missing/multiple-match behavior; preserve an optional join by putting the filter in its intended ON/input/WHERE location.
 3. **Filters and grain changes:** put each predicate at the required stage. State grouping, aggregation or deduplication only when applicable, including full keys, deterministic tie handling and resulting grain. Do not invent row winners.
 4. **Output:** name the target, approved output grain/business-key tuple and exact SQL-populated physical columns in order. Apply the Attribute rules; finish with `SourceSystemID`. Account for omitted database/framework fields through their Attribute rules.
-5. **System interaction/dependencies:** state disjoint identities or the complete reconciliation/precedence rule, predecessor targets and any existing-value lookup. Reference the actual structured dependency order; prose cannot replace `mapping_dependency` or `object_dependency_order`.
+5. **System interaction/dependencies:** state disjoint identities or the complete reconciliation/precedence rule, predecessor targets and any existing-value lookup. Keep `object_dependency_order` consistent with actual target dependencies. System list order does not establish business precedence or scheduling; the runtime schedule belongs to Process Groups and Processes.
 
 Only use applicable operations; a simple direct branch can combine these into a few steps. An intermediate result must carry the columns later joins/expressions need. No transformation may depend on a temporary view created by another file/session.
 
 ## Attribute-level instructions
 
-For each active bound target Attribute and contributing System, state its actual source columns and implementable value rule. Use Object aliases in expressions; describe self-join roles in text because Attribute lineage has no alias field.
+For each active modeled Attribute and contributing System, state its actual source columns and implementable value rule. Use Object aliases in expressions; describe self-join roles in text because Attribute lineage has no alias field.
 
 - **Direct/derived:** expression and target-compatible type; preserve evidenced identifier formatting, precision, timezone, nullability and invalid-value rules. Storage STRING does not make every value semantically text, but leading-zero identifiers must not become numbers merely because they parse.
 - **Foreign key:** exact lookup Object/alias, complete business-key match, returned target key and missing/multiple-match behavior. Generate only the table's own key; a referenced key is a mapped value.
@@ -59,17 +62,17 @@ Runtime batch filters apply only where required by the transformation/consumer. 
 
 ## Complete context for coding and validation
 
-The coding/validation agent consumes a complete target-oriented Mapping view: Mapping instructions plus resolved technical context. Raw `mapping_object`/`mapping_attribute` arrays alone omit physical target placement, types and ordinal information. The read/assembly layer must resolve those once from the approved bound context, so the consuming agent does not traverse the model or reinterpret its design.
+The coding/validation agent consumes a complete target-oriented Mapping view: Mapping instructions plus resolved technical context. Raw `mapping_object`/`mapping_attribute` arrays alone omit modeled target types and ordinal information. The read/assembly layer must resolve those once from the approved Entity and source context, so the consuming agent does not traverse the model or reinterpret its design.
 
 Reuse the existing backend downstream projection where compatible:
 
 | Context component | Information the consumer needs |
 |---|---|
-| `target_metadata` | Exact bound physical target and every target column's physical name, type/capacity, nullability and ordinal; modeled-to-physical correspondence supplied by Attribute transformations. |
+| `target_metadata` | Planned Entity schema/name and every modeled Attribute's name, type/capacity, nullability and ordinal. This is an executable projection of the design, not proof of physical registration. |
 | `source_metadata` | Actual permitted input identities, SQL coordinates/column names and relevant source types; distinguish originating System from GDS placement. |
-| `source_systems` | Selected originating Systems and their dependency orders. |
+| `source_systems` | Selected originating Systems and their resolved IDs/names; list order is stable presentation only. |
 | `object_transformations` | Every selected System branch's complete Object document, modeled identity and Object dependency order; final approved grain, keys, branch policy and prerequisites are explicit in the document. |
-| `attribute_transformations` | Complete per-System bound target coverage, modeled/physical target names and Attribute documents, including generated/framework rules. |
+| `attribute_transformations` | Complete per-System modeled Attribute coverage, schema-qualified modeled target names and Attribute documents, including generated/framework rules. |
 
 This is a derived read view, not a fourth Change Set dataset, a second manually maintained mapping or a large prose handoff. It must preserve record boundaries and complete coverage when paged. Use one consistent approved revision/context; required target/source changes make the view stale and need reconciliation. Do not put internal IDs, credentials or physical rows into author instructions.
 
@@ -79,6 +82,7 @@ Use the governed `read_mapping_context` MCP tool. Start with the verified applie
 read_mapping_context(
   model_id=<verified positive ID>,
   modeled_entity_type="logical_entity" | "dimensional_entity",
+  modeled_entity_schema_name=<exact configured schema>,
   modeled_entity_name=<exact target name>,
   component="target_metadata",
   expected_model_revision=<applied revision>,
@@ -154,13 +158,13 @@ These extend the structural checks in [Mapping records](mapping.md). Template/re
 | `mapping.types` | Source/target semantics, casts, precision, formatting, null/default/invalid-value behavior agree. |
 | `mapping.projection` | Full active bound Attribute coverage per System; final explicit columns end at SourceSystemID, own surrogate/framework fields excluded only from SELECT. |
 | `mapping.branches` | Same target shape and explicit cross-System identity/reconciliation policy; file layout does not alter semantics. |
-| `mapping.orders` | System/Object orders satisfy named prerequisites; contribution order and Attribute ordinal are not execution order. |
+| `mapping.orders` | Object order satisfies named prerequisites; contribution order, System list order and Attribute ordinal do not schedule execution. |
 | `mapping.consumer` | Complete consistent Mapping view supplies every fact needed to write code and judge it, without reinterpreting upstream model design. |
 
 Review source → Object step → Attribute rule → final column, then derive the expected grain, key, null and reconciliation behavior using only the complete Mapping view. A structural pass does not prove business correctness. Resolve substantive gaps before activating affected work; optional SQL retains the shared query policy.
 
 ## Source pointers
 
-Exact template: `database/seed/07_global_mapping_output_templates.template.sql`; existing GDS `references/workflows/mapping.md`, `references/examples/mapping-documents.md` and `mapping-steps.md`. Runtime/code conventions: GDS `references/workflows/code-generation.md` and the Mapping/code chapter of `references/orchestration-rules.md`. Complete-context precedent: `web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_inputs.py`; underlying eligibility projections: `database/11_workflow_eligibility.sql`.
+Exact template: `database/seed/07_global_mapping_output_templates.template.sql`. Record contract: [Mapping records](mapping.md). Runtime/code conventions: [SQL generation](../code-generation/sql.md). Complete-context projection: `web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_inputs.py`; underlying eligibility projections: `database/11_workflow_eligibility.sql`.
 
-Atlas reuses the current template; existing GDS template files need no format change. Do not copy unrelated stale ingestion rules or seed prompt claims about catalog-qualified production SQL. Confirmed Atlas metadata and runtime rules take precedence. The governed consumer view and shared local checks implement the corresponding technical boundaries; semantic review remains necessary.
+Atlas uses the current published template. Confirm runtime coordinates from the saved Entity schemas and governed source context. The governed consumer view and shared local checks implement the corresponding technical boundaries; semantic review remains necessary.

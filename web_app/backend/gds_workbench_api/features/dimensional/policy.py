@@ -205,7 +205,7 @@ def project_dimensional_gold_policy(
     for entity_key, entity in sorted(entities.items()):
         if entity.dimensional_entity_status != "active":
             continue
-        entity_attributes = [record for key, record in attributes.items() if key[0] == entity_key]
+        entity_attributes = [record for key, record in attributes.items() if key[:2] == entity_key]
         is_new_entity = entity_key not in {_entity_key(row) for row in baseline.entities}
         if is_new_entity or any(
             row.dimensional_attribute_key_role == "surrogate"
@@ -225,7 +225,7 @@ def project_dimensional_gold_policy(
                 desired = row.model_copy(update={"dimensional_attribute_ordinal_position": ordinal})
                 attributes[_attribute_key(desired)] = desired
                 projected.append(desired)
-            entity_attributes = [row for key, row in attributes.items() if key[0] == entity_key]
+            entity_attributes = [row for key, row in attributes.items() if key[:2] == entity_key]
         business_ordinal = max(
             (
                 record.dimensional_attribute_ordinal_position
@@ -285,7 +285,7 @@ def project_dimensional_gold_policy(
             )
 
         for offset, (column, role, key_role) in enumerate(specifications, start=1):
-            key = (entity_key, normalize_model_key_value(column.semantic_name))
+            key = (*entity_key, normalize_model_key_value(column.semantic_name))
             existing = attributes.get(key)
             if key_role == "surrogate":
                 ordinal = (
@@ -396,12 +396,18 @@ def project_dimensional_foreign_key_policy(
     applied_attributes = {_attribute_key(record): record for record in baseline.attributes}
 
     projected_relationships: list[DimensionalRelationshipRecord] = []
-    projected_attributes: dict[tuple[str, str], DimensionalAttributeRecord] = {}
-    projected_fk_keys: set[tuple[str, str]] = set()
-    affected_entity_keys: set[str] = set()
+    projected_attributes: dict[tuple[str, str, str], DimensionalAttributeRecord] = {}
+    projected_fk_keys: set[tuple[str, str, str]] = set()
+    affected_entity_keys: set[tuple[str, str]] = set()
     for relationship in changed_relationships:
-        from_key = normalize_model_key_value(relationship.from_dimensional_entity_name)
-        to_key = normalize_model_key_value(relationship.to_dimensional_entity_name)
+        from_key = (
+            normalize_model_key_value(relationship.from_dimensional_entity_schema_name),
+            normalize_model_key_value(relationship.from_dimensional_entity_name),
+        )
+        to_key = (
+            normalize_model_key_value(relationship.to_dimensional_entity_schema_name),
+            normalize_model_key_value(relationship.to_dimensional_entity_name),
+        )
         from_entity = entities.get(from_key)
         to_entity = entities.get(to_key)
         if from_entity is None or to_entity is None:
@@ -457,7 +463,7 @@ def project_dimensional_foreign_key_policy(
                     "and its definition fits 2000 characters. Preserve the frozen policy."
                 ) from None
             attribute_key = (
-                from_key,
+                *from_key,
                 normalize_model_key_value(column.semantic_name),
             )
             if attribute_key in projected_fk_keys:
@@ -653,6 +659,7 @@ def _policy_attribute(
             "A configured Gold policy column conflicts with an existing Attribute."
         )
     desired = DimensionalAttributeRecord(
+        dimensional_entity_schema_name=entity.dimensional_entity_schema_name,
         dimensional_entity_name=entity.dimensional_entity_name,
         dimensional_attribute_name=column.semantic_name,
         dimensional_attribute_definition=column.definition or column.semantic_name,
@@ -700,19 +707,23 @@ def _validate_template(
         raise ValueError("Gold policy template placeholders are invalid")
 
 
-def _entity_key(record: DimensionalEntityRecord) -> str:
-    return normalize_model_key_value(record.dimensional_entity_name)
-
-
-def _attribute_key(record: DimensionalAttributeRecord) -> tuple[str, str]:
+def _entity_key(record: DimensionalEntityRecord) -> tuple[str, str]:
     return (
+        normalize_model_key_value(record.dimensional_entity_schema_name),
+        normalize_model_key_value(record.dimensional_entity_name),
+    )
+
+
+def _attribute_key(record: DimensionalAttributeRecord) -> tuple[str, str, str]:
+    return (
+        normalize_model_key_value(record.dimensional_entity_schema_name),
         normalize_model_key_value(record.dimensional_entity_name),
         normalize_model_key_value(record.dimensional_attribute_name),
     )
 
 
-def _entity_key_from_attribute(record: DimensionalAttributeRecord) -> str:
-    return normalize_model_key_value(record.dimensional_entity_name)
+def _entity_key_from_attribute(record: DimensionalAttributeRecord) -> tuple[str, str]:
+    return _attribute_key(record)[:2]
 
 
 __all__ = [

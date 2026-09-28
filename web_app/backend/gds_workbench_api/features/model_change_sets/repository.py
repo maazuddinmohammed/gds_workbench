@@ -147,33 +147,6 @@ UPDATE workflow.dimensional_relationship AS target
    AND target.dimensional_relationship_id = %s
 RETURNING target.dimensional_relationship_id
 """,
-    "model_object_binding": """
-UPDATE workflow.model_object_binding AS target
-   SET model_object_binding_is_locked = %s, model_object_binding_status = %s,
-       updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE target.model_id = %s
-   AND target.model_object_binding_id = %s
-RETURNING target.model_object_binding_id
-""",
-    "model_attribute_binding": """
-UPDATE workflow.model_attribute_binding AS target
-   SET model_attribute_binding_is_locked = %s, model_attribute_binding_status = %s,
-       updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE EXISTS (SELECT 1 FROM workflow.model_object_binding b
-       WHERE b.model_object_binding_id = target.model_object_binding_id
-         AND b.model_id = %s)
-   AND target.model_attribute_binding_id = %s
-RETURNING target.model_attribute_binding_id
-""",
-    "mapping_dependency": """
-UPDATE workflow.mapping_source_system_dependency AS target
-   SET mapping_source_system_dependency_is_locked = %s,
-       mapping_source_system_dependency_status = %s,
-       updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE target.model_id = %s
-   AND target.mapping_source_system_dependency_id = %s
-RETURNING target.mapping_source_system_dependency_id
-""",
     "mapping_object": """
 UPDATE workflow.mapping_object AS target
    SET object_mapping_is_locked = %s, object_mapping_status = %s,
@@ -196,9 +169,7 @@ RETURNING target.mapping_attribute_id
 UPDATE workflow.generated_code AS target
    SET generated_code_is_locked = %s, generated_code_status = %s,
        updated_time = CURRENT_TIMESTAMP, updated_by = %s
- WHERE EXISTS (SELECT 1 FROM workflow.model_object_binding b
-       WHERE b.model_object_binding_id = target.model_object_binding_id
-         AND b.model_id = %s)
+ WHERE target.model_id = %s
    AND target.generated_code_id = %s
 RETURNING target.generated_code_id
 """,
@@ -207,10 +178,8 @@ UPDATE workflow.generated_code_source_system AS target
    SET generated_code_source_system_is_locked = %s, generated_code_source_system_status = %s,
        updated_time = CURRENT_TIMESTAMP, updated_by = %s
  WHERE EXISTS (SELECT 1 FROM workflow.generated_code c
-        JOIN workflow.model_object_binding b
-          ON b.model_object_binding_id = c.model_object_binding_id
        WHERE c.generated_code_id = target.generated_code_id
-         AND b.model_id = %s)
+         AND c.model_id = %s)
    AND target.generated_code_source_system_id = %s
 RETURNING target.generated_code_source_system_id
 """,
@@ -241,7 +210,7 @@ SELECT change_set.model_change_set_id, event.action_count, event.event_metadata
     ON event.model_change_set_id = change_set.model_change_set_id
    AND event.event_type = 'applied'
    AND event.outcome IN (
-       'review_applied', 'bindings_applied', 'scope_added', 'dependency_saved',
+       'review_applied', 'scope_added', 'dependency_saved',
        'assertion_saved', 'record_edited', 'records_deleted'
    )
  WHERE change_set.model_id = %s
@@ -426,7 +395,6 @@ UPDATE mcp.model_change_set
        conceptual_document = %s,
        logical_document = %s,
        dimensional_document = %s,
-       model_binding_document = %s,
        mapping_document = %s,
        code_generation_document = %s,
        validation_document = %s,
@@ -836,7 +804,6 @@ class PostgresModelChangeSetRepository:
                         "conceptual",
                         "logical",
                         "dimensional",
-                        "model_binding",
                         "mapping",
                         "code_generation",
                         "validation",

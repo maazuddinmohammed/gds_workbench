@@ -5,6 +5,10 @@ from datetime import datetime
 from typing import Self
 
 from gds_etl_workbench.domain.errors import WorkbenchError
+from gds_etl_workbench.domain.modeling_records import (
+    ModelSchemaDefinition,
+    normalize_model_key_value,
+)
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -32,6 +36,12 @@ class CompleteModelRequest(BaseModel):
 
     model_name: str = Field(min_length=1, max_length=255)
     model_description: str | None = Field(default=None, min_length=1, max_length=2000)
+    logical_schemas: list[ModelSchemaDefinition] = Field(
+        default_factory=list[ModelSchemaDefinition], max_length=100
+    )
+    dimensional_schemas: list[ModelSchemaDefinition] = Field(
+        default_factory=list[ModelSchemaDefinition], max_length=100
+    )
     silver_model_naming_instructions: str | None = Field(
         default=None,
         min_length=1,
@@ -112,6 +122,19 @@ class CompleteModelRequest(BaseModel):
             raise ValueError("Model template is too large")
         return value
 
+    @field_validator("logical_schemas", "dimensional_schemas")
+    @classmethod
+    def validate_schemas(cls, value: list[ModelSchemaDefinition]) -> list[ModelSchemaDefinition]:
+        names = [normalize_model_key_value(item.schema_name) for item in value]
+        if len(set(names)) != len(names):
+            raise ValueError("Schema names must be unique within the layer")
+        if (
+            len(json.dumps([item.model_dump() for item in value], ensure_ascii=False).encode())
+            > 262144
+        ):
+            raise ValueError("Schema definitions must fit within 256 KB")
+        return value
+
     @model_validator(mode="after")
     def validate_agent_defaults(self) -> Self:
         values = (
@@ -183,5 +206,17 @@ class ModelNameConflictError(WorkbenchError):
             code="model_name_conflict",
             message=(
                 "A Model with this name already exists in this Tenant, including archived Models."
+            ),
+        )
+
+
+class ModelSchemaConflictError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="model_schema_conflict",
+            message=(
+                "An existing Entity still uses a removed or renamed schema. "
+                "Restore its schema name before saving, including schemas "
+                "used by inactive Entities."
             ),
         )

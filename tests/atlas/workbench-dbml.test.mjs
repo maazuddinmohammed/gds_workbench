@@ -20,7 +20,7 @@ test("local DBML renders complete and submodel files from the effective Model", 
     ])],
     ["logical_entity", state([
       {
-        logical_entity_name: "Customer",
+        logical_entity_schema_name: "silver", logical_entity_name: "Customer",
         logical_entity_definition: "Customer master",
         logical_entity_type: "master",
         logical_entity_grain: "One row per customer",
@@ -31,7 +31,7 @@ test("local DBML renders complete and submodel files from the effective Model", 
     ])],
     ["logical_attribute", state([
       {
-        logical_entity_name: "Customer",
+        logical_entity_schema_name: "silver", logical_entity_name: "Customer",
         logical_attribute_name: "CustomerID",
         logical_attribute_definition: "Customer identifier",
         logical_attribute_data_type: "bigint",
@@ -64,7 +64,7 @@ test("local DBML renders complete and submodel files from the effective Model", 
     "logical_sales.dbml",
   ]);
   const logical = documents.find((document) => document.path === "logical_complete.dbml");
-  assert.match(logical.content, /Table "Customer"/);
+  assert.match(logical.content, /Table "silver"\."Customer"/);
   assert.match(logical.content, /"CustomerID" bigint \[pk, not null/);
   assert.equal(logical.table_count, 1);
 });
@@ -75,15 +75,15 @@ test("local DBML rejects relationships whose effective endpoints are missing", (
     ["conceptual_relationship", state([])],
     ["logical_submodel", state([])],
     ["logical_entity", state([
-      { logical_entity_name: "Order", logical_entity_dependency_order: 1, logical_entity_status: "active", submodels: [] },
+      { logical_entity_schema_name: "silver", logical_entity_name: "Order", logical_entity_dependency_order: 1, logical_entity_status: "active", submodels: [] },
     ])],
     ["logical_attribute", state([])],
     ["logical_relationship", state([
       {
         logical_relationship_name: "MissingEndpoint",
-        from_logical_entity_name: "Order",
+        from_logical_entity_schema_name: "silver", from_logical_entity_name: "Order",
         from_logical_attribute_name: "CustomerID",
-        to_logical_entity_name: "Customer",
+        to_logical_entity_schema_name: "silver", to_logical_entity_name: "Customer",
         to_logical_attribute_name: "CustomerID",
         logical_relationship_cardinality: "many_to_one",
         logical_relationship_status: "active",

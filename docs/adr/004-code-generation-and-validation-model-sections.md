@@ -3,6 +3,9 @@
 - Status: accepted
 - Date: 2026-09-01
 
+Historical contract: Binding ownership and prerequisites superseded by ADR 012; other decisions retained.
+See [Entity-owned Mapping and Code](012-entity-owned-mapping-and-code.md).
+
 ## Context
 
 Generated Code and Validation definitions must participate in the same

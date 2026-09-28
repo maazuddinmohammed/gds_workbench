@@ -13,10 +13,10 @@ describe("Model Dimensional", () => {
     render(<WorkbenchApp router={dimensionalRouter(dimensionalFetchStub())} />);
 
     expect(await screen.findByRole("table", { name: "Dimensional Objects" })).toBeVisible();
-    expect(screen.getByText("sales_fact")).toBeVisible();
+    expect(screen.getByText("gold.sales_fact")).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Open Dimensional Object 301" }));
 
-    expect(await screen.findByRole("heading", { name: "sales_fact" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "gold.sales_fact" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Submodel membership" })).toBeVisible();
     expect(screen.getByText("Sales Analytics")).not.toBeVisible();
     expect(await screen.findByRole("table", { name: "Entity Attributes" })).toBeVisible();
@@ -58,8 +58,8 @@ describe("Model Dimensional", () => {
     expect(await screen.findByRole("table", { name: "Dimensional Relationships" })).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Open Dimensional Relationship 501" }));
     expect(await screen.findByRole("heading", { name: "customer to sales" })).toBeVisible();
-    expect(screen.getByText("customer_dimension.customer_key")).toBeVisible();
-    expect(screen.getByText("sales_fact.customer_key")).toBeVisible();
+    expect(screen.getByText("gold.customer_dimension.customer_key")).toBeVisible();
+    expect(screen.getByText("gold.sales_fact.customer_key")).toBeVisible();
     expect(screen.getByText("The customer key establishes the conformed join.")).toBeVisible();
     expect(screen.getByText("Each sale has one customer; a customer has many sales.")).toBeVisible();
   });
@@ -171,6 +171,9 @@ describe("Model Dimensional", () => {
         body: expect.stringContaining('"model_workflow":"dimensional"'),
       }),
     );
+    const createCall = fetcher.mock.calls.find(([input, init]) => String(input).endsWith("/models/18/runs") && init?.method === "POST");
+    expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({ selected_object_ids: [], selected_entity_ids: [501], modeled_entity_type: "logical_entity" });
+    expect(fetcher.mock.calls.some(([input]) => String(input).includes("input-scope?zone=silver"))).toBe(false);
     expect(fetcher).toHaveBeenCalledWith(
       "/api/v1/tenants/7/models/18/dimensional/runs/1250/execute",
       expect.objectContaining({
@@ -222,7 +225,7 @@ function dimensionalFetchStub(options: {
           : [{
             ...dimensionalObjectPayload,
             ...(isNextPage
-              ? { dimensional_entity_id: 302, dimensional_entity_name: "customer_dimension" }
+              ? { dimensional_entity_id: 302, dimensional_entity_schema_name: "gold", dimensional_entity_name: "customer_dimension" }
               : {}),
           }],
         next_cursor: options.hasNextPage && !isNextPage ? "objects-next" : null,
@@ -258,11 +261,11 @@ function dimensionalFetchStub(options: {
     if (url === "/api/v1/tenants/7/models/18/dimensional/relationships/501") {
       return jsonResponse(dimensionalRelationshipDetailPayload);
     }
-    if (url === "/api/v1/tenants/7/models/18/input-scope?zone=silver&page_size=200") {
+    if (url === "/api/v1/tenants/7/models/18/logical/entities?status=active&page_size=200") {
       return jsonResponse({
         model_id: 18,
         model_revision: 18,
-        items: [dimensionalScopeObjectPayload],
+        items: [{ logical_entity_id: 501, logical_entity_schema_name: "silver", logical_entity_name: "sales_order", logical_entity_status: "active", logical_entity_is_locked: false }],
         next_cursor: null,
       });
     }
@@ -330,7 +333,7 @@ const modelPayload = {
   model_description: "Cross-system customer domain",
   model_revision: 18,
   model_input_scope_object_count: 25,
-  silver_model_naming_instructions: null,
+  logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
   gold_model_technical_columns_template: null,
@@ -348,7 +351,7 @@ const modelPayload = {
 const dimensionalObjectPayload = {
   dimensional_entity_id: 301,
   workflow_run_id: 1200,
-  dimensional_entity_name: "sales_fact",
+  dimensional_entity_schema_name: "gold", dimensional_entity_name: "sales_fact",
   dimensional_entity_type: "fact",
   dimensional_fact_type: "transaction",
   dimensional_entity_dependency_order: 1,
@@ -377,7 +380,7 @@ const dimensionalObjectDetailPayload = {
     {
       dimensional_entity_source_mapping_id: 901,
       workflow_run_id: 1200,
-      support_source_type: "object",
+      support_source_type: "logical_entity",
       source_role: "primary",
       source_order: 1,
       rationale: "The Silver order table establishes the transaction grain.",
@@ -385,14 +388,7 @@ const dimensionalObjectDetailPayload = {
       is_locked: false,
       created_at: "2026-08-24T14:42:00Z",
       updated_at: "2026-08-24T15:00:00Z",
-      source_object: {
-        object_id: 501,
-        tenant_code: "DDS",
-        system_code: "ERP",
-        connection_code: "erp-prod",
-        object_schema: "silver",
-        object_name: "sales_order",
-      },
+      source_logical_entity: { logical_entity_id: 501, logical_entity_schema_name: "silver", logical_entity_name: "sales_order" },
     },
     {
       dimensional_entity_source_mapping_id: 902,
@@ -422,7 +418,7 @@ const dimensionalAttributePayload = {
   dimensional_attribute_id: 401,
   workflow_run_id: 1200,
   dimensional_entity_id: 301,
-  dimensional_entity_name: "sales_fact",
+  dimensional_entity_schema_name: "gold", dimensional_entity_name: "sales_fact",
   dimensional_attribute_name: "sales_amount",
   dimensional_attribute_data_type: "decimal(18,2)",
   dimensional_attribute_is_nullable: false,
@@ -450,23 +446,14 @@ const dimensionalAttributeDetailPayload = {
       dimensional_attribute_source_mapping_id: 1001,
       workflow_run_id: 1200,
       dimensional_entity_source_mapping_id: 901,
-      support_source_type: "attribute",
+      support_source_type: "logical_attribute",
       source_order: 1,
       rationale: "The Silver amount is the governed monetary source.",
       status: "active",
       is_locked: false,
       created_at: "2026-08-24T14:42:00Z",
       updated_at: "2026-08-24T15:00:00Z",
-      source_attribute: {
-        object_id: 501,
-        attribute_id: 502,
-        tenant_code: "DDS",
-        system_code: "ERP",
-        connection_code: "erp-prod",
-        object_schema: "silver",
-        object_name: "sales_order",
-        attribute_name: "sales_amount",
-      },
+      source_logical_attribute: { logical_entity_id: 501, logical_entity_schema_name: "silver", logical_entity_name: "sales_order", logical_attribute_id: 502, logical_attribute_name: "sales_amount" },
     },
     {
       dimensional_attribute_source_mapping_id: 1002,
@@ -495,11 +482,11 @@ const dimensionalRelationshipPayload = {
   dimensional_relationship_id: 501,
   workflow_run_id: 1200,
   from_dimensional_entity_id: 302,
-  from_dimensional_entity_name: "customer_dimension",
+  from_dimensional_entity_schema_name: "gold", from_dimensional_entity_name: "customer_dimension",
   from_dimensional_attribute_id: 402,
   from_dimensional_attribute_name: "customer_key",
   to_dimensional_entity_id: 301,
-  to_dimensional_entity_name: "sales_fact",
+  to_dimensional_entity_schema_name: "gold", to_dimensional_entity_name: "sales_fact",
   to_dimensional_attribute_id: 403,
   to_dimensional_attribute_name: "customer_key",
   dimensional_relationship_name: "customer to sales",
@@ -521,28 +508,7 @@ const dimensionalRelationshipDetailPayload = {
   created_at: "2026-08-24T14:44:00Z",
 };
 
-const dimensionalScopeObjectPayload = {
-  model_input_scope_id: 211,
-  object_id: 511,
-  connection_id: 311,
-  system_id: 411,
-  system_code: "GDS",
-  system_name: "Governed Data Store",
-  source_tenant_id: 7,
-  source_tenant_code: "NWA",
-  source_tenant_name: "Northwind Analytics",
-  object_schema: "silver",
-  object_name: "sales_order",
-  zone_code: "silver",
-  batch_attribute_name: "batch_id",
-  attribute_count: 14,
-  is_model_input_eligible: false,
-  is_dimensional_source_eligible: true,
-  is_logical_mapping_target_eligible: true,
-  is_dimensional_mapping_target_eligible: false,
-  created_at: "2026-08-24T14:00:00Z",
-  updated_at: "2026-08-24T14:00:00Z",
-};
+
 
 const agentCapabilitiesPayload = {
   schema_version: "3.0",

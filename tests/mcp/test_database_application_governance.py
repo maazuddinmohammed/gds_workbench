@@ -25,6 +25,7 @@ APPLICATION_TABLES = (
     "sql_generation_guide",
     "sql_generation_guide_version",
     "workflow_run",
+    "workflow_run_entity_selection",
     "workflow_run_mapping_target_selection",
     "workflow_run_model_request",
     "workflow_run_object_selection",
@@ -88,7 +89,7 @@ APPLICATION_WEB_FUNCTIONS = (
     (
         "create_model",
         "uuid, uuid, character varying, bigint, character varying, character varying, "
-        "text, jsonb, text, jsonb, jsonb, character varying, character varying, "
+        "jsonb, jsonb, text, jsonb, text, jsonb, jsonb, character varying, character varying, "
         "character varying, character varying, integer, integer",
     ),
     (
@@ -102,7 +103,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "character varying, character varying, character varying, character varying, "
         "character varying, integer, integer, bigint[], character varying[], character varying, "
         "character varying, uuid, jsonb, character varying, character varying, "
-        "bigint, bigint, bigint, character varying, bigint, jsonb, jsonb, character varying",
+        "bigint, bigint, bigint, character varying, bigint, jsonb, jsonb, character varying, bigint[]",
     ),
     (
         "delete_model_records",
@@ -208,7 +209,7 @@ APPLICATION_WEB_FUNCTIONS = (
     (
         "update_model",
         "uuid, uuid, character varying, bigint, bigint, character varying, "
-        "character varying, text, jsonb, text, jsonb, jsonb, character varying, "
+        "character varying, jsonb, jsonb, text, jsonb, text, jsonb, jsonb, character varying, "
         "character varying, character varying, character varying, integer, integer",
     ),
     (

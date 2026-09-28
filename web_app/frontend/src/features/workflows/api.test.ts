@@ -160,7 +160,6 @@ describe("Workflow HTTP adapter", () => {
 describe.each([
   ["bronze", { zone: "bronze" }, "Bronze"],
   ["enrichment", {}, "Source and Bronze"],
-  ["dimensional", { zone: "silver" }, "Silver"],
 ] as const)("Workflow scope: %s", (scope, filters, zoneName) => {
   const object = {
     object_id: 501,
@@ -168,13 +167,12 @@ describe.each([
     system_code: "CRM",
     source_tenant_code: "TENANT",
     object_name: "customers",
-    zone_code: scope === "dimensional" ? "silver" as const : "bronze" as const,
-    is_dimensional_source_eligible: true,
+    zone_code: "bronze" as const,
     batch_attribute_name: "batch_id",
   };
 
   it("loads complete ordered pages, preserves item fields, and applies only its scope filter", async () => {
-    const second = { ...object, object_id: 502, is_dimensional_source_eligible: false };
+    const second = { ...object, object_id: 502, };
     const third = { ...object, object_id: 503 };
     const listModelInputScope = vi.fn(async () => ({
       model_revision: 18, items: [third], next_cursor: null as string | null,
@@ -184,7 +182,7 @@ describe.each([
 
     const result = await loadWorkflowScope({ listModelInputScope }, 7, 18, scope);
 
-    expect(result).toEqual({ modelRevision: 18, items: scope === "dimensional" ? [object, third] : [object, second, third] });
+    expect(result).toEqual({ modelRevision: 18, items: [object, second, third] });
     expect(result.items[0]?.batch_attribute_name).toBe("batch_id");
     expect(listModelInputScope.mock.calls).toEqual([
       [7, 18, filters, 200, undefined],

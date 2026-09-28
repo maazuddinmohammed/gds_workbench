@@ -71,106 +71,33 @@ $list_tenant_visible_objects$;
 REVOKE ALL ON FUNCTION workflow.list_tenant_visible_objects(BIGINT)
 FROM PUBLIC;
 
--- Model Inputs are Source or Bronze Objects. Bound Silver and Gold Objects are
--- included separately as downstream targets and do not belong to Input Scope.
--- Source/Bronze eligibility spans Tenants; callers must intersect it with actor
--- read permissions. Silver/Gold targets still belong to the Model Tenant.
-CREATE FUNCTION workflow.list_model_object_eligibility(
-    p_model_id BIGINT
-)
+-- Physical eligibility is restricted to Model input evidence. Modeled targets
+-- and Dimensional sources are identified through workflow.modeled_entity.
+CREATE FUNCTION workflow.list_model_object_eligibility(p_model_id BIGINT)
 RETURNS TABLE (
-    model_id BIGINT,
-    object_id BIGINT,
-    connection_id BIGINT,
-    system_id BIGINT,
-    object_tenant_id BIGINT,
-    object_schema VARCHAR(400),
-    object_name VARCHAR(400),
-    zone_code TEXT,
-    is_model_input_eligible BOOLEAN,
-    is_dimensional_source_eligible BOOLEAN,
-    is_logical_mapping_target_eligible BOOLEAN,
-    is_dimensional_mapping_target_eligible BOOLEAN
+    model_id BIGINT, object_id BIGINT, connection_id BIGINT, system_id BIGINT,
+    object_tenant_id BIGINT, object_schema VARCHAR(400), object_name VARCHAR(400),
+    zone_code TEXT, is_model_input_eligible BOOLEAN
 )
-LANGUAGE SQL
-STABLE
-SECURITY INVOKER
-SET search_path = pg_catalog
+LANGUAGE SQL STABLE SECURITY INVOKER SET search_path = pg_catalog
 AS $list_model_object_eligibility$
-    WITH target_model AS MATERIALIZED (
-        SELECT model.model_id,
-               model.tenant_id
-          FROM model.model AS model
-          JOIN core.tenant AS tenant
-            ON tenant.tenant_id = model.tenant_id
-           AND tenant.is_active
-         WHERE model.model_id = p_model_id
-           AND model.is_active
-    ), candidate_object AS MATERIALIZED (
-        SELECT object.object_id
-          FROM target_model
-          JOIN core.object AS object ON TRUE
-          JOIN reference.zone AS zone ON zone.zone_id = object.zone_id
-          JOIN core.tenant AS owner ON owner.tenant_id = object.source_tenant_id
-           AND owner.is_active
-         WHERE object.source_tenant_id = target_model.tenant_id
-            OR lower(btrim(zone.zone_code)) IN ('source', 'bronze')
-    )
-    SELECT target_model.model_id,
-           object.object_id,
-           connection.connection_id,
-           system.system_id,
-           object.source_tenant_id AS object_tenant_id,
-           object.object_schema,
-           object.object_name,
-           lower(btrim(zone.zone_code)) AS zone_code,
-           lower(btrim(zone.zone_code)) IN ('source', 'bronze')
-               AS is_model_input_eligible,
-           lower(btrim(zone.zone_code)) = 'silver'
-           AND EXISTS (
-               SELECT 1
-                 FROM workflow.model_object_binding AS binding
-                 JOIN workflow.mapping_object AS mapping
-                   ON mapping.model_object_binding_id =
-                      binding.model_object_binding_id
-                  AND mapping.model_id = binding.model_id
-                  AND mapping.object_mapping_status = 'active'
-                  AND mapping.mapping_transformation_document IS NOT NULL
-                 JOIN core.system AS source_system
-                   ON source_system.system_id = mapping.source_system_id
-                  AND source_system.is_active
-                WHERE binding.model_id = target_model.model_id
-                  AND binding.object_id = object.object_id
-                  AND binding.modeled_entity_type = 'logical_entity'
-                  AND binding.model_object_binding_status = 'active'
-           ) AS is_dimensional_source_eligible,
-           lower(btrim(zone.zone_code)) = 'silver'
-               AS is_logical_mapping_target_eligible,
-           lower(btrim(zone.zone_code)) = 'gold'
-               AS is_dimensional_mapping_target_eligible
-      FROM target_model
-      JOIN candidate_object
-        ON TRUE
-      JOIN core.object AS object
-        ON object.object_id = candidate_object.object_id
-       AND object.is_active
-      JOIN core.connection AS connection
-        ON connection.connection_id = object.connection_id
+    SELECT target.model_id, object.object_id, connection.connection_id, system.system_id,
+           object.source_tenant_id, object.object_schema, object.object_name,
+           lower(btrim(zone.zone_code)), TRUE
+      FROM model.model AS target
+      JOIN core.tenant AS tenant ON tenant.tenant_id = target.tenant_id AND tenant.is_active
+      JOIN core.object AS object ON object.is_active
+      JOIN core.tenant AS owner ON owner.tenant_id = object.source_tenant_id AND owner.is_active
+      JOIN core.connection AS connection ON connection.connection_id = object.connection_id
        AND connection.is_active
-      JOIN core.system AS system
-        ON system.system_id = connection.system_id
-       AND system.is_active
-      JOIN reference.zone AS zone
-        ON zone.zone_id = object.zone_id
-       AND zone.is_active
-     ORDER BY lower(btrim(system.system_code)),
-              lower(btrim(object.object_schema)),
-              lower(btrim(object.object_name)),
-              object.object_id;
+      JOIN core.system AS system ON system.system_id = connection.system_id AND system.is_active
+      JOIN reference.zone AS zone ON zone.zone_id = object.zone_id AND zone.is_active
+     WHERE target.model_id = p_model_id AND target.is_active
+       AND lower(btrim(zone.zone_code)) IN ('source', 'bronze')
+     ORDER BY lower(btrim(system.system_code)), lower(btrim(object.object_schema)),
+              lower(btrim(object.object_name)), object.object_id;
 $list_model_object_eligibility$;
-
-REVOKE ALL ON FUNCTION workflow.list_model_object_eligibility(BIGINT)
-FROM PUBLIC;
+REVOKE ALL ON FUNCTION workflow.list_model_object_eligibility(BIGINT) FROM PUBLIC;
 
 -- Business Systems represented by active Input Scope. Bronze placement does not
 -- identify its originating System; registered ingestion lineage does.
@@ -202,722 +129,325 @@ AS $list_model_input_sources$
 $list_model_input_sources$;
 REVOKE ALL ON FUNCTION workflow.list_model_input_sources(BIGINT) FROM PUBLIC;
 
--- Complete candidate physical sources for a target/System pair. Saved Entity
--- support links add evidence, but are not prerequisites for discovery.
+-- Source evidence for an Entity/System pair. Logical inputs include physical
+-- Objects and peer Logical lookups; Dimensional inputs are Logical Entities.
+-- Modeled sources require an applied Mapping for the selected source System.
 CREATE FUNCTION workflow.list_mapping_source_objects(
-    p_model_id BIGINT,
-    p_target_object_id BIGINT,
-    p_modeled_entity_type VARCHAR(30),
-    p_source_system_id BIGINT
+    p_model_id BIGINT, p_target_entity_id BIGINT,
+    p_modeled_entity_type VARCHAR(30), p_source_system_id BIGINT
 )
 RETURNS TABLE (
-    source_mapping_id BIGINT,
-    modeled_entity_id BIGINT,
-    role TEXT,
-    rationale TEXT,
-    mapping_order INTEGER,
-    is_locked BOOLEAN,
-    source_object_id BIGINT,
-    scope_is_locked BOOLEAN,
-    scope_is_active BOOLEAN
+    source_mapping_id BIGINT, modeled_entity_id BIGINT, role TEXT, rationale TEXT,
+    mapping_order INTEGER, is_locked BOOLEAN, source_object_id BIGINT,
+    source_logical_entity_id BIGINT, source_dimensional_entity_id BIGINT,
+    scope_is_locked BOOLEAN, scope_is_active BOOLEAN
 )
-LANGUAGE SQL
-STABLE
-SECURITY INVOKER
-SET search_path = pg_catalog
+LANGUAGE SQL STABLE SECURITY INVOKER SET search_path = pg_catalog
 AS $list_mapping_source_objects$
-    WITH selected_binding AS MATERIALIZED (
-        SELECT binding.*
-          FROM workflow.model_object_binding AS binding
-         WHERE binding.model_id = p_model_id
-           AND binding.object_id = p_target_object_id
-           AND binding.modeled_entity_type = p_modeled_entity_type
-           AND binding.model_object_binding_status = 'active'
-    ), source_reference AS MATERIALIZED (
-        SELECT binding.model_id,
-               binding.modeled_entity_type,
-               source.logical_entity_source_mapping_id AS source_mapping_id,
-               source.logical_entity_id AS modeled_entity_id,
-               'support'::TEXT AS role,
-               source.logical_entity_source_mapping_rationale AS rationale,
-               source.logical_entity_source_mapping_order AS mapping_order,
-               source.logical_entity_source_mapping_is_locked AS is_locked,
-               source.source_object_id
-          FROM selected_binding AS binding
-          JOIN workflow.logical_entity_source_mapping AS source
-            ON binding.modeled_entity_type = 'logical_entity'
-           AND source.model_id = binding.model_id
-           AND source.logical_entity_id = binding.logical_entity_id
-           AND source.support_source_type = 'object'
-           AND source.logical_entity_source_mapping_status = 'active'
-         UNION ALL
-        SELECT binding.model_id,
-               binding.modeled_entity_type,
-               source.dimensional_entity_source_mapping_id,
-               source.dimensional_entity_id,
-               source.dimensional_entity_source_role,
-               source.dimensional_entity_source_mapping_rationale,
-               source.dimensional_entity_source_mapping_order,
-               source.dimensional_entity_source_mapping_is_locked,
-               source.source_object_id
-          FROM selected_binding AS binding
-          JOIN workflow.dimensional_entity_source_mapping AS source
-            ON binding.modeled_entity_type = 'dimensional_entity'
-           AND source.model_id = binding.model_id
-           AND source.dimensional_entity_id = binding.dimensional_entity_id
-           AND source.support_source_type = 'object'
-           AND source.dimensional_entity_source_mapping_status = 'active'
+    WITH target AS MATERIALIZED (
+        SELECT * FROM workflow.modeled_entity AS entity
+         WHERE entity.model_id = p_model_id
+           AND entity.modeled_entity_type = p_modeled_entity_type
+           AND entity.modeled_entity_id = p_target_entity_id AND entity.status = 'active'
     )
-    SELECT support.source_mapping_id,
-           coalesce(binding.logical_entity_id, binding.dimensional_entity_id),
-           coalesce(support.role, 'candidate'),
-           coalesce(support.rationale, 'Available source candidate; relevance must be established from evidence.'),
-           support.mapping_order,
-           coalesce(support.is_locked, FALSE),
-           eligible.object_id,
-           CASE binding.modeled_entity_type
-               WHEN 'dimensional_entity' THEN source_binding.model_object_binding_is_locked
-               ELSE source_scope.model_input_scope_is_locked
-           END,
-           TRUE
-      FROM selected_binding AS binding
-      JOIN workflow.list_model_object_eligibility(p_model_id) AS eligible ON TRUE
-      LEFT JOIN model.model_input_scope AS source_scope
-        ON source_scope.model_id = binding.model_id AND source_scope.object_id = eligible.object_id
-      LEFT JOIN workflow.model_object_binding AS source_binding
-        ON source_binding.model_id = binding.model_id AND source_binding.object_id = eligible.object_id
-       AND source_binding.modeled_entity_type = 'logical_entity'
-       AND source_binding.model_object_binding_status = 'active'
-      LEFT JOIN LATERAL (
-          SELECT * FROM source_reference AS evidence
-           WHERE evidence.source_object_id = eligible.object_id
-           ORDER BY evidence.mapping_order NULLS LAST, evidence.source_mapping_id LIMIT 1
-      ) AS support ON TRUE
-     WHERE (binding.modeled_entity_type = 'logical_entity'
-            AND EXISTS (SELECT 1 FROM workflow.list_model_input_sources(p_model_id) AS input
-                        WHERE input.object_id = eligible.object_id
-                          AND input.source_system_id = p_source_system_id))
-        OR (binding.modeled_entity_type = 'dimensional_entity'
-            AND eligible.is_dimensional_source_eligible
-            AND source_binding.model_object_binding_id IS NOT NULL
-            AND EXISTS (
-                SELECT 1 FROM workflow.mapping_object AS upstream
-                JOIN core.system AS system ON system.system_id = upstream.source_system_id AND system.is_active
-                WHERE upstream.model_id = binding.model_id
-                  AND upstream.model_object_binding_id = source_binding.model_object_binding_id
-                  AND upstream.source_system_id = p_source_system_id
-                  AND upstream.object_mapping_status = 'active'
-                  AND upstream.mapping_transformation_document IS NOT NULL))
-     ORDER BY support.mapping_order NULLS LAST, support.source_mapping_id, eligible.object_id;
+    SELECT support.logical_entity_source_mapping_id, target.modeled_entity_id,
+           CASE WHEN support.logical_entity_source_mapping_id IS NULL THEN 'candidate' ELSE 'support' END,
+           coalesce(support.logical_entity_source_mapping_rationale,
+                    'Available source candidate; relevance must be established from evidence.'),
+           support.logical_entity_source_mapping_order,
+           coalesce(support.logical_entity_source_mapping_is_locked, FALSE),
+           input.object_id, NULL::BIGINT, NULL::BIGINT, scope.model_input_scope_is_locked, scope.is_active
+      FROM target
+      JOIN workflow.list_model_input_sources(p_model_id) AS input
+        ON target.modeled_entity_type = 'logical_entity' AND input.source_system_id = p_source_system_id
+      JOIN model.model_input_scope AS scope ON scope.model_id = p_model_id AND scope.object_id = input.object_id
+      LEFT JOIN workflow.logical_entity_source_mapping AS support
+        ON support.model_id = p_model_id AND support.logical_entity_id = target.modeled_entity_id
+       AND support.source_object_id = input.object_id AND support.support_source_type = 'object'
+       AND support.logical_entity_source_mapping_status = 'active'
+    UNION ALL
+    SELECT support.dimensional_entity_source_mapping_id, target.modeled_entity_id,
+           CASE WHEN target.modeled_entity_type = 'logical_entity' THEN 'lookup'
+                ELSE coalesce(support.dimensional_entity_source_role, 'candidate') END,
+           CASE WHEN target.modeled_entity_type = 'logical_entity'
+                THEN 'Available peer Logical lookup with applied Mapping for the selected source System.'
+                ELSE coalesce(support.dimensional_entity_source_mapping_rationale,
+                    'Available Logical source candidate; relevance must be established from evidence.') END,
+           support.dimensional_entity_source_mapping_order,
+           coalesce(support.dimensional_entity_source_mapping_is_locked, FALSE),
+           NULL::BIGINT, source.logical_entity_id, NULL::BIGINT, source.logical_entity_is_locked, TRUE
+      FROM target
+      JOIN workflow.logical_entity AS source ON source.model_id = p_model_id
+       AND source.logical_entity_status = 'active'
+       AND (target.modeled_entity_type = 'dimensional_entity'
+            OR source.logical_entity_id <> target.modeled_entity_id)
+      LEFT JOIN workflow.dimensional_entity_source_mapping AS support
+        ON target.modeled_entity_type = 'dimensional_entity'
+       AND support.model_id = p_model_id AND support.dimensional_entity_id = target.modeled_entity_id
+       AND support.source_logical_entity_id = source.logical_entity_id
+       AND support.support_source_type = 'logical_entity'
+       AND support.dimensional_entity_source_mapping_status = 'active'
+     WHERE EXISTS (
+         SELECT 1 FROM workflow.mapping_object AS mapping
+         JOIN core.system AS system ON system.system_id = mapping.source_system_id AND system.is_active
+          WHERE mapping.model_id = p_model_id AND mapping.logical_entity_id = source.logical_entity_id
+            AND mapping.modeled_entity_type = 'logical_entity' AND mapping.source_system_id = p_source_system_id
+            AND mapping.object_mapping_status = 'active' AND mapping.mapping_transformation_document IS NOT NULL
+     )
+    UNION ALL
+    SELECT NULL::BIGINT, target.modeled_entity_id, 'lookup'::TEXT,
+           'Available peer Dimensional lookup with applied Mapping for the selected source System.'::TEXT,
+           NULL::INTEGER, FALSE, NULL::BIGINT, NULL::BIGINT,
+           source.dimensional_entity_id, source.dimensional_entity_is_locked, TRUE
+      FROM target
+      JOIN workflow.dimensional_entity AS source ON source.model_id = p_model_id
+       AND source.dimensional_entity_status = 'active'
+       AND target.modeled_entity_type = 'dimensional_entity'
+       AND source.dimensional_entity_id <> target.modeled_entity_id
+     WHERE EXISTS (
+         SELECT 1 FROM workflow.mapping_object AS mapping
+         JOIN core.system AS system ON system.system_id = mapping.source_system_id AND system.is_active
+          WHERE mapping.model_id = p_model_id AND mapping.dimensional_entity_id = source.dimensional_entity_id
+            AND mapping.modeled_entity_type = 'dimensional_entity' AND mapping.source_system_id = p_source_system_id
+            AND mapping.object_mapping_status = 'active' AND mapping.mapping_transformation_document IS NOT NULL
+     );
 $list_mapping_source_objects$;
-
-REVOKE ALL ON FUNCTION workflow.list_mapping_source_objects(
-    BIGINT, BIGINT, VARCHAR, BIGINT
-) FROM PUBLIC;
+REVOKE ALL ON FUNCTION workflow.list_mapping_source_objects(BIGINT, BIGINT, VARCHAR, BIGINT) FROM PUBLIC;
 
 CREATE FUNCTION workflow.list_code_generation_target_context(
-    p_model_id BIGINT,
-    p_modeled_entity_type VARCHAR(30),
+    p_model_id BIGINT, p_modeled_entity_type VARCHAR(30),
     p_required_artifact_type VARCHAR(30) DEFAULT 'sql_file'
 )
 RETURNS TABLE (
-    model_id BIGINT,
-    modeled_entity_type VARCHAR(30),
-    modeled_entity_name VARCHAR(255),
-    object_id BIGINT,
-    source_system_count INTEGER,
-    code_input_digest CHAR(64),
-    source_context JSONB
+    model_id BIGINT, modeled_entity_type VARCHAR(30), modeled_entity_id BIGINT,
+    modeled_entity_schema_name VARCHAR(400), modeled_entity_name VARCHAR(255),
+    source_system_count INTEGER, code_input_digest CHAR(64), source_context JSONB
 )
-LANGUAGE SQL
-STABLE
-SECURITY INVOKER
-SET search_path = pg_catalog
+LANGUAGE SQL STABLE SECURITY INVOKER SET search_path = pg_catalog
 AS $list_code_generation_target_context$
-    WITH eligible_target AS MATERIALIZED (
-        SELECT eligible.model_id,
-               eligible.object_id,
-               eligible.object_tenant_id,
-               eligible.connection_id,
-               eligible.system_id,
-               eligible.object_schema,
-               eligible.object_name,
-               eligible.zone_code,
-               binding.model_object_binding_id,
-               binding.modeled_entity_type,
-               binding.logical_entity_id,
-               binding.dimensional_entity_id
-          FROM workflow.list_model_object_eligibility(p_model_id) AS eligible
-          JOIN workflow.model_object_binding AS binding
-            ON binding.model_id = eligible.model_id
-           AND binding.object_id = eligible.object_id
-           AND binding.modeled_entity_type = p_modeled_entity_type
-           AND binding.model_object_binding_status = 'active'
-         WHERE p_modeled_entity_type IN (
-                   'logical_entity', 'dimensional_entity'
-               )
-           AND (
-               p_required_artifact_type IS NULL
-               OR p_required_artifact_type IN (
-                   'sql_file', 'python_file', 'python_notebook'
-               )
-           )
-           AND CASE p_modeled_entity_type
-                   WHEN 'logical_entity' THEN
-                       eligible.is_logical_mapping_target_eligible
-                   WHEN 'dimensional_entity' THEN
-                       eligible.is_dimensional_mapping_target_eligible
-                   ELSE FALSE
-               END
+    WITH target AS MATERIALIZED (
+        SELECT entity.*, model.tenant_id, model.silver_model_audit_columns_template,
+               model.gold_model_audit_columns_template, model.gold_model_technical_columns_template,
+               owner.tenant_code AS source_tenant_code, owner.tenant_name AS source_tenant_name,
+               connection.connection_id, connection.connection_code,
+               placement.tenant_id AS placement_tenant_id, placement.tenant_code,
+               placement.tenant_name, placement.tenant_catalog,
+               system.system_id, system.system_code, system.system_name
+          FROM workflow.modeled_entity AS entity
+          JOIN model.model AS model ON model.model_id = entity.model_id AND model.is_active
+          JOIN core.tenant AS owner ON owner.tenant_id = model.tenant_id AND owner.is_active
+          JOIN core.connection AS connection ON connection.connection_id = owner.gds_connection_id
+           AND connection.is_active AND connection.is_global_data_store
+          JOIN core.tenant AS placement ON placement.tenant_id = connection.tenant_id AND placement.is_active
+          JOIN core.system AS system ON system.system_id = connection.system_id AND system.is_active
+         WHERE entity.model_id = p_model_id AND entity.modeled_entity_type = p_modeled_entity_type
+           AND entity.status = 'active'
+           AND (p_required_artifact_type IS NULL OR p_required_artifact_type IN ('sql_file','python_file','python_notebook'))
     ), active_mapping AS MATERIALIZED (
-        SELECT target.*,
-               mapping.mapping_object_id,
-               mapping.source_system_id,
-               0 AS source_system_dependency_order,
-               mapping.object_dependency_order,
-               mapping.mapping_transformation_document,
-               source_system.system_code AS source_system_code,
-               source_system.system_name AS source_system_name,
-               CASE target.modeled_entity_type
-                   WHEN 'logical_entity' THEN target.logical_entity_id
-                   ELSE target.dimensional_entity_id
-               END AS modeled_entity_id,
-               CASE target.modeled_entity_type
-                   WHEN 'logical_entity' THEN logical_entity.logical_entity_name
-                   ELSE dimensional_entity.dimensional_entity_name
-               END AS modeled_entity_name,
-               CASE target.modeled_entity_type
-                   WHEN 'logical_entity' THEN
-                       logical_entity.logical_entity_definition
-                   ELSE dimensional_entity.dimensional_entity_definition
-               END AS modeled_entity_definition,
-               CASE target.modeled_entity_type
-                   WHEN 'logical_entity' THEN logical_entity.logical_entity_type
-                   ELSE dimensional_entity.dimensional_entity_type
-               END AS modeled_entity_classification,
-               CASE target.modeled_entity_type
-                   WHEN 'logical_entity' THEN logical_entity.logical_entity_grain
-                   ELSE dimensional_entity.dimensional_entity_grain_definition
-               END AS modeled_entity_grain,
-               mapping.mapping_transformation_document IS NOT NULL
-               AND source_system.is_active
-               AND (
-                   (
-                       target.modeled_entity_type = 'logical_entity'
-                       AND logical_entity.logical_entity_status = 'active'
-                   ) OR (
-                       target.modeled_entity_type = 'dimensional_entity'
-                       AND dimensional_entity.dimensional_entity_status = 'active'
-                   )
-               )
-               AND NOT EXISTS (
-                   SELECT 1
-                     FROM workflow.model_attribute_binding AS attribute_binding
-                    WHERE attribute_binding.model_object_binding_id =
-                          target.model_object_binding_id
-                      AND attribute_binding.model_attribute_binding_status =
-                          'active'
-                      AND NOT EXISTS (
-                          SELECT 1
-                            FROM workflow.mapping_attribute AS child
-                           WHERE child.mapping_object_id =
-                                 mapping.mapping_object_id
-                             AND child.model_attribute_binding_id =
-                                 attribute_binding.model_attribute_binding_id
-                             AND child.attribute_mapping_status = 'active'
-                             AND child.attribute_mapping_transformation_document
-                                 IS NOT NULL
-                      )
-               ) AS is_complete
-          FROM eligible_target AS target
-          JOIN workflow.mapping_object AS mapping
-            ON mapping.model_id = target.model_id
-           AND mapping.model_object_binding_id =
-               target.model_object_binding_id
-           AND mapping.object_mapping_status = 'active'
-          JOIN core.system AS source_system
-            ON source_system.system_id = mapping.source_system_id
-          LEFT JOIN workflow.logical_entity AS logical_entity
-            ON logical_entity.logical_entity_id = target.logical_entity_id
-           AND logical_entity.model_id = target.model_id
-          LEFT JOIN workflow.dimensional_entity AS dimensional_entity
-            ON dimensional_entity.dimensional_entity_id =
-               target.dimensional_entity_id
-           AND dimensional_entity.model_id = target.model_id
-    ), complete_target AS MATERIALIZED (
-        SELECT mapping.model_id,
-               mapping.modeled_entity_type,
-               min(mapping.modeled_entity_name)::VARCHAR(255)
-                   AS modeled_entity_name,
-               mapping.object_id,
-               mapping.model_object_binding_id
-          FROM active_mapping AS mapping
-         GROUP BY mapping.model_id,
-                  mapping.modeled_entity_type,
-                  mapping.object_id,
-                  mapping.model_object_binding_id
-        HAVING count(*) > 0
-           AND bool_and(mapping.is_complete)
-    ), assembled AS MATERIALIZED (
-        SELECT complete.model_id,
-               complete.modeled_entity_type,
-               complete.modeled_entity_name,
-               target.object_id,
-               source_systems.source_system_count,
-               jsonb_build_object(
-                   'model_object_binding_id', complete.model_object_binding_id,
-                   'source_systems', source_systems.documents,
-                   'object_mappings', object_mappings.documents,
-                   'attribute_mappings', attribute_mappings.documents
-               ) AS mapping_context,
-               jsonb_build_object(
-                   'consumer_context_version', 'atlas-1',
-                   'target', jsonb_build_object(
-                       'source_tenant_id', source_tenant.tenant_id,
-                       'source_tenant_code', source_tenant.tenant_code,
-                       'source_tenant_name', source_tenant.tenant_name,
-                       'tenant_id', placement_tenant.tenant_id,
-                       'tenant_code', placement_tenant.tenant_code,
-                       'tenant_name', placement_tenant.tenant_name,
-                       'tenant_catalog', placement_tenant.tenant_catalog,
-                       'system_id', target_system.system_id,
-                       'system_code', target_system.system_code,
-                       'system_name', target_system.system_name,
-                       'connection_id', connection.connection_id,
-                       'connection_code', connection.connection_code,
-                       'object_id', target.object_id,
-                       'object_schema', target.object_schema,
-                       'object_name', target.object_name,
-                       'object_description', target_object.object_description,
-                       'zone_code', target.zone_code,
-                       'batch_attribute_name', target_object.batch_attribute_name,
-                       'audit_columns_template', CASE complete.modeled_entity_type
-                           WHEN 'logical_entity' THEN mapping_model.silver_model_audit_columns_template
-                           ELSE mapping_model.gold_model_audit_columns_template END,
-                       'technical_columns_template', CASE complete.modeled_entity_type
-                           WHEN 'dimensional_entity' THEN mapping_model.gold_model_technical_columns_template
-                           ELSE NULL END,
-                       'attributes', target_attributes.documents
-                   ),
-                   'physical_sources', physical_sources.documents,
-                   'source_systems', source_systems.documents,
-                   'object_mappings', object_mappings.documents,
-                   'attribute_mappings', attribute_mappings.documents
-               ) AS source_context
-          FROM complete_target AS complete
-          JOIN model.model AS mapping_model ON mapping_model.model_id = complete.model_id
-          JOIN eligible_target AS target
-            ON target.model_id = complete.model_id
-           AND target.object_id = complete.object_id
-          JOIN core.object AS target_object
-            ON target_object.object_id = target.object_id
-          JOIN core.connection AS connection
-            ON connection.connection_id = target.connection_id
-           AND connection.is_active
-          JOIN core.tenant AS placement_tenant
-            ON placement_tenant.tenant_id = connection.tenant_id
-           AND placement_tenant.is_active
-          JOIN core.tenant AS source_tenant
-            ON source_tenant.tenant_id = target.object_tenant_id
-           AND source_tenant.is_active
-          JOIN core.system AS target_system
-            ON target_system.system_id = target.system_id
-           AND target_system.is_active
-          CROSS JOIN LATERAL (
+        SELECT mapping.*, source.system_code AS source_system_code, source.system_name AS source_system_name
+          FROM workflow.mapping_object AS mapping
+          JOIN target ON target.model_id = mapping.model_id AND target.modeled_entity_type = mapping.modeled_entity_type
+           AND target.modeled_entity_id = coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id)
+          JOIN core.system AS source ON source.system_id = mapping.source_system_id AND source.is_active
+         WHERE mapping.object_mapping_status = 'active'
+    ), complete AS MATERIALIZED (
+        SELECT target.* FROM target
+         WHERE EXISTS (SELECT 1 FROM active_mapping AS mapping WHERE mapping.model_id = target.model_id
+           AND mapping.modeled_entity_type = target.modeled_entity_type
+           AND coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id) = target.modeled_entity_id)
+           AND NOT EXISTS (
+             SELECT 1 FROM active_mapping AS mapping
+              WHERE mapping.model_id = target.model_id AND mapping.modeled_entity_type = target.modeled_entity_type
+                AND coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id) = target.modeled_entity_id
+                AND (mapping.mapping_transformation_document IS NULL OR EXISTS (
+                  SELECT 1 FROM workflow.modeled_attribute AS attribute
+                   WHERE attribute.model_id = target.model_id AND attribute.modeled_entity_type = target.modeled_entity_type
+                     AND attribute.modeled_entity_id = target.modeled_entity_id AND attribute.status = 'active'
+                     AND NOT EXISTS (
+                       SELECT 1 FROM workflow.mapping_attribute AS mapped
+                        WHERE mapped.mapping_object_id = mapping.mapping_object_id
+                          AND coalesce(mapped.logical_attribute_id,mapped.dimensional_attribute_id) = attribute.modeled_attribute_id
+                          AND mapped.attribute_mapping_status = 'active'
+                          AND mapped.attribute_mapping_transformation_document IS NOT NULL
+                     )
+                ))
+           )
+    ), assembled AS (
+      SELECT target.model_id, target.modeled_entity_type, target.modeled_entity_id,
+             target.modeled_entity_schema_name, target.modeled_entity_name,
+             systems.source_system_count,
+             jsonb_build_object(
+               'consumer_context_version','entity-3',
+               'target', jsonb_build_object(
+                 'model_id',target.model_id,'modeled_entity_type',target.modeled_entity_type,
+                 'modeled_entity_id',target.modeled_entity_id,
+                 'modeled_entity_schema_name',target.modeled_entity_schema_name,
+                 'modeled_entity_name',target.modeled_entity_name,
+                 'source_tenant_id',target.tenant_id,'source_tenant_code',target.source_tenant_code,
+                 'source_tenant_name',target.source_tenant_name,'tenant_id',target.placement_tenant_id,
+                 'tenant_code',target.tenant_code,'tenant_name',target.tenant_name,'tenant_catalog',target.tenant_catalog,
+                 'system_id',target.system_id,'system_code',target.system_code,'system_name',target.system_name,
+                 'connection_id',target.connection_id,'connection_code',target.connection_code,
+                 'object_schema',target.modeled_entity_schema_name,'object_name',target.modeled_entity_name,
+                 'object_description',target.definition,'zone_code',CASE target.modeled_entity_type WHEN 'logical_entity' THEN 'silver' ELSE 'gold' END,
+                 'batch_attribute_name',NULL,'is_locked',target.is_locked,
+                 'audit_columns_template',CASE target.modeled_entity_type WHEN 'logical_entity' THEN target.silver_model_audit_columns_template ELSE target.gold_model_audit_columns_template END,
+                 'technical_columns_template',CASE target.modeled_entity_type WHEN 'dimensional_entity' THEN target.gold_model_technical_columns_template ELSE NULL END,
+                 'attributes',attributes.documents),
+               'physical_sources',sources.documents,'source_systems',systems.documents,
+               'object_mappings',mappings.documents,'attribute_mappings',attribute_mappings.documents
+             ) AS source_context
+        FROM complete AS target
+        CROSS JOIN LATERAL (
+          SELECT coalesce(jsonb_agg(jsonb_build_object(
+            'modeled_attribute_id',a.modeled_attribute_id,'attribute_name',a.attribute_name,
+            'attribute_ordinal_position',a.ordinal_position,'attribute_data_type',a.data_type,
+            'attribute_inferred_data_type',a.data_type,'attribute_nullability',a.is_nullable,
+            'attribute_description',a.definition,'fc_attribute_name',NULL,'attribute_custom_code',NULL,
+            'is_surrogate_key',a.is_surrogate_key,'is_natural_key',a.is_natural_key,'is_meta_data',a.is_audit_column,
+            'is_masking_required',FALSE,'is_active',a.status = 'active','is_locked',a.is_locked
+          ) ORDER BY a.ordinal_position,a.modeled_attribute_id),'[]'::JSONB) AS documents
+          FROM workflow.modeled_attribute AS a WHERE a.model_id = target.model_id
+           AND a.modeled_entity_type = target.modeled_entity_type AND a.modeled_entity_id = target.modeled_entity_id
+        ) AS attributes
+        CROSS JOIN LATERAL (
+          SELECT count(*)::INTEGER AS source_system_count,
+                 jsonb_agg(jsonb_build_object('source_system_id',m.source_system_id,
+                   'system_code',m.source_system_code,'system_name',m.source_system_name)
+                   ORDER BY lower(m.source_system_code),m.source_system_id) AS documents
+            FROM active_mapping AS m WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+             AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
+        ) AS systems
+        CROSS JOIN LATERAL (
+          SELECT jsonb_agg(jsonb_build_object('mapping_object_id',m.mapping_object_id,'source_system_id',m.source_system_id,
+                   'object_dependency_order',m.object_dependency_order,
+                   'entity',jsonb_build_object('entity_type',target.modeled_entity_type,'entity_id',target.modeled_entity_id,
+                     'entity_schema_name',target.modeled_entity_schema_name,'entity_name',target.modeled_entity_name,
+                     'definition',target.definition,'classification',target.classification,'grain',target.grain,'assertions',assertions.documents),
+                   'transformation',m.mapping_transformation_document)
+                   ORDER BY lower(m.source_system_code),m.source_system_id,m.object_dependency_order,m.mapping_object_id) AS documents
+            FROM active_mapping AS m
+            CROSS JOIN LATERAL (
               SELECT coalesce(jsonb_agg(jsonb_build_object(
-                         'attribute_id', attribute.attribute_id,
-                         'attribute_name', attribute.attribute_name,
-                         'attribute_ordinal_position', attribute.attribute_ordinal_position,
-                         'attribute_data_type', attribute.attribute_data_type,
-                         'attribute_inferred_data_type', attribute.attribute_inferred_data_type,
-                         'attribute_nullability', attribute.attribute_nullability,
-                         'attribute_description', attribute.attribute_description,
-                         'fc_attribute_name', attribute.fc_attribute_name,
-                         'attribute_custom_code', attribute.attribute_custom_code,
-                         'is_surrogate_key', attribute.is_surrogate_key,
-                         'is_natural_key', attribute.is_natural_key,
-                         'is_meta_data', attribute.is_meta_data,
-                         'is_masking_required', attribute.is_masking_required,
-                         'is_active', attribute.is_active,
-                         'is_locked', attribute.is_locked
-                     ) ORDER BY attribute.attribute_ordinal_position, attribute.attribute_id),
-                     '[]'::JSONB) AS documents
-                FROM core.attribute AS attribute
-               WHERE attribute.object_id = target.object_id
-          ) AS target_attributes
-          CROSS JOIN LATERAL (
-              SELECT coalesce(jsonb_agg(jsonb_build_object(
-                         'selected_source_system_id', mapping.source_system_id,
-                         'source_mapping_id', source.source_mapping_id,
-                         'role', source.role,
-                         'rationale', source.rationale,
-                         'mapping_order', source.mapping_order,
-                         'is_locked', source.is_locked,
-                         'object', jsonb_build_object(
-                             'object_id', source_object.object_id,
-                             'source_tenant_id', source_object.source_tenant_id,
-                             'tenant_id', placement.tenant_id,
-                             'tenant_code', placement.tenant_code,
-                             'tenant_catalog', placement.tenant_catalog,
-                             'system_id', source_system.system_id,
-                             'system_code', source_system.system_code,
-                             'connection_id', source_connection.connection_id,
-                             'connection_code', source_connection.connection_code,
-                             'object_schema', source_object.object_schema,
-                             'object_name', source_object.object_name,
-                             'object_description', source_object.object_description,
-                             'fc_object_schema', source_object.fc_object_schema,
-                             'fc_object_name', source_object.fc_object_name,
-                             'foreign_catalog', source_connection.foreign_catalog,
-                             'batch_attribute_name', source_object.batch_attribute_name,
-                             'zone_code', lower(btrim(zone.zone_code)),
-                             'is_active', source_object.is_active,
-                             'is_locked', source_object.is_locked,
-                             'scope_is_active', source.scope_is_active,
-                             'scope_is_locked', source.scope_is_locked,
-                             'attributes', source_attributes.documents
-                         )
-                     ) ORDER BY mapping.source_system_dependency_order,
-                                mapping.source_system_id,
-                                source.mapping_order NULLS LAST,
-                                source.source_mapping_id, source_object.object_id), '[]'::JSONB) AS documents
-                FROM active_mapping AS mapping
-                CROSS JOIN LATERAL (
-                    WITH supported AS MATERIALIZED (
-                        SELECT * FROM workflow.list_mapping_source_objects(
-                            mapping.model_id, mapping.object_id,
-                            mapping.modeled_entity_type, mapping.source_system_id
-                        )
-                    ), named AS (
-                        SELECT named_object.value AS identity
-                          FROM jsonb_array_elements(CASE
-                              WHEN jsonb_typeof(mapping.mapping_transformation_document -> 'source_objects') = 'array'
-                              THEN mapping.mapping_transformation_document -> 'source_objects'
-                              ELSE '[]'::JSONB END) AS named_object
-                        UNION
-                        SELECT named_attribute.value AS identity
-                          FROM workflow.mapping_attribute AS mapped_attribute
-                         CROSS JOIN LATERAL jsonb_array_elements(CASE
-                              WHEN jsonb_typeof(mapped_attribute.attribute_mapping_transformation_document -> 'source_attributes') = 'array'
-                              THEN mapped_attribute.attribute_mapping_transformation_document -> 'source_attributes'
-                              ELSE '[]'::JSONB END) AS named_attribute
-                         WHERE mapped_attribute.mapping_object_id = mapping.mapping_object_id
-                           AND mapped_attribute.attribute_mapping_status = 'active'
-                    )
-                    SELECT source_mapping_id, role, rationale, mapping_order, is_locked,
-                           source_object_id, scope_is_locked, scope_is_active
-                      FROM supported
-                    UNION ALL
-                    SELECT NULL::BIGINT, 'lookup'::TEXT, 'Referenced by applied Mapping.'::TEXT, NULL::INTEGER,
-                           FALSE, lookup.object_id, FALSE, TRUE
-                      FROM workflow.list_model_object_eligibility(mapping.model_id) AS lookup
-                      JOIN core.connection AS lookup_connection
-                        ON lookup_connection.connection_id = lookup.connection_id
-                      JOIN core.tenant AS lookup_tenant
-                        ON lookup_tenant.tenant_id = lookup_connection.tenant_id
-                      JOIN core.system AS lookup_system
-                        ON lookup_system.system_id = lookup_connection.system_id
-                     WHERE NOT EXISTS (SELECT 1 FROM supported WHERE source_object_id = lookup.object_id)
-                       AND EXISTS (
-                           SELECT 1 FROM named
-                            WHERE lower(btrim(identity ->> 'tenant_code')) = lower(btrim(lookup_tenant.tenant_code))
-                              AND lower(btrim(identity ->> 'system_code')) = lower(btrim(lookup_system.system_code))
-                              AND lower(btrim(identity ->> 'connection_code')) = lower(btrim(lookup_connection.connection_code))
-                              AND lower(btrim(identity ->> 'object_schema')) = lower(btrim(lookup.object_schema))
-                              AND lower(btrim(identity ->> 'object_name')) = lower(btrim(lookup.object_name))
-                       )
-                       AND (
-                           lookup.object_id = mapping.object_id
-                           OR (lookup.is_model_input_eligible AND EXISTS (
-                               SELECT 1 FROM model.model_input_scope AS input
-                                WHERE input.model_id = mapping.model_id
-                                  AND input.object_id = lookup.object_id AND input.is_active
-                           ))
-                           OR ((lookup.is_logical_mapping_target_eligible OR lookup.is_dimensional_mapping_target_eligible)
-                               AND EXISTS (SELECT 1 FROM workflow.model_object_binding AS binding
-                                   WHERE binding.model_id = mapping.model_id
-                                     AND binding.object_id = lookup.object_id
-                                     AND binding.model_object_binding_status = 'active'))
-                       )
-                ) AS source
-                JOIN core.object AS source_object
-                  ON source_object.object_id = source.source_object_id
-                JOIN core.connection AS source_connection
-                  ON source_connection.connection_id = source_object.connection_id
-                JOIN core.tenant AS placement
-                  ON placement.tenant_id = source_connection.tenant_id
-                JOIN core.system AS source_system
-                  ON source_system.system_id = source_connection.system_id
-                JOIN reference.zone AS zone ON zone.zone_id = source_object.zone_id
-                CROSS JOIN LATERAL (
-                    SELECT coalesce(jsonb_agg(jsonb_build_object(
-                               'attribute_id', attribute.attribute_id,
-                               'attribute_name', attribute.attribute_name,
-                               'attribute_ordinal_position', attribute.attribute_ordinal_position,
-                               'attribute_data_type', attribute.attribute_data_type,
-                               'attribute_inferred_data_type', attribute.attribute_inferred_data_type,
-                               'attribute_nullability', attribute.attribute_nullability,
-                               'attribute_description', attribute.attribute_description,
-                               'fc_attribute_name', attribute.fc_attribute_name,
-                               'attribute_custom_code', attribute.attribute_custom_code,
-                               'is_surrogate_key', attribute.is_surrogate_key,
-                               'is_natural_key', attribute.is_natural_key,
-                               'is_meta_data', attribute.is_meta_data,
-                               'is_masking_required', attribute.is_masking_required,
-                         'fc_attribute_name', attribute.fc_attribute_name,
-                         'attribute_custom_code', attribute.attribute_custom_code,
-                         'is_surrogate_key', attribute.is_surrogate_key,
-                         'is_natural_key', attribute.is_natural_key,
-                         'is_meta_data', attribute.is_meta_data,
-                         'is_masking_required', attribute.is_masking_required,
-                               'is_active', attribute.is_active,
-                               'is_locked', attribute.is_locked
-                           ) ORDER BY attribute.attribute_ordinal_position, attribute.attribute_id),
-                           '[]'::JSONB) AS documents
-                      FROM core.attribute AS attribute
-                     WHERE attribute.object_id = source.source_object_id
-                ) AS source_attributes
-               WHERE mapping.model_id = complete.model_id
-                 AND mapping.object_id = complete.object_id
-          ) AS physical_sources
-          JOIN LATERAL (
-              SELECT count(*)::INTEGER AS source_system_count,
-                     jsonb_agg(
-                         system_document.document
-                         ORDER BY system_document.dependency_order,
-                                  lower(btrim(system_document.system_code)),
-                                  system_document.source_system_id
-                     ) AS documents
-                FROM (
-                    SELECT DISTINCT
-                           mapping.source_system_dependency_order
-                               AS dependency_order,
-                           mapping.source_system_id,
-                           mapping.source_system_code AS system_code,
-                           jsonb_build_object(
-                               'source_system_id', mapping.source_system_id,
-                               'system_code', mapping.source_system_code,
-                               'system_name', mapping.source_system_name,
-                               'dependency_order',
-                                   mapping.source_system_dependency_order
-                           ) AS document
-                      FROM active_mapping AS mapping
-                     WHERE mapping.model_id = complete.model_id
-                       AND mapping.object_id = complete.object_id
-                ) AS system_document
-          ) AS source_systems ON TRUE
-          JOIN LATERAL (
-              SELECT jsonb_agg(
-                         jsonb_build_object(
-                             'mapping_object_id', mapping.mapping_object_id,
-                             'model_object_binding_id',
-                                 mapping.model_object_binding_id,
-                             'source_system_id', mapping.source_system_id,
-                             'object_dependency_order',
-                                 mapping.object_dependency_order,
-                             'entity', jsonb_build_object(
-                                 'entity_type', mapping.modeled_entity_type,
-                                 'entity_id', mapping.modeled_entity_id,
-                                 'entity_name', mapping.modeled_entity_name,
-                                 'definition', mapping.modeled_entity_definition,
-                                 'classification',
-                                     mapping.modeled_entity_classification,
-                                 'grain', mapping.modeled_entity_grain,
-                                 'assertions', assertion_support.documents
-                             ),
-                             'transformation',
-                                 mapping.mapping_transformation_document
-                         ) ORDER BY
-                             mapping.source_system_dependency_order,
-                             mapping.object_dependency_order,
-                             mapping.mapping_object_id
-                     ) AS documents
-                FROM active_mapping AS mapping
-                CROSS JOIN LATERAL (
-                    SELECT coalesce(jsonb_agg(jsonb_build_object(
-                                  'modeling_assertion_record_key', assertion.modeling_assertion_record_key,
-                                  'modeling_assertion_record_type', assertion.modeling_assertion_record_type,
-                                  'modeling_assertion_text', assertion.modeling_assertion_text,
-                                  'modeling_assertion_details', assertion.modeling_assertion_details,
-                                  'modeling_assertion_source_location', assertion.modeling_assertion_source_location,
-                                  'modeling_assertion_confidence', assertion.modeling_assertion_confidence,
-                                  'modeling_assertion_document_name', document.modeling_assertion_document_name
-                              ) ORDER BY lower(btrim(assertion.modeling_assertion_record_key))),
-                              '[]'::JSONB) AS documents
-                      FROM model.modeling_assertion_record AS assertion
-                      JOIN model.modeling_assertion_document AS document
-                        ON document.modeling_assertion_document_id = assertion.modeling_assertion_document_id
-                       AND document.model_id = assertion.model_id AND document.is_active
-                     WHERE assertion.model_id = mapping.model_id
-                       AND assertion.modeling_assertion_record_status = 'active'
-                       AND (document.system_id IS NULL OR document.system_id = mapping.source_system_id)
-                       AND (document.tenant_id IS NULL OR document.tenant_id = mapping_model.tenant_id
-                           OR EXISTS (SELECT 1 FROM jsonb_array_elements(physical_sources.documents) AS source
-                                      WHERE (source -> 'object' ->> 'tenant_id')::BIGINT = document.tenant_id
-                                        AND (document.system_id IS NULL OR (source -> 'object' ->> 'system_id')::BIGINT = document.system_id)))
-                ) AS assertion_support
-               WHERE mapping.model_id = complete.model_id
-                 AND mapping.object_id = complete.object_id
-          ) AS object_mappings ON TRUE
-          JOIN LATERAL (
-              SELECT coalesce(
-                         jsonb_agg(
-                             jsonb_build_object(
-                                 'mapping_attribute_id',
-                                     child.mapping_attribute_id,
-                                 'mapping_object_id', mapping.mapping_object_id,
-                                 'model_attribute_binding_id',
-                                     attribute_binding.model_attribute_binding_id,
-                                 'source_system_id', mapping.source_system_id,
-                                 'modeled_attribute_id',
-                                     coalesce(
-                                         attribute_binding.logical_attribute_id,
-                                         attribute_binding.dimensional_attribute_id
-                                     ),
-                                 'target_attribute_id', target_attribute.attribute_id,
-                                 'target_attribute_name', target_attribute.attribute_name,
-                                 'modeled_attribute_name', coalesce(
-                                     logical_attribute.logical_attribute_name,
-                                     dimensional_attribute.dimensional_attribute_name
-                                 ),
-                                 'target_attribute_ordinal_position',
-                                     target_attribute.attribute_ordinal_position,
-                                 'transformation',
-                                     child.attribute_mapping_transformation_document
-                             ) ORDER BY
-                                 mapping.source_system_dependency_order,
-                                 mapping.object_dependency_order,
-                                 target_attribute.attribute_ordinal_position,
-                                 child.mapping_attribute_id
-                         ),
-                         '[]'::JSONB
-                     ) AS documents
-                FROM active_mapping AS mapping
-                JOIN workflow.mapping_attribute AS child
-                  ON child.mapping_object_id = mapping.mapping_object_id
-                 AND child.attribute_mapping_status = 'active'
-                JOIN workflow.model_attribute_binding AS attribute_binding
-                  ON attribute_binding.model_attribute_binding_id =
-                     child.model_attribute_binding_id
-                 AND attribute_binding.model_object_binding_id =
-                     mapping.model_object_binding_id
-                 AND attribute_binding.model_attribute_binding_status = 'active'
-                LEFT JOIN workflow.logical_attribute AS logical_attribute
-                  ON logical_attribute.logical_attribute_id = attribute_binding.logical_attribute_id
-                LEFT JOIN workflow.dimensional_attribute AS dimensional_attribute
-                  ON dimensional_attribute.dimensional_attribute_id = attribute_binding.dimensional_attribute_id
-                JOIN core.attribute AS target_attribute
-                  ON target_attribute.attribute_id = attribute_binding.attribute_id
-                 AND target_attribute.object_id = mapping.object_id
-                 AND target_attribute.is_active
-               WHERE mapping.model_id = complete.model_id
-                 AND mapping.object_id = complete.object_id
-          ) AS attribute_mappings ON TRUE
+                'modeling_assertion_record_key',a.modeling_assertion_record_key,
+                'modeling_assertion_record_type',a.modeling_assertion_record_type,'modeling_assertion_text',a.modeling_assertion_text,
+                'modeling_assertion_details',a.modeling_assertion_details,'modeling_assertion_source_location',a.modeling_assertion_source_location,
+                'modeling_assertion_confidence',a.modeling_assertion_confidence,'modeling_assertion_document_name',d.modeling_assertion_document_name
+              ) ORDER BY lower(a.modeling_assertion_record_key)),'[]'::JSONB) AS documents
+              FROM model.modeling_assertion_record AS a JOIN model.modeling_assertion_document AS d
+                ON d.modeling_assertion_document_id = a.modeling_assertion_document_id AND d.model_id = a.model_id AND d.is_active
+              WHERE a.model_id = target.model_id AND a.modeling_assertion_record_status = 'active'
+                AND (d.system_id IS NULL OR d.system_id = m.source_system_id)
+                AND (d.tenant_id IS NULL OR d.tenant_id = target.tenant_id OR EXISTS (
+                  SELECT 1 FROM model.model_input_scope AS scope JOIN core.object AS source ON source.object_id = scope.object_id
+                   WHERE scope.model_id = target.model_id AND scope.is_active AND source.source_tenant_id = d.tenant_id))
+            ) AS assertions
+           WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+             AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
+        ) AS mappings
+        CROSS JOIN LATERAL (
+          SELECT coalesce(jsonb_agg(jsonb_build_object(
+                   'mapping_attribute_id',a.mapping_attribute_id,'mapping_object_id',m.mapping_object_id,
+                   'source_system_id',m.source_system_id,'modeled_attribute_id',attribute.modeled_attribute_id,
+                   'target_attribute_name',attribute.attribute_name,'modeled_attribute_name',attribute.attribute_name,
+                   'target_attribute_ordinal_position',attribute.ordinal_position,
+                   'transformation',a.attribute_mapping_transformation_document
+                 ) ORDER BY lower(m.source_system_code),m.source_system_id,attribute.ordinal_position,a.mapping_attribute_id),'[]'::JSONB) AS documents
+            FROM active_mapping AS m JOIN workflow.mapping_attribute AS a ON a.mapping_object_id = m.mapping_object_id AND a.attribute_mapping_status = 'active'
+            JOIN workflow.modeled_attribute AS attribute ON attribute.model_id = m.model_id
+              AND attribute.modeled_entity_type = m.modeled_entity_type
+              AND attribute.modeled_entity_id = coalesce(m.logical_entity_id,m.dimensional_entity_id)
+              AND attribute.modeled_attribute_id = coalesce(a.logical_attribute_id,a.dimensional_attribute_id) AND attribute.status = 'active'
+           WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+             AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
+        ) AS attribute_mappings
+        CROSS JOIN LATERAL (
+          SELECT coalesce(jsonb_agg(jsonb_build_object(
+            'selected_source_system_id',m.source_system_id,'source_mapping_id',source.source_mapping_id,
+            'role',source.role,'rationale',source.rationale,'mapping_order',source.mapping_order,'is_locked',source.is_locked,
+            'object',CASE WHEN source.source_object_id IS NOT NULL THEN physical.document ELSE modeled.document END
+          ) ORDER BY lower(m.source_system_code),m.source_system_id,source.mapping_order NULLS LAST,source.source_object_id,source.source_logical_entity_id,source.source_dimensional_entity_id),'[]'::JSONB) AS documents
+          FROM active_mapping AS m
+          CROSS JOIN LATERAL workflow.list_mapping_source_objects(m.model_id,target.modeled_entity_id,target.modeled_entity_type,m.source_system_id) AS source
+          LEFT JOIN LATERAL (
+            SELECT jsonb_build_object(
+              'object_id',o.object_id,'source_tenant_id',o.source_tenant_id,'tenant_id',t.tenant_id,
+              'tenant_code',t.tenant_code,'tenant_catalog',t.tenant_catalog,'system_id',system.system_id,'system_code',system.system_code,
+              'connection_id',c.connection_id,'connection_code',c.connection_code,'object_schema',o.object_schema,'object_name',o.object_name,
+              'object_description',o.object_description,'fc_object_schema',o.fc_object_schema,'fc_object_name',o.fc_object_name,
+              'foreign_catalog',c.foreign_catalog,'batch_attribute_name',o.batch_attribute_name,'zone_code',lower(z.zone_code),
+              'is_active',o.is_active,'is_locked',o.is_locked,'scope_is_active',source.scope_is_active,'scope_is_locked',source.scope_is_locked,
+              'attributes',(SELECT coalesce(jsonb_agg(jsonb_build_object(
+                'attribute_id',a.attribute_id,'attribute_name',a.attribute_name,'attribute_ordinal_position',a.attribute_ordinal_position,
+                'attribute_data_type',a.attribute_data_type,'attribute_inferred_data_type',a.attribute_inferred_data_type,
+                'attribute_nullability',a.attribute_nullability,'attribute_description',a.attribute_description,
+                'fc_attribute_name',a.fc_attribute_name,'attribute_custom_code',a.attribute_custom_code,
+                'is_surrogate_key',a.is_surrogate_key,'is_natural_key',a.is_natural_key,'is_meta_data',a.is_meta_data,
+                'is_masking_required',a.is_masking_required,'is_active',a.is_active,'is_locked',a.is_locked
+              ) ORDER BY a.attribute_ordinal_position,a.attribute_id),'[]'::JSONB) FROM core.attribute AS a WHERE a.object_id = o.object_id)
+            ) AS document
+            FROM core.object AS o JOIN core.connection AS c ON c.connection_id = o.connection_id
+             JOIN core.tenant AS t ON t.tenant_id = c.tenant_id JOIN core.system AS system ON system.system_id = c.system_id
+             JOIN reference.zone AS z ON z.zone_id = o.zone_id WHERE o.object_id = source.source_object_id
+          ) AS physical ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT jsonb_build_object(
+              'modeled_entity_id',e.modeled_entity_id,'modeled_entity_type',e.modeled_entity_type,
+              'modeled_entity_schema_name',e.modeled_entity_schema_name,'modeled_entity_name',e.modeled_entity_name,
+              'source_tenant_id',target.tenant_id,'tenant_id',target.placement_tenant_id,'tenant_code',target.tenant_code,
+              'tenant_catalog',target.tenant_catalog,'system_id',target.system_id,'system_code',target.system_code,
+              'connection_id',target.connection_id,'connection_code',target.connection_code,
+              'object_schema',e.modeled_entity_schema_name,'object_name',e.modeled_entity_name,'object_description',e.definition,
+              'fc_object_schema',NULL,'fc_object_name',NULL,'foreign_catalog',NULL,'batch_attribute_name',NULL,
+              'zone_code',CASE e.modeled_entity_type WHEN 'logical_entity' THEN 'silver' ELSE 'gold' END,
+              'is_active',e.status = 'active','is_locked',e.is_locked,
+              'scope_is_active',source.scope_is_active,'scope_is_locked',source.scope_is_locked,
+              'attributes',(SELECT coalesce(jsonb_agg(jsonb_build_object(
+                'modeled_attribute_id',a.modeled_attribute_id,
+                'attribute_name',a.attribute_name,'attribute_ordinal_position',a.ordinal_position,
+                'attribute_data_type',a.data_type,'attribute_inferred_data_type',a.data_type,'attribute_nullability',a.is_nullable,
+                'attribute_description',a.definition,'fc_attribute_name',NULL,'attribute_custom_code',NULL,
+                'is_surrogate_key',a.is_surrogate_key,'is_natural_key',a.is_natural_key,'is_meta_data',a.is_audit_column,
+                'is_masking_required',FALSE,'is_active',a.status = 'active','is_locked',a.is_locked
+              ) || jsonb_build_object(
+                CASE e.modeled_entity_type WHEN 'logical_entity' THEN 'logical_attribute_name' ELSE 'dimensional_attribute_name' END,
+                a.attribute_name
+              ) ORDER BY a.ordinal_position,a.modeled_attribute_id),'[]'::JSONB) FROM workflow.modeled_attribute AS a
+              WHERE a.model_id = e.model_id AND a.modeled_entity_type = e.modeled_entity_type AND a.modeled_entity_id = e.modeled_entity_id)
+            ) || CASE e.modeled_entity_type WHEN 'logical_entity' THEN jsonb_build_object(
+              'logical_entity_schema_name',e.modeled_entity_schema_name,'logical_entity_name',e.modeled_entity_name
+            ) ELSE jsonb_build_object(
+              'dimensional_entity_schema_name',e.modeled_entity_schema_name,'dimensional_entity_name',e.modeled_entity_name
+            ) END AS document FROM workflow.modeled_entity AS e
+             WHERE e.model_id = target.model_id
+               AND e.modeled_entity_type = CASE WHEN source.source_dimensional_entity_id IS NOT NULL THEN 'dimensional_entity' ELSE 'logical_entity' END
+               AND e.modeled_entity_id = coalesce(source.source_logical_entity_id,source.source_dimensional_entity_id)
+          ) AS modeled ON TRUE
+          WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+            AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
+        ) AS sources
     )
-    SELECT assembled.model_id,
-           assembled.modeled_entity_type,
-           assembled.modeled_entity_name,
-           assembled.object_id,
-           assembled.source_system_count,
-           encode(
-               sha256(
-                   convert_to(
-                       jsonb_build_object(
-                           'mapping_context', assembled.mapping_context,
-                           'source_context', assembled.source_context
-                       )::TEXT,
-                       'UTF8'
-                   )
-               ),
-               'hex'
-           )::CHAR(64) AS code_input_digest,
-           assembled.source_context
-      FROM assembled
-     ORDER BY assembled.object_id;
+    SELECT assembled.model_id,assembled.modeled_entity_type,assembled.modeled_entity_id,
+           assembled.modeled_entity_schema_name,assembled.modeled_entity_name,assembled.source_system_count,
+           encode(sha256(convert_to(assembled.source_context::TEXT,'UTF8')),'hex')::CHAR(64),assembled.source_context
+      FROM assembled ORDER BY assembled.modeled_entity_id;
 $list_code_generation_target_context$;
+REVOKE ALL ON FUNCTION workflow.list_code_generation_target_context(BIGINT,VARCHAR,VARCHAR) FROM PUBLIC;
 
-REVOKE ALL ON FUNCTION workflow.list_code_generation_target_context(
-    BIGINT,
-    VARCHAR,
-    VARCHAR
-) FROM PUBLIC;
-
-CREATE FUNCTION workflow.list_model_attribute_eligibility(
-    p_model_id BIGINT
-)
+CREATE FUNCTION workflow.list_model_attribute_eligibility(p_model_id BIGINT)
 RETURNS TABLE (
-    model_id BIGINT,
-    object_id BIGINT,
-    attribute_id BIGINT,
-    connection_id BIGINT,
-    system_id BIGINT,
-    object_tenant_id BIGINT,
-    object_schema VARCHAR(400),
-    object_name VARCHAR(400),
-    attribute_name VARCHAR(400),
-    attribute_ordinal_position INTEGER,
-    zone_code TEXT,
-    is_model_input_eligible BOOLEAN,
-    is_dimensional_source_eligible BOOLEAN,
-    is_logical_mapping_target_eligible BOOLEAN,
-    is_dimensional_mapping_target_eligible BOOLEAN
+    model_id BIGINT, object_id BIGINT, attribute_id BIGINT, connection_id BIGINT,
+    system_id BIGINT, object_tenant_id BIGINT, object_schema VARCHAR(400), object_name VARCHAR(400),
+    attribute_name VARCHAR(400), attribute_ordinal_position INTEGER, zone_code TEXT,
+    is_model_input_eligible BOOLEAN
 )
-LANGUAGE SQL
-STABLE
-SECURITY INVOKER
-SET search_path = pg_catalog
+LANGUAGE SQL STABLE SECURITY INVOKER SET search_path = pg_catalog
 AS $list_model_attribute_eligibility$
-    SELECT eligible_object.model_id,
-           eligible_object.object_id,
-           attribute.attribute_id,
-           eligible_object.connection_id,
-           eligible_object.system_id,
-           eligible_object.object_tenant_id,
-           eligible_object.object_schema,
-           eligible_object.object_name,
-           attribute.attribute_name,
-           attribute.attribute_ordinal_position,
-           eligible_object.zone_code,
-           eligible_object.is_model_input_eligible,
-           eligible_object.is_dimensional_source_eligible
-           AND EXISTS (
-               SELECT 1
-                 FROM workflow.model_object_binding AS object_binding
-                 JOIN workflow.model_attribute_binding AS attribute_binding
-                   ON attribute_binding.model_object_binding_id =
-                      object_binding.model_object_binding_id
-                  AND attribute_binding.attribute_id = attribute.attribute_id
-                  AND attribute_binding.model_attribute_binding_status = 'active'
-                 JOIN workflow.mapping_object AS mapping_object
-                   ON mapping_object.model_object_binding_id =
-                      object_binding.model_object_binding_id
-                  AND mapping_object.object_mapping_status = 'active'
-                 JOIN workflow.mapping_attribute AS mapping_attribute
-                   ON mapping_attribute.mapping_object_id =
-                      mapping_object.mapping_object_id
-                  AND mapping_attribute.model_attribute_binding_id =
-                      attribute_binding.model_attribute_binding_id
-                  AND mapping_attribute.attribute_mapping_status = 'active'
-                  AND mapping_attribute.attribute_mapping_transformation_document
-                      IS NOT NULL
-                WHERE object_binding.model_id = eligible_object.model_id
-                  AND object_binding.object_id = eligible_object.object_id
-                  AND object_binding.modeled_entity_type = 'logical_entity'
-                  AND object_binding.model_object_binding_status = 'active'
-           ) AS is_dimensional_source_eligible,
-           eligible_object.is_logical_mapping_target_eligible,
-           eligible_object.is_dimensional_mapping_target_eligible
-      FROM workflow.list_model_object_eligibility(p_model_id)
-           AS eligible_object
-      JOIN core.attribute AS attribute
-        ON attribute.object_id = eligible_object.object_id
-       AND attribute.is_active
-     ORDER BY lower(btrim(eligible_object.object_schema)),
-              lower(btrim(eligible_object.object_name)),
-              attribute.attribute_ordinal_position,
-              lower(btrim(attribute.attribute_name)),
-              attribute.attribute_id;
+    SELECT o.model_id,o.object_id,a.attribute_id,o.connection_id,o.system_id,o.object_tenant_id,
+           o.object_schema,o.object_name,a.attribute_name,a.attribute_ordinal_position,o.zone_code,
+           o.is_model_input_eligible
+      FROM workflow.list_model_object_eligibility(p_model_id) AS o
+      JOIN core.attribute AS a ON a.object_id = o.object_id AND a.is_active
+     ORDER BY lower(o.object_schema),lower(o.object_name),a.attribute_ordinal_position,lower(a.attribute_name),a.attribute_id;
 $list_model_attribute_eligibility$;
-
-REVOKE ALL ON FUNCTION workflow.list_model_attribute_eligibility(BIGINT)
-FROM PUBLIC;
+REVOKE ALL ON FUNCTION workflow.list_model_attribute_eligibility(BIGINT) FROM PUBLIC;
