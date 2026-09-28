@@ -669,9 +669,16 @@ def test_new_inactive_authored_records_can_reference_current_entities() -> None:
     assert result.valid
 
 
-def test_code_authoring_requires_every_entity_attribute_per_source_system() -> None:
+@pytest.mark.parametrize("partial", ["object_only", "attribute_only", "blank_attribute"])
+def test_code_authoring_accepts_available_mapping_transformations(partial: str) -> None:
     graph = complete_model_graph()
-    graph["mapping_attribute"] = graph["mapping_attribute"][:1]
+    if partial == "object_only":
+        graph["mapping_attribute"] = []
+    elif partial == "attribute_only":
+        graph["mapping_object"][0]["mapping_transformation_document"] = None
+        graph["mapping_attribute"] = graph["mapping_attribute"][:1]
+    else:
+        graph["mapping_attribute"][0]["attribute_mapping_transformation_document"] = None
 
     result = validate_future_graph(
         snapshot=empty_model_snapshot(),
@@ -679,30 +686,65 @@ def test_code_authoring_requires_every_entity_attribute_per_source_system() -> N
         physical_scope=complete_physical_scope(),
     )
 
-    assert result.valid is False
-    assert result.phase == "references"
-    assert any(
-        issue.code == "active_dependency_invalid"
-        and issue.dataset == "mapping_attribute"
-        for issue in result.issues
+    assert result.valid
+
+
+def test_cleared_saved_pair_does_not_require_a_new_code_assignment() -> None:
+    graph = complete_model_graph()
+    empty_mapping = {
+        **graph["mapping_object"][0],
+        "source_system_code": "GDS",
+        "mapping_transformation_document": None,
+    }
+    graph["mapping_object"].append(empty_mapping)
+    result = validate_future_graph(
+        snapshot=snapshot_from_graph(graph),
+        staged_documents={
+            "generated_code": [{**graph["generated_code"][0], "generated_code_content": "SELECT 2"}],
+        },
+        physical_scope=complete_physical_scope(),
     )
 
+    assert result.valid
 
-def test_code_authoring_requires_object_transformation() -> None:
+
+def test_code_authoring_rejects_an_entity_with_only_cleared_saved_pairs() -> None:
     graph = complete_model_graph()
     graph["mapping_object"][0]["mapping_transformation_document"] = None
-
+    for record in graph["mapping_attribute"]:
+        record["attribute_mapping_transformation_document"] = None
     result = validate_future_graph(
-        snapshot=empty_model_snapshot(),
-        staged_documents=graph,
+        snapshot=snapshot_from_graph(graph),
+        staged_documents={"generated_code": [graph["generated_code"][0]]},
         physical_scope=complete_physical_scope(),
     )
 
-    assert result.valid is False
-    assert any(
-        issue.code == "active_dependency_invalid" and issue.dataset == "mapping_object"
-        for issue in result.issues
+    assert not result.valid
+    assert any(issue.dataset == "generated_code" for issue in result.issues)
+
+
+def test_cleared_pair_still_rejects_duplicate_active_code_assignments() -> None:
+    graph = complete_model_graph()
+    graph["mapping_object"].append({
+        **graph["mapping_object"][0],
+        "source_system_code": "GDS",
+        "mapping_transformation_document": None,
+    })
+    for name in ("GdsFirst.sql", "GdsSecond.sql"):
+        graph["generated_code"].append({**graph["generated_code"][0], "artifact_name": name})
+        graph["generated_code_source_system"].append({
+            **graph["generated_code_source_system"][0],
+            "artifact_name": name,
+            "source_system_code": "GDS",
+        })
+    result = validate_future_graph(
+        snapshot=snapshot_from_graph(graph),
+        staged_documents={"generated_code": [graph["generated_code"][0]]},
+        physical_scope=complete_physical_scope(),
     )
+
+    assert not result.valid
+    assert any(issue.dataset == "generated_code_source_system" for issue in result.issues)
 
 
 @pytest.mark.parametrize("partial", ["object_only", "attribute_only", "blank_attribute"])

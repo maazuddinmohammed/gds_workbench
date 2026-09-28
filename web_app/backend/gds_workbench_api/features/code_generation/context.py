@@ -285,7 +285,9 @@ def _assemble_context(
             if (
                 artifact.generated_code_is_locked
                 or any(item.generated_code_source_system_is_locked for item in assignments)
-                or (assigned_codes and not assigned_codes <= selected_codes)
+                # Retire obsolete assignments with their unlocked file; only still
+                # eligible Systems can make a combined file partially selected.
+                or (assigned_codes and not (assigned_codes & all_source_codes) <= selected_codes)
                 or (not assigned_codes and selected_codes != all_source_codes)
             ):
                 preserved_names.add(name)

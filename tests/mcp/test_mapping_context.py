@@ -122,6 +122,36 @@ def test_mapping_reports_missing_references_without_inventing_context():
     assert "mapping_source_object_missing_or_ineligible" in result.issues
 
 
+@pytest.mark.parametrize("missing_object", [False, True])
+def test_partial_mapping_pages_preserve_blank_documents_and_report_incomplete(missing_object):
+    value = context()
+    value["attribute_mappings"][0]["transformation"] = None
+    if missing_object:
+        value["object_mappings"][0]["transformation"] = None
+    original = deepcopy(value)
+    result = page(value)
+    assert not result.complete
+    assert "mapping_document_not_canonical" in result.issues
+    assert result.records[0]["transformation"] is None
+    assert value == original
+    following = page(value, cursor=result.next_cursor, digest=result.context_digest)
+    assert not following.complete
+    assert following.context_digest == result.context_digest
+    assert following.records[0]["transformation"] == (
+        value["attribute_mappings"][1]["transformation"]
+    )
+
+
+def test_missing_attribute_rows_report_incomplete_coverage_without_inventing_rules():
+    value = context()
+    value["attribute_mappings"] = value["attribute_mappings"][:1]
+    result = page(value)
+    assert not result.complete
+    assert "mapping_attribute_coverage_incomplete" in result.issues
+    assert len(result.records) == 1
+    assert result.next_cursor is None
+
+
 def test_mapping_population_and_source_system_value_survive_id_stripping():
     projected = project_mapping_inputs(context())
     assert projected["source_systems"] == [

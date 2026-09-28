@@ -42,7 +42,7 @@ _SQL: LiteralString = """
 SELECT code_input_digest,
        octet_length(source_context::TEXT) AS context_bytes,
        CASE WHEN octet_length(source_context::TEXT) <= %s THEN source_context END AS source_context
-  FROM workflow.list_code_generation_target_context(%s, %s, NULL)
+  FROM workflow.list_code_generation_target_context(%s, %s, 'sql_file')
  WHERE lower(btrim(modeled_entity_schema_name)) = lower(btrim(%s))
    AND lower(btrim(modeled_entity_name)) = lower(btrim(%s))
  LIMIT 2
@@ -95,7 +95,7 @@ def mapping_context_page(
     wanted = {code.strip().casefold() for code in source_system_codes}
     available = {row["system_code"].strip().casefold() for row in values["source_systems"]}
     if wanted and not wanted <= available:
-        raise InvalidRequestError("A selected System is outside the complete applied Mapping.")
+        raise InvalidRequestError("A selected System is outside the applied Mapping.")
     if wanted:
         for name in ("source_metadata", "object_transformations", "attribute_transformations"):
             values[name] = [
@@ -177,10 +177,11 @@ def register_read_mapping_context_tool(
     @server.tool(
         name="read_mapping_context",
         description=(
-            "Read one complete applied target Mapping component for independent SQL/Validation "
+            "Read one applied target Mapping component for independent SQL/Validation "
             "authoring. Read all five components, preserving expected_context_digest and "
             "expected_model_revision across pages/components. Missing context is reported; "
-            "complete=false must be resolved before code generation. No SQL is executed."
+            "Code may review partial Mapping with explicit gaps; Validation requires "
+            "complete=true. No SQL is executed."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False
@@ -235,7 +236,7 @@ def register_read_mapping_context_tool(
                 )
                 if len(rows) != 1 or not isinstance(rows[0].get("source_context"), dict):
                     raise InvalidRequestError(
-                        "The target has no bounded complete eligible Mapping context."
+                        "The target has no bounded eligible applied Mapping context."
                     )
                 context = rows[0]["source_context"]
                 if context.get("consumer_context_version") != "entity-3":

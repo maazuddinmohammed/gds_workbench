@@ -1809,7 +1809,7 @@ def test_code_generation_run_replay_keeps_frozen_default_guide_after_retirement(
     assert replay["sql_generation_guide_digest"] == guide_digest
 
 
-def test_code_generation_run_rejects_zone_only_target_without_complete_mapping(
+def test_code_generation_run_rejects_zone_only_target_without_applied_mapping(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
@@ -1826,7 +1826,7 @@ def test_code_generation_run_rejects_zone_only_target_without_complete_mapping(
 
     with (
         postgres_database.connect_owner() as connection,
-        pytest.raises(RaiseException, match="complete applied SQL Mapping"),
+        pytest.raises(RaiseException, match="no active applied SQL Mapping"),
     ):
         connection.execute(
             CREATE_CODE_GENERATION_WORKFLOW_RUN_SQL,

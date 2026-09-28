@@ -49,7 +49,7 @@ def test_code_examples_keep_default_delivery_and_seed_content_aligned() -> None:
             hashlib.sha256(code[component].encode()).digest()
             == hashlib.sha256(PROMPT[component].encode()).digest()
         )
-    assert len(SQL_EXAMPLES) == 3
+    assert len(SQL_EXAMPLES) == 4
 
 
 @pytest.mark.parametrize(
@@ -70,8 +70,15 @@ def test_code_examples_keep_default_delivery_and_seed_content_aligned() -> None:
             ("CustomerID", "SourceSystemID"),
             {("bronze_crm", "customer"), ("bronze_erp", "customer")},
         ),
+        (
+            3,
+            ("CRM",),
+            1,
+            ("CustomerID", "CustomerName", "SourceSystemID"),
+            {("bronze_crm", "customer")},
+        ),
     ],
-    ids=("direct", "staged_join", "combined_systems"),
+    ids=("direct", "staged_join", "combined_systems", "partial_mapping"),
 )
 async def test_sql_examples_parse_and_pass_real_artifact_validation(
     example_index: int,
@@ -99,6 +106,7 @@ async def test_sql_examples_parse_and_pass_real_artifact_validation(
     candidate = cast(
         JsonValue,
         {
+            "issues": ["missing_requirement_evidence"] if example_index == 3 else [],
             "artifacts": [
                 {
                     "target_ref": "target_1",
@@ -148,6 +156,12 @@ async def test_sql_examples_parse_and_pass_real_artifact_validation(
         assert joins[0].args.get("on") is not None
         assert statements[0] is not None
         assert len(list(statements[0].find_all(exp.Where))) == 1
+    elif example_index == 3:
+        assert isinstance(final, exp.Select)
+        placeholder = final.selects[1]
+        assert isinstance(placeholder, exp.Alias)
+        assert isinstance(placeholder.this, exp.Cast)
+        assert isinstance(placeholder.this.this, exp.Null)
     elif example_index == 2:
         assert isinstance(final, exp.Union) and final.args.get("distinct") is False
 

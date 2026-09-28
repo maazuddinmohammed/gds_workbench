@@ -114,7 +114,36 @@ SELECT jsonb_build_object(
                        ),
                        'dependency_order',
                            (mapping_entry.document ->>
-                            'object_dependency_order')::INTEGER
+                            'object_dependency_order')::INTEGER,
+                       'object_transformation_missing',
+                           mapping_entry.document ->> 'transformation' IS NULL,
+                       'unmapped_attribute_count', (
+                           SELECT count(*)::INTEGER
+                             FROM jsonb_array_elements(
+                                 context.source_context -> 'attribute_mappings'
+                             ) AS attribute_entry(document)
+                            WHERE attribute_entry.document ->> 'mapping_object_id' =
+                                  mapping_entry.document ->> 'mapping_object_id'
+                              AND attribute_entry.document ->> 'transformation' IS NULL
+                       ),
+                       'unmapped_attribute_names', (
+                           SELECT coalesce(
+                               jsonb_agg(missing.name ORDER BY missing.position), '[]'::JSONB
+                           )
+                             FROM (
+                                 SELECT attribute_entry.document ->>
+                                            'target_attribute_name' AS name,
+                                        attribute_entry.position
+                                   FROM jsonb_array_elements(
+                                       context.source_context -> 'attribute_mappings'
+                                   ) WITH ORDINALITY AS attribute_entry(document, position)
+                                  WHERE attribute_entry.document ->> 'mapping_object_id' =
+                                        mapping_entry.document ->> 'mapping_object_id'
+                                    AND attribute_entry.document ->> 'transformation' IS NULL
+                                  ORDER BY attribute_entry.position
+                                  LIMIT 200
+                             ) AS missing
+                       )
                    ) AS document
               FROM jsonb_array_elements(
                        context.source_context -> 'object_mappings'
@@ -332,7 +361,36 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
                        ),
                        'dependency_order',
                            (mapping_entry.document ->>
-                            'object_dependency_order')::INTEGER
+                            'object_dependency_order')::INTEGER,
+                       'object_transformation_missing',
+                           mapping_entry.document ->> 'transformation' IS NULL,
+                       'unmapped_attribute_count', (
+                           SELECT count(*)::INTEGER
+                             FROM jsonb_array_elements(
+                                 current_context.source_context -> 'attribute_mappings'
+                             ) AS attribute_entry(document)
+                            WHERE attribute_entry.document ->> 'mapping_object_id' =
+                                  mapping_entry.document ->> 'mapping_object_id'
+                              AND attribute_entry.document ->> 'transformation' IS NULL
+                       ),
+                       'unmapped_attribute_names', (
+                           SELECT coalesce(
+                               jsonb_agg(missing.name ORDER BY missing.position), '[]'::JSONB
+                           )
+                             FROM (
+                                 SELECT attribute_entry.document ->>
+                                            'target_attribute_name' AS name,
+                                        attribute_entry.position
+                                   FROM jsonb_array_elements(
+                                       current_context.source_context -> 'attribute_mappings'
+                                   ) WITH ORDINALITY AS attribute_entry(document, position)
+                                  WHERE attribute_entry.document ->> 'mapping_object_id' =
+                                        mapping_entry.document ->> 'mapping_object_id'
+                                    AND attribute_entry.document ->> 'transformation' IS NULL
+                                  ORDER BY attribute_entry.position
+                                  LIMIT 200
+                             ) AS missing
+                       )
                    ) AS document
               FROM jsonb_array_elements(
                        coalesce(

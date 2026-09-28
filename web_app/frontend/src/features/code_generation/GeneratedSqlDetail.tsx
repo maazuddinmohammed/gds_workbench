@@ -13,6 +13,7 @@ import {
   type GeneratedSqlArtifactDetail,
 } from "./api";
 import { CodeGenerationRunDialog } from "./CodeGenerationRunDialog";
+import { CodeMappingWarnings } from "./CodeMappingWarnings";
 
 export function GeneratedSqlDetailPage({
   api,
@@ -151,6 +152,7 @@ function GeneratedSqlDetailView({
       ) : null}
 
       {!detail.artifact_is_current ? <p className="drawer-warning">Generation context changed. Review this SQL before reuse.</p> : null}
+      <CodeMappingWarnings supports={detail.mapping_supports} systemCodes={detail.source_systems.map((system) => system.system_code)} />
       <section className="detail-section detail-primary generated-sql-section" aria-labelledby="stored-sql-heading">
         <header>
           <h2 id="stored-sql-heading">Stored SQL</h2>

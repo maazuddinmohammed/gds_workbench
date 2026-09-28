@@ -11,6 +11,7 @@ import { useWorkflowRunSubmission } from "../workflows/useWorkflowRunSubmission"
 import { findAgentExecutionProfile, reasoningEffortDisplayName, resolveDefaultAgent, workflowCreationQueryKeys } from "../workflows/api";
 import { isTenantWorkflowConflict, TENANT_WORKFLOW_CONFLICT_MESSAGE } from "../workflows/presentation";
 import { codeGenerationQueryKeys, loadCodeGenerationTargets, type CodeGenerationApi, type CodeGenerationTarget } from "./api";
+import { CodeMappingWarnings } from "./CodeMappingWarnings";
 
 export type CodeGenerationCoverage = "selected_targets" | "all_eligible_targets";
 
@@ -60,8 +61,9 @@ export function CodeGenerationRunDialog({ api, tenantId, model, entityType, cove
   const selectable = shown.filter((item) => !item.is_locked);
   const partialFiles = requestedEntities.some((item) => item.artifacts.some((artifact) => artifact.generated_code_status === "active"
     && artifact.source_system_codes.some((code) => selectedCodes.includes(code))
-    && artifact.source_system_codes.some((code) => !selectedCodes.includes(code))));
-  const fileCount = fileLayout === "combined" ? requestedEntities.length : requestedEntities.reduce((count, item) => count + item.source_systems.filter((system) => selectedCodes.includes(system.system_code)).length, 0);
+    && artifact.source_system_codes.some((code) => item.source_systems.some((system) => system.system_code === code) && !selectedCodes.includes(code))));
+  const mappingCount = requestedEntities.reduce((count, item) => count + item.source_systems.filter((system) => selectedCodes.includes(system.system_code)).length, 0);
+  const fileCount = fileLayout === "combined" ? requestedEntities.length : mappingCount;
   const unavailable = targets.isPending || targets.isError || targets.data?.model_revision !== model.model_revision;
   const valid = !unavailable && !hasUnavailableSystems && requestedEntities.length > 0 && selectedCodes.length > 0 && !partialFiles
     && agent?.model_code === modelCode && agent?.reasoning_effort_code === reasoningCode;
@@ -110,19 +112,22 @@ export function CodeGenerationRunDialog({ api, tenantId, model, entityType, cove
               setScope("selected_targets");
             }} />Selected Entities</label>
           </div>
+          <p className="field-help">Partial mappings are included. Missing Attribute transformations become typed NULL values; review the generated SQL before applying.</p>
           <div className="agent-run-grid mapping-scope-controls"><label><span>Find Entities</span><input type="search" aria-label="Find Entities" value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} /></label></div>
           {scope === "selected_targets" ? <div className="scope-selection-actions">
             <button className="button button-secondary button-small" type="button" onClick={() => setObjectIds(new Set([...objectIds, ...selectable.map((item) => item.target.entity_id)]))}>Select all shown Entities</button>
             <button className="button button-secondary button-small" type="button" onClick={() => setObjectIds(new Set())}>Clear Entity selection</button>
           </div> : null}
           <div className="workflow-table-scroll mapping-target-selection"><table className="enrichment-selection-table" aria-label="Entities for SQL generation">
-            <thead><tr><th>Select</th><th>Object</th><th>Contributing Systems</th><th>Lock</th></tr></thead>
+            <thead><tr><th>Select</th><th>Entity</th><th>Contributing Systems</th><th>Lock</th></tr></thead>
             <tbody>{shown.map((item) => <tr key={item.target.entity_id}><td><input type="checkbox" aria-label={`Generate ${item.target.entity_schema_name}.${item.target.entity_name}`} disabled={scope === "all_eligible_targets" || item.is_locked} checked={!item.is_locked && (scope === "all_eligible_targets" || objectIds.has(item.target.entity_id))} onChange={(event) => {
               const next = new Set(objectIds); if (event.target.checked) next.add(item.target.entity_id); else next.delete(item.target.entity_id); setObjectIds(next);
-            }} /></td><td><strong>{item.target.entity_schema_name}.{item.target.entity_name}</strong></td><td>{item.source_systems.map((system) => system.system_code).join(", ")}</td><td>{item.is_locked ? "Locked" : "Open"}</td></tr>)}</tbody>
+            }} /></td><td><strong>{item.target.entity_schema_name}.{item.target.entity_name}</strong></td><td>{item.source_systems.map((system) => system.system_code).join(", ")}
+              <CodeMappingWarnings supports={item.mapping_supports} systemCodes={selectedCodes} />
+            </td><td>{item.is_locked ? "Locked" : "Open"}</td></tr>)}</tbody>
           </table>{!shown.length ? <p className="empty-state compact">{systemScope === "selected" && !selectedCodes.length ? "Choose at least one contributing System to see its Entities." : "No Entities match this selection."}</p> : null}</div>
           {visible.length > 50 ? <nav className="code-generation-pagination" aria-label="Generation Object pages"><button type="button" className="button button-secondary button-small" disabled={!page} onClick={() => setPage(page - 1)}>Previous</button><span>Page {page + 1}</span><button type="button" className="button button-secondary button-small" disabled={(page + 1) * 50 >= visible.length} onClick={() => setPage(page + 1)}>Next</button></nav> : null}
-          <p className="scope-selection-summary" role="status">{requestedEntities.length} Entities · {selectedCodes.length} Systems · {fileCount} transformation SQL files</p>
+          <p className="scope-selection-summary" role="status">{requestedEntities.length} Entities · {mappingCount} Entity/System mappings · {fileCount} SQL files</p>
           {partialFiles ? <p className="inline-error" role="alert">An existing SQL file combines selected and unselected Systems. Select all Systems covered by that file to regenerate it.</p> : null}
           {hasUnavailableSystems ? <p className="inline-error" role="alert">A selected System no longer contributes to the selected Entities. Remove unavailable Systems from the selection or choose All Systems.</p> : null}
         </fieldset>
@@ -140,8 +145,8 @@ function generationError(error: Error, created: boolean): string {
   if (created && isTenantWorkflowConflict(error)) return TENANT_WORKFLOW_CONFLICT_MESSAGE;
   if (error instanceof ApiError) {
     const messages: Record<string, string> = {
-      code_mapping_incomplete: "Complete Object and Attribute Mapping for the selected Entities, then refresh before generating SQL.",
-      code_no_eligible_targets: "No selected Entities have complete Mapping. Complete their Object and Attribute Mapping, then refresh.",
+      code_mapping_incomplete: "The selected Entities need at least one saved Object or Attribute transformation. Review their applied Mapping, then refresh before generating SQL.",
+      code_no_eligible_targets: "No selected Entities have a saved Mapping transformation. Apply at least one Object or Attribute transformation, then refresh.",
       code_system_unavailable: "A selected System no longer contributes to the selected Entities. Refresh and select the contributing Systems again.",
       sql_generation_guide_unavailable: "An active, published SQL generation guide is required. Ask an administrator to configure it, then retry.",
       workflow_prompt_unavailable: "A published Code generation prompt is unavailable. Review the Model’s prompt settings, then retry.",

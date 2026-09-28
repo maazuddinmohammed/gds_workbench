@@ -220,16 +220,20 @@ def _raise_safe_workflow_error(error: Exception) -> Never:
         "Global default Mapping Attribute output template is unavailable",
     }:
         raise InvalidRequestError("The global Mapping output templates are unavailable.") from error
-    if message == "Selected Code Generation target lacks complete applied SQL Mapping":
+    if message in {
+        "Selected Code Generation target lacks complete applied SQL Mapping",
+        "Selected Code Generation target has no active applied SQL Mapping",
+    }:
         raise WorkbenchError(
             code="code_mapping_incomplete",
-            message="Complete Object and Attribute Mapping for the selected Entities "
+            message="Save an Object or Attribute transformation for the selected Entities "
             "before generating Code.",
         ) from error
     if message == "Code Generation has no eligible target set":
         raise WorkbenchError(
             code="code_no_eligible_targets",
-            message="Code Generation needs an Entity with complete Object and Attribute Mapping.",
+            message="Code Generation needs an Entity with an active Object or Attribute "
+            "transformation.",
         ) from error
     if message == "Selected Code Generation System is unavailable":
         raise WorkbenchError(

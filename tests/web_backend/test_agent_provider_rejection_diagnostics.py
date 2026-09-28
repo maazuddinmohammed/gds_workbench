@@ -2,14 +2,14 @@
 
 # pyright: reportPrivateUsage=false
 import json
-from typing import Any, cast
+from typing import Any
 
 import httpx2
 import pytest
 from gds_etl_workbench.domain.errors import WorkbenchError
 
 from tests.web_backend import test_code_generation_executor as code
-from tests.web_backend.test_agent_usage import _request, _response, _router
+from tests.web_backend.test_agent_usage import _request, _responses_response, _router
 
 
 @pytest.mark.parametrize(
@@ -99,16 +99,18 @@ async def test_real_code_tool_conversation_preserves_later_rejection_in_run(
     def handler(request: httpx2.Request) -> httpx2.Response:
         nonlocal sends
         body = json.loads(request.content)
-        assert body["response_format"] == {"type": "json_object"}
+        assert request.url.path.endswith("/responses")
+        assert body["text"]["format"] == {"type": "json_object"}
+        assert "messages" not in body and "response_format" not in body
         assert len(body["tools"]) == 5
         outstanding: set[str] = set()
-        for message in body["messages"]:
-            if message["role"] == "assistant" and message.get("tool_calls"):
+        for item in body["input"]:
+            if item.get("type") == "function_call":
                 assert not outstanding
-                outstanding = {item["id"] for item in message["tool_calls"]}
-            elif message["role"] == "tool":
-                assert message["tool_call_id"] in outstanding
-                outstanding.remove(message["tool_call_id"])
+                outstanding.add(item["call_id"])
+            elif item.get("type") == "function_call_output":
+                assert item["call_id"] in outstanding
+                outstanding.remove(item["call_id"])
             else:
                 assert not outstanding
         assert not outstanding
@@ -116,27 +118,14 @@ async def test_real_code_tool_conversation_preserves_later_rejection_in_run(
         if sends > 5:
             return httpx2.Response(
                 400,
-                json={
-                    "error": {"code": "content_filter", "message": "private-message"}
-                },
+                json={"error": {"code": "content_filter", "message": "private-message"}},
             )
-        name = body["tools"][sends - 1]["function"]["name"]
+        name = body["tools"][sends - 1]["name"]
         tool_names.append(name)
-        result = _response(None)
-        choices = cast(list[dict[str, Any]], result["choices"])
-        choices[0]["message"] = {
-            "role": "assistant",
-            "content": None,
-            "tool_calls": [
-                {
-                    "id": f"call_{sends}",
-                    "type": "function",
-                    "function": {"name": name, "arguments": "{}"},
-                }
-            ],
-        }
-        choices[0]["finish_reason"] = "tool_calls"
-        return httpx2.Response(200, json=result)
+        return httpx2.Response(
+            200,
+            json=_responses_response(None, tool=True, tool_name=name, call_id=f"call_{sends}"),
+        )
 
     router = _router(monkeypatch, None, handler)
     service, _, _, handoff, no_op, lifecycle = code._service(executor=router)

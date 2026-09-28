@@ -149,7 +149,7 @@ def validate_future_graph(
     code_authoring: bool = True,
 ) -> ValidatedModelChangeSet:
     # Only the governed, field-only human lifecycle review uses False. It can
-    # retain stale Code; Code authoring requires complete Mapping and System assignments.
+    # retain stale Code; Code authoring requires available Mapping and exact System assignments.
     effective = model_snapshot_records(snapshot)
     staged: dict[str, tuple[ModelingRecord, ...]] = {}
     schema_issues: list[ModelValidationIssue] = []
@@ -851,6 +851,7 @@ def _validate_active_dependencies(
             )
         )
 
+    code_mapping_systems_by_entity: dict[ModeledEntityKey, set[str]] = {}
     for entity, systems in mapping_systems_by_entity.items():
         entity_attributes = {
             attribute[3] for attribute in active_attributes if attribute[:3] == entity
@@ -871,27 +872,13 @@ def _validate_active_dependencies(
                     "mapping_transformation_document",
                     "New active Mapping requires an Object or Attribute transformation.",
                 )
-            # Saved Mapping may be partial. Executable Code still requires complete
-            # coverage; unchanged Code remains stored and becomes stale by its digest.
-            if entity not in code_authoring_entities:
-                continue
-            if not has_object_transformation:
-                _active_invalid(
-                    issues,
-                    "mapping_object",
-                    "mapping_transformation_document",
-                    "Code authoring requires an Object transformation for every mapped System.",
-                )
-            if any(
-                (*entity, system, attribute_name) not in active_mapping_attributes
+            # Code can be authored from partial Mapping. Keep every System with
+            # evidence; cleared saved pairs remain stored but do not require SQL.
+            if has_object_transformation or any(
+                (*entity, system, attribute_name) in active_mapping_attributes
                 for attribute_name in entity_attributes
             ):
-                _active_invalid(
-                    issues,
-                    "mapping_attribute",
-                    "modeled_attribute_name",
-                    "Code authoring requires every active modeled Attribute per mapped System.",
-                )
+                code_mapping_systems_by_entity.setdefault(entity, set()).add(system)
 
     active_artifacts = {
         _artifact_reference(record): record
@@ -906,6 +893,17 @@ def _validate_active_dependencies(
                 "generated_code",
                 "modeled_entity_name",
                 "Active Code artifact requires an active modeled Entity.",
+            )
+        elif _entity_key(
+            record
+        ) in code_authoring_entities and not code_mapping_systems_by_entity.get(
+            _entity_key(record)
+        ):
+            _active_invalid(
+                issues,
+                "generated_code",
+                "modeled_entity_name",
+                "Code authoring requires an active Object or Attribute transformation.",
             )
     for record in future["generated_code_source_system"]:
         if record.generated_code_source_system_status != "active":
@@ -931,7 +929,11 @@ def _validate_active_dependencies(
             # Upstream Mapping may outgrow unchanged Code. Input digests mark that Code
             # stale; only Code authoring can supply its missing System assignments.
             count = system_assignments[(entity, system)]
-            if count > 1 or (count == 0 and entity in code_authoring_entities):
+            if count > 1 or (
+                count == 0
+                and entity in code_authoring_entities
+                and system in code_mapping_systems_by_entity.get(entity, set())
+            ):
                 _active_invalid(
                     issues,
                     "generated_code_source_system",

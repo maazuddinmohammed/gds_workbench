@@ -735,6 +735,131 @@ async def test_executor_renders_selected_guide_into_each_agent_instruction() -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("reported_missing", [False, True])
+async def test_executor_keeps_partial_mapping_systems_and_marks_sql_for_review(
+    reported_missing: bool,
+) -> None:
+    from gds_etl_workbench.domain.snapshots.model import (
+        ModelChangeSetDataset,
+        model_snapshot_records,
+    )
+
+    from tests.mcp.model_test_fixtures import snapshot_from_graph
+
+    source = _source_context(mapping_expression="42")
+    source["source_systems"].append(
+        {"source_system_id": 32, "system_code": "ERP", "system_name": "ERP"}
+    )
+    source["object_mappings"].append(
+        {
+            **source["object_mappings"][0],
+            "mapping_object_id": 2,
+            "source_system_id": 32,
+            "transformation": None,
+        }
+    )
+    context = _execution_context()
+    context = code_validation_context(
+        context.model_copy(
+            update={
+                "targets": (
+                    context.targets[0].model_copy(update={"source_system_codes": ("CRM", "ERP")}),
+                ),
+                "agent_context": {"targets": [{"target_ref": "target_1", "context": source}]},
+            }
+        )
+    )
+    assert context.snapshot is not None
+    graph: dict[ModelChangeSetDataset, list[dict[str, object]]] = {
+        cast(ModelChangeSetDataset, dataset): [record.model_dump(mode="json") for record in records]
+        for dataset, records in model_snapshot_records(context.snapshot).items()
+    }
+    for mapping in graph["mapping_object"]:
+        if mapping["source_system_code"] == "ERP":
+            mapping["mapping_transformation_document"] = None
+    graph["mapping_attribute"] = [
+        mapping for mapping in graph["mapping_attribute"] if mapping["source_system_code"] != "ERP"
+    ]
+    context = context.model_copy(update={"snapshot": snapshot_from_graph(graph)})
+    artifacts = [
+        {
+            "target_ref": "target_1",
+            "artifact_name": "customer_crm.sql",
+            "source_system_codes": ["CRM"],
+            "generated_sql": "SELECT 42 AS CustomerID",
+        },
+        {
+            "target_ref": "target_1",
+            "artifact_name": "customer_erp.sql",
+            "source_system_codes": ["ERP"],
+            "generated_sql": "SELECT CAST(NULL AS BIGINT) AS CustomerID WHERE FALSE",
+        },
+    ]
+    agent = _AgentExecutor(
+        responses=[
+            cast(
+                JsonValue,
+                {
+                    "artifacts": artifacts,
+                    "issues": ["missing_requirement_evidence"] if reported_missing else [],
+                },
+            )
+        ]
+    )
+    plan = _plan().model_copy(
+        update={"selected_entity_ids": (501,), "code_generation_file_layout": "per_system"}
+    )
+    original_system = "Return no artifacts when Mapping is incomplete."
+    plan = plan.model_copy(
+        update={
+            "stages": (
+                plan.stages[0].model_copy(
+                    update={
+                        "templates": plan.stages[0].templates.model_copy(
+                            update={"system": original_system}
+                        )
+                    }
+                ),
+            )
+        }
+    )
+    service, _, _, handoff, _, lifecycle = _service(
+        executor=agent, context=context, plan_repository=_PlanRepository(plan=plan)
+    )
+
+    result = await service.execute_started(
+        _principal(), tenant_id=7, model_id=18, workflow_run_id=1048,
+        expected_model_revision=7, workflow_run_claim_token=_CLAIM_TOKEN,
+    )
+
+    assert isinstance(result, WorkflowChangeSetHandoffResult)
+    assert lifecycle.failed is None and len(agent.requests) == 1
+    staged = {change.dataset: change.records for change in handoff.calls[0]}
+    assert {row["source_system_code"] for row in staged["generated_code_source_system"]} == {
+        "CRM", "ERP"
+    }
+    assert {row["generated_code_content"] for row in staged["generated_code"]} == {
+        cast(str, artifact["generated_sql"]) for artifact in artifacts
+    }
+    instruction = agent.requests[0].instruction_prompt
+    assert instruction.index("Authoritative partial-authoring contract") > instruction.index(
+        "Use deterministic MERGE SQL."
+    )
+    assert "CAST(NULL AS its declared target data type)" in instruction
+    assert "Never invent source columns, joins, filters" in instruction
+    system_prompt = agent.requests[0].system_prompt
+    assert system_prompt.startswith(original_system)
+    assert "Authoritative partial-authoring contract" in system_prompt
+    assert "CAST(NULL AS its declared target data type)" in system_prompt
+    assert plan.stages[0].templates.system == original_system
+    assert handoff.final_events[0].status == "warning"
+    assert "needs review" in handoff.final_events[0].message
+    assert "repair" not in handoff.final_events[0].message
+    assert any("1 have incomplete Mapping" in event.message for event in lifecycle.events)
+    assert any("1 contain typed NULL placeholders" in event.message for event in lifecycle.events)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("provider_code", "model_code"),
     (("microsoft_foundry", "foundry-primary"),),
@@ -848,7 +973,8 @@ async def test_executor_uses_frozen_plan_and_hands_off_one_atomic_draft() -> Non
         == target_context["object_mappings"][0]["transformation"]
     )
     assert "mapping_object_id" not in delivered["object_transformations"][0]
-    assert delivered["sql_generation_guide"] == guide
+    assert delivered["sql_generation_guide"].startswith(guide)
+    assert "Authoritative partial-authoring contract" in delivered["sql_generation_guide"]
     assert request.instruction_prompt.count(guide) == 1
     assert "request_context_original_context" not in request.instruction_prompt
     assert len(handoff.calls) == 1

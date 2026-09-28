@@ -32,6 +32,9 @@ export interface CodeMappingSupport {
   source: MappingModeledEntity;
   source_system: MappingSourceSystem;
   dependency_order: number;
+  object_transformation_missing?: boolean;
+  unmapped_attribute_count?: number;
+  unmapped_attribute_names?: string[];
 }
 
 export interface CodeGenerationTarget {

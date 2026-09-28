@@ -713,7 +713,7 @@
       ]
     },
     "object_transformations": {
-      "description": "Applied Object transformation documents with source_system_code, dependency order and exact modeled Entity identity, definition, classification and grain. entity.assertions contains active Model/System assertions without requiring Entity links: assess relevance; keys identify provenance, text states context, details may include notes, formula, grain, dimensions, date_basis, exclusions, history and acceptance_criteria. Use these to interpret approved transformations and report conflicts; never silently replace approved Mapping rules.",
+      "description": "Applied Object transformation documents with source_system_code, dependency order and exact modeled Entity identity, definition, classification and grain. entity.assertions contains active Model/System assertions without requiring Entity links: assess relevance; keys identify provenance, text states context, details may include notes, formula, grain, dimensions, date_basis, exclusions, history and acceptance_criteria. Use these to interpret approved transformations and report conflicts; never silently replace approved Mapping rules. A null transformation preserves an Attribute-only Mapping pair; it does not authorize invented joins or filters.",
       "schema": {
         "$defs": {
           "JsonValue": {},
@@ -837,7 +837,10 @@
                   "$ref": "#/$defs/JsonValue"
                 },
                 "title": "Transformation",
-                "type": "object"
+                "type": [
+                  "object",
+                  "null"
+                ]
               },
               "source_system_code": {
                 "type": "string",
@@ -883,7 +886,7 @@
       ]
     },
     "attribute_transformations": {
-      "description": "Applied Attribute transformation documents with source_system_code, modeled Entity type/name, physical target_attribute_name and target ordinal. Identity links are resolved from modeled Entity identities; no guessed name matching.",
+      "description": "Applied Attribute transformation documents with source_system_code, modeled Entity type/name, physical target_attribute_name and target ordinal. Identity links are resolved from modeled Entity identities; no guessed name matching. Every active target Attribute is included for each saved System pair. A null transformation means no saved rule; use a typed NULL placeholder for a required mapping-populated output and flag it for review.",
       "schema": {
         "$defs": {
           "JsonValue": {},
@@ -907,7 +910,10 @@
                   "$ref": "#/$defs/JsonValue"
                 },
                 "title": "Transformation",
-                "type": "object"
+                "type": [
+                  "object",
+                  "null"
+                ]
               },
               "source_system_code": {
                 "type": "string",

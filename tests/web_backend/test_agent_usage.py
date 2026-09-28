@@ -142,6 +142,43 @@ def _response(
     }
 
 
+def _responses_response(
+    usage: object,
+    *,
+    tool: bool = False,
+    content: str = '{"result":"valid"}',
+    tool_name: str = "read_fixture",
+    call_id: str = "fixture_call",
+) -> dict[str, object]:
+    output: dict[str, object] = (
+        {
+            "id": f"fc_{call_id}",
+            "type": "function_call",
+            "status": "completed",
+            "call_id": call_id,
+            "name": tool_name,
+            "arguments": "{}",
+        }
+        if tool
+        else {
+            "id": "fixture_message",
+            "type": "message",
+            "status": "completed",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": content, "annotations": []}],
+        }
+    )
+    return {
+        "id": "fixture_response",
+        "object": "response",
+        "created_at": 0,
+        "status": "completed",
+        "model": "fixture",
+        "output": [output],
+        "usage": usage,
+    }
+
+
 def _router(
     monkeypatch: pytest.MonkeyPatch,
     recorder: AgentUsageRecorder | None,
@@ -270,12 +307,13 @@ async def test_real_sdk_keeps_reported_turn_usage_when_a_later_turn_fails(
     def handler(request: httpx2.Request) -> httpx2.Response:
         nonlocal sends
         sends += 1
+        assert request.url.path.endswith("/responses")
         assert len(recorder.started) == sends  # Pending row precedes the transport.
         if sends == 1:
             return httpx2.Response(
                 200,
-                json=_response(
-                    {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
+                json=_responses_response(
+                    {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12},
                     tool=True,
                 ),
             )
@@ -330,15 +368,19 @@ async def test_recording_failure_does_not_retry_a_paid_model_response(
     recorder = MemoryRecorder(fail_complete=True)
     sends = 0
 
-    def handler(_: httpx2.Request) -> httpx2.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         nonlocal sends
         sends += 1
+        assert request.url.path.endswith("/responses" if tool else "/chat/completions")
+        response_factory = _responses_response if tool else _response
+        usage = (
+            {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}
+            if tool
+            else {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12}
+        )
         return httpx2.Response(
             200,
-            json=_response(
-                {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
-                tool=tool,
-            ),
+            json=response_factory(usage, tool=tool),
         )
 
     router = _router(monkeypatch, recorder, handler)

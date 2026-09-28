@@ -1880,7 +1880,7 @@ BEGIN
              WHERE context.modeled_entity_id = ANY(v_selected_object_ids);
             IF v_eligible_scope_count <> v_selected_scope_count THEN
                 RAISE EXCEPTION
-                    'Selected Code Generation target lacks complete applied SQL Mapping';
+                    'Selected Code Generation target has no active applied SQL Mapping';
             END IF;
         END IF;
 

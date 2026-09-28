@@ -402,7 +402,20 @@ async def test_installed_sql_defaults_with_repository_projection(
 
     def checked_render(**kwargs: Any) -> Any:
         nonlocal renders
-        assert kwargs["templates"] is stages[0].templates
+        from gds_workbench_api.features.code_generation.service import (
+            _PARTIAL_AUTHORING_CONTRACT,
+        )
+
+        # Published content is preserved; the runtime appends its current delivery rules.
+        actual_templates = kwargs["templates"]
+        expected_system = stages[0].templates.system + "\n\n" + _PARTIAL_AUTHORING_CONTRACT
+        assert sha256(actual_templates.system.encode()).digest() == sha256(
+            expected_system.encode()
+        ).digest()
+        assert sha256(actual_templates.instruction.encode()).digest() == sha256(
+            stages[0].templates.instruction.encode()
+        ).digest()
+        assert actual_templates.tool_instruction == stages[0].templates.tool_instruction
         for variable in stages[0].variables:
             contract = get_prompt_input_contract(
                 model_workflow="code_generation",

@@ -2343,7 +2343,8 @@ SELECT attribute.{config.attribute_id}
             )
             if context is None:
                 raise InvalidRequestError(
-                    "Generated Code requires complete active Mapping for its Entity."
+                    "Generated Code requires an active Object or Attribute transformation "
+                    "for its Entity."
                 )
             existing = await self.transaction.fetch_one(
                 _FIND_GENERATED_CODE_SQL,

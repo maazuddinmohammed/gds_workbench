@@ -22,6 +22,7 @@ from tests.web_backend.test_agent_usage import (
     MemoryRecorder,
     _request,
     _response,
+    _responses_response,
     _router,
 )
 from tests.web_backend.test_conceptual_candidate import _object, _validator
@@ -87,12 +88,22 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         body: dict[str, Any] = json.loads(request.content)
-        if effort == "default":
-            assert "reasoning_effort" not in body
+        assert request.url.path.endswith("/responses" if tools else "/chat/completions")
+        if tools:
+            if effort == "default":
+                assert "reasoning" not in body
+            else:
+                assert body["reasoning"] == {"effort": effort}
+            assert "reasoning_effort" not in body and "response_format" not in body
+            formats.append(body["text"]["format"])
+            user_message = next(item for item in body["input"] if item.get("role") == "user")
         else:
-            assert body["reasoning_effort"] == effort
-        formats.append(body.get("response_format"))
-        user_message = next(item for item in body["messages"] if item["role"] == "user")
+            if effort == "default":
+                assert "reasoning_effort" not in body
+            else:
+                assert body["reasoning_effort"] == effort
+            formats.append(body.get("response_format"))
+            user_message = next(item for item in body["messages"] if item["role"] == "user")
         payload = json.loads(user_message["content"])
         schema_preserved.append(payload["required_output_schema"] == schema)
         repair = payload["context"]["repair"]
@@ -100,10 +111,16 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
             [] if repair is None else [item["code"] for item in repair["validation_issues"]]
         )
         tool_response = tools and len(formats) == 1
+        response_factory = _responses_response if tools else _response
+        usage = (
+            {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}
+            if tools
+            else {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12}
+        )
         return httpx2.Response(
             200,
-            json=_response(
-                {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
+            json=response_factory(
+                usage,
                 tool=tool_response,
                 content="" if tool_response else next(responses),
             ),

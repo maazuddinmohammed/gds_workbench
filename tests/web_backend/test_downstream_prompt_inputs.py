@@ -43,9 +43,7 @@ FIXTURE: dict[str, Any] = json.loads(
 def test_existing_code_and_validation_resolvers_use_canonical_prompt_evidence(
     workflow: Literal["code_generation", "validation"],
 ) -> None:
-    stage_code = (
-        "sql_generation" if workflow == "code_generation" else "validation_generation"
-    )
+    stage_code = "sql_generation" if workflow == "code_generation" else "validation_generation"
     prefix = f"workflow.{workflow}.common.{stage_code}.inputs."
     contracts = downstream_input_contracts(workflow)
     existing_names = (
@@ -162,9 +160,7 @@ def test_contract_examples_and_projected_context_have_exact_schema(
     )
 
 
-def test_mapping_joins_names_from_modeled_attributes_and_keeps_document_business_keys() -> (
-    None
-):
+def test_mapping_joins_names_from_modeled_attributes_and_keeps_document_business_keys() -> None:
     raw = deepcopy(FIXTURE["mapping"])
     child = raw["headers"][0]["attribute_mappings"][0]
     child["transformation_document"] = {
@@ -191,9 +187,7 @@ def test_mapping_unknown_attribute_is_not_resolved_by_similar_names(broken: str)
 def test_code_system_links_are_resolved_without_replacing_physical_placement() -> None:
     raw = deepcopy(FIXTURE["code_generation"])
     source = raw["targets"][0]["context"]["physical_sources"][0]
-    source["object"].update(
-        tenant_code="GDS", system_code="WAREHOUSE", connection_code="MAIN"
-    )
+    source["object"].update(tenant_code="GDS", system_code="WAREHOUSE", connection_code="MAIN")
     values = project_downstream_inputs("code_generation", raw)
     assert values["source_metadata"][0]["object"]["tenant_code"] == "GDS"
     assert values["source_metadata"][0]["object"]["system_code"] == "WAREHOUSE"
@@ -203,6 +197,41 @@ def test_code_system_links_are_resolved_without_replacing_physical_placement() -
     source["selected_source_system_id"] = 999_999
     with pytest.raises(InvalidRequestError):
         project_downstream_inputs("code_generation", raw)
+
+
+@pytest.mark.parametrize(
+    ("collection", "variable", "reader"),
+    [
+        ("object_mappings", "object_transformations", "get_object_transformations"),
+        ("attribute_mappings", "attribute_transformations", "get_attribute_transformations"),
+    ],
+)
+def test_code_partial_mapping_null_survives_projection_contract_and_reader(
+    collection: str, variable: str, reader: str
+) -> None:
+    raw = deepcopy(FIXTURE["code_generation"])
+    raw["targets"][0]["context"][collection][0]["transformation"] = None
+    values = project_downstream_inputs("code_generation", raw)
+    schema = downstream_input_contracts("code_generation")[variable][0]
+    assert cast(Any, Draft202012Validator(schema)).is_valid(values[variable])
+    catalog = build_downstream_readers(
+        "code_generation",
+        values,
+        max_result_bytes=100_000,
+        max_page_records=200,
+        max_cumulative_result_bytes=500_000,
+    )
+    page = catalog.invoke(reader, {})
+    assert page["items"][0]["transformation"] is None
+    assert page["items"] == values[variable]
+    exported = Path(__file__).resolve().parents[2] / "docs/workflow-prompts"
+    context_export = json.loads((exported / "code.context.json").read_text())
+    assert context_export["variables"][variable]["schema"] == schema
+    tools_export = json.loads((exported / "code.tools.json").read_text())
+    tool_schema = next(
+        tool["result_schema"] for tool in tools_export["tools"] if tool["name"] == reader
+    )
+    assert cast(Any, Draft202012Validator(tool_schema)).is_valid(page)
 
 
 @pytest.mark.parametrize("workflow", ["mapping", "code_generation", "validation"])
@@ -227,9 +256,7 @@ def test_all_readers_accept_no_input_and_preserve_prompt_value_shapes(
 
 
 def test_nested_source_key_filter_is_complete_frozen_and_cursor_bound() -> None:
-    values = project_downstream_inputs(
-        "code_generation", deepcopy(FIXTURE["code_generation"])
-    )
+    values = project_downstream_inputs("code_generation", deepcopy(FIXTURE["code_generation"]))
     first = values["source_metadata"][0]
     second = deepcopy(first)
     second["object"]["connection_code"] = "SECOND"
@@ -261,9 +288,7 @@ def test_nested_source_key_filter_is_complete_frozen_and_cursor_bound() -> None:
     assert page["items"] == [first] and page["is_complete"] is False
     next_page = catalog.invoke("get_code_sources", {"cursor": page["next_cursor"]})
     assert next_page["items"] == [second]
-    assert (
-        catalog.invoke("get_code_sources", {"cursor": page["next_cursor"]}) == next_page
-    )
+    assert catalog.invoke("get_code_sources", {"cursor": page["next_cursor"]}) == next_page
     with pytest.raises(AgentContextToolRequestError):
         catalog.invoke(
             "get_code_sources",
@@ -283,9 +308,7 @@ def test_nested_source_key_filter_is_complete_frozen_and_cursor_bound() -> None:
         )
 
 
-def test_known_validation_group_with_no_checks_returns_empty_and_unknown_group_fails() -> (
-    None
-):
+def test_known_validation_group_with_no_checks_returns_empty_and_unknown_group_fails() -> None:
     values = project_downstream_inputs("validation", deepcopy(FIXTURE["validation"]))
     values["applied_checks"] = []
     name = values["applied_groups"][0]["validation_group_name"]

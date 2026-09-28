@@ -1109,7 +1109,10 @@
                   "$ref": "#/$defs/JsonValue"
                 },
                 "title": "Transformation",
-                "type": "object"
+                "type": [
+                  "object",
+                  "null"
+                ]
               },
               "source_system_code": {
                 "type": "string",
@@ -1246,7 +1249,10 @@
                   "$ref": "#/$defs/JsonValue"
                 },
                 "title": "Transformation",
-                "type": "object"
+                "type": [
+                  "object",
+                  "null"
+                ]
               },
               "source_system_code": {
                 "type": "string",

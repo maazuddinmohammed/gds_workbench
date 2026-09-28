@@ -9,6 +9,14 @@ Stage: `sql_generation`. The public workflow execution mode remains `null`; the
 agent uses Tool-assisted delivery. Prompt authors choose workflow-local variables
 and readers. The executor does not silently append Mapping documents to the prompt.
 
+Requests with enabled readers use the OpenAI Responses API through Microsoft
+Foundry. This preserves the selected reasoning effort while allowing tool calls:
+GPT-5.6 cannot combine reasoning and tools on Chat Completions. Requests without
+tools retain the Chat Completions path. Responses run with `store=false`; encrypted
+reasoning items remain within the in-memory conversation across tool turns.
+Only numeric usage and fixed failure categories enter run telemetry.
+See [Foundry tool-calling restrictions](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning#tool-calling-with-reasoning-models).
+
 ## Maintained prompt and examples
 
 The [maintained default](workflow-prompts/code.tool_assisted.json) is the source for
@@ -23,11 +31,12 @@ The default inlines only `target_ref` and the selected published
 - One business Attribute plus explicitly mapped source provenance.
 - Multiple source Objects, ordered temporary stages, a join, and several Attribute expressions.
 - Combined System branches and the difference from separate files per System.
+- Partial Mapping with a typed `NULL` for an unmapped target column.
 
 Examples are synthetic. Their names, joins, filters, constants and combination
 policy are not evidence for a real Entity. Actual applied Mapping and the selected
-Guide determine the SQL. Missing or conflicting business requirements must be
-reported through the fixed output issue codes, not replaced with guessed SQL.
+Guide determine the SQL. Missing requirements produce review warnings alongside available SQL; conflicts
+remain blocking. Neither permits guessed business logic.
 
 ## Frozen context and readers
 
@@ -80,7 +89,26 @@ preserves locks, revision fencing and idempotency. Combined layout assigns all
 selected Systems once to one transformation file; per-System layout gives each
 System its own transformation file. Support files assign no Systems.
 
-Only complete active Mapping pairs are eligible for Code and Validation input.
-Partial Mapping remains reviewable in the Mapping UI; blank transformations do not
-become invented `NULL` expressions or defaults. Parsing and coverage checks do not
-execute SQL or prove every business expression against live source data.
+Code authoring includes every active Entity/System pair with at least one Object
+or Attribute transformation. All active modeled Attributes remain in its context,
+including blank transformations. Generate SQL lists Entities, grouping their
+Systems: 11 pairs may therefore be 7 Entities. The dialog shows Entity, pair and
+file counts separately; no Cartesian product is invented. All-empty/inactive
+pairs are excluded. Validation and executable modeled-source lookups still require
+complete Mapping.
+
+Missing Mapping-owned target expressions become `CAST(NULL AS declared_type)`
+placeholders in modeled column order, with explicit review warnings. Known
+transformations are retained. Missing joins or rowset semantics never justify
+invented joins or rows; an unresolved branch uses a zero-row placeholder.
+`missing_requirement_evidence` may accompany valid artifacts; conflicting
+requirements remain blocking. The executor appends this partial-authoring policy
+to the Code stage system instructions and after the selected Guide, including for
+existing Models, without editing their saved prompt versions. Run warnings persist
+through review/Apply; the picker and artifact detail also show current Mapping
+gaps per System. Artifact **Current** means its recorded inputs match, not that
+its SQL is complete or ready to run.
+
+Parsing and coverage checks do not execute SQL or prove every business expression
+against live source data. Ordinary review, Apply, locks and revision checks remain
+required. No populated-database migration or reseeding is performed here.

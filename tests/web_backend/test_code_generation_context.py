@@ -221,9 +221,7 @@ async def test_context_allows_complete_object_mapping_without_attribute_mappings
 
 
 @pytest.mark.asyncio
-async def test_selected_system_context_preserves_other_files_and_rejects_partial_combined_file() -> (
-    None
-):
+async def test_selected_system_scope_preserves_locks_and_replaces_only_eligible_files() -> None:
     row = _row(501)
     source = row["source_context"]
     source["source_systems"][0]["source_system_id"] = 11
@@ -276,6 +274,36 @@ async def test_selected_system_context_preserves_other_files_and_rejects_partial
         }
     )
     with pytest.raises(InvalidRequestError, match="partially selected SQL file"):
+        await PostgresCodeGenerationContextRepository().load(
+            ContextTransaction([row]), tenant_id=7, plan=plan
+        )
+
+    # Cleared or inactive ERP Mapping is absent from current eligible context.
+    # Its unlocked combined file remains in the replacement set so the normal
+    # reconciliation retires the old file and both old assignments together.
+    row["source_system_count"] = 1
+    source["source_systems"] = source["source_systems"][:1]
+    source["physical_sources"] = source["physical_sources"][:1]
+    context = await PostgresCodeGenerationContextRepository().load(
+        ContextTransaction([row]), tenant_id=7, plan=plan
+    )
+    target = context.targets[0]
+    assert target.source_system_codes == ("CRM",)
+    assert target.preserved_artifact_names == ()
+    assert [artifact.artifact_name for artifact in target.applied_generated_code] == ["erp.sql"]
+    assert {
+        assignment.source_system_code for assignment in target.applied_generated_code_source_systems
+    } == {"CRM", "ERP"}
+
+    artifact = cast(dict[str, Any], row["applied_artifacts"][0])
+    artifact["generated_code_is_locked"] = True
+    with pytest.raises(InvalidRequestError, match="locked or partially selected SQL file"):
+        await PostgresCodeGenerationContextRepository().load(
+            ContextTransaction([row]), tenant_id=7, plan=plan
+        )
+    artifact["generated_code_is_locked"] = False
+    artifact["source_systems"][0]["generated_code_source_system_is_locked"] = True
+    with pytest.raises(InvalidRequestError, match="locked or partially selected SQL file"):
         await PostgresCodeGenerationContextRepository().load(
             ContextTransaction([row]), tenant_id=7, plan=plan
         )

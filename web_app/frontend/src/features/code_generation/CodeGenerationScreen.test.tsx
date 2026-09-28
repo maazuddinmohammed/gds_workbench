@@ -116,6 +116,33 @@ describe("Code Generation journey", () => {
     );
   });
 
+  it.each([
+    [true, 3, "CRM: Entity transformation missing; 3 Attributes without transformations. Typed NULL placeholders need review."],
+    [false, 1, "CRM: 1 Attribute without transformations. Typed NULL placeholders need review."],
+    [true, 0, "CRM: Entity transformation missing. Entity logic needs review."],
+  ] as const)("shows only assigned-System gaps alongside stored SQL (%s, %s)", async (objectMissing, attributeCount, message) => {
+    const base = codeGenerationFetchStub();
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      const response = await base(input, init);
+      if (!String(input).endsWith("/code-generation/artifacts/501")) return response;
+      const data = await response.json();
+      return jsonResponse({ ...data, mapping_supports: [
+        { ...mappingSupport, object_transformation_missing: objectMissing, unmapped_attribute_count: attributeCount },
+        { ...mappingSupport, mapping_object_id: 82, source_system: { ...mappingSupport.source_system, system_code: "ERP", system_id: 99 },
+          object_transformation_missing: true, unmapped_attribute_count: 4 },
+      ], mapping_support_count: 2 });
+    });
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18/artifacts/501"] }),
+    })} />);
+    await screen.findByRole("heading", { name: "customer.sql" });
+    expect(screen.getByText((_, element) => element?.className === "code-mapping-warning" && element.textContent === message)).toBeVisible();
+    expect(screen.queryByText(/4 Attributes without transformations/)).not.toBeInTheDocument();
+    if (!objectMissing) expect(screen.queryByText(/Entity transformation missing/)).not.toBeInTheDocument();
+    if (!attributeCount) expect(screen.queryByText(/Typed NULL placeholders/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Stored SQL for silver_nwa.customer")).toBeVisible();
+  });
+
   it.each([false, true])("keeps stored SQL available with stale or bounded supports (%s)", async (truncated) => {
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(codeGenerationFetchStub({ stale: !truncated, truncated })),
@@ -214,6 +241,111 @@ describe("Code Generation journey", () => {
     expect(JSON.stringify(createCalls(fetcher))).not.toContain("claim_token");
   });
 
+  it("distinguishes Entity, Mapping pair and SQL file counts across file layouts and System selections", async () => {
+    const base = codeGenerationFetchStub();
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      const response = await base(input, init);
+      if (!String(input).includes("/code-generation/targets?")) return response;
+      const data = await response.json();
+      const first = codeGenerationTargets[0]!;
+      return jsonResponse({ ...data, items: Array.from({ length: 7 }, (_, index) => ({
+        ...first, target: { ...first.target, entity_id: 701 + index, entity_name: `entity_${index + 1}` },
+        artifacts: [], artifact_count: 0,
+        source_systems: index < 4 ? [mappingSupport.source_system,
+          { ...mappingSupport.source_system, system_id: 99, system_code: "ERP" }] : [mappingSupport.source_system],
+        source_system_count: index < 4 ? 2 : 1,
+      })) });
+    });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+    })} />);
+    await user.click(await screen.findByRole("button", { name: "Generate SQL" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Generate SQL" }));
+    await waitFor(() => expect(dialog.getByRole("button", { name: "Generate SQL" })).toBeEnabled());
+    expect(dialog.getByRole("columnheader", { name: "Entity" })).toBeVisible();
+    expect(dialog.getByText(/Partial mappings are included.*typed NULL/)).toBeVisible();
+    expect(dialog.getByRole("status")).toHaveTextContent("7 Entities · 11 Entity/System mappings · 11 SQL files");
+    await user.selectOptions(dialog.getByLabelText("SQL files"), "combined");
+    expect(dialog.getByRole("status")).toHaveTextContent("7 Entities · 11 Entity/System mappings · 7 SQL files");
+    await user.selectOptions(dialog.getByLabelText("Contributing Systems"), "selected");
+    await user.click(dialog.getByText("Choose Systems"));
+    await user.click(dialog.getByRole("checkbox", { name: "ERP" }));
+    await user.keyboard("{Escape}");
+    expect(dialog.getByRole("status")).toHaveTextContent("4 Entities · 4 Entity/System mappings · 4 SQL files");
+    await user.click(dialog.getByRole("button", { name: "Generate SQL" }));
+    await waitFor(() => expect(createCalls(fetcher)).toHaveLength(1));
+    expect(JSON.parse(String(createCalls(fetcher)[0]?.[1]?.body))).toMatchObject({
+      selected_entity_ids: [701, 702, 703, 704], selected_system_codes: ["ERP"], code_generation_file_layout: "combined",
+    });
+  });
+
+  it("keeps partially mapped Entities selectable and scopes gap notices to selected Systems", async () => {
+    const base = codeGenerationFetchStub();
+    const erp = { ...mappingSupport.source_system, system_id: 99, system_code: "ERP" };
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      const response = await base(input, init);
+      if (!String(input).includes("/code-generation/targets?")) return response;
+      const data = await response.json();
+      return jsonResponse({ ...data, items: [{ ...codeGenerationTargets[0], artifacts: [], artifact_count: 0,
+        source_systems: [mappingSupport.source_system, erp], source_system_count: 2,
+        mapping_supports: [
+          { ...mappingSupport, object_transformation_missing: false, unmapped_attribute_count: 3, unmapped_attribute_names: ["CustomerName", "BirthDate", "Region"] },
+          { ...mappingSupport, mapping_object_id: 82, source_system: erp, object_transformation_missing: true, unmapped_attribute_count: 0 },
+        ], mapping_support_count: 2,
+      }] });
+    });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+    })} />);
+    await user.click(await screen.findByRole("button", { name: "Generate SQL" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Generate SQL" }));
+    await waitFor(() => expect(dialog.getByRole("button", { name: "Generate SQL" })).toBeEnabled());
+    expect(dialog.getByText(/3 Attributes without transformations/)).toBeVisible();
+    await user.click(dialog.getByText("Unmapped Attributes"));
+    expect(dialog.getByText("CustomerName, BirthDate, Region")).toBeVisible();
+    expect(dialog.getByText(/Entity transformation missing/)).toBeVisible();
+    expect(dialog.getByRole("status")).toHaveTextContent("1 Entities · 2 Entity/System mappings · 2 SQL files");
+    await user.selectOptions(dialog.getByLabelText("Contributing Systems"), "selected");
+    await user.click(dialog.getByText("Choose Systems"));
+    await user.click(dialog.getByRole("checkbox", { name: "CRM" }));
+    await user.keyboard("{Escape}");
+    expect(dialog.getByText(/3 Attributes without transformations/)).toBeVisible();
+    expect(dialog.queryByText(/Entity transformation missing/)).not.toBeInTheDocument();
+    expect(dialog.getByRole("button", { name: "Generate SQL" })).toBeEnabled();
+    await user.click(dialog.getByRole("button", { name: "Generate SQL" }));
+    await waitFor(() => expect(createCalls(fetcher)).toHaveLength(1));
+    expect(JSON.parse(String(createCalls(fetcher)[0]?.[1]?.body))).toMatchObject({ selected_entity_ids: [701], selected_system_codes: ["CRM"] });
+  });
+
+  it("allows replacement of an unlocked combined file after a System has no eligible Mapping", async () => {
+    const base = codeGenerationFetchStub();
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      const response = await base(input, init);
+      if (!String(input).includes("/code-generation/targets?")) return response;
+      const data = await response.json();
+      const item = codeGenerationTargets[0]!;
+      return jsonResponse({ ...data, items: [{ ...item,
+        source_systems: [mappingSupport.source_system], source_system_count: 1,
+        artifacts: [{ ...item.artifacts[0], source_system_codes: ["CRM", "ERP"] }], artifact_count: 1,
+      }] });
+    });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+    })} />);
+    await user.click(await screen.findByRole("button", { name: "Generate SQL" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Generate SQL" }));
+    await waitFor(() => expect(dialog.getByRole("button", { name: "Generate SQL" })).toBeEnabled());
+    expect(dialog.getByRole("status")).toHaveTextContent("1 Entities · 1 Entity/System mappings · 1 SQL files");
+    await user.click(dialog.getByRole("button", { name: "Generate SQL" }));
+    await waitFor(() => expect(createCalls(fetcher)).toHaveLength(1));
+    expect(JSON.parse(String(createCalls(fetcher)[0]?.[1]?.body))).toMatchObject({
+      selected_entity_ids: [701], selected_system_codes: ["CRM"],
+    });
+  });
+
   it("keeps locked Objects out and freezes selected Systems and file layout", async () => {
     const base = codeGenerationFetchStub();
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
@@ -242,7 +374,7 @@ describe("Code Generation journey", () => {
     await user.keyboard("{Escape}");
     expect(dialog).toBeVisible();
     await user.selectOptions(within(dialog).getByLabelText("SQL files"), "combined");
-    expect(within(dialog).getByRole("status")).toHaveTextContent("1 Entities · 1 Systems · 1 transformation SQL files");
+    expect(within(dialog).getByRole("status")).toHaveTextContent("1 Entities · 1 Entity/System mappings · 1 SQL files");
     await user.click(within(dialog).getByRole("button", { name: "Generate SQL" }));
     await waitFor(() => expect(createCalls(fetcher)).toHaveLength(1));
     expect(JSON.parse(String(createCalls(fetcher)[0]?.[1]?.body))).toMatchObject({
@@ -263,7 +395,7 @@ describe("Code Generation journey", () => {
     await waitFor(() => expect(submit).toBeEnabled());
     expect(dialog.getByText("Tool-assisted")).toBeVisible();
     expect(dialog.queryByRole("combobox", { name: "Execution mode" })).not.toBeInTheDocument();
-    expect(dialog.getByRole("status")).toHaveTextContent("1 Entities · 1 Systems · 1 transformation SQL files");
+    expect(dialog.getByRole("status")).toHaveTextContent("1 Entities · 1 Entity/System mappings · 1 SQL files");
     await user.click(submit);
     await waitFor(() => expect(createCalls(fetcher)).toHaveLength(1));
     expect(JSON.parse(String(createCalls(fetcher)[0]?.[1]?.body))).toMatchObject({
@@ -289,12 +421,12 @@ describe("Code Generation journey", () => {
     await user.click(dialog.getByRole("checkbox", { name: "Generate silver_nwa.address" }));
     expect(dialog.getByRole("button", { name: "Generate SQL" })).toBeDisabled();
     expect(dialog.getByRole("alert")).toHaveTextContent("A selected System no longer contributes to the selected Entities.");
-    expect(dialog.getByRole("status")).toHaveTextContent("1 Entities · 1 Systems · 1 transformation SQL files");
+    expect(dialog.getByRole("status")).toHaveTextContent("1 Entities · 1 Entity/System mappings · 1 SQL files");
     expect(dialog.getByRole("checkbox", { name: "Generate silver_nwa.address" })).not.toBeChecked();
     await user.click(dialog.getByRole("checkbox", { name: "Generate silver_nwa.address" }));
     expect(dialog.queryByRole("alert")).not.toBeInTheDocument();
     expect(dialog.getByRole("button", { name: "Generate SQL" })).toBeEnabled();
-    expect(dialog.getByRole("status")).toHaveTextContent("2 Entities · 2 Systems · 2 transformation SQL files");
+    expect(dialog.getByRole("status")).toHaveTextContent("2 Entities · 2 Entity/System mappings · 2 SQL files");
     await user.click(dialog.getByRole("button", { name: "Clear Entity selection" }));
     expect(dialog.getByRole("button", { name: "Generate SQL" })).toBeDisabled();
     expect(dialog.getByRole("alert")).toHaveTextContent("A selected System no longer contributes to the selected Entities.");
@@ -302,7 +434,7 @@ describe("Code Generation journey", () => {
     expect(dialog.getByRole("checkbox", { name: "Generate silver_nwa.address" })).not.toBeChecked();
     await user.click(dialog.getByRole("checkbox", { name: "Generate silver_nwa.customer" }));
     expect(dialog.getByRole("button", { name: "Generate SQL" })).toBeDisabled();
-    expect(dialog.getByRole("status")).toHaveTextContent("1 Entities · 1 Systems · 1 transformation SQL files");
+    expect(dialog.getByRole("status")).toHaveTextContent("1 Entities · 1 Entity/System mappings · 1 SQL files");
     await user.click(dialog.getByText("2 selected", { selector: "summary span" }));
     expect(dialog.getByRole("checkbox", { name: "CRM" })).toBeChecked();
     await user.click(dialog.getByRole("checkbox", { name: "ERP (unavailable)" }));
@@ -353,8 +485,8 @@ describe("Code Generation journey", () => {
   });
 
   it.each([
-    ["code_mapping_incomplete", "Complete Object and Attribute Mapping for the selected Entities, then refresh before generating SQL."],
-    ["code_no_eligible_targets", "No selected Entities have complete Mapping."],
+    ["code_mapping_incomplete", "The selected Entities need at least one saved Object or Attribute transformation."],
+    ["code_no_eligible_targets", "No selected Entities have a saved Mapping transformation."],
     ["code_system_unavailable", "A selected System no longer contributes to the selected Entities."],
     ["sql_generation_guide_unavailable", "An active, published SQL generation guide is required."],
     ["workflow_prompt_unavailable", "A published Code generation prompt is unavailable."],

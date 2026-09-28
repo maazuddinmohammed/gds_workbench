@@ -23,6 +23,7 @@ from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.domain.modeling_records import (
     GeneratedCodeRecord,
     GeneratedCodeSourceSystemRecord,
+    has_mapping_transformation_content,
 )
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
@@ -85,6 +86,30 @@ from .context import (
 )
 
 _logger = logging.getLogger(__name__)
+
+_PARTIAL_AUTHORING_CONTRACT = (
+    "Authoritative partial-authoring contract for this Run: "
+    "These rules take precedence over older instructions that reject incomplete "
+    "Mapping. Generate reviewable SQL for every selected mapped System, even "
+    "when its Object or Attribute transformations are missing. Preserve grounded "
+    "transformations and use only the supplied source metadata and saved logic. "
+    "For each required output Attribute without an evidenced expression, emit "
+    "CAST(NULL AS its declared target data type) AS its target column name, "
+    "including nonnullable columns; this is an explicit review placeholder, "
+    "not a business default. Continue to omit database/framework-populated "
+    "columns required by the delivery contract. Never invent source columns, "
+    "joins, filters, deduplication, defaults or cross-System reconciliation. "
+    "If no evidenced rowset or join supports a branch, use a zero-row typed-NULL "
+    "projection with WHERE FALSE for that branch. If a combined file lacks "
+    "evidenced System-combination logic, preserve grounded stages and finish "
+    "with that zero-row projection; do not invent UNION or joins. Return "
+    "missing_requirement_evidence alongside the covered artifacts whenever "
+    "logic is missing or placeholders are used. It is a review warning, not a "
+    "reason to omit an Entity or System. Conflicting requirements still require "
+    "conflicting_requirement and no artifacts. Retain exact selected-System "
+    "coverage, requested file layout and SQL-only structural requirements. "
+    "Put warnings in issues, never comments or prose inside SQL."
+)
 
 
 class CodeGenerationContextRepository(Protocol):
@@ -267,12 +292,34 @@ class CodeGenerationWorkflow:
             stage_plan = plan.model_copy(
                 update={
                     "workflow_execution_mode": CODE_GENERATION_AGENT_EXECUTION_MODE,
+                    # Backend authoring policy also follows the frozen system
+                    # prompt, so an older version cannot prohibit partial SQL.
+                    # The stored prompt and original frozen plan stay unchanged.
+                    "stages": tuple(
+                        stage.model_copy(
+                            update={
+                                "templates": stage.templates.model_copy(
+                                    update={
+                                        "system": stage.templates.system
+                                        + "\n\n"
+                                        + _PARTIAL_AUTHORING_CONTRACT
+                                    }
+                                )
+                            }
+                        )
+                        if stage.stage_code == "sql_generation"
+                        else stage
+                        for stage in plan.stages
+                    ),
                 }
             )
             artifacts: list[GeneratedSqlArtifact] = []
             progress_points = intermediate_progress_points(target_count) | {target_count}
             highest_attempt = 1
             warning_seen = False
+            incomplete_target_count = 0
+            review_target_count = 0
+            placeholder_target_count = 0
             for position, target in enumerate(context.targets, start=1):
                 target_context = _target_agent_context(
                     context,
@@ -281,6 +328,31 @@ class CodeGenerationWorkflow:
                 prompt_values = project_downstream_inputs(
                     "code_generation", cast(dict[str, Any], target_context)
                 )
+                selected_systems = {code.strip().casefold() for code in target.source_system_codes}
+                active_attributes = {
+                    attribute["attribute_name"].strip().casefold()
+                    for attribute in prompt_values["target_metadata"].get("attributes", [])
+                    if attribute.get("is_active", True)
+                }
+                object_coverage = {
+                    row["source_system_code"].strip().casefold()
+                    for row in prompt_values["object_transformations"]
+                    if has_mapping_transformation_content(row.get("transformation"))
+                }
+                attribute_coverage = {
+                    (
+                        row["source_system_code"].strip().casefold(),
+                        row["target_attribute_name"].strip().casefold(),
+                    )
+                    for row in prompt_values["attribute_transformations"]
+                    if has_mapping_transformation_content(row.get("transformation"))
+                }
+                incomplete_mapping = not selected_systems <= object_coverage or any(
+                    (system, attribute) not in attribute_coverage
+                    for system in selected_systems
+                    for attribute in active_attributes
+                )
+                incomplete_target_count += int(incomplete_mapping)
                 run_guide = guide_content
                 if plan.code_generation_file_layout is not None:
                     run_guide += "\n\nRun delivery contract: " + (
@@ -309,6 +381,7 @@ class CodeGenerationWorkflow:
                         "\nPreserve these existing file names; do not emit them: "
                         + ", ".join(target.preserved_artifact_names)
                     )
+                run_guide += "\n\n" + _PARTIAL_AUTHORING_CONTRACT
                 prompt_values["sql_generation_guide"] = run_guide
                 prompt_context = cast(
                     JsonValue,
@@ -398,10 +471,23 @@ class CodeGenerationWorkflow:
                 )
                 artifacts.extend(validator.parse_validated(outcome.candidate))
                 highest_attempt = max(highest_attempt, outcome.attempt_count)
-                warning_seen = warning_seen or bool(outcome.was_repaired or outcome.warning_codes)
+                candidate_warnings = validator.warning_codes(outcome.candidate)
+                review_target_count += int(incomplete_mapping or bool(candidate_warnings))
+                placeholder_target_count += int(
+                    "code_generation.typed_null_placeholder" in candidate_warnings
+                )
+                warning_seen = warning_seen or bool(
+                    outcome.was_repaired or outcome.warning_codes or review_target_count
+                )
                 if position in progress_points:
                     message = f"SQL generation validated {position} of {target_count} Entities."
-                    if warning_seen:
+                    if review_target_count:
+                        message += (
+                            f" SQL for {review_target_count} Entities needs review: "
+                            f"{incomplete_target_count} have incomplete Mapping and "
+                            f"{placeholder_target_count} contain typed NULL placeholders."
+                        )
+                    elif warning_seen:
                         message += " One or more candidates required repair."
                     await progress.append(
                         attempt=highest_attempt,
@@ -435,7 +521,13 @@ class CodeGenerationWorkflow:
                             attempt=highest_attempt,
                             stage="code_generation.backend_validation",
                             status="warning" if warning_seen else "running",
-                            message="Code Generation completed with no effective change.",
+                            message=(
+                                "Code Generation completed with no effective change. "
+                                "SQL needs review for missing Mapping or "
+                                "NULL/zero-row placeholders."
+                                if review_target_count
+                                else "Code Generation completed with no effective change."
+                            ),
                             current=1,
                             total=1,
                             finding_count=0,
@@ -458,7 +550,12 @@ class CodeGenerationWorkflow:
                     attempt=highest_attempt,
                     stage="code_generation.backend_validation",
                     status="warning" if warning_seen else "running",
-                    message="Generated Code is ready in a validated draft.",
+                    message=(
+                        "Generated Code is in a validated draft and needs review for missing "
+                        "Mapping or NULL/zero-row placeholders."
+                        if review_target_count
+                        else "Generated Code is ready in a validated draft."
+                    ),
                     current=1,
                     total=1,
                     finding_count=staged_record_count,

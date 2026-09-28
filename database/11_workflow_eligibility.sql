@@ -347,12 +347,30 @@ AS $list_code_generation_target_context$
            AND target.modeled_entity_id = coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id)
           JOIN core.system AS source ON source.system_id = mapping.source_system_id AND source.is_active
          WHERE mapping.object_mapping_status = 'active'
-    ), complete AS MATERIALIZED (
+           -- Code can be authored from a partial saved pair. Empty ledger rows
+           -- are retained only by strict consumers so they still block readiness.
+           AND (p_required_artifact_type IS NULL
+                OR mapping.mapping_transformation_document IS NOT NULL
+                OR EXISTS (
+                    SELECT 1 FROM workflow.mapping_attribute AS mapped
+                    JOIN workflow.modeled_attribute AS attribute
+                      ON attribute.model_id = mapping.model_id
+                     AND attribute.modeled_entity_type = mapping.modeled_entity_type
+                     AND attribute.modeled_entity_id = coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id)
+                     AND attribute.modeled_attribute_id = coalesce(mapped.logical_attribute_id,mapped.dimensional_attribute_id)
+                     AND attribute.status = 'active'
+                   WHERE mapped.mapping_object_id = mapping.mapping_object_id
+                     AND mapped.attribute_mapping_status = 'active'
+                     AND mapped.attribute_mapping_transformation_document IS NOT NULL
+                ))
+    ), eligible AS MATERIALIZED (
         SELECT target.* FROM target
          WHERE EXISTS (SELECT 1 FROM active_mapping AS mapping WHERE mapping.model_id = target.model_id
            AND mapping.modeled_entity_type = target.modeled_entity_type
            AND coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id) = target.modeled_entity_id)
-           AND NOT EXISTS (
+           -- A NULL artifact type is the existing complete-Mapping contract
+           -- used by Validation and execution-readiness consumers.
+           AND (p_required_artifact_type IS NOT NULL OR NOT EXISTS (
              SELECT 1 FROM active_mapping AS mapping
               WHERE mapping.model_id = target.model_id AND mapping.modeled_entity_type = target.modeled_entity_type
                 AND coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id) = target.modeled_entity_id
@@ -368,7 +386,7 @@ AS $list_code_generation_target_context$
                           AND mapped.attribute_mapping_transformation_document IS NOT NULL
                      )
                 ))
-           )
+           ))
     ), assembled AS (
       SELECT target.model_id, target.modeled_entity_type, target.modeled_entity_id,
              target.modeled_entity_schema_name, target.modeled_entity_name,
@@ -394,7 +412,7 @@ AS $list_code_generation_target_context$
                'physical_sources',sources.documents,'source_systems',systems.documents,
                'object_mappings',mappings.documents,'attribute_mappings',attribute_mappings.documents
              ) AS source_context
-        FROM complete AS target
+        FROM eligible AS target
         CROSS JOIN LATERAL (
           SELECT coalesce(jsonb_agg(jsonb_build_object(
             'modeled_attribute_id',a.modeled_attribute_id,'attribute_name',a.attribute_name,
@@ -449,12 +467,16 @@ AS $list_code_generation_target_context$
                    'target_attribute_name',attribute.attribute_name,'modeled_attribute_name',attribute.attribute_name,
                    'target_attribute_ordinal_position',attribute.ordinal_position,
                    'transformation',a.attribute_mapping_transformation_document
-                 ) ORDER BY lower(m.source_system_code),m.source_system_id,attribute.ordinal_position,a.mapping_attribute_id),'[]'::JSONB) AS documents
-            FROM active_mapping AS m JOIN workflow.mapping_attribute AS a ON a.mapping_object_id = m.mapping_object_id AND a.attribute_mapping_status = 'active'
+                 ) ORDER BY lower(m.source_system_code),m.source_system_id,attribute.ordinal_position,
+                     coalesce(a.mapping_attribute_id,attribute.modeled_attribute_id)),'[]'::JSONB) AS documents
+            FROM active_mapping AS m
             JOIN workflow.modeled_attribute AS attribute ON attribute.model_id = m.model_id
               AND attribute.modeled_entity_type = m.modeled_entity_type
               AND attribute.modeled_entity_id = coalesce(m.logical_entity_id,m.dimensional_entity_id)
-              AND attribute.modeled_attribute_id = coalesce(a.logical_attribute_id,a.dimensional_attribute_id) AND attribute.status = 'active'
+              AND attribute.status = 'active'
+            LEFT JOIN workflow.mapping_attribute AS a ON a.mapping_object_id = m.mapping_object_id
+              AND a.attribute_mapping_status = 'active'
+              AND attribute.modeled_attribute_id = coalesce(a.logical_attribute_id,a.dimensional_attribute_id)
            WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
              AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
         ) AS attribute_mappings

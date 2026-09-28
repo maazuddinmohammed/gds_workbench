@@ -4,7 +4,7 @@ Owns artifact and source-System assignment fields, identities and storage checks
 
 ## Identity and local files
 
-Both datasets belong to Model section `code_generation`. Read the current Snapshot catalog and exact dataset schemas. The catalog requires applied `mapping`; active applied Entity definitions and complete Mapping are workflow prerequisites. `successive_change_set_required: false` does not make unapproved local Mapping an applied input.
+Both datasets belong to Model section `code_generation`. Read the current Snapshot catalog and exact dataset schemas. The catalog requires applied `mapping`; active applied Entity definitions and at least one saved Object or Attribute transformation per assigned Entity/System are prerequisites. Partial Mapping permits reviewed SQL with explicit typed NULL placeholders; wholly empty pairs are unavailable. `successive_change_set_required: false` does not make unapproved local Mapping an applied input.
 
 | Dataset | Natural key within the Model | Snapshot location |
 |---|---|---|
@@ -52,7 +52,7 @@ No outer `source_system_codes` array, dependency order, target physical keys, ou
 
 - **One file per target:** one artifact and one assignment for every System it implements. All branches use the same mapped target shape and explicit reconciliation policy.
 - **One file per target/System:** separate artifact names; each assignment points to the corresponding file. Each file is self-contained. Do not rely on a temporary view from another file/session.
-- **Mixed grouping:** an artifact can own a subset of Systems if the approved layout needs it. Across the target, each active mapped System belongs to exactly one active transformation artifact.
+- **Mixed grouping:** an artifact can own a subset of Systems if the approved layout needs it. Across the target, each active System with nonempty Mapping belongs to exactly one active transformation artifact.
 - Object dependency order remains in `mapping_object`; assignment-array order, System list order and filenames do not schedule execution. Later Process Metadata represents orchestration placement. A combined artifact must preserve mapped lookup dependencies, SQL stage order and explicit business precedence without assuming arbitrary branch order satisfies them.
 - Multiple artifacts for the same target/System cannot represent repeated executions through duplicate active assignments. Resolve repeated execution in the approved transformation/Process design; do not invent another Code key dimension.
 
@@ -60,9 +60,9 @@ The backend authoring candidate has `artifact_role: target_transformation|suppor
 
 ## Eligibility, coverage and protection
 
-- Every artifact requires its modeled Entity; active artifacts require an active Entity. Apply resolves complete active Mapping for that schema-qualified Entity before storing Code. No registered physical target is required.
+- Every artifact requires its modeled Entity; active artifacts require an active Entity. Apply resolves nonempty active Mapping for that schema-qualified Entity before storing Code. Partial Mapping remains incomplete and needs explicit review; Code storage does not make it complete. No registered physical target is required.
 - Every assignment requires its artifact and an active registered source System. An active assignment requires an active artifact and active Object Mapping for that target/System.
-- During Code authoring for a target, every active mapped System must have exactly one active assignment. Duplicate assignments across active artifacts are rejected. Upstream Mapping may add a System while unchanged Code remains; missing assignments then indicate stale/incomplete Code rather than permission to omit the new branch.
+- During Code authoring for a target, every active System with nonempty Mapping must have exactly one active assignment. Duplicate assignments across active artifacts are rejected. Upstream Mapping may add a System while unchanged Code remains; missing assignments then indicate stale/incomplete Code rather than permission to omit the new branch.
 - A partial selection of targets is valid. Within each selected target, reconcile the complete existing-plus-proposed assignment set; changing one file must not remove another System's coverage.
 - Artifact and assignment locks are checked independently. Locked Code cannot change content/type/status/name; locked assignments cannot move or deactivate. No implicit parent-lock cascade is established by the generic model contract. Preserve the behavior of protected work and flag layout changes that conflict with it.
 - Inactive/deprecated records retain their keys. Omitting them does not delete them. Review any deliberate replacement of an existing file layout, including superseded artifacts and assignments, before staging its lifecycle changes; never auto-unlock or rewrite preserved history.
@@ -75,7 +75,7 @@ Backend SQL candidate validation parses Databricks SQL but also accepts DDL, DML
 
 Apply derives `code_input_digest` from current eligible Mapping/target context; the database derives `generated_code_digest` from content. Neither is supplied in these records. Snapshot artifact records contain neither digest, so their presence or a local timestamp cannot prove freshness. Use a supported governed freshness/context view when available; otherwise record the unresolved freshness check. Use `read_mapping_context` for a revision/digest-bound current view; do not manufacture server artifact digests.
 
-Changing Mapping or target context can make Code stale without changing artifact text. Regenerate/review only affected artifacts against a complete consistent Mapping view. Stamping unchanged SQL with refreshed input context is not evidence that it still implements the new Mapping.
+Changing Mapping or target context can make Code stale without changing artifact text. Regenerate/review only affected artifacts against all pages of one consistent Mapping view, retaining any partial-Mapping findings. Stamping unchanged SQL with refreshed input context is not evidence that it still implements the new Mapping.
 
 Resolve [existing work and update scope](../working-method.md#existing-work-and-update-scope) before authoring. A Snapshot includes saved content, not automatically synchronized source files; inspect pending/local edits as described in [saved Code](../snapshots/model.md#saved-code-and-local-files). A narrow selection still requires complete per-target System coverage and preservation of unselected valid artifacts.
 
@@ -86,7 +86,7 @@ Use the shared [review/Stage/Validate/Apply lifecycle](../change-set-lifecycle.m
 | Rule | Check / reason | Current coverage |
 |---|---|---|
 | `code.shape` | Exact fields from the current schema, canonical keys, enums, nonblank content and legal filenames. | Generic schema, duplicate-key checks and database constraints; assignment filename resolves through its parent. |
-| `code.parents` | Real modeled target Entity, complete active Mapping and active assigned System. | Graph/eligibility checks and Apply context resolution. |
+| `code.parents` | Real modeled target Entity, nonempty active Mapping and active assigned System; partial Mapping gaps remain explicit. | Graph/eligibility checks and Apply context resolution. |
 | `code.coverage` | Every selected target's mapped System assigned exactly once across active transformation artifacts. | Generic Code-authoring graph checks; backend candidate also checks its frozen target set. |
 | `code.layout` | Approved filenames/grouping, no output-path collision, self-contained artifacts and compatible dependencies. | Additional workflow/local checks; no scheduling/path fields in record schema. |
 | `code.protection` | Preserve independent Code/assignment locks, statuses and unaffected coverage. | Direct record locks checked; semantic consequences of assignment/layout changes need review. |

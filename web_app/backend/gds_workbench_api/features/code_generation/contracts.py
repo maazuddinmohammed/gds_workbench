@@ -94,6 +94,9 @@ class CodeMappingSupport(ContractModel):
     source: ModeledEntityReference
     source_system: SourceSystemReference
     dependency_order: int = Field(ge=0)
+    object_transformation_missing: bool = False
+    unmapped_attribute_count: int = Field(default=0, ge=0)
+    unmapped_attribute_names: tuple[str, ...] = Field(default=(), max_length=200)
 
 
 class CodeGenerationTargetSummary(ContractModel):

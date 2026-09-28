@@ -16,6 +16,7 @@ from agents import (
     MaxTurnsExceeded,
     ModelSettings,
     OpenAIChatCompletionsModel,
+    OpenAIResponsesModel,
     RunConfig,
     Runner,
     Tool,
@@ -220,7 +221,10 @@ class OpenAIAgentsSdkAdapter:
                 max_retries=2,
                 http_client=http_client,
             )
-            model = OpenAIChatCompletionsModel(
+            # Foundry GPT-5.6 cannot combine tools and reasoning on Chat Completions.
+            # Select the supported transport without weakening the selected reasoning effort.
+            model_type = OpenAIResponsesModel if tools else OpenAIChatCompletionsModel
+            model = model_type(
                 model=connection.model_endpoint,
                 openai_client=client,
             )
@@ -239,7 +243,13 @@ class OpenAIAgentsSdkAdapter:
                     parallel_tool_calls=False,
                     timeout=connection.timeout_seconds,
                 )
-            model_settings.extra_body = {"response_format": {"type": "json_object"}}
+            if tools:
+                model_settings.extra_body = {"text": {"format": {"type": "json_object"}}}
+                model_settings.store = False
+                # Carry reasoning across stateless tool turns without stored responses.
+                model_settings.response_include = ["reasoning.encrypted_content"]
+            else:
+                model_settings.extra_body = {"response_format": {"type": "json_object"}}
             agent = Agent(
                 name=f"{request.workflow}_{request.stage}",
                 instructions=_system_prompt(request),

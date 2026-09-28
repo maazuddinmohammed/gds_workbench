@@ -31,6 +31,13 @@
   font-weight: 720;
 }
 
+.code-mapping-warning {
+  margin: 0.35rem 0;
+  color: var(--orange-dark);
+  font-size: 0.72rem;
+  white-space: normal;
+}
+
 .code-generation-filterbar {
   grid-template-columns: minmax(8rem, 0.8fr) repeat(3, minmax(10rem, 1fr)) auto;
 }

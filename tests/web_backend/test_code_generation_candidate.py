@@ -351,3 +351,52 @@ async def test_requirement_failure_returns_safe_diagnostic_and_cannot_be_applied
     assert "Resolve the requirement" in result.issues[0].message
     with pytest.raises(InvalidRequestError):
         validator.parse_validated(candidate)
+
+
+@pytest.mark.parametrize("reported_missing", [False, True])
+async def test_missing_evidence_keeps_covered_typed_null_sql_for_review(
+    reported_missing: bool,
+) -> None:
+    candidate = cast(
+        JsonValue,
+        {
+            "issues": ["missing_requirement_evidence"] if reported_missing else [],
+            "artifacts": [
+                _artifact(
+                    "target_1",
+                    "SELECT CAST(NULL AS STRING) AS name WHERE FALSE",
+                    systems=["CRM", "ERP"],
+                ),
+                _artifact("target_2", "SELECT 2 AS id", systems=["MDM"]),
+            ],
+        },
+    )
+    validator = _validator()
+
+    assert not (await validator.validate(candidate)).issues
+    assert len(validator.parse_validated(candidate)) == 2
+    assert "code_generation.typed_null_placeholder" in validator.warning_codes(candidate)
+    assert (
+        "code_generation.missing_requirement_evidence" in validator.warning_codes(candidate)
+    ) == reported_missing
+
+    assert isinstance(candidate, dict) and isinstance(candidate["artifacts"], list)
+    candidate["artifacts"].pop()
+    assert (await validator.validate(candidate)).issues[0].code == "candidate.target_coverage"
+
+
+async def test_conflicting_requirements_still_reject_otherwise_covered_sql() -> None:
+    candidate = cast(
+        JsonValue,
+        {
+            "issues": ["missing_requirement_evidence", "conflicting_requirement"],
+            "artifacts": [
+                _artifact(
+                    "target_1", "SELECT CAST(NULL AS STRING) AS name", systems=["CRM", "ERP"]
+                ),
+                _artifact("target_2", "SELECT 2 AS id", systems=["MDM"]),
+            ],
+        },
+    )
+    result = await _validator().validate(candidate)
+    assert [issue.code for issue in result.issues] == ["code_generation.conflicting_requirement"]

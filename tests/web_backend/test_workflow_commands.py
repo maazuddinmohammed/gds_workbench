@@ -1078,14 +1078,14 @@ async def test_missing_mapping_default_returns_a_clear_controlled_error(
         (
             "code_generation",
             "Selected Code Generation target lacks complete applied SQL Mapping",
-            "Complete Object and Attribute Mapping for the selected Entities "
+            "Save an Object or Attribute transformation for the selected Entities "
             "before generating Code.",
             "code_mapping_incomplete",
         ),
         (
             "code_generation",
             "Code Generation has no eligible target set",
-            "Code Generation needs an Entity with complete Object and Attribute Mapping.",
+            "Code Generation needs an Entity with an active Object or Attribute transformation.",
             "code_no_eligible_targets",
         ),
         (

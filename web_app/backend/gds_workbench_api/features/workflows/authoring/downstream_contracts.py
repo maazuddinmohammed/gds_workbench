@@ -1074,7 +1074,8 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "transformations and report "
             "conflicts; never silently "
             "replace approved Mapping "
-            "rules.",
+            "rules. A null transformation preserves an Attribute-only Mapping pair; "
+            "it does not authorize invented joins or filters.",
             "value_schema": {
                 "$defs": {
                     "JsonValue": {},
@@ -1168,7 +1169,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "transformation": {
                                 "additionalProperties": {"$ref": "#/$defs/JsonValue"},
                                 "title": "Transformation",
-                                "type": "object",
+                                "type": ["object", "null"],
                             },
                             "source_system_code": {"type": "string", "minLength": 1},
                         },
@@ -1213,7 +1214,9 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "target ordinal. Identity "
             "links are resolved from "
             "modeled Entity identities; "
-            "no guessed name matching.",
+            "no guessed name matching. Every active target Attribute is included for each "
+            "saved System pair. A null transformation means no saved rule; use a typed NULL "
+            "placeholder for a required mapping-populated output and flag it for review.",
             "value_schema": {
                 "$defs": {
                     "JsonValue": {},
@@ -1235,7 +1238,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "transformation": {
                                 "additionalProperties": {"$ref": "#/$defs/JsonValue"},
                                 "title": "Transformation",
-                                "type": "object",
+                                "type": ["object", "null"],
                             },
                             "source_system_code": {"type": "string", "minLength": 1},
                             "modeled_entity_type": {

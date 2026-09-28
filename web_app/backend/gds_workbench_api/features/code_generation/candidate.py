@@ -121,7 +121,11 @@ class _AgentSqlBatch(BaseModel):
 
     issues: list[Literal["missing_requirement_evidence", "conflicting_requirement"]] = Field(
         default=[],
-        description="Unresolved business requirements; return no artifacts when reporting issues.",
+        description=(
+            "Report missing_requirement_evidence alongside covered reviewable SQL with typed "
+            "NULL placeholders. Conflicting requirements block authoring; return no artifacts "
+            "with conflicting_requirement."
+        ),
     )
     artifacts: list[_AgentSqlArtifact] = Field(
         min_length=0,
@@ -155,7 +159,7 @@ class CodeGenerationCandidateValidator:
             return AgentCandidateValidation(issues=issues)
         if batch is None:
             raise AssertionError("validated SQL batch is missing")
-        if batch.issues:
+        if "conflicting_requirement" in batch.issues or (batch.issues and not batch.artifacts):
             return AgentCandidateValidation(
                 issues=tuple(
                     AgentValidationIssue(
@@ -167,6 +171,7 @@ class CodeGenerationCandidateValidator:
                         ),
                     )
                     for code in dict.fromkeys(batch.issues)
+                    if code == "conflicting_requirement" or not batch.artifacts
                 )
             )
 
@@ -206,7 +211,7 @@ class CodeGenerationCandidateValidator:
 
     def parse_validated(self, candidate: JsonValue) -> tuple[GeneratedSqlArtifact, ...]:
         batch, issues = _parse_batch(candidate)
-        if issues or batch is None or batch.issues:
+        if issues or batch is None or "conflicting_requirement" in batch.issues:
             raise InvalidRequestError("The Code Generation candidate is invalid.")
         if self._coverage_issue(batch) is not None:
             raise InvalidRequestError("The Code Generation candidate is invalid.")
@@ -240,6 +245,26 @@ class CodeGenerationCandidateValidator:
             except ValidationError:
                 raise InvalidRequestError("The Code Generation candidate is invalid.") from None
         return tuple(artifacts)
+
+    def warning_codes(self, candidate: JsonValue) -> tuple[str, ...]:
+        """Keep review warnings outside SQL and independent of provider disclosure."""
+        batch, issues = _parse_batch(candidate)
+        if issues or batch is None:
+            raise InvalidRequestError("The Code Generation candidate is invalid.")
+        warnings: list[str] = []
+        if "missing_requirement_evidence" in batch.issues:
+            warnings.append("code_generation.missing_requirement_evidence")
+        if any(
+            isinstance(node.this, exp.Null)
+            for artifact in batch.artifacts
+            for statement in parse(
+                artifact.generated_sql, read="databricks", error_level=ErrorLevel.RAISE
+            )
+            if statement is not None
+            for node in statement.find_all(exp.Cast)
+        ):
+            warnings.append("code_generation.typed_null_placeholder")
+        return tuple(warnings)
 
     def _coverage_issue(
         self,

@@ -259,6 +259,9 @@ def test_code_generation_targets_are_target_object_first_and_filterable() -> Non
                 "system_name": "Customer Relationship Management",
             },
             "dependency_order": 1,
+            "object_transformation_missing": False,
+            "unmapped_attribute_count": 0,
+            "unmapped_attribute_names": [],
         }
     ]
     assert item["mapping_support_count"] == 1

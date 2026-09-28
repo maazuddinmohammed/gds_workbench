@@ -45,6 +45,35 @@ class ProviderUsageHooks:
             payload: object = response.json()
             if isinstance(payload, dict):
                 decoded = cast(dict[str, object], payload)
+                responses_api = response.request.url.path.rstrip("/").endswith("/responses")
+                if response.is_success and responses_api:
+                    status = decoded.get("status")
+                    if status in ("incomplete", "failed"):
+                        details = decoded.get("incomplete_details")
+                        reason = (
+                            cast(dict[str, object], details).get("reason")
+                            if isinstance(details, dict)
+                            else None
+                        )
+                        self.error = AgentExecutionFailedError(
+                            "output_truncated"
+                            if reason == "max_output_tokens"
+                            else "output_refused"
+                            if reason == "content_filter"
+                            else "execution_failed"
+                        )
+                    output = decoded.get("output")
+                    if isinstance(output, list):
+                        for item in cast(list[object], output):
+                            if not isinstance(item, dict):
+                                continue
+                            content = cast(dict[str, object], item).get("content")
+                            if isinstance(content, list) and any(
+                                isinstance(part, dict)
+                                and cast(dict[str, object], part).get("type") == "refusal"
+                                for part in cast(list[object], content)
+                            ):
+                                self.error = AgentExecutionFailedError("output_refused")
                 choices = decoded.get("choices")
                 if response.is_success and isinstance(choices, list) and choices:
                     choice = cast(list[object], choices)[0]
@@ -57,8 +86,10 @@ class ProviderUsageHooks:
                 raw = decoded.get("usage")
                 if isinstance(raw, dict):
                     counts = cast(dict[str, object], raw)
-                    input_details = counts.get("prompt_tokens_details")
-                    output_details = counts.get("completion_tokens_details")
+                    input_key = "input_tokens" if responses_api else "prompt_tokens"
+                    output_key = "output_tokens" if responses_api else "completion_tokens"
+                    input_details = counts.get(f"{input_key}_details")
+                    output_details = counts.get(f"{output_key}_details")
                     prompt: Mapping[str, object] = (
                         cast(Mapping[str, object], input_details)
                         if isinstance(input_details, dict)
@@ -71,8 +102,8 @@ class ProviderUsageHooks:
                     )
                     usage = ModelTokenUsage.model_validate(
                         {
-                            "input_tokens": counts.get("prompt_tokens"),
-                            "output_tokens": counts.get("completion_tokens"),
+                            "input_tokens": counts.get(input_key),
+                            "output_tokens": counts.get(output_key),
                             "total_tokens": counts.get("total_tokens"),
                             "cached_input_tokens": prompt.get("cached_tokens"),
                             "cache_write_input_tokens": prompt.get("cache_write_tokens"),

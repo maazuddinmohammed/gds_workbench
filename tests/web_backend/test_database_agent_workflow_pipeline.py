@@ -226,7 +226,22 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
             values = cast(dict[str, JsonValue], original["values"])
             if request.workflow == "code_generation":
                 target = cast(dict[str, JsonValue], values["target_metadata"])
-                assert target["object_name"] != "SecondCustomer"
+                if bulk == "empty":
+                    assert target["object_name"] != "SecondCustomer"
+                elif target["object_name"] == "SecondCustomer":
+                    attributes = cast(
+                        list[dict[str, JsonValue]], values["attribute_transformations"]
+                    )
+                    assert len(attributes) == 20
+                    expected_blank_count = {
+                        "object_only": 20,
+                        "attribute_only": 0,
+                        "partial_attributes": 10,
+                    }[bulk]
+                    assert (
+                        sum(row["transformation"] is None for row in attributes)
+                        == expected_blank_count
+                    )
             else:
                 evidence = cast(list[dict[str, JsonValue]], values["mapping_evidence"])
                 assert evidence
@@ -237,6 +252,45 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                 calls.append((request.workflow, request.execution_mode, 0))
                 raise TimeoutError("Synthetic provider timeout")
         result = await original_execute(self, request)
+        if partial_shape and bulk != "empty" and request.workflow == "code_generation":
+            outer = cast(dict[str, JsonValue], request.context)
+            original = cast(dict[str, JsonValue], outer["original_context"])
+            values = cast(dict[str, JsonValue], original["values"])
+            target = cast(dict[str, JsonValue], values["target_metadata"])
+            if target["object_name"] == "SecondCustomer":
+                # Synthetic provider output exercises the real SQL validation/draft/Apply path.
+                transforms = cast(list[dict[str, JsonValue]], values["attribute_transformations"])
+                systems = cast(list[dict[str, JsonValue]], values["source_systems"])
+                fields = cast(list[dict[str, JsonValue]], target["attributes"])
+                selects: list[str] = []
+                for system in systems:
+                    missing = {
+                        cast(str, row["modeled_attribute_name"])
+                        for row in transforms
+                        if row["source_system_code"] == system["system_code"]
+                        and row["transformation"] is None
+                    }
+                    expressions = [
+                        f"CAST({'NULL' if field['attribute_name'] in missing else '1'} "
+                        f"AS {field['attribute_data_type']}) AS `{field['attribute_name']}`"
+                        for field in fields
+                        if field.get("is_active", True)
+                        and field.get("population") not in {"database", "framework"}
+                    ]
+                    selects.append("SELECT " + ", ".join(expressions))
+                candidate = cast(dict[str, JsonValue], result.candidate)
+                artifacts = cast(list[dict[str, JsonValue]], candidate["artifacts"])
+                result = result.model_copy(
+                    update={
+                        "candidate": {
+                            **candidate,
+                            "artifacts": [
+                                {**artifact, "generated_sql": "\nUNION ALL\n".join(selects) + ";\n"}
+                                for artifact in artifacts
+                            ],
+                        }
+                    }
+                )
         if request.workflow == "mapping" and partial_shape:
             candidate = cast(dict[str, JsonValue], result.candidate)
             attributes = cast(list[JsonValue], candidate["attribute_mappings"])
@@ -327,6 +381,10 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
             else selected_entity_ids
         )
         successful_pairs = {pair for pair in expected_pairs if pair[0] in successful_entity_ids}
+        code_entity_ids = (
+            selected_entity_ids if partial_shape and bulk != "empty" else successful_entity_ids
+        )
+        code_pairs_expected = {pair for pair in expected_pairs if pair[0] in code_entity_ids}
         selections = [
             MappingTargetSelection(
                 modeled_entity_id=row.entity_id,
@@ -360,7 +418,7 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                 command = CreateWorkflowRunRequest(
                     expected_model_revision=revision,
                     model_workflow="code_generation",
-                    selected_entity_ids=successful_entity_ids,
+                    selected_entity_ids=code_entity_ids,
                     modeled_entity_type=entity_type,
                     code_generation_coverage_mode="selected_targets",
                     agent=selection,
@@ -545,22 +603,24 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                 incomplete = [
                     entity for entity in selected_entity_ids if entity not in successful_entity_ids
                 ]
-                with pytest.raises(WorkbenchError) as incomplete_mapping_error:
-                    await commands.create_run(
-                        principal,
-                        tenant_id=scope.tenant_id,
-                        model_id=model_id,
-                        correlation_id=uuid4(),
-                        command=CreateWorkflowRunRequest(
-                            expected_model_revision=revision + 1,
-                            model_workflow="code_generation",
-                            selected_entity_ids=incomplete,
-                            modeled_entity_type=entity_type,
-                            code_generation_coverage_mode="selected_targets",
-                            agent=selection,
-                        ),
-                    )
-                assert incomplete_mapping_error.value.code == "code_mapping_incomplete"
+                partial_code_command = CreateWorkflowRunRequest(
+                    expected_model_revision=revision + 1,
+                    model_workflow="code_generation",
+                    selected_entity_ids=incomplete,
+                    modeled_entity_type=entity_type,
+                    code_generation_coverage_mode="selected_targets",
+                    agent=selection,
+                )
+                if bulk == "empty":
+                    with pytest.raises(WorkbenchError) as incomplete_mapping_error:
+                        await commands.create_run(
+                            principal,
+                            tenant_id=scope.tenant_id,
+                            model_id=model_id,
+                            correlation_id=uuid4(),
+                            command=partial_code_command,
+                        )
+                    assert incomplete_mapping_error.value.code == "code_mapping_incomplete"
                 with fixture.connect_owner() as connection:
                     eligible_code = connection.execute(
                         "SELECT modeled_entity_id FROM "
@@ -574,9 +634,9 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
         await services.close()
         await database.close()
     expected_mapping_calls = expected_pair_count
-    expected_downstream_calls = ["code_generation"] * len(successful_entity_ids) + [
-        "validation"
-    ] * len(selected_system_codes)
+    expected_downstream_calls = ["code_generation"] * len(code_entity_ids) + ["validation"] * len(
+        selected_system_codes
+    )
     assert [workflow for workflow, _, _ in calls] == (
         ["mapping"] * expected_mapping_calls + expected_downstream_calls
     )
@@ -628,9 +688,22 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
         )
         assert {
             (row["entity_id"], row["source_system_id"]) for row in code_pairs
-        } == successful_pairs
-        assert len(code_pairs) == len(successful_pairs)
+        } == code_pairs_expected
+        assert len(code_pairs) == len(code_pairs_expected)
         assert all(row["generated_code_content"] and row["current"] for row in code_pairs)
+        if partial_shape and bulk != "empty":
+            partial_code = [
+                row for row in code_pairs if row["entity_id"] != scope.plan.pair.modeled_entity_id
+            ]
+            assert len(partial_code) == 2
+            for row in partial_code:
+                assert all(
+                    f"AS `fixture_{position}`" in row["generated_code_content"]
+                    for position in range(2, 11)
+                )
+                assert (
+                    "CAST(NULL AS bigint)" in row["generated_code_content"]
+                ) == (bulk in {"object_only", "partial_attributes"})
         if bulk == "partial":
             assert (
                 connection.execute(

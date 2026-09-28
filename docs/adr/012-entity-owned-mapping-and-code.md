@@ -102,9 +102,14 @@ applicable draft. Legacy Runs without these events retain their recorded status.
 The validated draft retains ownership, lock, revision, digest, expiry, idempotency
 and Apply validation. Retrying after Apply requires a new Run.
 
-Partial Mapping is saved authoring progress, not downstream readiness. Code and
-Validation retain complete Mapping eligibility, source-reference and coverage
-checks. Applying Mapping neither generates nor executes Code or Validation.
+The Code-authoring policy updated on 2026-09-28 accepts partial applied Mapping:
+every nonempty Entity/System pair is available to SQL generation, with the complete
+modeled Attribute shape. Missing Mapping-owned expressions use typed `NULL`
+placeholders and explicit review warnings; missing joins or rowsets are never
+invented. Code remains reviewable/applicable authoring output, with exact System
+assignment checks. A current input digest is not execution readiness.
+Validation and executable modeled-source lookups retain complete Mapping
+requirements. Applying Mapping neither generates nor executes Code or Validation.
 
 Models may choose an existing active System with an active Connection in their
 Tenant as `default_mapping_source_system_id`. It supplies one Mapping pair only

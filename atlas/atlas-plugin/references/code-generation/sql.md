@@ -4,10 +4,10 @@ Shared by Code Generation and its later review/Validation. The [Code Generation 
 
 ## Translate Mapping without redesigning it
 
-1. Read one complete target Mapping view, including all assigned Systems, actual input/lookup metadata and ordered target columns. No extra modeling traversal should be required. Resolve missing context before generating the affected target.
+1. Read all five components/pages of one target Mapping view, including all assigned Systems, actual input/lookup metadata and ordered target columns. Each selected Entity/System needs at least one saved transformation. Partial Mapping stays `complete=false`: preserve its issues and review findings. No extra modeling traversal should be required; do not invent missing source identities, joins or business rules.
 2. Translate substantial Object steps into successive `CREATE OR REPLACE TEMPORARY VIEW` statements. Each stage implements preparation, joins/filters or projection and consumes earlier results where needed. A simple direct branch needs only one view and a final SELECT; do not create a view per sentence or repeat the full pipeline in every stage.
 3. Use unique unqualified temporary names including target/System context as needed. Declare every temporary dependency before use in the same artifact. Carry all needed later join/expression columns forward; drop unnecessary intermediates from the final result.
-4. Apply Attribute Mapping expressions at their specified stage. Use resolved SQL source names and exact physical target aliases; modeled names may differ. Preserve identifiers, decimal capacity, timezone, nullability and invalid-value behavior. Do not add DISTINCT, TRY_CAST, rounding, COALESCE, deduplication or defaults unless Mapping requires them.
+4. Apply Attribute Mapping expressions at their specified stage. Use resolved SQL source names and exact physical target aliases; modeled names may differ. Preserve identifiers, decimal capacity, timezone, nullability and invalid-value behavior. An absent Attribute transformation becomes `CAST(NULL AS <target type>) AS <target column>` and an explicit per-System review finding. It is a placeholder, not a new business rule. If no evidenced row-producing source/join exists, emit a typed zero-row projection; never fabricate a row or join. Proven database/framework omissions still apply. Do not add DISTINCT, TRY_CAST, rounding, COALESCE, deduplication or defaults unless Mapping requires them.
 5. Finish with one explicit target-column SELECT. Use the exact mapped column order through `SourceSystemID`; omit the own generated surrogate, nine framework audit fields and applicable framework-populated Type 2 fields per the [population contract](../model/keys-and-audit.md#population-boundary-and-implementation-alignment). Supply mapped natural-key values, foreign keys and optional Source audit fields. Do not generate history-maintenance SQL. No final `SELECT *`.
 
 Framework SQL uses resolved `schema.table` references, with the catalog supplied by runtime. Quote physical identifiers correctly using Databricks syntax; temporary views remain unqualified. Preserve cross-placement requirements and reject unsupported access rather than silently redirecting a source. Governed evidence queries use their separate registered coordinates.
@@ -73,7 +73,7 @@ This demonstrates read/preparation → joins → field projection → final outp
 
 | Rule | Check / reason |
 |---|---|
-| `code.mapping-input` | Complete applied Mapping context and correct revision; no unresolved transformation assumptions or missing lookup metadata. |
+| `code.mapping-input` | Read every component/page at one applied revision/digest; retain partial-Mapping issues, explicit typed NULL placeholders and missing Object findings. No invented transformation assumptions or lookup metadata. Validation still requires complete Mapping. |
 | `code.statements` | Parse as Databricks SQL; only the agreed temporary-view preparation and final query. No persistent writes/DDL, prose or repeated complete pipelines. |
 | `code.stage-flow` | Temporary names are unique/unqualified, declared before use and self-contained; later stages receive needed columns. |
 | `code.translation` | Every Mapping step and Attribute rule is implemented at the right stage, preserving join/filter semantics, grain, keys and value behavior. |

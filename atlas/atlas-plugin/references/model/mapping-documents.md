@@ -17,7 +17,7 @@ Reuse `mapping_object_default` and `mapping_attribute_default` using the source 
 | `source_attributes` | Optional, nullable array. Each item contains `tenant_code`, `system_code`, `connection_code`, `object_schema`, `object_name`, `attribute_name`, in that order. Registered source identities, with no alias field. |
 | `transformation` | Required string: one field's expression or precise population rule. State necessary type conversion, null/default/invalid-value behavior and source role. |
 
-These are inner documents stored in `mapping_transformation_document` and `attribute_mapping_transformation_document`. They are not complete Change Set records. Preserve permitted nullability: null sources can describe a constant/generated value; null steps must not hide missing transformation logic. A null whole document means a missing transformation, never an instruction to emit SQL NULL. Partial Mapping can be saved under the [record rules](mapping.md#eligibility-coverage-and-state); all required behavior must be understood before Code Generation. Preserve real custom template selections rather than silently converting existing documents.
+These are inner documents stored in `mapping_transformation_document` and `attribute_mapping_transformation_document`. They are not complete Change Set records. Preserve permitted nullability: null sources can describe a constant/generated value; null steps must not hide missing transformation logic. A null whole document means a missing transformation, not an authored business rule. Partial Mapping can be saved under the [record rules](mapping.md#eligibility-coverage-and-state); Code exposes missing Attribute rules as typed NULL placeholders requiring review. Validation still requires complete Mapping. Preserve real custom template selections rather than silently converting existing documents.
 
 Newly staged active documents with only empty objects/arrays, nulls or whitespace must use explicit null, for both default and custom templates. Local and MCP validation reject these content-free documents; they do not silently normalize approved records. Numeric zero and boolean false can be meaningful custom rules and remain intact.
 
@@ -64,7 +64,7 @@ Runtime batch filters apply only where required by the transformation/consumer. 
 
 ## Complete context for coding and validation
 
-The coding/validation agent consumes a complete target-oriented Mapping view: Mapping instructions plus resolved technical context. Raw `mapping_object`/`mapping_attribute` arrays alone omit modeled target types and ordinal information. The read/assembly layer must resolve those once from the approved Entity and source context, so the consuming agent does not traverse the model or reinterpret its design.
+The coding/validation agent reads all components of one target-oriented Mapping view: Mapping instructions plus resolved technical context. Code may consume partial saved transformations; Validation requires the view's `complete=true` signal. Raw `mapping_object`/`mapping_attribute` arrays alone omit modeled target types and ordinal information. The read/assembly layer must resolve those once from the approved Entity and source context, so the consuming agent does not traverse the model or reinterpret its design.
 
 Reuse the existing backend downstream projection where compatible:
 
@@ -73,7 +73,7 @@ Reuse the existing backend downstream projection where compatible:
 | `target_metadata` | Planned Entity schema/name and every modeled Attribute's name, type/capacity, nullability and ordinal. This is an executable projection of the design, not proof of physical registration. |
 | `source_metadata` | Actual permitted input identities, SQL coordinates/column names and relevant source types; distinguish originating System from GDS placement. |
 | `source_systems` | Selected originating Systems and their resolved IDs/names; list order is stable presentation only. |
-| `object_transformations` | Every selected System branch's complete Object document, modeled identity and Object dependency order; final approved grain, keys, branch policy and prerequisites are explicit in the document. |
+| `object_transformations` | Every selected nonempty System branch's Object document (possibly null), modeled identity and Object dependency order; use only authored grain, keys, branch policy and prerequisites. |
 | `attribute_transformations` | Complete per-System modeled Attribute coverage, schema-qualified modeled target names and Attribute documents, including generated/framework rules. |
 
 This is a derived read view, not a fourth Change Set dataset, a second manually maintained mapping or a large prose handoff. It must preserve record boundaries and complete coverage when paged. Use one consistent approved revision/context; required target/source changes make the view stale and need reconciliation. Do not put internal IDs, credentials or physical rows into author instructions.
@@ -95,7 +95,7 @@ read_mapping_context(
 
 Read all five components listed above. Each response supplies `model_id`, `model_revision`, `context_digest`, `component`, `records`, `complete`, `issues` and `next_cursor`. Pass the first `context_digest` as `expected_context_digest` on every subsequent component/page; retain the same Model revision, target and optional `source_system_codes` selection. Follow each non-null `next_cursor` with unchanged page size. A component with a cursor is not fully read even when `complete=true` (that flag describes context validity).
 
-Cache only the assembled component records and their Model/target/System/revision/digest bindings as read-only task input. Do not keep opaque tool envelopes or fabricate missing columns. On changed revision/digest, refresh all components; never combine old and new pages. `complete=false` and `issues` identify missing context that must be resolved before independent Code Generation. Additional lookups named by Mapping are checked under the same governed eligibility.
+Cache only the assembled component records and their Model/target/System/revision/digest bindings as read-only task input. Do not keep opaque tool envelopes or fabricate missing columns. On changed revision/digest, refresh all components; never combine old and new pages. `complete=false` and `issues` remain authoritative findings: Code may expose absent Attribute transformations as typed NULL placeholders in the known target types/order, while Validation must resolve every issue before authoring. A missing Object document requires an explicit review finding; never invent source rows, joins or business rules. When row-producing evidence is unavailable, emit a typed zero-row projection. Malformed non-null documents, contradictory authored rules and unresolved source identities still require correction; the partial allowance does not make those valid. Additional lookups named by Mapping are checked under the same governed eligibility.
 
 The backend resolves foreign SQL coordinates, physical columns/types, batch declarations, key/audit population, the originating SourceSystemID value and eligible lookup inputs. Mapping still owns business rules, exact predicates, grain, precedence and any runtime placeholder semantics. A derived view cannot turn ambiguous prose into a confirmed decision.
 
@@ -163,7 +163,7 @@ These extend the structural checks in [Mapping records](mapping.md). Template/re
 | `mapping.orders` | Object order satisfies named prerequisites; contribution order, System list order and Attribute ordinal do not schedule execution. |
 | `mapping.consumer` | Complete consistent Mapping view supplies every fact needed to write code and judge it, without reinterpreting upstream model design. |
 
-Review source → Object step → Attribute rule → final column, then derive the expected grain, key, null and reconciliation behavior using only the complete Mapping view. A structural pass does not prove business correctness. Save supported partial transformations and leave missing documents blank; resolve substantive gaps before Code Generation. Optional SQL retains the shared query policy.
+Review source → Object step → Attribute rule → final column, then derive the expected grain, key, null and reconciliation behavior using only the saved Mapping view. A structural pass does not prove business correctness. Save supported partial transformations and leave missing documents blank; Code may preserve them as explicitly reviewed placeholders, while Validation remains blocked until Mapping is complete. Optional SQL retains the shared query policy.
 
 ## Source pointers
 

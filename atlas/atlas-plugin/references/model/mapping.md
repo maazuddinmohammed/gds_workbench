@@ -11,7 +11,7 @@ Both datasets belong to Model section `mapping`. Read the current Snapshot catal
 | `mapping_object` | `modeled_entity_type` + `modeled_entity_schema_name` + `modeled_entity_name` + `source_system_code` |
 | `mapping_attribute` | `modeled_entity_type` + `modeled_entity_schema_name` + `modeled_entity_name` + `modeled_attribute_name` + `source_system_code` |
 
-Compare keys with the shared Model normalization; preserve actual names. One target receiving Systems A and B has separate Object Mapping records and Attribute Mapping sets for A and B. Partial transformations can be saved; each branch must be complete before Code Generation. File grouping is a later Code Generation choice, absent from these keys.
+Compare keys with the shared Model normalization; preserve actual names. One target receiving Systems A and B has separate Object Mapping records and Attribute Mapping sets for A and B. Partial transformations can be saved and used for reviewed Code authoring when the pair has at least one saved transformation. Empty pairs are excluded; Validation still requires complete Mapping. File grouping is a later Code Generation choice, absent from these keys.
 
 All fields below are required, with no record-schema defaults. Only the explicitly nullable fields accept JSON null. New completed records normally use `active` and unlocked; preserve existing state.
 
@@ -47,7 +47,7 @@ All fields below are required, with no record-schema defaults. Only the explicit
 
 - Mapping has no typed outer `supports`, `sources`, target physical keys, expressions, types, ordinal, file path, Model ID or database-ID fields. Put the self-contained transformation content inside the existing inner template, as the [document guide](mapping-documents.md) specifies.
 - The generic record schema accepts a JSON object with flexible nested JSON values. It does not define or validate the inner source/step/Attribute template. Keep the exact agreed GDS template; flexible storage is not permission to invent extra template fields.
-- A populated document is an object, not a JSON-encoded string, array or Markdown block. Source-less/generated behavior uses the template's permitted null/omitted source collection and an explicit generation rule. A null whole document means no transformation is available; it does not mean generate a SQL NULL expression.
+- A populated document is an object, not a JSON-encoded string, array or Markdown block. Source-less/generated behavior uses the template's permitted null/omitted source collection and an explicit generation rule. A null whole document means no transformation is available. It is not a business rule to return NULL; Code authoring exposes an absent Attribute rule as a typed NULL placeholder with an explicit review finding.
 - Manual plugin Apply resolves a non-null template code to an active Output Template of target type `mapping_object` or `mapping_attribute`. `mapping_object_default` and `mapping_attribute_default` are valid only when installation is established; otherwise use the agreed inner shapes with outer code null. Snapshot codes do not describe installed template schemas.
 - Newly authored or reactivated active documents cannot be content-free objects, including `{}`, empty default templates or nested null/empty/whitespace values. Stage an explicit null document for a missing transformation; custom template codes do not bypass this rule. Unchanged historical documents retain their approved bytes and digest. Template shape, real source references and executable meaning require the additional checks below.
 - Pydantic size checks use compact JSON UTF-8; PostgreSQL also limits its `jsonb::text` byte length. Leave headroom instead of filling a document to the compact limit. These are maximums, not writing targets.
@@ -61,7 +61,7 @@ The backend's workflow-specific `{schema_version, object_mapping, attribute_mapp
 - `source_system_code` must identify an active System. Current generic validation checks active System existence, not whether its claimed contribution matches every inner source. Confirm actual source origin; the physical GDS System and source lineage System may differ.
 - Every Object Mapping requires its existing modeled Entity. An active Object Mapping needs an active Entity. A new active target/System pair needs at least one non-null Object or active Attribute document. Attribute-only output uses a null Object document; Object-only output may have no Attribute records. Mapping has no separate System-order configuration; scheduling belongs to Process Groups and Processes.
 - Every Attribute Mapping requires its exact Object Mapping and modeled Attribute in the same Entity. Active records need active parents; a null document explicitly records a missing transformation. Missing Attribute records are also incomplete.
-- Code authoring requires a non-null Object document and one active non-null Attribute Mapping for every active modeled Attribute **for each active target/System contribution**. Include surrogates, audit, technical, constants and generated fields. Documenting their generation does not add them to the transformation SELECT; apply the shared [key/audit policy](keys-and-audit.md). Incomplete Mapping is also unavailable as an executable modeled-source lookup.
+- Code authoring accepts each active target/System contribution with any saved Object or Attribute transformation and preserves the full active target Attribute shape. Missing Attribute rules become typed NULL placeholders; missing Object logic stays a review finding. Never infer joins or create rows to fill those gaps; use a typed zero-row projection when row production cannot be established. Apply the shared [key/audit policy](keys-and-audit.md) for proven generated/framework omissions. Validation still requires non-null Object and Attribute documents for every active target/System contribution. Incomplete Mapping is also unavailable as an executable modeled-source lookup.
 - Inactive/deprecated rows keep their keys. Do not create duplicate identities, automatically reactivate them or omit an existing contribution to imply deletion. Current active-System checks can still report inactive source-System history; report that limitation rather than rewriting preserved records.
 - A locked Mapping record cannot change, including any part of its whole transformation document. Object and Attribute records have separate locks; no implicit parent-lock cascade is established by the generic model contract. Keep a changed Object's aliases, inputs and semantics compatible with preserved/locked Attribute rules.
 
@@ -185,9 +185,13 @@ Keep aliases unique across all input lists. Every referenced Attribute must belo
 to a declared input in the matching list. Use active, authorized same-Model source
 Entities and the selected System's applied Mapping context. Empty or nullable lists
 do not authorize inventing a source, and modeled names alone never prove a join.
-An authored Mapping may precede a peer Mapping. Code generation must stop when
-`read_mapping_context` reports `complete=false`, including when an input Entity
-lacks an applied Mapping for the same source System.
+An authored Mapping may precede a peer Mapping. `read_mapping_context` preserves
+`complete=false` and its issues for missing transformations or source context.
+Code may expose missing target rules as reviewed typed NULL placeholders, but
+cannot treat an incomplete peer as an executable source or invent a join.
+Missing row-producing evidence requires a typed zero-row projection; unresolved
+or contradictory authored references still require correction. Validation
+requires `complete=true` before authoring.
 
 ## Source pointers
 
