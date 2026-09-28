@@ -3,7 +3,7 @@
 - Fixed dialog requests including Systems belonging only to unselected Entities. Stale explicit System selections block submission and preserve Entity reselection.
 - Fixed Tool-assisted mode is visible; no public mode override added.
 - Known missing Mapping/System/Guide/Prompt prerequisites return safe specific codes and actionable UI messages. Unknown database details stay redacted; retries retain run identity.
-- Added a fresh-install default SQL Guide through governed functions. Requires an active Super Admin and no Models. Exact replay changes nothing; conflicting/custom Guide history is never overwritten. Existing databases are not migrated.
+- Added a default SQL Guide through governed functions. Requires an active Super Admin. The subsequent user-requested update allows installation after Models exist; exact replay preserves Models, Mapping and frozen Run versions. Conflicting/custom Guide history is never overwritten. The update passed 16 focused disposable-database/packaging tests plus Ruff and Pyright; no existing database was used.
 - Default Code prompt includes three synthetic SQL examples: direct projection/provenance, staged join with multiple Attributes, and combined System branches. Generated Code retains runtime schema.object references. Instructions explain complete paged Object/Attribute Mapping retrieval and interpretation.
 - Full Mapping documents, custom nested content and schema-qualified identities survive paging (2 Systems, 10 Attributes). Prompt examples parse and pass the actual Code artifact validator. These checks do not prove live business SQL correctness.
 

@@ -1,4 +1,4 @@
-"""Fresh-only SQL Guide setup and governed Code creation; no external execution."""
+"""SQL Guide setup with existing Models; disposable fixtures, no external execution."""
 
 from __future__ import annotations
 
@@ -93,7 +93,7 @@ def test_fresh_sql_guide_seed_is_authorized_and_exact_replay_preserves_history(
         )
 
 
-def test_fresh_sql_guide_seed_refuses_custom_default_and_populated_models(
+def test_sql_guide_seed_preserves_custom_default_with_or_without_models(
     guide_database: DisposablePostgres,
 ) -> None:
     _seed_super_admin(guide_database)
@@ -129,7 +129,7 @@ def test_fresh_sql_guide_seed_refuses_custom_default_and_populated_models(
     with pytest.raises(RaiseException, match="will not replace an existing default"):
         _apply_sql(guide_database, _guide_seed())
     _seed_mapping_scope(guide_database, dimensional=False, create_run=False)
-    with pytest.raises(RaiseException, match="fresh database without Models"):
+    with pytest.raises(RaiseException, match="will not replace an existing default"):
         _apply_sql(guide_database, _guide_seed())
     with guide_database.connect_owner() as connection:
         preserved = require_row(
@@ -144,14 +144,29 @@ def test_fresh_sql_guide_seed_refuses_custom_default_and_populated_models(
     assert preserved["sql_generation_guide_digest"] == version["sql_generation_guide_digest"]
 
 
-async def test_fresh_seed_supports_code_run_and_rejects_unrelated_selected_system(
+async def test_seed_with_existing_model_preserves_mapping_and_supports_code_run(
     guide_database: DisposablePostgres,
 ) -> None:
     _seed_super_admin(guide_database)
-    _apply_sql(guide_database, _guide_seed())
     _apply_sql(guide_database, REFERENCE_SEED.read_text())
     _apply_sql(guide_database, _render_seed())
     scope = _seed_mapping_scope(guide_database, dimensional=False, create_run=False)
+    # Installing guidance must not rewrite the Model or its applied Mapping.
+    snapshot_query = """
+        SELECT to_jsonb(model) AS model,
+               (SELECT jsonb_agg(to_jsonb(mapping) ORDER BY mapping_object_id)
+                  FROM workflow.mapping_object mapping
+                 WHERE mapping.model_id = model.model_id) AS objects,
+               (SELECT jsonb_agg(to_jsonb(attribute) ORDER BY mapping_attribute_id)
+                  FROM workflow.mapping_attribute attribute
+                 WHERE attribute.model_id = model.model_id) AS attributes
+          FROM model.model model WHERE model.model_id = %s
+    """
+    with guide_database.connect_owner() as connection:
+        before = require_row(connection.execute(snapshot_query, (scope.plan.model_id,)).fetchone())
+    _apply_sql(guide_database, _guide_seed())
+    with guide_database.connect_owner() as connection:
+        assert connection.execute(snapshot_query, (scope.plan.model_id,)).fetchone() == before
     with guide_database.connect_owner() as connection:
         actor = require_row(
             connection.execute(
@@ -250,5 +265,27 @@ async def test_fresh_seed_supports_code_run_and_rejects_unrelated_selected_syste
                 ).fetchone()
             )
         assert frozen == guide
+        # Replay after Model/Run creation must preserve the run's exact Guide version.
+        _apply_sql(guide_database, _guide_seed())
+        with guide_database.connect_owner() as connection:
+            assert connection.execute(snapshot_query, (scope.plan.model_id,)).fetchone() == before
+            assert (
+                require_row(
+                    connection.execute(
+                        "SELECT sql_generation_guide_version_id, sql_generation_guide_digest "
+                        "FROM application.workflow_run WHERE workflow_run_id=%s",
+                        (created.workflow_run_id,),
+                    ).fetchone()
+                )
+                == frozen
+            )
+            assert (
+                require_row(
+                    connection.execute(
+                        "SELECT count(*) AS count FROM application.sql_generation_guide_version"
+                    ).fetchone()
+                )["count"]
+                == 1
+            )
     finally:
         await database.close()

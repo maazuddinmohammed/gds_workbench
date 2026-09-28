@@ -67,18 +67,19 @@ Evidence enters model requests only through explicitly rendered workflow-local
 variables and enabled readers. Required output schemas and bounded repair
 feedback remain backend-owned.
 
-## Fresh-install default SQL Generation Guide
+## Default SQL Generation Guide
 
-Before creating any Model, install `06_global_sql_generation_guide.template.sql`
+Before starting Code Generation, install `06_global_sql_generation_guide.template.sql`
 using the same three active Super Admin identity placeholders as the Prompt seed.
 It creates and publishes the default Databricks transformation guide through the
 governed Guide functions. Code Generation requires an active published guide;
 the web dialog selects this default automatically.
 
-Exact replay before Model creation changes nothing. The seed rejects any database
-that already contains Models, a different default Guide, or conflicting history
-under its own Guide code. It does not update existing deployments or overwrite
-custom guidance. The local runner installs it before creating the review Model.
+Models may already exist. The seed adds missing Guide configuration without changing
+Models, Mapping, existing Runs or their frozen Guide versions. Exact replay changes
+nothing. A different default Guide or conflicting history under its own Guide code
+is rejected rather than overwritten. The local runner installs it automatically
+before creating the review Model.
 
 New Guide draft versions can subsequently be saved and published through the
 authenticated Guide API by a Super Admin. Published content stays immutable.

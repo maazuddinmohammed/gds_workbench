@@ -1,7 +1,7 @@
--- Fresh-install SQL Generation Guide. Run before creating any Model.
+-- Default SQL Generation Guide. Models may already exist.
 -- Replace the three placeholders with one existing active Super Admin identity.
--- Exact replay before Model creation is a no-op. Conflicts are never overwritten.
--- This is not a migration or a backfill for an existing application database.
+-- Exact replay is a no-op. Conflicts are never overwritten.
+-- Adds guide configuration only; existing Models, Mapping and Runs are unchanged.
 
 DO $global_sql_generation_guide_seed$
 DECLARE
@@ -75,11 +75,7 @@ BEGIN
         RAISE EXCEPTION 'SQL generation guide requires Super Admin';
     END IF;
 
-    -- Serialize first installation against Model creation and governed default changes.
-    LOCK TABLE model.model IN SHARE MODE;
-    IF EXISTS (SELECT 1 FROM model.model) THEN
-        RAISE EXCEPTION 'SQL generation guide seed requires a fresh database without Models';
-    END IF;
+    -- Serialize installation against governed default changes.
     PERFORM pg_catalog.pg_advisory_xact_lock(
         pg_catalog.hashtextextended('application.sql_generation_guide.default', 0)
     );
