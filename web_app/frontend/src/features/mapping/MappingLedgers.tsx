@@ -1,5 +1,5 @@
 import { reviewSelectionColumn } from "../model_record_review/selection";
-import { useMemo, type ReactNode } from "react";
+import { useId, useMemo, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
 import {
@@ -303,6 +303,7 @@ function MappingLedgerSurface<T>({
   renderCell?: (item: T, column: string) => ReactNode;
 }) {
   const table = useReactTable({ data: items, columns, getCoreRowModel: getCoreRowModel() });
+  const scrollHintId = useId();
   return (
     <section className="workflow-surface mapping-surface" aria-label={label}>
       {filters}
@@ -319,50 +320,56 @@ function MappingLedgerSurface<T>({
       ) : items.length === 0 ? (
         <div className="empty-state compact">No {label} match these filters.</div>
       ) : (
-        <div className="workflow-table-scroll mapping-table-scroll mapping-spreadsheet table-scroll" role="region" aria-label={`${label} spreadsheet`} tabIndex={0}>
-          <table aria-label={label}>
-            <thead>
-              {table.getHeaderGroups().map((group) => (
-                <tr key={group.id}>
-                  {group.headers.map((header) => (
-                    <th key={header.id} scope="col" className={header.column.id.startsWith("field:") || header.column.id === "empty-document"
-                      ? "mapping-document-column" : `mapping-column-${header.column.id}`}>
-                      {header.isPlaceholder ? null : typeof header.column.columnDef.header === "function"
-                        ? header.column.columnDef.header(header.getContext()) : header.column.columnDef.header}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {table.getRowModel().rows.map((row) => (
-                <tr key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className={cell.column.id.startsWith("field:") || cell.column.id === "empty-document"
-                      ? "mapping-document-column" : `mapping-column-${cell.column.id}`}>
-                      {/* These local renderers are stateless. Direct calls keep selection
-                          inputs mounted when newly loaded documents add columns. */}
-                      {renderCell?.(row.original, cell.column.id) ?? (typeof cell.column.columnDef.cell === "function"
-                        ? cell.column.columnDef.cell(cell.getContext()) : cell.column.columnDef.cell)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {state.hasMore ? (
-            <div className="ledger-pagination">
-              <button
-                className="button button-secondary button-small"
-                type="button"
-                disabled={state.isLoadingMore}
-                onClick={onLoadMore}
-              >
-                {state.isLoadingMore ? "Loading…" : `Load more ${label}`}
-              </button>
-            </div>
-          ) : null}
-        </div>
+        <>
+          {renderCell ? <p id={scrollHintId} className="mapping-scroll-hint">Scroll horizontally to view all transformation and source columns.</p> : null}
+          <div className="workflow-table-scroll mapping-table-scroll mapping-spreadsheet table-scroll" role="region" aria-label={`${label} spreadsheet`}
+            aria-describedby={renderCell ? scrollHintId : undefined} tabIndex={0}>
+            <table aria-label={label}>
+              <thead>
+                {table.getHeaderGroups().map((group) => (
+                  <tr key={group.id}>
+                    {group.headers.map((header) => (
+                      <th key={header.id} scope="col" data-mapping-field={header.column.id.startsWith("field:") ? header.column.id.slice(6) : undefined}
+                        className={header.column.id.startsWith("field:") || header.column.id === "empty-document"
+                        ? "mapping-document-column" : `mapping-column-${header.column.id}`}>
+                        {header.isPlaceholder ? null : typeof header.column.columnDef.header === "function"
+                          ? header.column.columnDef.header(header.getContext()) : header.column.columnDef.header}
+                      </th>
+                    ))}
+                  </tr>
+                ))}
+              </thead>
+              <tbody>
+                {table.getRowModel().rows.map((row) => (
+                  <tr key={row.id}>
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id} data-mapping-field={cell.column.id.startsWith("field:") ? cell.column.id.slice(6) : undefined}
+                        className={cell.column.id.startsWith("field:") || cell.column.id === "empty-document"
+                        ? "mapping-document-column" : `mapping-column-${cell.column.id}`}>
+                        {/* These local renderers are stateless. Direct calls keep selection
+                            inputs mounted when newly loaded documents add columns. */}
+                        {renderCell?.(row.original, cell.column.id) ?? (typeof cell.column.columnDef.cell === "function"
+                          ? cell.column.columnDef.cell(cell.getContext()) : cell.column.columnDef.cell)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {state.hasMore ? (
+              <div className="ledger-pagination">
+                <button
+                  className="button button-secondary button-small"
+                  type="button"
+                  disabled={state.isLoadingMore}
+                  onClick={onLoadMore}
+                >
+                  {state.isLoadingMore ? "Loading…" : `Load more ${label}`}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </>
       )}
     </section>
   );

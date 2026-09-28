@@ -53,7 +53,11 @@ describe("Mapping journey", () => {
     expect(within(grid).getAllByRole("checkbox", { checked: true })).toHaveLength(6);
     expect(fetcher.mock.calls.filter(([input]) => /\/mapping\/attributes\/\d+$/.test(String(input)))).toHaveLength(5);
     expect(fetcher.mock.calls.some(([input]) => String(input).includes("/mapping/attributes/null"))).toBe(false);
-    expect(screen.getByRole("region", { name: "Attribute Mappings spreadsheet" })).toHaveAttribute("tabindex", "0");
+    const scrollRegion = screen.getByRole("region", { name: "Attribute Mappings spreadsheet" });
+    expect(scrollRegion).toHaveAttribute("tabindex", "0");
+    expect(scrollRegion).toHaveAccessibleDescription("Scroll horizontally to view all transformation and source columns.");
+    scrollRegion.focus();
+    expect(scrollRegion).toHaveFocus();
   });
 
   it.each(["logical", "dimensional"] as const)("shows one Entity transformation above Attributes only after Show details in the %s layer", async (layer) => {

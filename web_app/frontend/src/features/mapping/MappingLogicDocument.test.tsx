@@ -4,6 +4,27 @@ import { MappingDocumentValue } from "./MappingDocumentView";
 import { MappingLogicDocument } from "./MappingLogicDocument";
 
 describe("Mapping logic documents", () => {
+  it("orders source identities consistently even when stored Object keys are shuffled", () => {
+    const document = { source_objects: [
+      { alias: "c", object_name: "customer", system_code: "CRM", tenant_code: "EXAMPLE",
+        object_schema: "bronze_crm", custom_note: "Keep this note", connection_code: "lakehouse" },
+      { connection_code: "warehouse", object_schema: "bronze_erp", tenant_code: "EXAMPLE",
+        system_code: "ERP", object_name: "account", alias: "a", nullable: null },
+    ] };
+    const original = JSON.stringify(document);
+    render(<MappingLogicDocument path="Entity logic" document={document} />);
+    const table = screen.getByRole("table", { name: 'Entity logic["source_objects"]' });
+    expect(within(table).getAllByRole("columnheader").map((column) => column.textContent)).toEqual([
+      "Tenant code", "System code", "Connection code", "Object schema", "Object name", "Alias", "Custom note", "Nullable",
+    ]);
+    expect(within(table).getAllByRole("row").slice(1).map((row) =>
+      within(row).getAllByRole("cell").map((cell) => cell.textContent))).toEqual([
+      ["EXAMPLE", "CRM", "lakehouse", "bronze_crm", "customer", "c", "Keep this note", "Not provided"],
+      ["EXAMPLE", "ERP", "warehouse", "bronze_erp", "account", "a", "Not provided", "Not set"],
+    ]);
+    expect(JSON.stringify(document)).toBe(original);
+  });
+
   it("prioritizes transformation and ordered steps while preserving every custom and empty value", () => {
     const expression = "CASE WHEN c.name IS NULL THEN '<script>literal</script>'\nELSE TRIM(c.name) END";
     const { container } = render(<MappingLogicDocument path="Entity logic" document={{

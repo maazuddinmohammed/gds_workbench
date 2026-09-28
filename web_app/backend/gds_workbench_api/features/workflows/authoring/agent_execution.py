@@ -262,6 +262,13 @@ type AgentFailureReason = Literal[
     "authentication_failed",
     "provider_unavailable",
     "provider_request_rejected",
+    "input_filtered",
+    "request_too_large",
+    "reasoning_rejected",
+    "tool_definition_rejected",
+    "conversation_rejected",
+    "response_format_rejected",
+    "model_unavailable",
     "tool_failed",
     "turn_limit_exceeded",
     "output_refused",
@@ -271,7 +278,12 @@ type AgentFailureReason = Literal[
 class AgentExecutionFailedError(WorkbenchError):
     """Only fixed public diagnostics cross the provider boundary."""
 
-    def __init__(self, reason: AgentFailureReason = "execution_failed") -> None:
+    def __init__(
+        self,
+        reason: AgentFailureReason = "execution_failed",
+        *,
+        provider_http_status: int | None = None,
+    ) -> None:
         messages: dict[AgentFailureReason, str] = {
             "execution_failed": "The selected agent could not complete this stage.",
             "context_exhausted": (
@@ -292,7 +304,39 @@ class AgentExecutionFailedError(WorkbenchError):
             "provider_unavailable": "The model provider is unavailable. Retry this run later.",
             "provider_request_rejected": (
                 "The model provider rejected this request. "
-                "Ask an administrator to check the model configuration."
+                "Ask an administrator to check this run's model configuration and request."
+            ),
+            "input_filtered": (
+                "The model provider's content filter blocked this request. "
+                "Ask an administrator to review this workflow's prompt and inputs "
+                "alongside the provider's filter assessment."
+            ),
+            "request_too_large": (
+                "The model provider rejected the request because it is too large. "
+                "Review this workflow's prompt and input size, "
+                "or choose a model with a larger input limit."
+            ),
+            "reasoning_rejected": (
+                "The model provider rejected the reasoning setting. "
+                "Choose Provider default, or ask an administrator to check which "
+                "reasoning settings the deployed model supports."
+            ),
+            "tool_definition_rejected": (
+                "The model provider rejected the tool definitions or tool settings. "
+                "Ask an administrator to check the deployed model's tool support "
+                "and the application's tool configuration."
+            ),
+            "conversation_rejected": (
+                "The model provider rejected the message or tool-response structure. "
+                "Ask an administrator to check the application's provider integration."
+            ),
+            "response_format_rejected": (
+                "The model provider rejected the JSON response format. "
+                "Ask an administrator to check JSON-object support for the deployed model."
+            ),
+            "model_unavailable": (
+                "The configured model deployment could not be found. "
+                "Ask an administrator to check the deployment name and provider endpoint."
             ),
             "tool_failed": (
                 "A local agent tool could not complete. No partial candidate was accepted."
@@ -303,7 +347,14 @@ class AgentExecutionFailedError(WorkbenchError):
             ),
             "output_refused": "The model provider declined to produce this stage's output.",
         }
-        super().__init__(code=f"agent_{reason}", message=messages[reason])
+        message = messages[reason]
+        if (
+            reason == "provider_request_rejected"
+            and type(provider_http_status) is int
+            and 400 <= provider_http_status <= 499
+        ):
+            message += f" Provider HTTP {provider_http_status}."
+        super().__init__(code=f"agent_{reason}", message=message)
 
 
 class AgentContextToolRequestError(WorkbenchError):

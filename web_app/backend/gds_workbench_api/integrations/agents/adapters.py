@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from threading import Lock
@@ -280,17 +281,56 @@ class OpenAIAgentsSdkAdapter:
             if isinstance(error, APIConnectionError):
                 raise AgentExecutionFailedError("provider_unavailable") from None
             if isinstance(error, APIStatusError):
-                # Compare structured codes only; provider messages/bodies may contain input data.
-                if isinstance(error.code, str) and error.code in {
-                    "context_length_exceeded",
-                    "context_window_exceeded",
-                }:
-                    raise AgentExecutionFailedError("context_exhausted") from None
                 if error.status_code in {408, 504}:
                     raise AgentExecutionFailedError("timeout") from None
                 if error.status_code >= 500:
                     raise AgentExecutionFailedError("provider_unavailable") from None
-                raise AgentExecutionFailedError("provider_request_rejected") from None
+                # Match only fixed codes/field shapes. Never return provider text, identifiers,
+                # headers or nested filter details, which can contain input or credentials.
+                body = error.body
+                inner: object = (
+                    cast(dict[str, object], body).get("innererror")
+                    if isinstance(body, dict)
+                    else None
+                )
+                inner_code = (
+                    cast(dict[str, object], inner).get("code") if isinstance(inner, dict) else None
+                )
+                codes = {
+                    value
+                    for value in (error.code, inner_code)
+                    if isinstance(value, str) and len(value) <= 64
+                }
+                if codes & {
+                    "context_length_exceeded",
+                    "context_window_exceeded",
+                }:
+                    raise AgentExecutionFailedError("context_exhausted") from None
+                if codes & {"content_filter", "ResponsibleAIPolicyViolation"}:
+                    raise AgentExecutionFailedError("input_filtered") from None
+                if error.status_code == 413:
+                    raise AgentExecutionFailedError("request_too_large") from None
+                if error.status_code == 404 and codes & {"DeploymentNotFound", "model_not_found"}:
+                    raise AgentExecutionFailedError("model_unavailable") from None
+                param = error.param if isinstance(error.param, str) else ""
+                if error.status_code in {400, 422} and len(param) <= 128:
+                    if param in {"reasoning_effort", "reasoning.effort"}:
+                        raise AgentExecutionFailedError("reasoning_rejected") from None
+                    if param in {"response_format", "response_format.type"}:
+                        raise AgentExecutionFailedError("response_format_rejected") from None
+                    if param in {"tools", "tool_choice", "parallel_tool_calls"} or re.fullmatch(
+                        r"tools\[[0-9]{1,3}\](?:\.type|\.function(?:\.(?:name|description|parameters|strict))?)?",
+                        param,
+                    ):
+                        raise AgentExecutionFailedError("tool_definition_rejected") from None
+                    if param == "messages" or re.fullmatch(
+                        r"messages\[[0-9]{1,4}\](?:\.(?:role|content|tool_calls|tool_call_id))?",
+                        param,
+                    ):
+                        raise AgentExecutionFailedError("conversation_rejected") from None
+                raise AgentExecutionFailedError(
+                    "provider_request_rejected", provider_http_status=error.status_code
+                ) from None
             if isinstance(error, LengthFinishReasonError):
                 raise AgentExecutionFailedError("output_truncated") from None
             if isinstance(error, MaxTurnsExceeded):

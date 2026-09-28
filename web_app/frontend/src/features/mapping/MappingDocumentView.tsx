@@ -1,5 +1,11 @@
 import type { JsonObject, JsonValue } from "../../shared/contracts";
 
+// JSON object key order is not a source identity contract (PostgreSQL JSONB
+// may reorder it). Keep familiar source columns first, retaining custom fields.
+const sourceColumnOrder = [
+  "tenant_code", "system_code", "connection_code", "object_schema", "object_name", "attribute_name", "alias",
+];
+
 export function MappingDocumentView({
   title,
   document,
@@ -34,11 +40,15 @@ export function MappingDocumentValue({ value, path, tabular = false }: {
     if (tabular && value.every((entry): entry is JsonObject => entry !== null
       && typeof entry === "object" && !Array.isArray(entry) && Object.keys(entry).length > 0)) {
       const columns = [...new Set(value.flatMap((entry) => Object.keys(entry)))];
+      columns.sort((left, right) => {
+        const a = sourceColumnOrder.indexOf(left), b = sourceColumnOrder.indexOf(right);
+        return (a < 0 ? sourceColumnOrder.length : a) - (b < 0 ? sourceColumnOrder.length : b);
+      });
       return <div className="mapping-document-table-scroll" role="region" aria-label={path} tabIndex={0}>
         <table className="mapping-document-table" aria-label={path}>
-          <thead><tr>{columns.map((key) => <th key={key} scope="col" title={key}>{humanize(key) || "Unnamed field"}</th>)}</tr></thead>
+          <thead><tr>{columns.map((key) => <th key={key} scope="col" title={key} data-source-field={key}>{humanize(key) || "Unnamed field"}</th>)}</tr></thead>
           <tbody>{value.map((entry, index) => <tr key={index}>
-            {columns.map((key) => <td key={key}>{Object.hasOwn(entry, key)
+            {columns.map((key) => <td key={key} data-source-field={key}>{Object.hasOwn(entry, key)
               ? <MappingDocumentValue value={entry[key] as JsonValue} path={`${path}[${index}][${JSON.stringify(key)}]`} tabular={tabular} />
               : <span className="mapping-json-scalar"><span>Not provided</span></span>}</td>)}
           </tr>)}</tbody>

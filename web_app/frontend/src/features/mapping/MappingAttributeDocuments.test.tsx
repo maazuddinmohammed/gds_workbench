@@ -44,6 +44,28 @@ function Documents({ api, items, enabled = true }: {
 }
 
 describe("Mapping Attribute documents", () => {
+  it("orders shuffled Attribute source identities without changing custom fields or stored values", () => {
+    const sources = [
+      { object_name: "customer", system_code: "CRM", tenant_code: "EXAMPLE", object_schema: "bronze_crm",
+        attribute_name: "first_name", custom_flag: false, connection_code: "lakehouse" },
+      { connection_code: "lakehouse", attribute_name: "last_name", object_name: "customer",
+        object_schema: "bronze_crm", system_code: "CRM", tenant_code: "EXAMPLE", custom_count: 0 },
+    ];
+    const original = JSON.stringify(sources);
+    render(<MappingTransformationValue label="Source attributes for CustomerName" value={sources} />);
+    const table = screen.getByRole("table", { name: "Source attributes for CustomerName" });
+    expect(within(table).getAllByRole("columnheader").map((column) => column.textContent)).toEqual([
+      "Tenant code", "System code", "Connection code", "Object schema", "Object name", "Attribute name", "Custom flag", "Custom count",
+    ]);
+    expect(within(table).getAllByRole("row").slice(1).map((row) =>
+      within(row).getAllByRole("cell").map((cell) => cell.textContent))).toEqual([
+      ["EXAMPLE", "CRM", "lakehouse", "bronze_crm", "customer", "first_name", "false", "Not provided"],
+      ["EXAMPLE", "CRM", "lakehouse", "bronze_crm", "customer", "last_name", "Not provided", "0"],
+    ]);
+    expect(JSON.stringify(sources)).toBe(original);
+    expect(table.parentElement).toHaveAttribute("tabindex", "0");
+  });
+
   it("renders exact custom values safely and expands long values in place", async () => {
     const expression = "SELECT '<script>literal</script>' AS name;\n".repeat(12);
     const { container } = render(<MappingTransformationValue label="Custom rule for customer_name"
