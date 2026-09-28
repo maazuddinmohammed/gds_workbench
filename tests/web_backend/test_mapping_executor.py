@@ -8,7 +8,9 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.application.change_sets.model_validation import ModelValidationIssue
+from gds_etl_workbench.application.change_sets.model_validation import (
+    ModelValidationIssue,
+)
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import (
     AuthorizationDeniedError,
@@ -71,7 +73,9 @@ class _RecordingFake:
 
 class _Lifecycle:
     def __init__(self) -> None:
-        self.starts: list[tuple[RequestPrincipal, int, int, int, str, str | None, int]] = []
+        self.starts: list[
+            tuple[RequestPrincipal, int, int, int, str, str | None, int]
+        ] = []
         self.append_event = AsyncMock()
         self.fail = AsyncMock()
 
@@ -177,7 +181,9 @@ def _executor(
         agent_executor=agent,
         handoff=cast(
             MappingChangeSetHandoff,
-            SimpleNamespace(finalize=handoff, retain_failed_candidate=retention or AsyncMock()),
+            SimpleNamespace(
+                finalize=handoff, retain_failed_candidate=retention or AsyncMock()
+            ),
         ),
         no_op=cast(MappingNoOpCompleter, SimpleNamespace(complete=no_op)),
         lifecycle=selected_lifecycle,
@@ -313,7 +319,7 @@ async def test_mapping_local_fake_completes_each_mode(
         "context_too_large",
     ),
 )
-async def test_mapping_retains_complete_pairs_when_another_selected_system_fails(
+async def test_mapping_retains_partial_and_complete_pairs_independently(
     mode: WorkflowExecutionMode,
     failed_pair_first: bool,
     failure_kind: str,
@@ -351,24 +357,24 @@ async def test_mapping_retains_complete_pairs_when_another_selected_system_fails
     preparations = (second, first) if failed_pair_first else (first, second)
     agent, lifecycle = IncompleteSystemAgent(), _Lifecycle()
     service, handoff, no_op, fail = _executor(
-        preparations[0], agent, additional_preparations=preparations[1:], lifecycle=lifecycle
+        preparations[0],
+        agent,
+        additional_preparations=preparations[1:],
+        lifecycle=lifecycle,
     )
 
     result = await _execute(service)
 
-    # The successful pair is complete; the failed pair contributes no partial
-    # Object/Attribute rows to the authoritative finalizer.
-    assert len(agent.requests) == (
-        2 if failure_kind in {"provider_timeout", "context_too_large"} else 3
-    )
+    assert len(agent.requests) == 2
     assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert result.staged_record_count == 2
+    is_partial = failure_kind == "incomplete_attributes"
+    assert result.staged_record_count == (3 if is_partial else 2)
     handoff.assert_awaited_once()
     assert {
         record["source_system_code"]
         for change in handoff.call_args.kwargs["changes"]
         for record in change.records
-    } == {"CRM"}
+    } == ({"CRM", "GDS"} if is_partial else {"CRM"})
     no_op.assert_not_awaited()
     fail.assert_not_awaited()
     outcomes = [
@@ -376,20 +382,29 @@ async def test_mapping_retains_complete_pairs_when_another_selected_system_fails
         for call in lifecycle.append_event.call_args_list
         if call.kwargs["event"].stage.startswith("mapping.pair_")
     ]
+    other_stage = (
+        "mapping.pair_partial"
+        if is_partial
+        else "mapping.pair_failed"
+        if failure_kind in {"provider_timeout", "context_too_large"}
+        else "mapping.pair_empty"
+    )
     assert [(event.stage, event.current) for event in outcomes] == [
         (
-            "mapping.pair_failed" if failed_pair_first else "mapping.pair_completed",
+            other_stage if failed_pair_first else "mapping.pair_completed",
             2 if failed_pair_first else 1,
         ),
         (
-            "mapping.pair_completed" if failed_pair_first else "mapping.pair_failed",
+            "mapping.pair_completed" if failed_pair_first else other_stage,
             1 if failed_pair_first else 2,
         ),
     ]
 
 
 @pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))
-@pytest.mark.parametrize("first_outcome", ("failed", "no_source", "unchanged", "locked"))
+@pytest.mark.parametrize(
+    "first_outcome", ("failed", "no_source", "unchanged", "locked")
+)
 async def test_mapping_without_successful_changes_cannot_hide_a_failed_pair(
     mode: WorkflowExecutionMode,
     first_outcome: str,
@@ -443,7 +458,9 @@ async def test_mapping_without_successful_changes_cannot_hide_a_failed_pair(
                             },
                             "attribute_mappings": [
                                 {
-                                    "modeled_attribute_name": names[child.modeled_attribute_id],
+                                    "modeled_attribute_name": names[
+                                        child.modeled_attribute_id
+                                    ],
                                     "attribute_mapping_transformation_document": (
                                         child.transformation_document
                                     ),
@@ -455,23 +472,14 @@ async def test_mapping_without_successful_changes_cannot_hide_a_failed_pair(
                     turn_count=1,
                     tool_call_count=0,
                 )
-            return AgentExecutionResult(
-                candidate={
-                    "schema_version": "1.0",
-                    "object_mapping": None,
-                    "attribute_mappings": [],
-                    "issues": [{"code": "missing_join_evidence"}],
-                },
-                turn_count=1,
-                tool_call_count=0,
-            )
+            raise AgentExecutionFailedError("timeout")
 
     service, handoff, no_op, fail = _executor(
         first, NoSuccessfulChangesAgent(), additional_preparations=(second,)
     )
     with pytest.raises(WorkbenchError) as error:
         await _execute(service)
-    assert error.value.code == "mapping_evidence_unresolved"
+    assert error.value.code == "agent_timeout"
     handoff.assert_not_awaited()
     no_op.assert_not_awaited()
     fail.assert_awaited_once()
@@ -496,7 +504,9 @@ async def test_mapping_safety_fence_failure_never_becomes_partial_success(
         "authorization": AuthorizationDeniedError(),
         "tenant_lock": TenantLockRequiredError(),
         "claim": DependencyUnavailableError(),
-        "revision": WorkbenchError("model_revision_conflict", "Model revision changed."),
+        "revision": WorkbenchError(
+            "model_revision_conflict", "Model revision changed."
+        ),
     }[failure_code]
 
     class FatalSystemAgent(_RecordingFake):
@@ -536,7 +546,9 @@ async def test_mapping_context_identity_drift_aborts_even_with_a_valid_sibling(
             "readiness": assess_mapping_readiness(plan=second.plan, context=context),
         }
     )
-    assert any(issue.code == "context.identity_drift" for issue in second.readiness.issues)
+    assert any(
+        issue.code == "context.identity_drift" for issue in second.readiness.issues
+    )
     preparations = (second, first) if failed_pair_first else (first, second)
     agent = _RecordingFake()
     service, handoff, no_op, fail = _executor(
@@ -592,7 +604,7 @@ async def test_partial_mapping_still_requires_authoritative_finalizer_validation
     fail.assert_not_awaited()
 
 
-@pytest.mark.parametrize("first_failure", ("evidence", "graph"))
+@pytest.mark.parametrize("first_failure", ("provider", "graph"))
 async def test_failed_candidate_retention_belongs_to_the_reported_pair(
     first_failure: str,
 ) -> None:
@@ -602,7 +614,9 @@ async def test_failed_candidate_retention_belongs_to_the_reported_pair(
         second = second.model_copy(
             update={
                 "context": context,
-                "readiness": assess_mapping_readiness(plan=second.plan, context=context),
+                "readiness": assess_mapping_readiness(
+                    plan=second.plan, context=context
+                ),
             }
         )
 
@@ -613,9 +627,13 @@ async def test_failed_candidate_retention_belongs_to_the_reported_pair(
             original = cast(dict[str, JsonValue], outer["original_context"])
             values = cast(dict[str, JsonValue], original["values"])
             system = cast(dict[str, JsonValue], values["source_system"])
-            evidence_failure = system["system_code"] == "CRM" and first_failure == "evidence"
+            evidence_failure = (
+                system["system_code"] == "CRM" and first_failure == "provider"
+            )
             no_source = system["system_code"] == "GDS" and first_failure == "graph"
-            if evidence_failure or no_source:
+            if evidence_failure:
+                raise AgentExecutionFailedError("timeout")
+            if no_source:
                 return result.model_copy(
                     update={
                         "candidate": {
@@ -659,8 +677,8 @@ async def test_failed_candidate_retention_belongs_to_the_reported_pair(
         await _execute(service)
     handoff.assert_not_awaited()
     no_op.assert_not_awaited()
-    if first_failure == "evidence":
-        # A later rejected candidate must not be attached to the earlier missing-rule error.
+    if first_failure == "provider":
+        # A later rejected candidate must not be attached to the earlier provider error.
         retention.assert_not_awaited()
         fail.assert_awaited_once()
     else:
@@ -681,13 +699,17 @@ async def test_mapping_authors_every_selected_entity_individually(
     mode: WorkflowExecutionMode,
     layer: ModeledEntityType,
 ) -> None:
-    first = mapping_preparation(execution_mode=mode, attribute_count=3, modeled_entity_type=layer)
+    first = mapping_preparation(
+        execution_mode=mode, attribute_count=3, modeled_entity_type=layer
+    )
     pair = first.plan.pair.model_copy(update={"modeled_entity_id": 202})
     plan = first.plan.model_copy(
         update={
             "pair": pair,
             "selection_ordinal": 2,
-            "agent_plan": first.plan.agent_plan.model_copy(update={"selected_entity_ids": (202,)}),
+            "agent_plan": first.plan.agent_plan.model_copy(
+                update={"selected_entity_ids": (202,)}
+            ),
         }
     )
     entity = first.context.target.model_copy(
@@ -747,7 +769,9 @@ async def test_mapping_authors_every_selected_entity_individually(
     assert result.staged_record_count == 8
     assert len(agent.requests) == 2
     changes = handoff.call_args.kwargs["changes"]
-    objects = next(change.records for change in changes if change.dataset == "mapping_object")
+    objects = next(
+        change.records for change in changes if change.dataset == "mapping_object"
+    )
     assert {record["modeled_entity_name"] for record in objects} == {
         "Customer",
         "CustomerArchive",
@@ -822,7 +846,9 @@ async def test_mapping_records_no_applicable_source_without_fabricating_a_mappin
         no_op.assert_not_awaited()
         changes = handoff.call_args.kwargs["changes"]
         assert {
-            record["source_system_code"] for change in changes for record in change.records
+            record["source_system_code"]
+            for change in changes
+            for record in change.records
         } == {"CRM"}
         assert result.staged_record_count == 2
     else:
@@ -831,7 +857,7 @@ async def test_mapping_records_no_applicable_source_without_fabricating_a_mappin
         no_op.assert_awaited_once()
     fail.assert_not_awaited()
     assert any(
-        "No applicable source found" in call.kwargs["event"].message
+        call.kwargs["event"].stage == "mapping.pair_no_source"
         for call in lifecycle.append_event.call_args_list
     )
 
@@ -848,7 +874,9 @@ async def test_mapping_large_descriptions_reach_the_agent_unchanged(
     raw["target"]["attributes"][0]["attribute_definition"] = long_description
     raw["sources"][0]["object"]["object_description"] = long_description
     attribute_description = "x" * 1_100_000
-    raw["sources"][0]["object"]["attributes"][0]["attribute_description"] = attribute_description
+    raw["sources"][0]["object"]["attributes"][0]["attribute_description"] = (
+        attribute_description
+    )
     entity = raw["headers"][0]["modeled_entity"]
     entity["entity_definition"] = long_description
     entity["grain"] = long_description
@@ -902,7 +930,9 @@ async def test_mapping_requires_private_validation_context_before_provider() -> 
     assert "snapshot" not in preparation.model_dump()
     assert "physical_scope" not in preparation.model_dump()
     agent = _RecordingFake()
-    service, handoff, _, fail = _executor(preparation.model_copy(update={"snapshot": None}), agent)
+    service, handoff, _, fail = _executor(
+        preparation.model_copy(update={"snapshot": None}), agent
+    )
     with pytest.raises(MappingRunContextUnavailableError):
         await _execute(service)
     assert not agent.requests

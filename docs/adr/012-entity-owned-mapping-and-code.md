@@ -65,26 +65,46 @@ file placement, and orchestration execution remain separate authorized actions.
 
 ## Mapping coverage and Assertion fallback
 
-Each selected Entity/System pair runs independently and must cover every
-actionable Attribute. Following the explicit partial-application decision on
-2026-09-28, recoverable provider, evidence or candidate-validation failures affect
-that pair only. Complete, valid sibling pairs may form one draft, revalidated
-against the entire future Model graph before ordinary review and Apply. Failed
-pairs remain unchanged or absent; no incomplete Attribute candidate is staged.
-With no successful changes, any failed pair fails the Run, not a successful no-op.
-Authorization, Tenant Lock, worker claim, revision and finalization failures
-remain fatal. Existing Mapping or known source support prohibits skipping a pair
-as inapplicable.
+Each selected Entity/System pair runs independently. The partial-application
+policy confirmed on 2026-09-28 permits partial output within a pair: a valid Object
+transformation **or** any valid Attribute transformation retains the pair. Missing
+transformations are blank; unsupported rules or joins must never be invented to
+satisfy a coverage count. An Entity with ten active modeled Attributes and five
+Attribute mappings shows all ten Attributes, with five blank transformations.
+Missing Attribute rows are derived by the backend from modeled Attributes and
+have no Mapping record ID. Attribute-only output leaves the Object document blank.
 
-Typed per-pair terminal events distinguish completed, preserved, no-source and
-failed outcomes. Their one-based position identifies the immutable ordered Run
-target selection; read projections attach its frozen Entity schema/name and
-System identity without parsing event messages. The web app labels a completed
-Run with failed pairs as **Partial results**, including after Apply, and lists
-failed pairs separately. All-failed Runs expose the same diagnostics without an
+For selected, unlocked records, omitted or null output clears the saved document
+on regeneration. Locked and unselected mappings are preserved. Existing Object
+logic is also preserved when any Attribute is locked or unselected, so changing
+joins or grain cannot silently change protected Attribute behavior. A new pair
+with neither Object nor Attribute output creates no empty parent or child records.
+An existing pair cleared of all output keeps its record identities and history;
+its detail URLs remain readable, but the Entity ledger hides the empty pair.
+
+Valid partial pairs and valid sibling pairs form one draft, revalidated against
+the entire future Model graph before ordinary review and Apply. Recoverable
+provider, evidence-access or candidate-integrity failures affect only their pair;
+failed pairs remain unchanged or absent. With no successful changes, any true
+failed pair fails the Run, not a successful no-op. Authorization, Tenant Lock,
+worker claim, revision and finalization failures remain fatal. No-source and
+empty-output outcomes remain distinct from failed pairs.
+
+Typed per-pair terminal events distinguish completed, partial, preserved,
+no-source, empty and failed outcomes. Their one-based position identifies the
+immutable ordered Run target selection; it is not execution progress. Read
+projections attach frozen Entity schema/name and System identity without parsing
+event messages. A completed Run with incomplete or failed pairs shows **Partial
+results**, including after Apply. The web app reports incomplete counts separately
+from the failed-pair issue list and explains that missing selected transformations
+will become blank before Apply. All-failed Runs expose diagnostics without an
 applicable draft. Legacy Runs without these events retain their recorded status.
-The validated subset uses existing ownership, lock, revision, digest, expiry,
-idempotency and Apply validation; retrying failures requires a new Run after Apply.
+The validated draft retains ownership, lock, revision, digest, expiry, idempotency
+and Apply validation. Retrying after Apply requires a new Run.
+
+Partial Mapping is saved authoring progress, not downstream readiness. Code and
+Validation retain complete Mapping eligibility, source-reference and coverage
+checks. Applying Mapping neither generates nor executes Code or Validation.
 
 Models may choose an existing active System with an active Connection in their
 Tenant as `default_mapping_source_system_id`. It supplies one Mapping pair only
@@ -93,9 +113,10 @@ Entity/Attribute source support. Explicit Assertion document Tenant/System scope
 must match the Model/default or be unspecified. This cannot relabel known source
 provenance or bypass unavailable upstream Mapping. The server marks the pair
 `source_system.is_default=true` and supplies no physical/peer source candidates.
-Authoring requires explicit generation rules for every actionable Attribute;
-missing rules fail validation instead of generating invented data or skipping
-the pair. Generated Code retains the ordinary source-System coverage checks.
+Authoring requires explicit rules for each transformation it returns. Missing
+rules leave the corresponding transformation blank while retaining supported
+output; they do not justify invented data or a different source System. Generated
+Code retains the ordinary source-System coverage checks.
 
 ## Compatibility and verification
 

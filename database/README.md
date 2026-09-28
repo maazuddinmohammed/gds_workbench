@@ -65,6 +65,12 @@ the actor and derives canonical selection digests/counts. A Profiling or Analysi
 batch ID is accepted only when selected eligible Objects belong to one System;
 no-batch multi-System runs remain valid. Callers never supply a digest or count.
 
+Fresh application setup must publish its default SQL Generation Guide before
+creating Models. Use `seed/06_global_sql_generation_guide.template.sql` with an
+active Super Admin identity after installation verification; see `seed/README.md`.
+This seed rejects databases that already contain Models and never overwrites
+existing custom guide history.
+
 Metadata Enrichment normally fills missing descriptions and inferred types.
 An explicit description-regeneration request freezes selected Objects, or
 selected Attributes across selected Objects, with every physical revision. Completion

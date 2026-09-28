@@ -210,6 +210,13 @@ following `database/seed/README.md`. Replace its identity placeholders with
 that exact Super Admin identity. The script is replay-safe and does not create
 Prompts for deterministic stages such as Profiling.
 
+Before creating any Model, install
+`database/seed/06_global_sql_generation_guide.template.sql` using the same active
+Super Admin identity placeholders. This publishes the default Databricks SQL
+Generation Guide required by Code Generation. Follow `database/seed/README.md`;
+the seed rejects databases containing Models and never replaces custom/default
+guide history. It is only for fresh setup, not an existing-database backfill.
+
 Next, install `database/seed/07_global_mapping_output_templates.template.sql`
 using the same active Super Admin identity placeholders and the instructions in
 `database/seed/README.md`. Both active global Mapping templates are required for

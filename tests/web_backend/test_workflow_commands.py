@@ -1,7 +1,7 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any, LiteralString, cast
+from typing import Any, Literal, LiteralString, cast
 from uuid import UUID
 
 import pytest
@@ -10,7 +10,7 @@ from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from gds_workbench_api.capabilities import (
     AgentCapabilityRegistry,
@@ -1070,3 +1070,81 @@ async def test_missing_mapping_default_returns_a_clear_controlled_error(
             ),
         )
     assert caught.value.message == "The global Mapping output templates are unavailable."
+
+
+@pytest.mark.parametrize(
+    "workflow,database_message,expected_message,expected_code",
+    [
+        (
+            "code_generation",
+            "Selected Code Generation target lacks complete applied SQL Mapping",
+            "Complete Object and Attribute Mapping for the selected Entities "
+            "before generating Code.",
+            "code_mapping_incomplete",
+        ),
+        (
+            "code_generation",
+            "Code Generation has no eligible target set",
+            "Code Generation needs an Entity with complete Object and Attribute Mapping.",
+            "code_no_eligible_targets",
+        ),
+        (
+            "validation",
+            "Selected Validation System lacks complete applied Mapping",
+            "Validation needs an Entity with complete Object and Attribute Mapping "
+            "for each selected System.",
+            "invalid_request",
+        ),
+    ],
+)
+async def test_incomplete_mapping_prerequisite_returns_an_actionable_controlled_error(
+    workflow: Literal["code_generation", "validation"],
+    database_message: str,
+    expected_message: str,
+    expected_code: str,
+) -> None:
+    class IncompleteMappingTransaction(MappingWorkflowCommandTransaction):
+        async def fetch_one(
+            self, query: LiteralString, parameters: tuple[Any, ...] = ()
+        ) -> dict[str, Any] | None:
+            if "application.create_workflow_run" in query:
+                raise RuntimeError(database_message)
+            return await super().fetch_one(query, parameters)
+
+    service = DatabaseWorkflowCommandService(
+        database=MappingWorkflowCommandDatabase(IncompleteMappingTransaction()),
+        authorizer=AuthorizationService(),
+        agent_capability_registry=load_default_agent_capabilities(),
+    )
+    no_eligible_targets = database_message == "Code Generation has no eligible target set"
+    command = CreateWorkflowRunRequest.model_validate(
+        {
+            "expected_model_revision": 4,
+            "model_workflow": workflow,
+            **(
+                {
+                    "selected_entity_ids": [] if no_eligible_targets else [101],
+                    "modeled_entity_type": "logical_entity",
+                    "code_generation_coverage_mode": (
+                        "all_eligible_targets" if no_eligible_targets else "selected_targets"
+                    ),
+                }
+                if workflow == "code_generation"
+                else {"selected_system_codes": ["CRM"]}
+            ),
+        }
+    )
+    with pytest.raises(WorkbenchError) as caught:
+        await service.create_run(
+            RequestPrincipal(
+                actor_kind=ActorKind.HUMAN,
+                entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+                entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+            ),
+            tenant_id=7,
+            model_id=18,
+            correlation_id=UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            command=command,
+        )
+    assert caught.value.message == expected_message
+    assert caught.value.code == expected_code

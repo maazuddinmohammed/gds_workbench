@@ -26,7 +26,7 @@ SELECT model.model_id,
        model.model_revision,
        scope.model_input_scope_object_count,
        latest_run.model_workflow AS latest_workflow,
-       CASE WHEN mapping_outcome.has_failed_pairs THEN 'partial_results'
+       CASE WHEN mapping_outcome.has_incomplete_pairs THEN 'partial_results'
             ELSE latest_run.workflow_run_state END AS latest_run_status,
        model.updated_time AS updated_at
   FROM model.model AS model
@@ -67,13 +67,14 @@ SELECT model.model_id,
                     AND event.model_event_log_total = pair.pair_count
                     AND event.model_event_log_stage IN (
                         'mapping.pair_completed', 'mapping.pair_preserved',
-                        'mapping.pair_no_source', 'mapping.pair_failed'
+                        'mapping.pair_no_source', 'mapping.pair_failed',
+                        'mapping.pair_partial', 'mapping.pair_empty'
                     )
                   ORDER BY event.model_event_log_sequence DESC
                   LIMIT 1
              ) AS outcome
-            WHERE outcome.stage = 'mapping.pair_failed'
-       ) AS has_failed_pairs
+            WHERE outcome.stage IN ('mapping.pair_failed', 'mapping.pair_partial')
+       ) AS has_incomplete_pairs
   ) AS mapping_outcome ON latest_run.model_workflow = 'mapping'
        AND latest_run.workflow_run_state IN ('completed', 'completed_with_repair')
  WHERE model.tenant_id = %s

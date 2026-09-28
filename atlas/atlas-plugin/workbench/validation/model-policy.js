@@ -123,6 +123,7 @@
     for (const record of changed.get("mapping_object") || []) {
       if (!active(record) || record.output_template_code && record.output_template_code !== "mapping_object_default") continue;
       const document = record.mapping_transformation_document;
+      if (document === null) continue;
       if (!document || !Array.isArray(document.steps) || !document.steps.length || document.steps.some(step => typeof step !== "string" || !step.trim())) { add("mapping.object-steps", "mapping_object", "mapping_transformation_document", "An active Mapping branch needs concise ordered transformation steps."); continue; }
       const dimensional = record.modeled_entity_type === "dimensional_entity";
       if (dimensional && document.source_objects != null) add("mapping.source-kind", "mapping_object", "mapping_transformation_document", "Dimensional Mapping uses modeled source identities; physical source fields must be null or absent.");
@@ -143,6 +144,7 @@
     for (const record of changed.get("mapping_attribute") || []) {
       if (!active(record) || record.output_template_code && record.output_template_code !== "mapping_attribute_default") continue;
       const document = record.attribute_mapping_transformation_document;
+      if (document === null) continue;
       if (!document || typeof document.transformation !== "string" || !document.transformation.trim()) { add("mapping.attribute-rule", "mapping_attribute", "attribute_mapping_transformation_document", "Every active mapped Attribute needs an explicit transformation or generated/framework population rule."); continue; }
       const object = mappingObjects.get(branch(record));
       const dimensional = record.modeled_entity_type === "dimensional_entity";
@@ -155,7 +157,7 @@
         if (!Array.isArray(sources)) { add("mapping.source-attributes", "mapping_attribute", "attribute_mapping_transformation_document", "Mapping Attribute inputs must be an array or null."); continue; }
         for (const source of sources) {
           if (layer ? !sourceAttributes[layer].has(sourceKey(source, layer, true)) : metadata && !physicalAttributes.has(tuple([...PHYSICAL, "attribute_name"].map(field => source?.[field])))) add("mapping.attribute-exists", "mapping_attribute", "attribute_mapping_transformation_document", "A Mapping source Attribute does not exist in applied source context.");
-          if (!Array.isArray(inputs) || !inputs.some(input => layer ? sourceKey(input, layer) === sourceKey(source, layer) : physical(input) === physical(source))) add("mapping.parent-input", "mapping_attribute", "attribute_mapping_transformation_document", "An Attribute source must belong to an Object-level query input in the same System branch.");
+          if (object?.mapping_transformation_document != null && (!Array.isArray(inputs) || !inputs.some(input => layer ? sourceKey(input, layer) === sourceKey(source, layer) : physical(input) === physical(source)))) add("mapping.parent-input", "mapping_attribute", "attribute_mapping_transformation_document", "An Attribute source must belong to an Object-level query input in the same System branch.");
         }
       }
     }

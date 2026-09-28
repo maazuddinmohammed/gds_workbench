@@ -80,8 +80,6 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
     ?? row.attributes.filter((attribute) => !attribute.is_locked).map((attribute) => attribute.attribute_id);
   const attributeCount = selected.reduce((count, row) => count + selectedAttributes(row).length, 0);
   const preservedCount = selected.reduce((count, row) => count + row.attributes.length - selectedAttributes(row).length, 0);
-  const incompleteCount = selected.filter((row) => row.attributes.some((attribute) =>
-    !attribute.is_authored && !selectedAttributes(row).includes(attribute.attribute_id))).length;
   const viewed = rows.find((row) => targetKey(row) === viewedKey);
   const viewedAttributes = viewed ? selectedAttributes(viewed) : [];
   const revisionChanged = targets.data !== undefined && targets.data.modelRevision !== model.model_revision;
@@ -128,7 +126,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
     event.preventDefault();
     if (mutation.isPending) return;
     if (pendingRunId !== null) { mutation.mutate(undefined); return; }
-    if (selectionUnavailable || !selected.length || !agentValid || incompleteCount) return;
+    if (selectionUnavailable || !selected.length || !agentValid) return;
     mutation.mutate({
       expected_model_revision: model.model_revision,
       model_workflow: "mapping",
@@ -196,7 +194,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
             <strong>{selected.length} Entity–System mappings · {attributeCount} Attributes to generate</strong>
             <span>{preservedCount} Attributes preserved. Locked and unselected mappings stay unchanged.</span>
           </div>
-          <p className="field-help">Each selected Entity is assessed for every selected input System. Relevant sources produce complete mappings; unrelated Systems are reported without creating a mapping.</p>
+          <p className="field-help">Each selected Entity is assessed for every selected input System. Available transformations are retained; missing selected transformations stay blank. Locked and unselected mappings are preserved.</p>
           {targets.isPending ? <div className="surface-state" aria-busy="true">Loading all Mapping targets and Attributes…</div>
             : targets.isError ? <p className="inline-error" role="alert">Targets could not be fully loaded.</p>
             : revisionChanged ? <p className="inline-error" role="alert">The Model changed. Close this dialog and refresh.</p>
@@ -294,7 +292,6 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
             </>}
         </fieldset>
         {targets.isError ? <button type="button" className="text-action" disabled={frozen} onClick={() => void targets.refetch()}>Retry loading targets</button> : null}
-        {incompleteCount > 0 ? <p className="inline-error" role="alert">{incompleteCount} selected Entities have missing Attributes excluded. Select those Attributes to complete their mappings.</p> : null}
         <details className="mapping-advanced"><summary>Advanced settings</summary>
           <MappingOutputTemplateSelection
             mappingObjects={templates.data?.mappingObjects ?? []} mappingAttributes={templates.data?.mappingAttributes ?? []}
@@ -307,7 +304,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
         <footer className="dialog-actions">
           <button className="button button-secondary" type="button" disabled={mutation.isPending} onClick={onClose}>Cancel</button>
           <button className="button button-primary" type="submit"
-            disabled={mutation.isPending || (pendingRunId === null && (selectionUnavailable || !selected.length || !agentValid || incompleteCount > 0))}>
+            disabled={mutation.isPending || (pendingRunId === null && (selectionUnavailable || !selected.length || !agentValid))}>
             {mutation.isPending ? "Starting…" : pendingRunId !== null ? "Retry start" : "Generate mappings"}
           </button>
         </footer>

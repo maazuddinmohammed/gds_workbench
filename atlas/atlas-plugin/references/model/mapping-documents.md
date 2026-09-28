@@ -17,7 +17,9 @@ Reuse `mapping_object_default` and `mapping_attribute_default` using the source 
 | `source_attributes` | Optional, nullable array. Each item contains `tenant_code`, `system_code`, `connection_code`, `object_schema`, `object_name`, `attribute_name`, in that order. Registered source identities, with no alias field. |
 | `transformation` | Required string: one field's expression or precise population rule. State necessary type conversion, null/default/invalid-value behavior and source role. |
 
-These are inner documents stored in `mapping_transformation_document` and `attribute_mapping_transformation_document`. They are not complete Change Set records. Preserve permitted nullability: null sources can describe a constant/generated value; null steps must not hide missing transformation logic. All required behavior must be understood before an active branch is ready. Preserve real custom template selections rather than silently converting existing documents.
+These are inner documents stored in `mapping_transformation_document` and `attribute_mapping_transformation_document`. They are not complete Change Set records. Preserve permitted nullability: null sources can describe a constant/generated value; null steps must not hide missing transformation logic. A null whole document means a missing transformation, never an instruction to emit SQL NULL. Partial Mapping can be saved under the [record rules](mapping.md#eligibility-coverage-and-state); all required behavior must be understood before Code Generation. Preserve real custom template selections rather than silently converting existing documents.
+
+Newly staged active documents with only empty objects/arrays, nulls or whitespace must use explicit null, for both default and custom templates. Local and MCP validation reject these content-free documents; they do not silently normalize approved records. Numeric zero and boolean false can be meaningful custom rules and remain intact.
 
 For Dimensional Attribute documents, use `source_logical_attributes` instead of `source_attributes`; each item has `logical_entity_schema_name`, `logical_entity_name`, `logical_attribute_name`. Preserve `transformation`. Logical documents keep physical sources.
 
@@ -161,7 +163,7 @@ These extend the structural checks in [Mapping records](mapping.md). Template/re
 | `mapping.orders` | Object order satisfies named prerequisites; contribution order, System list order and Attribute ordinal do not schedule execution. |
 | `mapping.consumer` | Complete consistent Mapping view supplies every fact needed to write code and judge it, without reinterpreting upstream model design. |
 
-Review source → Object step → Attribute rule → final column, then derive the expected grain, key, null and reconciliation behavior using only the complete Mapping view. A structural pass does not prove business correctness. Resolve substantive gaps before activating affected work; optional SQL retains the shared query policy.
+Review source → Object step → Attribute rule → final column, then derive the expected grain, key, null and reconciliation behavior using only the complete Mapping view. A structural pass does not prove business correctness. Save supported partial transformations and leave missing documents blank; resolve substantive gaps before Code Generation. Optional SQL retains the shared query policy.
 
 ## Source pointers
 

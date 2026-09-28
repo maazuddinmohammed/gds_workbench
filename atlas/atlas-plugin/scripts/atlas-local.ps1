@@ -1725,10 +1725,36 @@ function Add-ModelPhysicalScopeIssues([object[]]$States, [object[]]$ReferenceSta
 
 }
 
+function Test-MappingTransformationContent($Value) {
+    if ($null -eq $Value) { return $false }
+    if ($Value -is [string]) { return $Value -match '[^\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]' }
+    if ($Value -is [Array]) {
+        foreach ($item in $Value) { if (Test-MappingTransformationContent $item) { return $true } }
+        return $false
+    }
+    if ($Value -is [Collections.IDictionary] -or $Value -is [pscustomobject]) {
+        foreach ($name in @(Get-PropertyNames $Value)) { if (Test-MappingTransformationContent (Get-Property $Value $name)) { return $true } }
+        return $false
+    }
+    return $true
+}
+
 function Add-ModelValidationIssues([object[]]$States, $Issues, [object[]]$ReferenceStates, [string]$TenantCode) {
     foreach ($state in $States) {
         $baseline = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::Ordinal)
         foreach ($record in @($state.Baseline)) { $baseline[(Get-NormalizedValidationKey 'model' @($state.Dataset.canonical_key) $record)] = $record }
+        if ($state.RecordType -in @('mapping_object', 'mapping_attribute')) {
+            $field = if ($state.RecordType -ceq 'mapping_object') { 'mapping_transformation_document' } else { 'attribute_mapping_transformation_document' }
+            foreach ($record in @($state.Pending)) {
+                $key = Get-NormalizedValidationKey 'model' @($state.Dataset.canonical_key) $record
+                $original = if ($baseline.ContainsKey($key)) { $baseline[$key] } else { $null }
+                $document = Get-Property $record $field
+                if ((Get-Active $record) -eq $true -and $null -ne $document -and -not (Test-MappingTransformationContent $document) -and
+                    ($null -eq $original -or (Get-Active $original) -ne $true -or (ConvertTo-GdsJson (Get-Property $original $field)) -cne (ConvertTo-GdsJson $document))) {
+                    Add-LocalValidationIssue $Issues $state.RecordType $null 'mapping_document_empty' 'A content-free Mapping document must be explicit null; do not invent transformation logic.' $field
+                }
+            }
+        }
         $retained = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
         foreach ($record in @($state.Effective)) {
             $key = Get-NormalizedValidationKey 'model' @($state.Dataset.canonical_key) $record
@@ -1828,9 +1854,10 @@ function Add-ModelValidationIssues([object[]]$States, $Issues, [object[]]$Refere
     $entityFields = @('modeled_entity_type', 'modeled_entity_schema_name', 'modeled_entity_name')
     $branchFields = $entityFields + @('source_system_code')
     $artifactFields = $entityFields + @('artifact_name')
-    $allEntities = @{}; $allAttributes = @{}; $activeEntities = @{}; $activeAttributes = @{}; $rows = @{}; $codeAuthoringEntities = @{}
+    $allEntities = @{}; $allAttributes = @{}; $activeEntities = @{}; $activeAttributes = @{}; $rows = @{}; $codeAuthoringEntities = @{}; $existingMappings = @{}
     foreach ($state in $States) {
         $type = [string]$state.RecordType; $rows[$type] = @($state.Effective)
+        if ($type -ceq 'mapping_object') { foreach ($record in @($state.Baseline)) { $existingMappings[(Get-NormalizedValidationKey 'model' $branchFields $record)] = $true } }
         if ($type -in @('generated_code', 'generated_code_source_system')) { foreach ($record in $state.Pending) { $codeAuthoringEntities[(Get-NormalizedValidationKey 'model' $entityFields $record)] = $true } }
         if ($type -notin @('logical_entity', 'logical_attribute', 'dimensional_entity', 'dimensional_attribute')) { continue }
         $layer = $type.Split('_')[0]; $attribute = $type.EndsWith('_attribute', [StringComparison]::Ordinal)
@@ -1868,7 +1895,7 @@ function Add-ModelValidationIssues([object[]]$States, $Issues, [object[]]$Refere
         $allMappings[$branch] = $true
         if (-not $allEntities.ContainsKey($entity)) { Add-LocalValidationIssue $Issues 'mapping_object' $null 'reference_not_found' 'Referenced modeled Entity is not present in the future Model graph.' 'modeled_entity_name' }
         if ($record.object_mapping_status -cne 'active') { continue }
-        if (-not $activeEntities.ContainsKey($entity) -or $null -eq $record.mapping_transformation_document) { Add-LocalValidationIssue $Issues 'mapping_object' $null 'active_dependency_invalid' 'Active Mapping Object requires an active Entity and transformation.' 'mapping_transformation_document'; continue }
+        if (-not $activeEntities.ContainsKey($entity)) { Add-LocalValidationIssue $Issues 'mapping_object' $null 'active_dependency_invalid' 'Active Mapping Object requires an active Entity.' 'modeled_entity_name'; continue }
         $activeMappings[$branch] = $record; $mappingSystems[$branch] = $entity
     }
     foreach ($record in @($rows['mapping_attribute'])) {
@@ -1876,11 +1903,21 @@ function Add-ModelValidationIssues([object[]]$States, $Issues, [object[]]$Refere
         $branch = Get-NormalizedValidationKey 'model' $branchFields $record; $attribute = Get-NormalizedValidationKey 'model' ($entityFields + @('modeled_attribute_name')) $record
         if (-not $allMappings.ContainsKey($branch) -or -not $allAttributes.ContainsKey($attribute)) { Add-LocalValidationIssue $Issues 'mapping_attribute' $null 'reference_not_found' 'Referenced Mapping or modeled Attribute is not present in the future Model graph.' 'modeled_attribute_name' }
         if ($record.attribute_mapping_status -cne 'active') { continue }
-        if (-not $activeMappings.ContainsKey($branch) -or -not $activeAttributes.ContainsKey($attribute) -or $null -eq $record.attribute_mapping_transformation_document) { Add-LocalValidationIssue $Issues 'mapping_attribute' $null 'active_dependency_invalid' 'Active Mapping Attribute requires active Mapping and modeled Attribute.' 'modeled_attribute_name'; continue }
+        if (-not $activeMappings.ContainsKey($branch) -or -not $activeAttributes.ContainsKey($attribute)) { Add-LocalValidationIssue $Issues 'mapping_attribute' $null 'active_dependency_invalid' 'Active Mapping Attribute requires active Mapping and modeled Attribute.' 'modeled_attribute_name'; continue }
+        if ($null -eq $record.attribute_mapping_transformation_document) { continue }
         $mappedAttributes[$branch + ':' + $attribute] = $true
     }
     foreach ($branch in $activeMappings.Keys) {
-        foreach ($attribute in $activeAttributes.Keys) { if ($activeAttributes[$attribute] -ceq $mappingSystems[$branch] -and -not $mappedAttributes.ContainsKey($branch + ':' + $attribute)) { Add-LocalValidationIssue $Issues 'mapping_attribute' $null 'active_dependency_invalid' 'Active Mapping must cover every active modeled Attribute per System.' 'modeled_attribute_name'; break } }
+        $hasObject = $null -ne $activeMappings[$branch].mapping_transformation_document
+        $hasAttribute = $false; $missingAttribute = $false
+        foreach ($attribute in $activeAttributes.Keys) {
+            if ($activeAttributes[$attribute] -cne $mappingSystems[$branch]) { continue }
+            if ($mappedAttributes.ContainsKey($branch + ':' + $attribute)) { $hasAttribute = $true } else { $missingAttribute = $true }
+        }
+        if (-not $existingMappings.ContainsKey($branch) -and -not $hasObject -and -not $hasAttribute) { Add-LocalValidationIssue $Issues 'mapping_object' $null 'active_dependency_invalid' 'New active Mapping requires an Object or Attribute transformation.' 'mapping_transformation_document' }
+        if (-not $codeAuthoringEntities.ContainsKey($mappingSystems[$branch])) { continue }
+        if (-not $hasObject) { Add-LocalValidationIssue $Issues 'mapping_object' $null 'active_dependency_invalid' 'Code authoring requires an Object transformation for every mapped System.' 'mapping_transformation_document' }
+        if ($missingAttribute) { Add-LocalValidationIssue $Issues 'mapping_attribute' $null 'active_dependency_invalid' 'Code authoring must cover every active modeled Attribute per mapped System.' 'modeled_attribute_name' }
     }
     $allArtifacts = @{}; $artifacts = @{}; $artifactEntities = @{}; $assignments = @{}
     foreach ($record in @($rows['generated_code'])) {

@@ -20,7 +20,8 @@ const item: MappingAttribute = {
 };
 
 const detail: MappingAttributeDetail = {
-  ...item, mapping_document: null, output_template: null, created_at: item.updated_at,
+  ...item, mapping_attribute_id: 91, status: "active", updated_at: "2026-09-01T00:00:00Z",
+  mapping_document: null, output_template: null, created_at: "2026-09-01T00:00:00Z",
   parent_object_mapping: { mapping_object_id: 81, dependency_order: 0, status: "active", is_locked: false },
 };
 
@@ -36,8 +37,8 @@ function Documents({ api, items, enabled = true }: {
   const { documents, fields } = useMappingAttributeDocuments({ api, tenantId: 7, modelId: 18, items, enabled });
   return <>
     <output data-testid="fields">{JSON.stringify(fields)}</output>
-    {items.map((row) => <output key={row.mapping_attribute_id} data-testid={`document-${row.mapping_attribute_id}`}>
-      {documents.get(row.mapping_attribute_id)?.state}
+    {items.map((row) => <output key={row.target.attribute_id} data-testid={`document-${row.mapping_attribute_id}`}>
+      {row.mapping_attribute_id === null ? "not mapped" : documents.get(row.mapping_attribute_id)?.state}
     </output>)}
   </>;
 }
@@ -104,7 +105,7 @@ describe("Mapping Attribute documents", () => {
     const next: MappingAttribute = { ...item, mapping_attribute_id: 92,
       target: { ...item.target, attribute_id: 703, attribute_name: "customer_code", ordinal_position: 3 } };
     const api = { readMappingAttribute: vi.fn<MappingApi["readMappingAttribute"]>().mockImplementation(async (_tenant, _model, id) => ({
-      ...detail, ...(id === 91 ? item : next),
+      ...detail, target: (id === 91 ? item : next).target, mapping_attribute_id: id,
       mapping_document: id === 91 ? { transformation: "TRIM(name)", custom_check: false }
         : { transformation: "code", source_attributes: ["raw.customer.code"] },
     })) };

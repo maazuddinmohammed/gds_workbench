@@ -21,7 +21,7 @@
       "example": "logical_to_silver"
     },
     "operation": {
-      "description": "build authors missing transformations; extend preserves existing authored content while adding actionable coverage. Read readiness for the exact per-record action.",
+      "description": "build authors a new pair; extend regenerates selected, unlocked transformations in an existing pair. Omitted or null selected output clears saved documents; locked and unselected content is preserved. generate selects the effective operation per pair. Read readiness for the exact per-record action.",
       "schema": {
         "enum": [
           "build",
@@ -652,7 +652,7 @@
       ]
     },
     "existing_mapping": {
-      "description": "Existing header, owning modeled Entity/Attributes and their transformation documents. Preserve locked/preserved records. A null document is unauthored, not an empty executable transformation.",
+      "description": "Existing header, owning modeled Entity/Attributes and transformation documents. Locked and unselected records are preserved. Null documents are unauthored or cleared transformations; they are not executable content.",
       "schema": {
         "$defs": {
           "ExistingMappingAttribute": {
@@ -1022,7 +1022,7 @@
       }
     },
     "readiness": {
-      "description": "Backend-computed action for the Object and each modeled Attribute. author/extend are actionable; preserve means omit from authored output. blocked is not permission to force a mapping.",
+      "description": "Backend-computed Object and modeled Attribute actions. author/extend permit supported partial output; omitted or null selected output clears saved documents. preserve means omit from output and retain saved content. blocked never permits invented rules.",
       "schema": {
         "$defs": {
           "MappingAttributeReadiness": {
@@ -1186,6 +1186,11 @@
           },
           "is_active": {
             "title": "Is Active",
+            "type": "boolean"
+          },
+          "is_default": {
+            "default": false,
+            "title": "Is Default",
             "type": "boolean"
           }
         },

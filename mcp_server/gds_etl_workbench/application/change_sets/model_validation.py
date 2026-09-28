@@ -13,7 +13,11 @@ from pydantic import ValidationError
 
 from gds_etl_workbench.domain.databricks_sql import validate_databricks_sql
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.modeling_records import ModelingRecord, normalize_model_key_value
+from gds_etl_workbench.domain.modeling_records import (
+    ModelingRecord,
+    has_mapping_transformation_content,
+    normalize_model_key_value,
+)
 from gds_etl_workbench.domain.snapshots.model import (
     CHANGE_SET_DATASETS_BY_NAME,
     DATASETS,
@@ -145,7 +149,7 @@ def validate_future_graph(
     code_authoring: bool = True,
 ) -> ValidatedModelChangeSet:
     # Only the governed, field-only human lifecycle review uses False. It can
-    # retain stale Code; authoring always requires complete System assignments.
+    # retain stale Code; Code authoring requires complete Mapping and System assignments.
     effective = model_snapshot_records(snapshot)
     staged: dict[str, tuple[ModelingRecord, ...]] = {}
     schema_issues: list[ModelValidationIssue] = []
@@ -166,6 +170,7 @@ def validate_future_graph(
     future: dict[str, tuple[ModelingRecord, ...]] = {}
     retained_keys: dict[str, set[tuple[object, ...]]] = {}
     lock_issues: list[ModelValidationIssue] = []
+    mapping_document_issues: list[ModelValidationIssue] = []
     for definition in DATASETS:
         current = effective[definition.name]
         changes = staged.get(definition.name, ())
@@ -191,6 +196,37 @@ def validate_future_graph(
                 )
             if existing is None or not _retains_physical_history(existing, record):
                 retained_keys[definition.name].discard(key)
+            if definition.name in ("mapping_object", "mapping_attribute"):
+                object_level = definition.name == "mapping_object"
+                field = (
+                    "mapping_transformation_document"
+                    if object_level
+                    else "attribute_mapping_transformation_document"
+                )
+                status_field = (
+                    "object_mapping_status" if object_level else "attribute_mapping_status"
+                )
+                document = getattr(record, field)
+                # Preserve historical documents byte-for-byte; require explicit NULL
+                # only when an empty document is newly authored or reactivated.
+                if (
+                    getattr(record, status_field) == "active"
+                    and document is not None
+                    and not has_mapping_transformation_content(document)
+                    and (
+                        existing is None
+                        or getattr(existing, field) != document
+                        or getattr(existing, status_field) != "active"
+                    )
+                ):
+                    _issue(
+                        mapping_document_issues,
+                        "mapping_document_empty",
+                        definition.name,
+                        (field,),
+                        "A content-free Mapping document must be explicit null; "
+                        "do not invent transformation logic.",
+                    )
             by_key[key] = record
         future[definition.name] = tuple(by_key.values())
     if lock_issues:
@@ -217,11 +253,14 @@ def validate_future_graph(
     if uniqueness_issues:
         return _failed(staged, "uniqueness", candidate_digest, uniqueness_issues)
 
-    reference_issues: list[ModelValidationIssue] = []
+    reference_issues = mapping_document_issues
     _validate_references(future, reference_issues)
     _validate_active_dependencies(
         future,
         reference_issues,
+        existing_mapping_objects=frozenset(
+            _mapping_object_reference(record) for record in effective["mapping_object"]
+        ),
         code_authoring_entities=frozenset(
             _entity_key(record)
             for dataset in ("generated_code", "generated_code_source_system")
@@ -692,6 +731,7 @@ def _validate_active_dependencies(
     future: Mapping[str, tuple[Any, ...]],
     issues: list[ModelValidationIssue],
     *,
+    existing_mapping_objects: frozenset[tuple[str, str, str, str]],
     code_authoring_entities: frozenset[ModeledEntityKey],
 ) -> None:
     active_conceptual_objects = {
@@ -762,6 +802,7 @@ def _validate_active_dependencies(
                     "Attributes and Entities.",
                 )
     active_mapping_objects: set[tuple[str, str, str, str]] = set()
+    mapping_object_transformations: set[tuple[str, str, str, str]] = set()
     active_mapping_attributes: set[tuple[str, str, str, str, str]] = set()
     mapping_systems_by_entity: dict[ModeledEntityKey, set[str]] = {}
     for record in future["mapping_object"]:
@@ -769,16 +810,18 @@ def _validate_active_dependencies(
             continue
         entity = _entity_key(record)
         system = normalize_model_key_value(record.source_system_code)
-        if entity not in active_entities or record.mapping_transformation_document is None:
+        if entity not in active_entities:
             _active_invalid(
                 issues,
                 "mapping_object",
-                "mapping_transformation_document",
-                "Active Mapping Object requires active Entity and transformation.",
+                "modeled_entity_name",
+                "Active Mapping Object requires an active Entity.",
             )
             continue
         reference = _mapping_object_reference(record)
         active_mapping_objects.add(reference)
+        if record.mapping_transformation_document is not None:
+            mapping_object_transformations.add(reference)
         mapping_systems_by_entity.setdefault(entity, set()).add(system)
 
     for record in future["mapping_attribute"]:
@@ -787,7 +830,6 @@ def _validate_active_dependencies(
         if (
             _mapping_object_reference(record) not in active_mapping_objects
             or _attribute_key(record) not in active_attributes
-            or record.attribute_mapping_transformation_document is None
         ):
             _active_invalid(
                 issues,
@@ -796,6 +838,8 @@ def _validate_active_dependencies(
                 "Active Mapping Attribute requires active Mapping and modeled Attribute.",
             )
             continue
+        if record.attribute_mapping_transformation_document is None:
+            continue  # An explicit blank is retained without inventing transformation logic.
         entity_type, entity_schema, entity_name, attribute_name = _attribute_key(record)
         active_mapping_attributes.add(
             (
@@ -812,6 +856,32 @@ def _validate_active_dependencies(
             attribute[3] for attribute in active_attributes if attribute[:3] == entity
         }
         for system in systems:
+            has_object_transformation = (*entity, system) in mapping_object_transformations
+            if (
+                (*entity, system) not in existing_mapping_objects
+                and not has_object_transformation
+                and not any(
+                    (*entity, system, attribute_name) in active_mapping_attributes
+                    for attribute_name in entity_attributes
+                )
+            ):
+                _active_invalid(
+                    issues,
+                    "mapping_object",
+                    "mapping_transformation_document",
+                    "New active Mapping requires an Object or Attribute transformation.",
+                )
+            # Saved Mapping may be partial. Executable Code still requires complete
+            # coverage; unchanged Code remains stored and becomes stale by its digest.
+            if entity not in code_authoring_entities:
+                continue
+            if not has_object_transformation:
+                _active_invalid(
+                    issues,
+                    "mapping_object",
+                    "mapping_transformation_document",
+                    "Code authoring requires an Object transformation for every mapped System.",
+                )
             if any(
                 (*entity, system, attribute_name) not in active_mapping_attributes
                 for attribute_name in entity_attributes
@@ -820,7 +890,7 @@ def _validate_active_dependencies(
                     issues,
                     "mapping_attribute",
                     "modeled_attribute_name",
-                    "Active Mapping must cover every active modeled Attribute per System.",
+                    "Code authoring requires every active modeled Attribute per mapped System.",
                 )
 
     active_artifacts = {

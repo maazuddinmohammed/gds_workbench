@@ -1,3 +1,62 @@
+# Code generation start and Mapping input verification — 2026-09-28
+
+- Fixed dialog requests including Systems belonging only to unselected Entities. Stale explicit System selections block submission and preserve Entity reselection.
+- Fixed Tool-assisted mode is visible; no public mode override added.
+- Known missing Mapping/System/Guide/Prompt prerequisites return safe specific codes and actionable UI messages. Unknown database details stay redacted; retries retain run identity.
+- Added a fresh-install default SQL Guide through governed functions. Requires an active Super Admin and no Models. Exact replay changes nothing; conflicting/custom Guide history is never overwritten. Existing databases are not migrated.
+- Default Code prompt includes three synthetic SQL examples: direct projection/provenance, staged join with multiple Attributes, and combined System branches. Generated Code retains runtime schema.object references. Instructions explain complete paged Object/Attribute Mapping retrieval and interpretation.
+- Full Mapping documents, custom nested content and schema-qualified identities survive paging (2 Systems, 10 Attributes). Prompt examples parse and pass the actual Code artifact validator. These checks do not prove live business SQL correctness.
+
+| Check | Result |
+| --- | --- |
+| MCP + backend suite | 3,172 passed, no failures or skips. |
+| New prompt examples/paging tests | 8 passed separately after the full suite was collected. |
+| Frontend | 514 tests passed; types and production build passed. |
+| Packaging + Atlas Python | 102 passed; 39 Windows-only PowerShell cases skipped. |
+| Disposable DB pipelines | All 36 Mapping → Code → Validation cases passed using the real installed default Guide. Three additional seed/setup tests passed. |
+| Browser | Actual dialog → create → generate → validate → Apply succeeded for both Logical Entities, then one selected Dimensional Entity. Selected output became Current; unselected output remained unchanged. |
+
+Browser checks used random-credential, sentinel-verified disposable PostgreSQL and deterministic fake AI. No live AI/Databricks, existing-database changes, deployment or publishing. Review container/tab disposed. Web source ZIP rebuilt; latest frontend bundle: index-CrpDEgga.js. Existing published prompt versions remain unchanged; new examples are in maintained defaults/fresh-install seeds and require normal draft/publish on existing installations.
+
+Screenshot: `/Users/maazuddinmohammed/.codex/visualizations/2026/09/28/01a0e575-a0ec-72f0-8054-7277131f2dfc/atlas-code-generation-verified.png`
+
+---
+
+# Partial Mapping behavior — final verification, 2026-09-28
+
+This section supersedes the earlier complete-pair Mapping policy recorded below.
+
+- Any valid Object or Attribute transformation retains its Entity/System pair.
+- Every active modeled Attribute appears in web details; missing transformations are blank.
+- Missing selected, unlocked saved transformations clear on regeneration. Locked and unselected records remain unchanged; protected Attribute logic also protects its Object context.
+- New empty pairs create no records. Existing pairs cleared to empty retain history and detail URLs, and disappear from the Entity ledger.
+- Evidence gaps are advisory; genuine invalid candidates/provider failures remain isolated failures. Ownership, lock, revision, digest and Apply checks remain authoritative.
+- Code, Validation and executable modeled-source eligibility still require complete Mapping.
+- Web generation normalizes content-free JSON to null. MCP/Atlas require explicit null for newly authored content-free documents, preserving historical bytes/digests and meaningful false/zero custom values.
+
+| Check | Final result |
+| --- | --- |
+| MCP + backend | 3,163 passed; no failures or skips. Includes disposable PostgreSQL pipelines for both layers and authoring modes. |
+| Frontend | 505 passed; types and production build passed. |
+| Atlas JavaScript | 136 passed. |
+| Stage extension | 118 passed; compilation passed; rebuilt VSIX contents identical to canonical artifact. |
+| Packaging + Atlas Python | 107 passed. Windows PowerShell cases skipped because the runtime is unavailable. |
+| Source quality | MCP/backend Ruff format, Ruff check and project-specific Pyright passed; changed backend tests linted. |
+| Browser | Fresh disposable local fixture: Generate → Partial results → Apply → Entity details. All four modeled Attributes remained, two populated/two cleared. Database regressions separately verify ten rows/five blanks. |
+
+MCP ZIP, web source ZIP and Atlas plugin ZIP rebuilt and checked against source.
+No deployment, external writes, existing-database changes or live model calls.
+Browser verification used deterministic fake model output. Its temporary Docker
+container and browser tab were disposed after verification. Existing saved prompt
+versions were not overwritten; maintained default prompt sources and fresh-install
+seeds carry the new authoring guidance.
+
+Screenshot: `/Users/maazuddinmohammed/.codex/visualizations/2026/09/28/01a0e575-a0ec-72f0-8054-7277131f2dfc/atlas-mapping-blank-attributes.png`
+
+---
+
+## Earlier verification history (Mapping completeness rules superseded above)
+
 # Atlas workflow verification — 2026-09-28
 
 ## Scope and result

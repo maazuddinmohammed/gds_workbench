@@ -795,9 +795,10 @@ def _mapping_inputs(
         "operation": (
             TypeAdapter(MappingOperation),
             "run.operation",
-            "build authors missing transformations; extend preserves existing authored "
-            "content while adding actionable coverage. Read readiness for the exact "
-            "per-record action.",
+            "build authors a new pair; extend regenerates selected, unlocked "
+            "transformations in an existing pair. Omitted or null selected output clears "
+            "saved documents; locked and unselected content is preserved. generate selects "
+            "the effective operation per pair. Read readiness for the exact per-record action.",
             examples["operation"],
         ),
         "target_metadata": (

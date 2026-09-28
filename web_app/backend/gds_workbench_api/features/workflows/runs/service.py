@@ -175,23 +175,31 @@ WITH selected_pairs AS (
        AND event.model_event_log_total = pair.pair_count
        AND event.model_event_log_stage IN (
            'mapping.pair_completed', 'mapping.pair_preserved',
-           'mapping.pair_no_source', 'mapping.pair_failed'
+           'mapping.pair_no_source', 'mapping.pair_failed',
+           'mapping.pair_partial', 'mapping.pair_empty'
        )
      ORDER BY pair.workflow_run_id, pair.pair_ordinal, event.model_event_log_sequence DESC
 )
 """
 
-_MAPPING_SUMMARIES_SQL = _MAPPING_PAIR_OUTCOMES_SQL + """
+_MAPPING_SUMMARIES_SQL = (
+    _MAPPING_PAIR_OUTCOMES_SQL
+    + """
 SELECT workflow_run_id,
        count(*) FILTER (WHERE stage = 'mapping.pair_completed') AS completed_pair_count,
        count(*) FILTER (WHERE stage = 'mapping.pair_preserved') AS preserved_pair_count,
        count(*) FILTER (WHERE stage = 'mapping.pair_no_source') AS no_source_pair_count,
-       count(*) FILTER (WHERE stage = 'mapping.pair_failed') AS failed_pair_count
+       count(*) FILTER (WHERE stage = 'mapping.pair_failed') AS failed_pair_count,
+       count(*) FILTER (WHERE stage = 'mapping.pair_partial') AS partial_pair_count,
+       count(*) FILTER (WHERE stage = 'mapping.pair_empty') AS empty_pair_count
   FROM pair_outcomes
  GROUP BY workflow_run_id
 """
+)
 
-_MAPPING_FAILURES_SQL = _MAPPING_PAIR_OUTCOMES_SQL + """
+_MAPPING_FAILURES_SQL = (
+    _MAPPING_PAIR_OUTCOMES_SQL
+    + """
 SELECT source_system_id, system_code, modeled_entity_id,
        entity_schema_name, entity_name, message
   FROM pair_outcomes
@@ -199,6 +207,7 @@ SELECT source_system_id, system_code, modeled_entity_id,
  ORDER BY pair_ordinal
  LIMIT 201
 """
+)
 
 
 async def read_mapping_run_outcomes(

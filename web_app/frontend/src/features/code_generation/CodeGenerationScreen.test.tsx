@@ -250,6 +250,71 @@ describe("Code Generation journey", () => {
     });
   });
 
+  it("limits All Systems to the selected Entities when Entities have disjoint sources", async () => {
+    const fetcher = codeGenerationFetchStub({ disjointSourceSystems: true });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+    })} />);
+    await user.click(await screen.findByRole("checkbox", { name: "Select silver_nwa.customer" }));
+    await user.click(screen.getByRole("button", { name: "Generate SQL" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Generate SQL" }));
+    const submit = dialog.getByRole("button", { name: "Generate SQL" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    expect(dialog.getByText("Tool-assisted")).toBeVisible();
+    expect(dialog.queryByRole("combobox", { name: "Execution mode" })).not.toBeInTheDocument();
+    expect(dialog.getByRole("status")).toHaveTextContent("1 Entities · 1 Systems · 1 transformation SQL files");
+    await user.click(submit);
+    await waitFor(() => expect(createCalls(fetcher)).toHaveLength(1));
+    expect(JSON.parse(String(createCalls(fetcher)[0]?.[1]?.body))).toMatchObject({
+      selected_entity_ids: [701], selected_system_codes: ["CRM"], workflow_execution_mode: null,
+    });
+  });
+
+  it("keeps Entities reselectable while unavailable Systems block generation", async () => {
+    const fetcher = codeGenerationFetchStub({ disjointSourceSystems: true });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+    })} />);
+    await user.click(await screen.findByRole("button", { name: "Generate SQL" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Generate SQL" }));
+    await waitFor(() => expect(dialog.getByRole("button", { name: "Generate SQL" })).toBeEnabled());
+    await user.click(dialog.getByRole("radio", { name: "Selected Entities" }));
+    await user.selectOptions(dialog.getByLabelText("Contributing Systems"), "selected");
+    await user.click(dialog.getByText("Choose Systems"));
+    await user.click(dialog.getByRole("checkbox", { name: "CRM" }));
+    await user.click(dialog.getByRole("checkbox", { name: "ERP" }));
+    await user.keyboard("{Escape}");
+    await user.click(dialog.getByRole("checkbox", { name: "Generate silver_nwa.address" }));
+    expect(dialog.getByRole("button", { name: "Generate SQL" })).toBeDisabled();
+    expect(dialog.getByRole("alert")).toHaveTextContent("A selected System no longer contributes to the selected Entities.");
+    expect(dialog.getByRole("status")).toHaveTextContent("1 Entities · 1 Systems · 1 transformation SQL files");
+    expect(dialog.getByRole("checkbox", { name: "Generate silver_nwa.address" })).not.toBeChecked();
+    await user.click(dialog.getByRole("checkbox", { name: "Generate silver_nwa.address" }));
+    expect(dialog.queryByRole("alert")).not.toBeInTheDocument();
+    expect(dialog.getByRole("button", { name: "Generate SQL" })).toBeEnabled();
+    expect(dialog.getByRole("status")).toHaveTextContent("2 Entities · 2 Systems · 2 transformation SQL files");
+    await user.click(dialog.getByRole("button", { name: "Clear Entity selection" }));
+    expect(dialog.getByRole("button", { name: "Generate SQL" })).toBeDisabled();
+    expect(dialog.getByRole("alert")).toHaveTextContent("A selected System no longer contributes to the selected Entities.");
+    expect(dialog.getByRole("checkbox", { name: "Generate silver_nwa.customer" })).not.toBeChecked();
+    expect(dialog.getByRole("checkbox", { name: "Generate silver_nwa.address" })).not.toBeChecked();
+    await user.click(dialog.getByRole("checkbox", { name: "Generate silver_nwa.customer" }));
+    expect(dialog.getByRole("button", { name: "Generate SQL" })).toBeDisabled();
+    expect(dialog.getByRole("status")).toHaveTextContent("1 Entities · 1 Systems · 1 transformation SQL files");
+    await user.click(dialog.getByText("2 selected", { selector: "summary span" }));
+    expect(dialog.getByRole("checkbox", { name: "CRM" })).toBeChecked();
+    await user.click(dialog.getByRole("checkbox", { name: "ERP (unavailable)" }));
+    await user.keyboard("{Escape}");
+    const submit = dialog.getByRole("button", { name: "Generate SQL" });
+    expect(submit).toBeEnabled();
+    expect(dialog.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(submit);
+    await waitFor(() => expect(createCalls(fetcher)).toHaveLength(1));
+    expect(JSON.parse(String(createCalls(fetcher)[0]?.[1]?.body)).selected_system_codes).toEqual(["CRM"]);
+  });
+
   it.each(["network", "server"] as const)("retries an ambiguous Code Generation %s create with the original command and key", async (failure) => {
     const success = codeGenerationFetchStub();
     let attempts = 0;
@@ -285,6 +350,49 @@ describe("Code Generation journey", () => {
     const firstKey = new Headers(creates[0]?.[1]?.headers).get("Idempotency-Key");
     expect(firstKey).toMatch(/^[a-f0-9-]{36}$/);
     expect(new Headers(creates[1]?.[1]?.headers).get("Idempotency-Key")).toBe(firstKey);
+  });
+
+  it.each([
+    ["code_mapping_incomplete", "Complete Object and Attribute Mapping for the selected Entities, then refresh before generating SQL."],
+    ["code_no_eligible_targets", "No selected Entities have complete Mapping."],
+    ["code_system_unavailable", "A selected System no longer contributes to the selected Entities."],
+    ["sql_generation_guide_unavailable", "An active, published SQL generation guide is required."],
+    ["workflow_prompt_unavailable", "A published Code generation prompt is unavailable."],
+    ["tenant_lock_required", "Acquire the Tenant Lock on Home before generating SQL."],
+    ["model_revision_conflict", "The Model changed. Close this dialog and refresh before generating SQL."],
+  ])("shows safe %s guidance and keeps the failed selection editable", async (code, message) => {
+    const base = codeGenerationFetchStub();
+    const rawMessage = "Synthetic provider diagnostics must not be rendered.";
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST") {
+        const response = jsonResponse({ error: { code, message: rawMessage,
+          retryable: false, correlation_id: "synthetic-code-create-reference" } }, 400);
+        response.headers.set("x-correlation-id", "synthetic-code-create-reference");
+        return response;
+      }
+      return base(input, init);
+    });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+    })} />);
+    await screen.findByRole("table", { name: "Code Generation target Entities" });
+    await user.click(screen.getByRole("checkbox", { name: "Select silver_nwa.customer" }));
+    await user.click(screen.getByRole("button", { name: "Generate SQL" }));
+    const dialog = await screen.findByRole("dialog", { name: "Generate SQL" });
+    const submit = within(dialog).getByRole("button", { name: "Generate SQL" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+    // Render bounded code-specific guidance, never arbitrary response messages.
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent(message!);
+    expect(alert).toHaveTextContent("Reference synthetic-code-create-reference.");
+    expect(within(dialog).queryByText(rawMessage)).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("checkbox", { name: "Generate silver_nwa.customer" })).toBeChecked();
+    expect(within(dialog).getByLabelText("Model")).toBeEnabled();
+    expect(submit).toBeEnabled();
+    expect(createCalls(fetcher)).toHaveLength(1);
+    expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/execute"))).toBe(false);
   });
 
   it("retries a conflicted Code Generation start without creating another run", async () => {
@@ -376,6 +484,7 @@ describe("Code Generation journey", () => {
 });
 
 function codeGenerationFetchStub(options: {
+  disjointSourceSystems?: boolean;
   hasNextPage?: boolean;
   empty?: boolean;
   denied?: boolean;
@@ -414,7 +523,11 @@ function codeGenerationFetchStub(options: {
       return jsonResponse({
         model_id: 18,
         model_revision: options.modelRevision ?? 18,
-        items: options.empty ? [] : nextPage ? [nextTarget] : codeGenerationTargets,
+        items: options.empty ? [] : options.disjointSourceSystems
+          ? codeGenerationTargets.slice(0, 2).map((item, index) => ({ ...item, artifacts: [], artifact_count: 0,
+            source_systems: [{ ...mappingSupport.source_system,
+              system_id: index ? 99 : 2, system_code: index ? "ERP" : "CRM" }] }))
+          : nextPage ? [nextTarget] : codeGenerationTargets,
         next_cursor: options.hasNextPage && !nextPage ? "targets-next" : null,
       });
     }

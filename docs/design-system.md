@@ -383,7 +383,12 @@ Before completing a frontend change:
   the System and Schema beside the Entity identity. Render authored logic first,
   sources below it, and repeated source records as compact tables. Attribute
   rows pivot transformation-document fields into separate columns, with target
-  name/type first and compact status at the end. Retain custom fields and show
+  name/type first and compact status at the end. Show every active modeled
+  Attribute, including missing mappings with blank transformation cells. A missing
+  Mapping record has no selectable ID or Record info; real cleared records retain
+  their governed review actions. Leave the Entity transformation blank when only
+  Attribute mappings exist. Hide pairs with no Object or active Attribute output
+  from the Entity ledger while preserving existing detail URLs and history. Retain custom fields and show
   nested source records as tables inside their cells. Keep nested table headings
   on one line and source identifiers intact; let their content size the source
   column and scroll within the spreadsheet on narrow screens. Omit a repeated
@@ -394,7 +399,7 @@ Before completing a frontend change:
   filters on demand. Keep template metadata and the original Entity document in
   collapsed Mapping details. Keep transformations and Attributes off the Entity ledger.
   Humanize template field labels and structured values; preserve
-  custom fields and distinguish unauthored from empty documents. Long content
+  custom fields; never invent filler transformations for missing output. Long content
   expands inside its cell. Attribute filters, pagination, refresh, and review
   actions stay within that Entity.
 - Mapping separates Logical and Dimensional with layer links in its
@@ -409,6 +414,14 @@ Before completing a frontend change:
   Entity names open Attribute selection with Back to Entities, Select all unlocked
   Attributes and Clear Attribute selection. Preserve choices across navigation and
   scope-mode changes; search narrows the list without changing selected targets.
+  Excluding an unauthored Attribute must not prevent partial Mapping generation.
+  Incomplete pairs and true failed pairs use Partial results, including after
+  Apply. Show counts for generated, incomplete, empty and failed outcomes; list
+  only actual failed pairs in the System/Schema/Entity/Issue table. Apply review
+  explains that omitted selected transformations become blank, while locked and
+  unselected mappings and failed pairs stay unchanged. Never portray typed pair
+  ordinals as completion progress. Code and Validation retain their complete
+  Mapping eligibility gates.
 - Conceptual detail pages use the workspace width, with status beside the title.
   Support evidence uses a Source/Rationale/Confidence/Status table; source codes,
   assertion text, and detailed reasoning remain available through Show details.

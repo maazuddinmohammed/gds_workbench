@@ -346,27 +346,43 @@ _Avoid_: Logical Section, Silver deployment
 
 **Mapping generation selection**:
 One modeled layer, selected Entity–Source System pairs, and selected modeled
-Attributes. Entity selection includes unlocked Attributes by default. Existing
-Mapping locks and deselections preserve records; a locked Entity Mapping protects
-all its Attribute Mappings. A Run freezes Entity identity and Attribute selection,
-authors each pair independently, and stages only complete, valid pairs in one
-fully validated draft. Recoverable authoring failures produce explicit partial
-results: successful pairs can be reviewed and applied; failed pairs remain
-unchanged and are listed by System and frozen Entity identity. Missing evidence
-is never treated as no applicable source. With no successful changes, a failed
-pair fails the Run rather than completing a no-op. Authorization, lock, claim,
-revision and finalization failures still block the whole Run. Source-System order is not
-Mapping configuration; Process
-Group dependency order and Process execution order define the runtime schedule.
-Target choices cross active Entities with business Systems represented in Model
-Input Scope; Bronze provenance comes from ingestion lineage. Logical Mapping uses
-eligible scoped Source/Bronze inputs. Dimensional Mapping uses applied Logical
-Entities with an active Logical Mapping for that System. Saved source links provide
-evidence. Each pair produces complete actionable Attribute coverage or an explicit
-no-applicable-source outcome. An optional Model default Mapping System assigns
-one pair to Entities supported only by active applicable Assertions, with no
-physical or Logical source provenance. The default requires explicit generation
-rules and cannot skip authoring or substitute for unavailable source lineage.
+Attributes. Entity selection includes unlocked Attributes by default. A Run
+freezes Entity identity and Attribute selection and authors each pair independently.
+A valid Object transformation or any valid Attribute transformation is enough to
+retain the pair; complete Attribute coverage is not required to save Mapping.
+Entity details list every active modeled Attribute, with missing transformations
+blank. Missing records are read projections from the Model, not fabricated Mapping
+records. Attribute-only output leaves the Object transformation blank.
+
+Regeneration clears omitted or null selected, unlocked transformation documents,
+including previously saved values. Locked and unselected mappings remain unchanged;
+a locked Entity Mapping protects all its Attribute Mappings. Existing Object logic
+also stays unchanged when locked or unselected Attributes depend on it. A new pair
+with no Object or Attribute output creates no Mapping records. An existing pair
+that becomes empty retains its record history and detail URLs but disappears from
+the Entity Mapping ledger.
+
+Valid partial output forms one draft, validated against the full future Model
+graph before review and Apply. Incomplete pairs and recoverable authoring failures
+produce explicit **Partial results**. True failed pairs remain unchanged and are
+listed by System and frozen Entity identity; valid sibling output is retained.
+Missing evidence leaves transformations blank, never invented or mislabeled as
+no applicable source. With no successful changes, a true failed pair fails the Run
+rather than completing a no-op. Authorization, lock, claim, revision and
+finalization failures still block the whole Run. Code and Validation retain their
+complete Mapping eligibility gates; saving partial Mapping does not relax them.
+
+Source-System order is not Mapping configuration; Process Group dependency order
+and Process execution order define the runtime schedule. Target choices cross
+active Entities with business Systems represented in Model Input Scope; Bronze
+provenance comes from ingestion lineage. Logical Mapping uses eligible scoped
+Source/Bronze inputs. Dimensional Mapping uses applied Logical Entities with an
+active Logical Mapping for that System. Saved source links provide evidence.
+No applicable source and no transformation output are distinct outcomes.
+An optional Model default Mapping System assigns one pair to Entities supported
+only by active applicable Assertions, with no physical or Logical source provenance.
+The default requires explicit rules for the transformations it authors and cannot
+substitute for unavailable source lineage. Unsupported transformations stay blank.
 See ADR 012 for the current ownership contract.
 _Avoid_: Attribute-only top-level workflow, Mapping System ordering
 

@@ -74,6 +74,48 @@ test('DBML renders same-name Entities with independent columns and qualified rel
   assert.match(doc.content, /"silver_b"\."Customer"\."ExternalID" > "silver_a"\."Customer"\."CustomerID"/);
 });
 
+test('partial Mapping retains real transformations, rejects new empty pairs and keeps Code gated', () => {
+  for (const shape of ['object-only', 'attribute-only', 'empty', 'existing-empty']) {
+    const branch = {...mapping('silver_a'), mapping_transformation_document: shape === 'object-only' ? {steps:['Read source rows.']} : null};
+    const column = {...branch, modeled_attribute_name:'CustomerID', attribute_mapping_status:'active', attribute_mapping_transformation_document: shape === 'attribute-only' ? {transformation:'Use evidenced customer ID.'} : null};
+    const loaded = new Map([
+      ['logical_entity', state([entity('silver_a')])],
+      ['logical_attribute', state([attribute('silver_a'), {...attribute('silver_a'), logical_attribute_name:'Name'}])],
+      ['mapping_object', state([branch], shape === 'existing-empty' ? [] : [branch])],
+      ['mapping_attribute', state([column], [column])],
+    ]);
+    const issues = graph.validateActiveDependencies(loaded);
+    assert.equal(issues.some(issue => issue.dataset === 'mapping_object'), shape === 'empty');
+    assert.equal(issues.some(issue => issue.dataset === 'mapping_attribute'), false);
+    const code = {...branch, artifact_name:'customer.sql', generated_code_status:'active'};
+    loaded.set('generated_code', state([code], [code]));
+    assert.ok(graph.validateActiveDependencies(loaded).some(issue => issue.dataset === 'mapping_attribute'));
+  }
+});
+
+test('empty newly authored Mapping documents require null without rewriting historical or custom values', () => {
+  const empty = [{}, {steps:[],source_objects:[]}, {nested:[null,{},[],' \t\n\u001c\u0085']}];
+  const meaningful = [{custom:false}, {custom:0}, {custom:'\ufeff'}];
+  for (const [dataset, field] of [['mapping_object','mapping_transformation_document'],['mapping_attribute','attribute_mapping_transformation_document']]) {
+    for (const document of [...empty,...meaningful]) {
+      const branch = {...mapping('silver_a'),output_template_code:'custom_template'};
+      const column = {...branch,modeled_attribute_name:'CustomerID',attribute_mapping_status:'active',attribute_mapping_transformation_document:{custom:'real rule'}};
+      const changed = {...(dataset === 'mapping_object' ? branch : column),[field]:document};
+      const loaded = new Map([
+        ['logical_entity',state([entity('silver_a')])],['logical_attribute',state([attribute('silver_a')])],
+        ['mapping_object',state([branch])],['mapping_attribute',state([column])],
+        [dataset,state([changed],[changed])],
+      ]);
+      const before = JSON.stringify(changed);
+      assert.equal(graph.validateActiveDependencies(loaded).some(issue=>issue.code==='mapping_document_empty'),empty.includes(document));
+      assert.equal(JSON.stringify(changed),before);
+      loaded.get(dataset).baseline=[structuredClone(changed)];
+      assert.equal(graph.validateActiveDependencies(loaded).some(issue=>issue.code==='mapping_document_empty'),false);
+      assert.equal(JSON.stringify(changed),before);
+    }
+  }
+});
+
 test('Dimensional Mapping resolves Logical inputs with aliases and schema-qualified Attribute parents', () => {
   const branch = {...mapping('gold'), modeled_entity_type: 'dimensional_entity', mapping_transformation_document: {source_logical_entities: [{logical_entity_schema_name: 'silver_a', logical_entity_name: 'Customer', alias: 'c'}], steps: ['Read c at one row per CustomerID.']}};
   const source = {logical_entity_schema_name: 'silver_a', logical_entity_name: 'Customer', logical_attribute_name: 'CustomerID'};

@@ -49,10 +49,12 @@ export function CodeGenerationRunDialog({ api, tenantId, model, entityType, cove
   const rows = targets.data?.items ?? [];
   const unlocked = rows.filter((item) => !item.is_locked);
   const objects = unlocked.filter((item) => scope === "all_eligible_targets" || objectIds.has(item.target.entity_id));
-  const systems = [...new Map(unlocked.flatMap((item) => item.source_systems.map((system) => [system.system_code, system] as const))).values()];
+  const systems = [...new Map(objects.flatMap((item) => item.source_systems.map((system) => [system.system_code, system] as const))).values()];
+  const unavailableSystemCodes = systemCodes.filter((code) => !systems.some((item) => item.system_code === code));
+  const hasUnavailableSystems = systemScope === "selected" && unavailableSystemCodes.length > 0;
   const selectedCodes = systemScope === "all" ? systems.map((item) => item.system_code) : systemCodes.filter((code) => systems.some((item) => item.system_code === code));
   const requestedEntities = objects.filter((item) => item.source_systems.some((system) => selectedCodes.includes(system.system_code)));
-  const scopedRows = rows.filter((item) => systemScope === "all" || item.source_systems.some((system) => selectedCodes.includes(system.system_code)));
+  const scopedRows = rows.filter((item) => systemScope === "all" || item.source_systems.some((system) => systemCodes.includes(system.system_code)));
   const visible = scopedRows.filter((item) => `${item.target.entity_schema_name}.${item.target.entity_name} ${item.target.entity_type}`.toLowerCase().includes(search.trim().toLowerCase()));
   const shown = visible.slice(page * 50, (page + 1) * 50);
   const selectable = shown.filter((item) => !item.is_locked);
@@ -61,7 +63,7 @@ export function CodeGenerationRunDialog({ api, tenantId, model, entityType, cove
     && artifact.source_system_codes.some((code) => !selectedCodes.includes(code))));
   const fileCount = fileLayout === "combined" ? requestedEntities.length : requestedEntities.reduce((count, item) => count + item.source_systems.filter((system) => selectedCodes.includes(system.system_code)).length, 0);
   const unavailable = targets.isPending || targets.isError || targets.data?.model_revision !== model.model_revision;
-  const valid = !unavailable && requestedEntities.length > 0 && selectedCodes.length > 0 && !partialFiles
+  const valid = !unavailable && !hasUnavailableSystems && requestedEntities.length > 0 && selectedCodes.length > 0 && !partialFiles
     && agent?.model_code === modelCode && agent?.reasoning_effort_code === reasoningCode;
   const { mutation, pendingRunId } = useWorkflowRunSubmission({ api, tenantId, modelId: model.model_id,
     execute: (id, command) => api.executeCodeGenerationRun(tenantId, model.model_id, id, command.expected_model_revision),
@@ -89,11 +91,15 @@ export function CodeGenerationRunDialog({ api, tenantId, model, entityType, cove
           <SelectField label="Model" value={modelCode} options={models.map((item) => [item.code, item.name])} onChange={setModelCode} />
           <SelectField label="Reasoning effort" value={reasoningCode} options={efforts.map((item) => [item.code, reasoningEffortDisplayName(item)])} onChange={setReasoningCode} />
         </fieldset>
+        <p className="field-help">Mode: <strong>Tool-assisted</strong>. Reads the selected Mapping documents and supporting context before generating SQL.</p>
         <fieldset disabled={mutation.isPending || pendingRunId !== null || unavailable}>
           <legend className="sr-only">SQL generation selection</legend>
           <div className="agent-run-grid agent-run-grid-two code-delivery-options">
             <div className="code-system-options"><SelectField label="Contributing Systems" value={systemScope} options={[["all", "All Systems"], ["selected", "Selected Systems"]]} onChange={(value) => { setSystemScope(value); setPage(0); }} />
-            {systemScope === "selected" ? <MultiSelectField label="Systems" value={selectedCodes} emptyLabel="Choose Systems" options={systems.map((item) => [item.system_code, item.system_code])} onChange={(value) => { setSystemCodes(value); setPage(0); }} /> : null}</div>
+            {systemScope === "selected" ? <MultiSelectField label="Systems" value={systemCodes} emptyLabel="Choose Systems"
+              options={[...systems.map((item): [string, string] => [item.system_code, item.system_code]),
+                ...unavailableSystemCodes.map((code): [string, string] => [code, `${code} (unavailable)`])]}
+              onChange={(value) => { setSystemCodes(value); setPage(0); }} /> : null}</div>
             <SelectField label="SQL files" value={fileLayout} options={[["per_system", "Separate file per Object and System"], ["combined", "Combined file per Object"]]} onChange={(value) => setFileLayout(value as typeof fileLayout)} />
           </div>
           <p className="field-help">{fileLayout === "per_system" ? "Each file contains one System’s transformation for one Object and runs independently." : "Each Object gets one file with System-specific transformations and a final combined query, following its applied Mapping."}</p>
@@ -118,10 +124,12 @@ export function CodeGenerationRunDialog({ api, tenantId, model, entityType, cove
           {visible.length > 50 ? <nav className="code-generation-pagination" aria-label="Generation Object pages"><button type="button" className="button button-secondary button-small" disabled={!page} onClick={() => setPage(page - 1)}>Previous</button><span>Page {page + 1}</span><button type="button" className="button button-secondary button-small" disabled={(page + 1) * 50 >= visible.length} onClick={() => setPage(page + 1)}>Next</button></nav> : null}
           <p className="scope-selection-summary" role="status">{requestedEntities.length} Entities · {selectedCodes.length} Systems · {fileCount} transformation SQL files</p>
           {partialFiles ? <p className="inline-error" role="alert">An existing SQL file combines selected and unselected Systems. Select all Systems covered by that file to regenerate it.</p> : null}
+          {hasUnavailableSystems ? <p className="inline-error" role="alert">A selected System no longer contributes to the selected Entities. Remove unavailable Systems from the selection or choose All Systems.</p> : null}
         </fieldset>
         {targets.isPending ? <p className="surface-state compact" aria-busy="true">Loading Entities…</p> : targets.isError ? <p className="inline-error" role="alert">Entities could not be loaded. Close and retry.</p> : targets.data?.model_revision !== model.model_revision ? <p className="inline-error" role="alert">The Model changed. Close and refresh before generating SQL.</p> : null}
         {capabilities.isError ? <p className="inline-error" role="alert">Generator options could not be loaded.</p> : null}
-        {mutation.isError ? <p className="inline-error" role="alert">{generationError(mutation.error, pendingRunId !== null)}</p> : null}
+        {mutation.isError ? <p className="inline-error" role="alert">{generationError(mutation.error, pendingRunId !== null)}
+          {mutation.error instanceof ApiError && mutation.error.correlationId ? <span> Reference {mutation.error.correlationId}.</span> : null}</p> : null}
         <footer className="dialog-actions"><button type="button" className="button button-secondary" disabled={mutation.isPending} onClick={onClose}>Cancel</button><button className="button button-primary" type="submit" disabled={mutation.isPending || (pendingRunId === null && !valid)}>{mutation.isPending ? "Starting…" : pendingRunId !== null ? "Retry start" : "Generate SQL"}</button></footer>
       </form>
     </section>
@@ -130,6 +138,20 @@ export function CodeGenerationRunDialog({ api, tenantId, model, entityType, cove
 
 function generationError(error: Error, created: boolean): string {
   if (created && isTenantWorkflowConflict(error)) return TENANT_WORKFLOW_CONFLICT_MESSAGE;
+  if (error instanceof ApiError) {
+    const messages: Record<string, string> = {
+      code_mapping_incomplete: "Complete Object and Attribute Mapping for the selected Entities, then refresh before generating SQL.",
+      code_no_eligible_targets: "No selected Entities have complete Mapping. Complete their Object and Attribute Mapping, then refresh.",
+      code_system_unavailable: "A selected System no longer contributes to the selected Entities. Refresh and select the contributing Systems again.",
+      sql_generation_guide_unavailable: "An active, published SQL generation guide is required. Ask an administrator to configure it, then retry.",
+      workflow_prompt_unavailable: "A published Code generation prompt is unavailable. Review the Model’s prompt settings, then retry.",
+      tenant_lock_required: "Acquire the Tenant Lock on Home before generating SQL.",
+      tenant_locked: "Another user holds the Tenant Lock. Acquire it on Home before generating SQL.",
+      model_revision_conflict: "The Model changed. Close this dialog and refresh before generating SQL.",
+    };
+    const message = messages[error.code];
+    if (message) return message + (created ? " This run remains queued." : "");
+  }
   if (created) return "The Code Generation run remains queued because it could not be started.";
   if (error instanceof ApiError && error.status === 403) return "You no longer have permission or the required Tenant Lock to generate SQL.";
   if (error instanceof ApiError && error.status === 409) return "The Model or Code Generation state changed. Refresh before creating another run.";

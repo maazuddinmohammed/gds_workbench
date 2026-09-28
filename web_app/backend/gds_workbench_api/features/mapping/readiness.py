@@ -197,15 +197,12 @@ def assess_mapping_readiness(
         ):
             issue("template.unavailable", "A selected Mapping output template is unavailable.")
 
-    if plan.operation == "build" and header.is_authored:
+    if plan.operation == "build" and header.mapping_object_id is not None:
         issue("operation.requires_extend", "An existing Mapping requires the extend operation.")
-    if plan.operation == "extend" and not header.is_authored:
+    if plan.operation == "extend" and header.mapping_object_id is None:
         issue("operation.requires_build", "A new Mapping requires the build operation.")
 
-    if header.is_locked:
-        object_action = "preserve" if header.is_authored else "blocked"
-    else:
-        object_action = "extend" if header.is_authored else "author"
+    object_action = "preserve" if header.is_locked else "extend" if header.is_authored else "author"
     attribute_actions: list[MappingAttributeReadiness] = []
     for modeled_id in sorted(modeled_attributes):
         child = children.get(modeled_id)
@@ -220,12 +217,7 @@ def assess_mapping_readiness(
                 and child.modeled_attribute_id not in plan.selected_attribute_ids
             )
         ):
-            action = (
-                "preserve"
-                if child.mapping_attribute_id is not None
-                and child.transformation_document is not None
-                else "blocked"
-            )
+            action = "preserve"
             mapping_attribute_id = child.mapping_attribute_id
         else:
             action = (
@@ -252,11 +244,10 @@ def assess_mapping_readiness(
             issue(
                 "selection.attributes_unavailable", "A selected Attribute is locked or unavailable."
             )
-    if object_action == "blocked" or any(item.action == "blocked" for item in attribute_actions):
+    if any(item.action == "blocked" for item in attribute_actions):
         issue(
             "mapping.locked_incomplete",
-            "A preserved Mapping record is incomplete. "
-            "Select missing Attributes before generation.",
+            "The selected Mapping context is incomplete or unavailable.",
         )
 
     readiness_header = MappingHeaderReadiness(

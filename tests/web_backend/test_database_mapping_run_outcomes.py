@@ -20,14 +20,18 @@ from tests.mcp.database_test_support import require_row
 from tests.web_backend.test_database_mapping_source_context import _seed_mapping_scope
 
 
-@pytest.mark.parametrize("scenario", ["legacy", "mixed", "recovered", "all_failed"])
+@pytest.mark.parametrize(
+    "scenario", ["legacy", "mixed", "recovered", "partial", "empty", "all_failed"]
+)
 async def test_mapping_outcomes_use_frozen_ordinals_and_bounded_tenant_scoped_reads(
     web_postgres_database: DisposablePostgres,
-    scenario: Literal["legacy", "mixed", "recovered", "all_failed"],
+    scenario: Literal["legacy", "mixed", "recovered", "partial", "empty", "all_failed"],
 ) -> None:
     scope = _seed_mapping_scope(web_postgres_database, dimensional=False)
     model_id, run_id = scope.plan.model_id, scope.plan.workflow_run_id
-    pair_count = {"legacy": 1, "mixed": 4, "recovered": 4, "all_failed": 205}[scenario]
+    pair_count = {
+        "legacy": 1, "mixed": 4, "recovered": 4, "partial": 2, "empty": 1, "all_failed": 205,
+    }[scenario]
     with web_postgres_database.connect_owner() as connection:
         actor = require_row(connection.execute(
             "SELECT entra_tenant_id, entra_object_id FROM security.entra_principal_identity "
@@ -71,6 +75,11 @@ async def test_mapping_outcomes_use_frozen_ordinals_and_bounded_tenant_scoped_re
             ]
             if scenario == "recovered":
                 events.append(("mapping.pair_completed", 4, 4, "Completed on retry."))
+        elif scenario == "partial":
+            events = [("mapping.pair_partial", 1, 2, "Available transformations retained."),
+                      ("mapping.pair_empty", 2, 2, "No transformation output.")]
+        elif scenario == "empty":
+            events = [("mapping.pair_empty", 1, 1, "No transformation output.")]
         elif scenario == "legacy":
             events = [("mapping.mapping_authoring", 1, 1, "Failed: legacy prose only.")]
         else:
@@ -144,6 +153,7 @@ async def test_mapping_outcomes_use_frozen_ordinals_and_bounded_tenant_scoped_re
         assert models.items[0].latest_run_status == {
             "legacy": "completed", "mixed": "partial_results",
             "recovered": "completed", "all_failed": "failed",
+            "partial": "partial_results", "empty": "completed",
         }[scenario]
         if scenario == "legacy":
             assert detail.mapping_outcome is None
@@ -171,6 +181,14 @@ async def test_mapping_outcomes_use_frozen_ordinals_and_bounded_tenant_scoped_re
                 "message": "Required join evidence is unavailable.",
             }
             assert not detail.mapping_failures_truncated
+        elif scenario in {"partial", "empty"}:
+            assert detail.mapping_outcome == MappingRunOutcome(
+                completed_pair_count=0, preserved_pair_count=0,
+                no_source_pair_count=0, failed_pair_count=0,
+                partial_pair_count=1 if scenario == "partial" else 0, empty_pair_count=1,
+            )
+            assert not detail.mapping_failures
+            assert not detail.mapping_failures_truncated
         else:
             assert detail.workflow_run_state == "failed"
             assert detail.mapping_outcome == MappingRunOutcome(
@@ -184,10 +202,13 @@ async def test_mapping_outcomes_use_frozen_ordinals_and_bounded_tenant_scoped_re
         overview = await DatabaseWorkflowOverviewService(
             database=runtime, authorizer=AuthorizationService(),
         ).read_overview(principal, tenant_id=scope.tenant_id, model_id=model_id)
-        mapping_section = next(item for item in overview.section_states if item.section == "mapping")
+        mapping_section = next(
+            item for item in overview.section_states if item.section == "mapping"
+        )
         assert mapping_section.state == {
             "legacy": "completed", "mixed": "results_available",
             "recovered": "completed", "all_failed": "failed",
+            "partial": "results_available", "empty": "completed",
         }[scenario]
 
         # The query itself fences Tenant and Model, even independently of the

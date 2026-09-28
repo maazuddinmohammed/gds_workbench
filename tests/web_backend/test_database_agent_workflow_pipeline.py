@@ -2,19 +2,23 @@
 
 # Existing builders create only fixture-owned disposable database contents.
 # pyright: reportPrivateUsage=false
-from hashlib import sha256
-from typing import Literal
+from typing import Literal, cast
 from uuid import uuid4
 
 import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
+from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_workbench_api.capabilities import (
     AgentRunSelection,
     load_default_agent_capabilities,
 )
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.mapping.contracts import MappingTargetSelection
+from gds_workbench_api.features.mapping.read_contracts import (
+    MappingAttributeFilters,
+    MappingFilters,
+)
 from gds_workbench_api.features.mapping.read_service import DatabaseMappingReviewService
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
@@ -51,6 +55,8 @@ from gds_workbench_api.integrations.agents.configuration import (
 from gds_workbench_api.integrations.databricks.runtime import (
     create_databricks_execution_adapters,
 )
+from psycopg import sql
+from pydantic import JsonValue
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.conftest import (
@@ -71,6 +77,7 @@ from tests.web_backend.test_database_mapping_source_context import (
     _seed_assertion_mapping_target,
     _seed_mapping_scope,
 )
+from tests.web_backend.test_database_sql_guide_seed import _guide_seed
 
 
 @pytest.fixture(scope="module")
@@ -79,37 +86,10 @@ def pipeline_database(
 ) -> DisposablePostgres:
     database = bootstrap_postgres_database
     _apply_sql(database, REFERENCE_SEED.read_text(encoding="utf-8"))
-    actor_id = _seed_super_admin(database)
+    _seed_super_admin(database)
     _apply_sql(database, _render_seed())
+    _apply_sql(database, _guide_seed())
     seed_mapping_output_templates(database)
-    content = "Generate Databricks SQL from the frozen Mapping definitions."
-    with database.connect_owner() as connection:
-        guide_id = require_row(
-            connection.execute(
-                "INSERT INTO application.sql_generation_guide "
-                "(sql_generation_guide_code, sql_generation_guide_name, is_default, "
-                "created_by_principal_id, updated_by_principal_id) "
-                "VALUES ('fixture_pipeline', 'Fixture pipeline guide', TRUE, %s, %s) "
-                "RETURNING sql_generation_guide_id",
-                (actor_id, actor_id),
-            ).fetchone()
-        )["sql_generation_guide_id"]
-        connection.execute(
-            "INSERT INTO application.sql_generation_guide_version "
-            "(sql_generation_guide_id, sql_generation_guide_version_number, "
-            "sql_generation_guide_content, sql_generation_guide_digest, "
-            "sql_generation_guide_version_status, created_by_principal_id, "
-            "updated_by_principal_id, published_time, published_by_principal_id) "
-            "VALUES (%s, 1, %s, %s, 'published', %s, %s, CURRENT_TIMESTAMP, %s)",
-            (
-                guide_id,
-                content,
-                sha256(content.encode()).hexdigest(),
-                actor_id,
-                actor_id,
-                actor_id,
-            ),
-        )
     return database
 
 
@@ -127,6 +107,14 @@ def pipeline_database(
         ("multi_system", True),
         ("assertion", False),
         ("assertion", True),
+        ("object_only", False),
+        ("object_only", True),
+        ("attribute_only", False),
+        ("attribute_only", True),
+        ("partial_attributes", False),
+        ("partial_attributes", True),
+        ("empty", False),
+        ("empty", True),
     ],
 )
 async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
@@ -140,13 +128,51 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
     scope = _seed_mapping_scope(fixture, dimensional=dimensional, create_run=False)
     model_id = scope.plan.model_id
     entity_type = "dimensional_entity" if dimensional else "logical_entity"
+    partial_shape = bulk in {
+        "object_only",
+        "attribute_only",
+        "partial_attributes",
+        "empty",
+    }
     if bulk == "assertion":
         _seed_assertion_mapping_target(fixture, scope, dimensional=dimensional)
     elif bulk != "single":
         _add_mapping_target(
-            fixture, model_id, scope.plan.pair.modeled_entity_id, dimensional=dimensional
+            fixture,
+            model_id,
+            scope.plan.pair.modeled_entity_id,
+            dimensional=dimensional,
         )
-    if bulk == "multi_system":
+    if partial_shape:
+        layer = "dimensional" if dimensional else "logical"
+        with fixture.connect_owner() as connection:
+            columns = [
+                "model_id",
+                f"{layer}_entity_id",
+                f"{layer}_attribute_name",
+                f"{layer}_attribute_definition",
+                f"{layer}_attribute_data_type",
+                f"{layer}_attribute_ordinal_position",
+            ]
+            values = "entity.model_id, entity.modeled_entity_id, 'fixture_' || position, "
+            values += "'Synthetic test Attribute.', 'bigint', position"
+            if dimensional:
+                columns.append("dimensional_attribute_role")
+                values += ", 'descriptor'"
+            connection.execute(
+                sql.SQL(
+                    "INSERT INTO workflow.{} ({}) SELECT {} "
+                    "FROM workflow.modeled_entity entity CROSS JOIN generate_series(2,10) position "
+                    "WHERE entity.model_id=%s AND entity.modeled_entity_type=%s "
+                    "AND entity.modeled_entity_name='SecondCustomer'"
+                ).format(
+                    sql.Identifier(f"{layer}_attribute"),
+                    sql.SQL(",").join(map(sql.Identifier, columns)),
+                    sql.SQL(values),
+                ),
+                (model_id, entity_type),
+            )
+    if bulk == "multi_system" or partial_shape:
         _add_mapping_system(fixture, scope)
     with fixture.connect_owner() as connection:
         actor = require_row(
@@ -194,21 +220,39 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
         self: LocalFakeAgentAdapter, request: AgentExecutionRequest
     ) -> AgentExecutionResult:
         nonlocal mapping_calls
+        if partial_shape and request.workflow in {"code_generation", "validation"}:
+            outer = cast(dict[str, JsonValue], request.context)
+            original = cast(dict[str, JsonValue], outer["original_context"])
+            values = cast(dict[str, JsonValue], original["values"])
+            if request.workflow == "code_generation":
+                target = cast(dict[str, JsonValue], values["target_metadata"])
+                assert target["object_name"] != "SecondCustomer"
+            else:
+                evidence = cast(list[dict[str, JsonValue]], values["mapping_evidence"])
+                assert evidence
+                assert all(row["modeled_entity_name"] != "SecondCustomer" for row in evidence)
         if request.workflow == "mapping":
             mapping_calls += 1
-            if bulk == "partial" and mapping_calls <= 2:
+            if bulk == "partial" and mapping_calls == 1:
                 calls.append((request.workflow, request.execution_mode, 0))
-                return AgentExecutionResult(
-                    candidate={
-                        "schema_version": "1.0",
-                        "object_mapping": None,
-                        "attribute_mappings": [],
-                        "issues": [{"code": "missing_join_evidence"}],
-                    },
-                    turn_count=1,
-                    tool_call_count=0,
-                )
+                raise TimeoutError("Synthetic provider timeout")
         result = await original_execute(self, request)
+        if request.workflow == "mapping" and partial_shape:
+            candidate = cast(dict[str, JsonValue], result.candidate)
+            attributes = cast(list[JsonValue], candidate["attribute_mappings"])
+            if len(attributes) == 10:
+                candidate = {
+                    **candidate,
+                    "object_mapping": None
+                    if bulk in {"attribute_only", "empty"}
+                    else candidate["object_mapping"],
+                    "attribute_mappings": []
+                    if bulk in {"object_only", "empty"}
+                    else attributes[:5]
+                    if bulk == "partial_attributes"
+                    else attributes,
+                }
+                result = result.model_copy(update={"candidate": candidate})
         calls.append((request.workflow, request.execution_mode, result.tool_call_count))
         return result
 
@@ -238,6 +282,11 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
         authorizer=authorizer,
         cursor_signing_key=b"fixture-signing-key" * 2,
     )
+    mapping_review = DatabaseMappingReviewService(
+        database=database,
+        authorizer=authorizer,
+        cursor_signing_key=b"fixture-key" * 4,
+    )
     selection = AgentRunSelection(
         sdk_code="openai_agents_sdk",
         provider_code="microsoft_foundry",
@@ -249,11 +298,7 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
     run_ids: list[int] = []
     await database.open()
     try:
-        targets = await DatabaseMappingReviewService(
-            database=database,
-            authorizer=authorizer,
-            cursor_signing_key=b"fixture-key" * 4,
-        ).list_generation_targets(
+        targets = await mapping_review.list_generation_targets(
             principal,
             tenant_id=scope.tenant_id,
             model_id=model_id,
@@ -262,14 +307,18 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
             cursor=None,
         )
         eligible = [row for row in targets.items if row.has_sources]
-        expected_pair_count = 1 if bulk == "single" else 4 if bulk == "multi_system" else 2
+        expected_pair_count = (
+            1 if bulk == "single" else 4 if bulk == "multi_system" or partial_shape else 2
+        )
         assert len(eligible) == expected_pair_count
         assert all(row.attributes and not row.is_locked for row in eligible)
         selected_entity_ids = sorted({row.entity_id for row in eligible})
         selected_system_codes = sorted({row.source_system.system_code for row in eligible})
         expected_pairs = {(row.entity_id, row.source_system.system_id) for row in eligible}
         successful_entity_ids = (
-            [
+            [scope.plan.pair.modeled_entity_id]
+            if partial_shape
+            else [
                 entity
                 for entity in selected_entity_ids
                 if entity != scope.plan.pair.modeled_entity_id
@@ -381,6 +430,10 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
             if workflow == "mapping":
                 assert detail.mapping_outcome is not None
                 assert detail.mapping_outcome.completed_pair_count == len(successful_pairs)
+                assert detail.mapping_outcome.partial_pair_count == (
+                    2 if partial_shape and bulk != "empty" else 0
+                )
+                assert detail.mapping_outcome.empty_pair_count == (2 if bulk == "empty" else 0)
                 assert detail.mapping_outcome.failed_pair_count == int(bulk == "partial")
                 assert detail.mapping_outcome.preserved_pair_count == 0
                 assert detail.mapping_outcome.no_source_pair_count == 0
@@ -390,7 +443,7 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                     failed_pair = detail.mapping_failures[0]
                     assert failed_pair.modeled_entity_id == scope.plan.pair.modeled_entity_id
                     assert failed_pair.source_system_id == scope.source_system_id
-                    assert "join evidence" in failed_pair.message
+                    assert "agent" in failed_pair.message.lower()
                 else:
                     assert not detail.mapping_failures
                 ledger = await runs.list_runs(
@@ -435,10 +488,92 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
             )
             assert applied.model_revision == revision + 1 and not applied.replayed
             assert replayed == applied.model_copy(update={"replayed": True})
+            if workflow == "mapping" and partial_shape:
+                objects = await mapping_review.list_objects(
+                    principal,
+                    tenant_id=scope.tenant_id,
+                    model_id=model_id,
+                    filters=MappingFilters(entity_type=entity_type),
+                    page_size=200,
+                    cursor=None,
+                )
+                partial_objects = [
+                    row for row in objects.items if row.target.entity_name == "SecondCustomer"
+                ]
+                assert len(partial_objects) == (0 if bulk == "empty" else 2)
+                for mapping in partial_objects:
+                    object_detail = await mapping_review.read_object(
+                        principal,
+                        tenant_id=scope.tenant_id,
+                        model_id=model_id,
+                        mapping_object_id=mapping.mapping_object_id,
+                    )
+                    assert (object_detail.mapping_document is None) == (bulk == "attribute_only")
+                    attributes = await mapping_review.list_attributes(
+                        principal,
+                        tenant_id=scope.tenant_id,
+                        model_id=model_id,
+                        filters=MappingAttributeFilters(
+                            mapping_object_id=mapping.mapping_object_id
+                        ),
+                        page_size=200,
+                        cursor=None,
+                    )
+                    assert len(attributes.items) == 10 and attributes.next_cursor is None
+                    assert len({row.target.attribute_name for row in attributes.items}) == 10
+                    documents = 0
+                    for attribute in attributes.items:
+                        if attribute.mapping_attribute_id is None:
+                            assert attribute.status is None and attribute.updated_at is None
+                            assert not attribute.is_locked
+                            continue
+                        attribute_detail = await mapping_review.read_attribute(
+                            principal,
+                            tenant_id=scope.tenant_id,
+                            model_id=model_id,
+                            mapping_attribute_id=attribute.mapping_attribute_id,
+                        )
+                        documents += int(attribute_detail.mapping_document is not None)
+                    assert (
+                        documents
+                        == {
+                            "object_only": 0,
+                            "attribute_only": 10,
+                            "partial_attributes": 5,
+                        }[bulk]
+                    )
+                incomplete = [
+                    entity for entity in selected_entity_ids if entity not in successful_entity_ids
+                ]
+                with pytest.raises(WorkbenchError) as incomplete_mapping_error:
+                    await commands.create_run(
+                        principal,
+                        tenant_id=scope.tenant_id,
+                        model_id=model_id,
+                        correlation_id=uuid4(),
+                        command=CreateWorkflowRunRequest(
+                            expected_model_revision=revision + 1,
+                            model_workflow="code_generation",
+                            selected_entity_ids=incomplete,
+                            modeled_entity_type=entity_type,
+                            code_generation_coverage_mode="selected_targets",
+                            agent=selection,
+                        ),
+                    )
+                assert incomplete_mapping_error.value.code == "code_mapping_incomplete"
+                with fixture.connect_owner() as connection:
+                    eligible_code = connection.execute(
+                        "SELECT modeled_entity_id FROM "
+                        "workflow.list_code_generation_target_context(%s,%s,NULL)",
+                        (model_id, entity_type),
+                    ).fetchall()
+                assert {row["modeled_entity_id"] for row in eligible_code} == set(
+                    successful_entity_ids
+                )
     finally:
         await services.close()
         await database.close()
-    expected_mapping_calls = expected_pair_count + int(bulk == "partial")
+    expected_mapping_calls = expected_pair_count
     expected_downstream_calls = ["code_generation"] * len(successful_entity_ids) + [
         "validation"
     ] * len(selected_system_codes)
@@ -486,9 +621,11 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
             if bulk == "partial" and preserved_objects
             else set()
         )
-        assert {
-            (row["entity_id"], row["source_system_id"]) for row in mapping_pairs
-        } == successful_pairs | existing_pairs
+        assert {(row["entity_id"], row["source_system_id"]) for row in mapping_pairs} == (
+            expected_pairs
+            if partial_shape and bulk != "empty"
+            else successful_pairs | existing_pairs
+        )
         assert {
             (row["entity_id"], row["source_system_id"]) for row in code_pairs
         } == successful_pairs
@@ -523,7 +660,11 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
 
 
 def _add_mapping_target(
-    fixture: DisposablePostgres, model_id: int, entity_id: int, *, dimensional: bool = False
+    fixture: DisposablePostgres,
+    model_id: int,
+    entity_id: int,
+    *,
+    dimensional: bool = False,
 ) -> None:
     """Create another modeled target without registering a physical table."""
     if dimensional:

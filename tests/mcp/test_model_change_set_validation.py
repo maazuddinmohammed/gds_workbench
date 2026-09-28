@@ -669,7 +669,7 @@ def test_new_inactive_authored_records_can_reference_current_entities() -> None:
     assert result.valid
 
 
-def test_active_mapping_requires_every_entity_attribute_per_source_system() -> None:
+def test_code_authoring_requires_every_entity_attribute_per_source_system() -> None:
     graph = complete_model_graph()
     graph["mapping_attribute"] = graph["mapping_attribute"][:1]
 
@@ -688,7 +688,7 @@ def test_active_mapping_requires_every_entity_attribute_per_source_system() -> N
     )
 
 
-def test_active_mapping_requires_transformation() -> None:
+def test_code_authoring_requires_object_transformation() -> None:
     graph = complete_model_graph()
     graph["mapping_object"][0]["mapping_transformation_document"] = None
 
@@ -703,6 +703,106 @@ def test_active_mapping_requires_transformation() -> None:
         issue.code == "active_dependency_invalid" and issue.dataset == "mapping_object"
         for issue in result.issues
     )
+
+
+@pytest.mark.parametrize("partial", ["object_only", "attribute_only", "blank_attribute"])
+def test_mapping_can_store_partial_transformations_without_authoring_code(partial: str) -> None:
+    graph = complete_model_graph()
+    graph["generated_code"] = []
+    graph["generated_code_source_system"] = []
+    if partial == "object_only":
+        graph["mapping_attribute"] = []
+    elif partial == "attribute_only":
+        graph["mapping_object"][0]["mapping_transformation_document"] = None
+        graph["mapping_attribute"] = graph["mapping_attribute"][:1]
+    else:
+        graph["mapping_attribute"][0]["attribute_mapping_transformation_document"] = None
+
+    result = validate_future_graph(
+        snapshot=empty_model_snapshot(), staged_documents=graph,
+        physical_scope=complete_physical_scope(),
+    )
+
+    assert result.valid
+    assert [record.model_dump(mode="json") for record in result.records["mapping_object"]] == (
+        graph["mapping_object"]
+    )
+    assert [record.model_dump(mode="json") for record in result.records["mapping_attribute"]] == (
+        graph["mapping_attribute"]
+    )
+
+
+@pytest.mark.parametrize("attributes", ["absent", "blank", "inactive"])
+def test_active_mapping_pair_needs_at_least_one_transformation(attributes: str) -> None:
+    graph = complete_model_graph()
+    graph["generated_code"] = []
+    graph["generated_code_source_system"] = []
+    graph["mapping_object"][0]["mapping_transformation_document"] = None
+    if attributes == "absent":
+        graph["mapping_attribute"] = []
+    else:
+        for record in graph["mapping_attribute"]:
+            if attributes == "blank":
+                record["attribute_mapping_transformation_document"] = None
+            else:
+                record["attribute_mapping_status"] = "inactive"
+
+    result = validate_future_graph(
+        snapshot=empty_model_snapshot(), staged_documents=graph,
+        physical_scope=complete_physical_scope(),
+    )
+
+    assert not result.valid
+    assert any(
+        issue.dataset == "mapping_object" and issue.code == "active_dependency_invalid"
+        for issue in result.issues
+    )
+
+
+@pytest.mark.parametrize("dataset", ["mapping_object", "mapping_attribute"])
+def test_partial_mapping_cannot_blank_locked_transformations(dataset: ModelChangeSetDataset) -> None:
+    graph = complete_model_graph()
+    lock_field = (
+        "object_mapping_is_locked" if dataset == "mapping_object" else "attribute_mapping_is_locked"
+    )
+    document_field = (
+        "mapping_transformation_document" if dataset == "mapping_object"
+        else "attribute_mapping_transformation_document"
+    )
+    graph[dataset][0][lock_field] = True
+    changed = deepcopy(graph[dataset][0])
+    changed[document_field] = None
+
+    result = validate_future_graph(
+        snapshot=snapshot_from_graph(graph), staged_documents={dataset: [changed]},
+        physical_scope=complete_physical_scope(),
+    )
+
+    assert not result.valid
+    assert result.phase == "locks"
+    assert any(issue.code == "record_locked" for issue in result.issues)
+
+
+def test_existing_mapping_can_clear_all_unlocked_transformations_without_losing_identity() -> None:
+    graph = complete_model_graph()
+    changed_object = {**graph["mapping_object"][0], "mapping_transformation_document": None}
+    changed_attributes = [
+        {**record, "attribute_mapping_transformation_document": None}
+        for record in graph["mapping_attribute"]
+    ]
+    result = validate_future_graph(
+        snapshot=snapshot_from_graph(graph),
+        staged_documents={
+            "mapping_object": [changed_object], "mapping_attribute": changed_attributes,
+        },
+        physical_scope=complete_physical_scope(),
+    )
+
+    assert result.valid
+    assert len(result.records["mapping_object"]) == 1
+    assert len(result.records["mapping_attribute"]) == len(changed_attributes)
+    assert all(summary.insert_count == 0 for summary in result.action_review)
+    assert sum(summary.update_count for summary in result.action_review) == 1 + len(changed_attributes)
 
 
 @pytest.mark.parametrize("assignment_count", [0, 2])

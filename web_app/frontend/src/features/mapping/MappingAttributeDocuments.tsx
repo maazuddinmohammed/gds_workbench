@@ -35,7 +35,8 @@ export function useMappingAttributeDocuments({ api, tenantId, modelId, items, en
   api: Pick<MappingApi, "readMappingAttribute">;
   tenantId: number; modelId: number; items: MappingAttribute[]; enabled: boolean;
 }) {
-  const visibleItems = enabled ? items : [];
+  const visibleItems = enabled ? items.filter((item): item is MappingAttribute & { mapping_attribute_id: number } =>
+    item.mapping_attribute_id !== null) : [];
   const queries = useQueries({ queries: visibleItems.map((item) => ({
     queryKey: mappingQueryKeys.attribute(tenantId, modelId, item.mapping_attribute_id),
     queryFn: ({ signal }: { signal: AbortSignal }) => readDetail(() => {

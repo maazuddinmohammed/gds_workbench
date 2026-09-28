@@ -5,7 +5,6 @@ import json
 from typing import cast
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_workbench_api.features.mapping.complete_candidate import (
     CompleteMappingCandidateValidator,
 )
@@ -133,22 +132,18 @@ async def test_mapping_candidate_contains_only_flexible_transformation_content()
 
 
 @pytest.mark.asyncio
-async def test_mapping_candidate_requires_exact_modeled_attribute_coverage() -> None:
+async def test_mapping_candidate_accepts_object_only_output() -> None:
     validator = CompleteMappingCandidateValidator(preparation=mapping_preparation())
-    incomplete = mapping_candidate()
-    incomplete["attribute_mappings"] = []
-
-    validation = await validator.validate(incomplete)
-
-    assert [issue.code for issue in validation.issues] == [
-        "candidate.mapping_integrity_invalid"
-    ]
-    with pytest.raises(InvalidRequestError, match="every actionable modeled Attribute"):
-        validator.parse_validated(incomplete)
+    partial = mapping_candidate()
+    partial["attribute_mappings"] = []
+    assert not (await validator.validate(partial)).issues
+    result = validator.parse_validated(partial)
+    assert result.is_partial
+    assert [change.dataset for change in result.changes] == ["mapping_object"]
 
 
 @pytest.mark.parametrize("target", ("object", "attribute"))
-async def test_new_mapping_documents_must_contain_transformation_content(
+async def test_empty_mapping_documents_are_normalized_to_blank(
     target: str,
 ) -> None:
     candidate = mapping_candidate()
@@ -163,7 +158,7 @@ async def test_new_mapping_documents_must_contain_transformation_content(
     validation = await CompleteMappingCandidateValidator(
         preparation=mapping_preparation(),
     ).validate(candidate)
-    assert validation.issues
+    assert not validation.issues
 
 
 def test_locked_complete_mapping_is_preserved_without_agent_output() -> None:
@@ -322,7 +317,7 @@ async def test_unrelated_system_can_return_an_explicit_no_mapping_outcome() -> N
 
 
 @pytest.mark.parametrize("existing", [False, True])
-async def test_no_mapping_cannot_skip_known_entity_sources_or_existing_mapping(
+async def test_empty_output_is_valid_even_with_known_sources_or_existing_mapping(
     existing: bool,
 ) -> None:
     preparation = mapping_preparation(existing=existing)
@@ -332,14 +327,14 @@ async def test_no_mapping_cannot_skip_known_entity_sources_or_existing_mapping(
         "object_mapping": None,
         "attribute_mappings": [],
     }
-    assert (
+    assert not (
         await CompleteMappingCandidateValidator(preparation=preparation).validate(
             candidate
         )
     ).issues
 
 
-async def test_no_mapping_cannot_skip_attribute_lineage_without_object_support_links() -> (
+async def test_empty_output_is_valid_with_attribute_lineage() -> (
     None
 ):
     preparation = mapping_preparation()
@@ -361,7 +356,7 @@ async def test_no_mapping_cannot_skip_attribute_lineage_without_object_support_l
         "object_mapping": None,
         "attribute_mappings": [],
     }
-    assert (
+    assert not (
         await CompleteMappingCandidateValidator(preparation=preparation).validate(
             candidate
         )
@@ -369,7 +364,7 @@ async def test_no_mapping_cannot_skip_attribute_lineage_without_object_support_l
 
 
 @pytest.mark.parametrize("layer", ("logical_entity", "dimensional_entity"))
-async def test_assertion_default_system_requires_complete_source_free_mapping(
+async def test_assertion_default_system_accepts_partial_source_free_mapping(
     layer: ModeledEntityType,
 ) -> None:
     preparation = mapping_preparation(modeled_entity_type=layer)
@@ -400,6 +395,6 @@ async def test_assertion_default_system_requires_complete_source_free_mapping(
         "object_mapping": None,
         "attribute_mappings": [],
     }
-    assert (await validator.validate(skipped)).issues
+    assert not (await validator.validate(skipped)).issues
     complete["attribute_mappings"] = []
-    assert (await validator.validate(complete)).issues
+    assert not (await validator.validate(complete)).issues

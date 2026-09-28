@@ -105,14 +105,14 @@ export interface MappingObjectDetail extends MappingObject {
 }
 
 export interface MappingAttribute {
-  mapping_attribute_id: number;
+  mapping_attribute_id: number | null;
   workflow_run_id: number | null;
   mapping_object_id: number;
   target: MappingModeledAttribute;
   source_system: MappingSourceSystem;
-  status: MappingStatus;
+  status: MappingStatus | null;
   is_locked: boolean;
-  updated_at: string;
+  updated_at: string | null;
 }
 
 export interface MappingAttributePage {
@@ -130,6 +130,9 @@ export interface MappingParentObjectReference {
 }
 
 export interface MappingAttributeDetail extends MappingAttribute {
+  mapping_attribute_id: number;
+  status: MappingStatus;
+  updated_at: string;
   parent_object_mapping: MappingParentObjectReference;
   mapping_document: JsonObject | null;
   output_template: MappingOutputTemplateProvenance | null;

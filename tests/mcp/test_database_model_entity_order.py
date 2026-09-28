@@ -105,8 +105,11 @@ def assert_entity_layers_preserved(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("missing_contribution", [None, "mapping_object", "mapping_attribute"])
-async def test_public_model_apply_orders_entities_and_checks_mapping_coverage(
+@pytest.mark.parametrize(
+    "missing_contribution",
+    [None, "mapping_object", "mapping_attribute", "object_document", "empty_pair", "blank_attribute"],
+)
+async def test_public_model_apply_orders_entities_and_preserves_partial_mapping(
     postgres_database: DisposablePostgres,
     missing_contribution: str | None,
 ) -> None:
@@ -119,6 +122,15 @@ async def test_public_model_apply_orders_entities_and_checks_mapping_coverage(
         graph["mapping_attribute"] = []
     elif missing_contribution == "mapping_attribute":
         graph["mapping_attribute"] = []
+    elif missing_contribution == "object_document":
+        graph["mapping_object"][0]["mapping_transformation_document"] = None
+        graph["mapping_attribute"] = graph["mapping_attribute"][:1]
+    elif missing_contribution == "empty_pair":
+        graph["mapping_object"][0]["mapping_transformation_document"] = None
+        graph["mapping_attribute"] = []
+    elif missing_contribution == "blank_attribute":
+        graph["mapping_attribute"][0]["attribute_mapping_transformation_document"] = None
+    expected_valid = missing_contribution != "empty_pair"
     model = ModelReadContext(
         model_id=model_id,
         tenant_id=tenant_id,
@@ -143,10 +155,10 @@ async def test_public_model_apply_orders_entities_and_checks_mapping_coverage(
             canonical = validate_future_graph(
                 snapshot=baseline, staged_documents=graph, physical_scope=physical
             )
-            assert canonical.valid is (missing_contribution != "mapping_attribute")
-            if missing_contribution == "mapping_attribute":
+            assert canonical.valid is expected_valid
+            if not expected_valid:
                 assert any(
-                    issue.dataset == "mapping_attribute"
+                    issue.dataset == "mapping_object"
                     for issue in canonical.issues
                 )
 
@@ -172,9 +184,9 @@ async def test_public_model_apply_orders_entities_and_checks_mapping_coverage(
             }
             validated = await client.call_tool("validate_model_change_set", command)
             assert not validated.is_error
-            assert validated.structured_content["valid"] is (missing_contribution != "mapping_attribute")
+            assert validated.structured_content["valid"] is expected_valid
             applied = await client.call_tool("apply_model_change_set", command)
-            if missing_contribution != "mapping_attribute":
+            if expected_valid:
                 assert not applied.is_error, "A canonically valid graph must Apply successfully."
                 assert applied.structured_content["model_revision"] == 2
                 assert applied.structured_content["action_count"] > 0
@@ -186,9 +198,9 @@ async def test_public_model_apply_orders_entities_and_checks_mapping_coverage(
         async with database.read_transaction() as transaction:
             snapshot = await build_model_snapshot(
                 transaction,
-                replace(model, model_revision=2) if missing_contribution != "mapping_attribute" else model,
+                replace(model, model_revision=2) if expected_valid else model,
             )
-            if missing_contribution != "mapping_attribute":
+            if expected_valid:
                 assert_entity_layers_preserved(snapshot, canonical)
                 current_physical = await load_model_physical_scope(transaction, model)
                 assert validate_future_graph(
@@ -202,12 +214,74 @@ async def test_public_model_apply_orders_entities_and_checks_mapping_coverage(
             row = connection.execute(
                 "SELECT model_revision FROM model.model WHERE model_id = %s", (model_id,)
             ).fetchone()
-            assert row == {"model_revision": 2 if missing_contribution != "mapping_attribute" else 1}
+            assert row == {"model_revision": 2 if expected_valid else 1}
             events = connection.execute(
                 "SELECT count(*) AS count FROM mcp.model_change_set_event "
                 "WHERE model_change_set_id = %s AND event_type = 'applied'",
                 (change_set_id,),
             ).fetchone()
-            assert events == {"count": 1 if missing_contribution != "mapping_attribute" else 0}
+            assert events == {"count": 1 if expected_valid else 0}
+        if missing_contribution is None:
+            with postgres_database.connect_owner() as connection:
+                original_ids = connection.execute(
+                    "SELECT mapping_object_id FROM workflow.mapping_object WHERE model_id=%s",
+                    (model_id,),
+                ).fetchall()
+            cleared = {
+                "mapping_object": [
+                    {**row, "mapping_transformation_document": None}
+                    for row in graph["mapping_object"]
+                ],
+                "mapping_attribute": [
+                    {**row, "attribute_mapping_transformation_document": None}
+                    for row in graph["mapping_attribute"]
+                ],
+            }
+            async with Client(server) as client:
+                created = await client.call_tool("create_model_change_set", {"model_id": model_id})
+                assert not created.is_error
+                change_set_id = created.structured_content["model_change_set_id"]
+                staged = await client.call_tool(
+                    "stage_model_change_set",
+                    {
+                        "model_id": model_id,
+                        "model_change_set_id": change_set_id,
+                        "expected_draft_revision": created.structured_content["draft_revision"],
+                        "changes": [
+                            {"dataset": key, "records": rows} for key, rows in cleared.items()
+                        ],
+                    },
+                )
+                assert not staged.is_error
+                command = {
+                    "model_id": model_id,
+                    "model_change_set_id": change_set_id,
+                    "expected_draft_revision": staged.structured_content["draft_revision"],
+                }
+                validated = await client.call_tool("validate_model_change_set", command)
+                assert not validated.is_error and validated.structured_content["valid"]
+                applied = await client.call_tool("apply_model_change_set", command)
+                assert not applied.is_error
+                assert applied.structured_content["model_revision"] == 3
+            async with database.read_transaction() as transaction:
+                cleared_snapshot = await build_model_snapshot(
+                    transaction, replace(model, model_revision=3)
+                )
+            assert len(cleared_snapshot.mapping.objects) == len(graph["mapping_object"])
+            assert len(cleared_snapshot.mapping.attributes) == len(graph["mapping_attribute"])
+            assert all(
+                row.mapping_transformation_document is None
+                for row in cleared_snapshot.mapping.objects
+            )
+            assert all(
+                row.attribute_mapping_transformation_document is None
+                for row in cleared_snapshot.mapping.attributes
+            )
+            with postgres_database.connect_owner() as connection:
+                retained_ids = connection.execute(
+                    "SELECT mapping_object_id FROM workflow.mapping_object WHERE model_id=%s",
+                    (model_id,),
+                ).fetchall()
+            assert retained_ids == original_ids
     finally:
         await database.close()

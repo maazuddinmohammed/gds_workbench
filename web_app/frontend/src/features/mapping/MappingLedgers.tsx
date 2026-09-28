@@ -123,7 +123,8 @@ export function MappingAttributesLedger({
     id: `field:${field}`, header: () => <span title={field}>{humanize(field) || "Unnamed field"}</span>,
   })) : [{ id: "empty-document", header: "Transformation" }];
   const columns = useMemo<ColumnDef<MappingAttribute>[]>(() => [
-    reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.mapping_attribute_id, "Mapping Attributes"),
+    reviewSelectionColumn(items.filter((item) => item.mapping_attribute_id !== null),
+      { selectedIds, onSelectionChange }, (item) => item.mapping_attribute_id!, "Mapping Attributes"),
     {
       id: "target",
       header: "Target Attribute",
@@ -132,7 +133,7 @@ export function MappingAttributesLedger({
     },
     ...documentColumns,
     { id: "status", header: "Status", cell: ({ row }) => <span className="mapping-attribute-status">
-      <span className={`status-badge ${row.original.status === "active" ? "is-success" : "is-neutral"}`}>{humanize(row.original.status)}</span>
+      <span className={`status-badge ${row.original.status === "active" ? "is-success" : "is-neutral"}`}>{row.original.status === null ? "Not mapped" : humanize(row.original.status)}</span>
       <small>{row.original.is_locked ? "Locked" : "Open"}</small></span> },
     { id: "record-info", header: "Record info" },
   ], [items, selectedIds, onSelectionChange, documentColumns]);
@@ -147,9 +148,11 @@ export function MappingAttributesLedger({
       state={state}
       onLoadMore={onLoadMore}
       renderCell={(item, column) => {
+        // These rows come from modeled Attributes, not persisted Mapping records.
+        if (item.mapping_attribute_id === null && column !== "target" && column !== "status") return <></>;
         const isField = column.startsWith("field:") || column === "empty-document";
         if (!isField && column !== "record-info") return undefined;
-        const record = documents.get(item.mapping_attribute_id);
+        const record = item.mapping_attribute_id === null ? undefined : documents.get(item.mapping_attribute_id);
         const firstColumn = documentColumns[0]?.id;
         if (!record || record.state !== "ready" || !record.detail) {
           if (column !== firstColumn) return <span className="mapping-cell-state">—</span>;
@@ -180,8 +183,9 @@ export function MappingAttributesLedger({
           </details> : null}
         </details>;
         const doc = detail.mapping_document;
-        if (doc === null || Object.keys(doc).length === 0 || column === "empty-document") {
-          return <span className="mapping-cell-state">{column !== firstColumn ? "—" : doc === null ? "Not authored"
+        if (doc === null) return <></>;
+        if (Object.keys(doc).length === 0 || column === "empty-document") {
+          return <span className="mapping-cell-state">{column !== firstColumn ? "—"
             : Object.keys(doc).length === 0 ? "No fields" : "No additional fields"}</span>;
         }
         const field = column.slice("field:".length);

@@ -13,13 +13,10 @@ from gds_etl_workbench.domain.modeling_records import (
 )
 from pydantic import ValidationError
 
-from gds_workbench_api.features.workflows.authoring.context_inputs import natural_key
-
 from .contracts import CompleteMappingCandidateV1
 from .preparation_contracts import (
     ExistingMappingAttribute,
     ExistingMappingHeader,
-    MappingModeledEntity,
     MappingPreparation,
 )
 from .semantics import validate_mapping_references
@@ -39,85 +36,26 @@ class MappingCandidateReconciler:
         candidate: CompleteMappingCandidateV1,
     ) -> tuple[StageModelChange, ...]:
         header = self._preparation.context.headers[0]
-        if candidate.outcome == "no_applicable_source":
-            if (
-                candidate.object_mapping is not None
-                or candidate.attribute_mappings
-                or candidate.issues
-            ):
-                raise InvalidRequestError(
-                    "A no-source outcome cannot contain transformations or issues."
-                )
-            known_source = any(
-                source.source_mapping_id is not None for source in self._preparation.context.sources
-            )
-            snapshot = self._preparation.snapshot
-            if snapshot is not None:
-                layer = (
-                    "logical"
-                    if self._preparation.plan.route == "logical_to_silver"
-                    else "dimensional"
-                )
-                section = snapshot.logical if layer == "logical" else snapshot.dimensional
-                source_keys = {
-                    natural_key(source.object.model_dump())
-                    for source in self._preparation.context.sources
-                    if not isinstance(source.object, MappingModeledEntity)
-                }
-                logical_keys = {
-                    (
-                        source.object.entity_schema_name.casefold(),
-                        source.object.entity_name.casefold(),
-                    )
-                    for source in self._preparation.context.sources
-                    if isinstance(source.object, MappingModeledEntity)
-                    and source.object.entity_type == "logical_entity"
-                }
-                known_source |= any(
-                    source.status == "active"
-                    and (
-                        (
-                            source.support_source_type == "attribute"
-                            and natural_key(source.source_attribute.model_dump()) in source_keys
-                        )
-                        or (
-                            source.support_source_type == "logical_attribute"
-                            and (
-                                source.source_logical_attribute.logical_entity_schema_name.casefold(),
-                                source.source_logical_attribute.logical_entity_name.casefold(),
-                            )
-                            in logical_keys
-                        )
-                    )
-                    for attribute in section.attributes
-                    if getattr(attribute, f"{layer}_entity_name").casefold()
-                    == header.modeled_entity.entity_name.casefold()
-                    and getattr(attribute, f"{layer}_entity_schema_name").casefold()
-                    == header.modeled_entity.entity_schema_name.casefold()
-                    and getattr(attribute, f"{layer}_attribute_status") == "active"
-                    for source in attribute.sources
-                )
-            if (
-                header.is_authored
-                or known_source
-                or self._preparation.context.source_system.is_default
-            ):
-                raise InvalidRequestError(
-                    "Known source evidence or an existing Mapping requires complete authoring. "
-                    "Report missing transformation evidence instead of skipping the target."
-                )
-            return ()
-        if (
+        readiness = self._preparation.readiness.headers[0]
+        object_actionable = readiness.action in {"author", "extend"}
+        object_document = (
+            candidate.object_mapping.mapping_transformation_document
+            if candidate.object_mapping is not None
+            else None
+        )
+        has_output = object_document is not None or any(
+            item.attribute_mapping_transformation_document is not None
+            for item in candidate.attribute_mappings
+        )
+        if candidate.outcome == "no_applicable_source" and has_output:
+            raise InvalidRequestError("A no-source outcome cannot contain transformations.")
+        if has_output and (
             not self._preparation.context.sources
             and not self._preparation.context.source_system.is_default
         ):
-            raise InvalidRequestError("No source is available; return no_applicable_source.")
-        readiness = self._preparation.readiness.headers[0]
-        object_actionable = readiness.action in {"author", "extend"}
-        if object_actionable != (candidate.object_mapping is not None):
-            raise InvalidRequestError(
-                "Mapping output must include exactly the actionable Object transformation."
-            )
+            raise InvalidRequestError("No eligible source is available for this Mapping output.")
+        if object_document is not None and not object_actionable:
+            raise InvalidRequestError("Mapping output cannot replace preserved Object logic.")
 
         actionable_attribute_ids = {
             item.modeled_attribute_id
@@ -132,44 +70,71 @@ class MappingCandidateReconciler:
         returned_names = {
             item.modeled_attribute_name.casefold() for item in candidate.attribute_mappings
         }
-        if returned_names != set(modeled_attributes):
+        if not returned_names <= set(modeled_attributes):
             raise InvalidRequestError(
-                "Mapping output must cover every actionable modeled Attribute exactly once."
+                "Mapping output can include only selected, unlocked modeled Attributes."
             )
 
         validate_mapping_references(self._preparation, candidate)
 
+        # Omitted selected transformations are cleared on regeneration. A new
+        # pair needs useful output; do not manufacture empty parent/child rows.
         object_records: list[dict[str, object]] = []
-        if candidate.object_mapping is not None:
+        existing_parent = header.mapping_object_id is not None
+        preserved_attributes = any(
+            item.action == "preserve" for item in readiness.attribute_actions
+        )
+        if existing_parent or has_output:
+            current = _current_object_record(self._preparation, header)
+            next_document = (
+                header.transformation_document
+                if not object_actionable
+                or (preserved_attributes and header.transformation_document is not None)
+                else object_document
+            )
             authored = MappingObjectRecord(
                 modeled_entity_type=self._preparation.plan.modeled_entity_type,
                 modeled_entity_schema_name=header.modeled_entity.entity_schema_name,
                 modeled_entity_name=header.modeled_entity.entity_name,
                 source_system_code=self._preparation.context.source_system.system_code,
-                output_template_code=_output_template_code(
-                    self._preparation,
-                    self._preparation.plan.output_template_selections.mapping_object,
+                output_template_code=(
+                    _output_template_code(
+                        self._preparation,
+                        self._preparation.plan.output_template_selections.mapping_object,
+                    )
+                    if object_actionable
+                    else _template_code_by_id(
+                        self._preparation,
+                        header.output_template_id,
+                    )
                 ),
-                object_dependency_order=candidate.object_mapping.object_dependency_order,
-                mapping_transformation_document=cast(
-                    dict[str, object], candidate.object_mapping.mapping_transformation_document
+                object_dependency_order=(
+                    candidate.object_mapping.object_dependency_order
+                    if candidate.object_mapping is not None and object_document is not None
+                    else header.object_dependency_order
                 ),
-                object_mapping_status="active",
+                mapping_transformation_document=cast(dict[str, object] | None, next_document),
+                object_mapping_status="active" if has_output else header.status,
                 object_mapping_is_locked=header.is_locked,
             )
-            current = _current_object_record(self._preparation, header)
-            if authored != current:
+            if authored != current and object_actionable:
                 object_records.append(cast(dict[str, object], authored.model_dump(mode="json")))
 
         existing_by_modeled_id = {
             item.modeled_attribute_id: item for item in header.attribute_mappings
         }
+        returned = {
+            item.modeled_attribute_name.casefold(): item.attribute_mapping_transformation_document
+            for item in candidate.attribute_mappings
+        }
         attribute_records: list[dict[str, object]] = []
-        for item in candidate.attribute_mappings:
-            modeled = modeled_attributes[item.modeled_attribute_name.casefold()]
+        for name, modeled in modeled_attributes.items():
             existing = existing_by_modeled_id.get(modeled.attribute_id)
             if existing is None:
                 raise InvalidRequestError("The modeled Mapping Attribute context is unavailable.")
+            document = returned.get(name)
+            if document is None and existing.mapping_attribute_id is None:
+                continue
             authored = MappingAttributeRecord(
                 modeled_entity_type=self._preparation.plan.modeled_entity_type,
                 modeled_entity_schema_name=header.modeled_entity.entity_schema_name,
@@ -180,10 +145,8 @@ class MappingCandidateReconciler:
                     self._preparation,
                     self._preparation.plan.output_template_selections.mapping_attribute,
                 ),
-                attribute_mapping_transformation_document=cast(
-                    dict[str, object], item.attribute_mapping_transformation_document
-                ),
-                attribute_mapping_status="active",
+                attribute_mapping_transformation_document=cast(dict[str, object] | None, document),
+                attribute_mapping_status="active" if document is not None else existing.status,
                 attribute_mapping_is_locked=existing.is_locked,
             )
             current = _current_attribute_record(self._preparation, header, existing)
@@ -220,7 +183,7 @@ def _current_object_record(
     preparation: MappingPreparation,
     header: ExistingMappingHeader,
 ) -> MappingObjectRecord | None:
-    if not header.is_authored:
+    if header.mapping_object_id is None:
         return None
     return MappingObjectRecord(
         modeled_entity_type=preparation.plan.modeled_entity_type,
@@ -230,7 +193,7 @@ def _current_object_record(
         output_template_code=_template_code_by_id(preparation, header.output_template_id),
         object_dependency_order=header.object_dependency_order,
         mapping_transformation_document=cast(
-            dict[str, object],
+            dict[str, object] | None,
             header.transformation_document,
         ),
         object_mapping_status=header.status,
@@ -243,7 +206,7 @@ def _current_attribute_record(
     header: ExistingMappingHeader,
     existing: ExistingMappingAttribute,
 ) -> MappingAttributeRecord | None:
-    if existing.mapping_attribute_id is None or existing.transformation_document is None:
+    if existing.mapping_attribute_id is None:
         return None
     modeled = next(
         item
@@ -258,7 +221,7 @@ def _current_attribute_record(
         source_system_code=preparation.context.source_system.system_code,
         output_template_code=_template_code_by_id(preparation, existing.output_template_id),
         attribute_mapping_transformation_document=cast(
-            dict[str, object],
+            dict[str, object] | None,
             existing.transformation_document,
         ),
         attribute_mapping_status=existing.status,

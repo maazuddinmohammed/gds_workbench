@@ -277,7 +277,7 @@ def _section_state(
         completed
         and metric.workflow == "mapping"
         and mapping_outcome is not None
-        and mapping_outcome.failed_pair_count
+        and (mapping_outcome.failed_pair_count or mapping_outcome.partial_pair_count)
     ):
         return "results_available"
     if metric.result_count and (

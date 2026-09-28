@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Literal, Self, cast
 
+from gds_etl_workbench.domain.modeling_records import has_mapping_transformation_content
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 type JsonObject = dict[str, JsonValue]
@@ -29,31 +30,33 @@ class MappingTargetSelection(MappingContractModel):
 
 class MappingObjectCandidate(MappingContractModel):
     object_dependency_order: int = Field(ge=0)
-    mapping_transformation_document: JsonObject = Field(min_length=1)
+    mapping_transformation_document: JsonObject | None
 
-    @model_validator(mode="after")
-    def validate_size(self) -> Self:
-        if mapping_json_size(self.mapping_transformation_document) > 524_288:
+    @field_validator("mapping_transformation_document")
+    @classmethod
+    def normalize_blank(cls, value: JsonObject | None) -> JsonObject | None:
+        if mapping_json_size(value) > 524_288:
             raise ValueError("Mapping transformation document exceeds 524,288 bytes")
-        return self
+        return value if has_mapping_transformation_content(value) else None
 
 
 class MappingAttributeCandidate(MappingContractModel):
     modeled_attribute_name: str = Field(min_length=1, max_length=255, pattern=r"\S")
-    attribute_mapping_transformation_document: JsonObject = Field(min_length=1)
+    attribute_mapping_transformation_document: JsonObject | None
 
-    @model_validator(mode="after")
-    def validate_size(self) -> Self:
-        if mapping_json_size(self.attribute_mapping_transformation_document) > 65_536:
+    @field_validator("attribute_mapping_transformation_document")
+    @classmethod
+    def normalize_blank(cls, value: JsonObject | None) -> JsonObject | None:
+        if mapping_json_size(value) > 65_536:
             raise ValueError("Attribute Mapping document exceeds 65,536 bytes")
-        return self
+        return value if has_mapping_transformation_content(value) else None
 
 
 class MappingUnresolvedIssue(MappingContractModel):
     code: Literal[
         "missing_join_evidence", "missing_transformation_rule", "preserved_mapping_conflict"
     ]
-    modeled_attribute_name: str | None = None
+    modeled_attribute_name: str | None = Field(default=None, max_length=255)
 
 
 class CompleteMappingCandidateV1(MappingContractModel):
@@ -61,7 +64,7 @@ class CompleteMappingCandidateV1(MappingContractModel):
 
     schema_version: Literal["1.0"]
     outcome: Literal["mapped", "no_applicable_source"] = "mapped"
-    issues: tuple[MappingUnresolvedIssue, ...] = ()
+    issues: tuple[MappingUnresolvedIssue, ...] = Field(default=(), max_length=200)
     object_mapping: MappingObjectCandidate | None
     attribute_mappings: tuple[MappingAttributeCandidate, ...] = Field(max_length=5_000)
 

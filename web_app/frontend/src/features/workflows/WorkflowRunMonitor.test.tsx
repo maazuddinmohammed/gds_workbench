@@ -19,18 +19,41 @@ describe("Workflow Run monitor", () => {
     const run = partialMappingRun();
     api.readWorkflowRun.mockResolvedValue(run);
     api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
-    const ordinals = [3, 1, 4, 2];
+    const ordinals = [3, 1, 4, 2, 6, 5];
     api.listWorkflowRunEvents.mockResolvedValue({
-      items: ["mapping.pair_completed", "mapping.pair_preserved", "mapping.pair_no_source", "mapping.pair_failed"]
+      items: ["mapping.pair_completed", "mapping.pair_preserved", "mapping.pair_no_source", "mapping.pair_failed", "mapping.pair_partial", "mapping.pair_empty"]
         .map((stage, index) => progressEvent({ stage, sequence: index + 1,
-          current: ordinals[index]!, total: 4, message: `Pair outcome ${index + 1}` })),
-      next_after_sequence: 4,
+          current: ordinals[index]!, total: 6, message: `Pair outcome ${index + 1}` })),
+      next_after_sequence: 6,
     });
     renderMonitor(api, vi.fn(async () => undefined), "mapping");
-    expect(await screen.findByText("Pair outcome 4")).toBeVisible();
+    expect(await screen.findByText("Pair outcome 6")).toBeVisible();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-    expect(screen.getByText("3 of 4")).toBeVisible();
-    expect(screen.getByText("1 of 4")).toBeVisible();
+    expect(screen.getByText("3 of 6")).toBeVisible();
+    expect(screen.getByText("1 of 6")).toBeVisible();
+  });
+
+  it("shows incomplete pairs as partial results and explains blanks before applying", async () => {
+    const api = monitorApi();
+    const run: WorkflowRunDetail = { ...partialMappingRun(),
+      mapping_outcome: { completed_pair_count: 1, preserved_pair_count: 0,
+        no_source_pair_count: 0, failed_pair_count: 0, partial_pair_count: 1, empty_pair_count: 1 },
+      mapping_failures: [] };
+    api.readWorkflowRun.mockResolvedValue(run);
+    api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
+    renderMonitor(api, vi.fn(async () => undefined), "mapping");
+    const outcome = await screen.findByRole("region", { name: "Mapping pair outcomes" });
+    expect(outcome).toHaveTextContent("2 generated · 1 incomplete · 1 without output");
+    expect(outcome).toHaveTextContent("Missing selected transformations will be blank.");
+    expect(screen.getAllByText("Partial results").length).toBeGreaterThan(0);
+    expect(within(outcome).queryByRole("table", { name: "Failed Mapping pairs" })).not.toBeInTheDocument();
+    expect(outcome).not.toHaveTextContent("Failure details are unavailable");
+    expect(outcome).not.toHaveTextContent("Failed pairs remain unchanged");
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Apply successful mappings" }));
+    const confirmation = await screen.findByRole("dialog", { name: "Apply successful mappings?" });
+    expect(confirmation).toHaveTextContent("Missing selected transformations replace previous values with blanks.");
+    expect(confirmation).toHaveTextContent("Locked and unselected mappings remain unchanged.");
+    expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
   });
 
   it.each(["completed", "completed_with_repair"] as const)(

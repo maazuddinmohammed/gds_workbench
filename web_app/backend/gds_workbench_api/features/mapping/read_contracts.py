@@ -149,15 +149,19 @@ class MappingObjectNotFoundError(WorkbenchError):
         )
 
 
-class MappingAttributeSummary(ContractModel):
-    mapping_attribute_id: int = Field(gt=0)
+class _MappingAttributeIdentity(ContractModel):
     workflow_run_id: int | None = Field(default=None, gt=0)
     mapping_object_id: int = Field(gt=0)
     target: ModeledAttributeReference
     source_system: SourceSystemReference
-    status: MappingStatus
     is_locked: bool
-    updated_at: datetime
+
+
+class MappingAttributeSummary(_MappingAttributeIdentity):
+    # An active modeled Attribute remains visible before a Mapping is authored.
+    mapping_attribute_id: int | None = Field(gt=0)
+    status: MappingStatus | None
+    updated_at: datetime | None
 
 
 class MappingAttributePage(ContractModel):
@@ -174,7 +178,10 @@ class ParentObjectMappingReference(ContractModel):
     is_locked: bool
 
 
-class MappingAttributeDetail(MappingAttributeSummary):
+class MappingAttributeDetail(_MappingAttributeIdentity):
+    mapping_attribute_id: int = Field(gt=0)
+    status: MappingStatus
+    updated_at: datetime
     parent_object_mapping: ParentObjectMappingReference
     mapping_document: JsonObject | None = None
     output_template: OutputTemplateProvenance | None = None

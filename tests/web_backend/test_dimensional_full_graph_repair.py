@@ -227,9 +227,7 @@ async def test_local_status_passes_but_complete_graph_rejects_active_children(
 
 
 @pytest.mark.asyncio
-async def test_historize_is_valid_before_policy_but_breaks_retained_mapping_coverage() -> (
-    None
-):
+async def test_historize_projection_preserves_valid_partial_mapping_coverage() -> None:
     bundle, candidate = _bundle(mapped=True)
     candidate["attributes"][2]["dimensional_attribute_change_behavior"] = "historize"
     validator = _candidate_validator(bundle)
@@ -249,9 +247,7 @@ async def test_historize_is_valid_before_policy_but_breaks_retained_mapping_cove
         staged_documents={item.dataset: item.records for item in projected},
         physical_scope=bundle.physical_scope,
     )
-    assert checked.issues and all(
-        item.code == "active_dependency_invalid" for item in checked.issues
-    )
+    assert checked.valid
     added = {
         record["dimensional_attribute_name"]
         for item in projected
@@ -259,12 +255,19 @@ async def test_historize_is_valid_before_policy_but_breaks_retained_mapping_cove
         for record in item.records
     }
     assert {"Effective From", "Effective To", "Is Current"} <= added
+    mapped = {
+        attribute.modeled_attribute_name
+        for attribute in bundle.snapshot.mapping.attributes
+        if attribute.modeled_entity_type == "dimensional_entity"
+    }
+    assert {"Effective From", "Effective To", "Is Current"}.isdisjoint(mapped)
+    assert not any(item.dataset.startswith("mapping_") for item in projected)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 @pytest.mark.parametrize(
-    "fault", ["inactive_parent", "mapped_historize", "projected_name_overflow"]
+    "fault", ["inactive_parent", "mapped_inactive_attribute", "projected_name_overflow"]
 )
 @pytest.mark.parametrize("outcome", ["repair", "exhaust", "later_malformed"])
 async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
@@ -272,7 +275,7 @@ async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
     fault: str,
     outcome: str,
 ) -> None:
-    bundle, valid = _bundle(mapped=fault == "mapped_historize")
+    bundle, valid = _bundle(mapped=fault == "mapped_inactive_attribute")
     assert bundle.snapshot is not None and bundle.physical_scope is not None
     context = bundle.context.model_copy(
         update={
@@ -304,14 +307,31 @@ async def test_dimensional_projection_and_graph_failures_enter_bounded_repair(
     if fault == "inactive_parent":
         invalid["entities"][0]["dimensional_entity_status"] = "inactive"
         expected_code = "active_dependency_invalid"
-    elif fault == "mapped_historize":
-        invalid["attributes"][2]["dimensional_attribute_change_behavior"] = "historize"
+    elif fault == "mapped_inactive_attribute":
+        invalid["attributes"][2]["dimensional_attribute_status"] = "inactive"
+        for source in invalid["attributes"][2]["sources"]:
+            source["status"] = "inactive"
         expected_code = "active_dependency_invalid"
         assert {item.dataset for item in context.read_only_dependencies} == {
-
             "mapping_object",
             "mapping_attribute",
         }
+        # Partial coverage is valid, but an active retained Mapping still cannot
+        # reference an inactive modeled Attribute. This is a full-graph constraint.
+        assert bundle.snapshot is not None and bundle.physical_scope is not None
+        projected = _project_dimensional_changes(
+            validator=_candidate_validator(bundle), candidate=cast(JsonValue, invalid),
+            context=bundle,
+        )
+        checked = validate_future_graph(
+            snapshot=bundle.snapshot,
+            staged_documents={item.dataset: item.records for item in projected},
+            physical_scope=bundle.physical_scope,
+        )
+        assert checked.issues and all(
+            item.code == expected_code and item.dataset == "mapping_attribute"
+            for item in checked.issues
+        )
     else:
         invalid["entities"][0]["dimensional_entity_name"] = "D" * 253
         for attribute in invalid["attributes"]:

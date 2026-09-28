@@ -136,6 +136,19 @@ MAPPING_OBJECTS_SQL: LiteralString = (
     + _OBJECT_BASE_SQL
     + """
  WHERE target_model.tenant_id = %s AND target_model.model_id = %s AND target_model.is_active
+   AND (mapping.mapping_transformation_document IS NOT NULL OR EXISTS (
+       SELECT 1 FROM workflow.mapping_attribute AS mapped_attribute
+       JOIN workflow.modeled_attribute AS modeled_attribute
+         ON modeled_attribute.model_id = mapping.model_id
+        AND modeled_attribute.modeled_entity_type = mapping.modeled_entity_type
+        AND modeled_attribute.modeled_entity_id = entity.modeled_entity_id
+        AND modeled_attribute.modeled_attribute_id = coalesce(
+            mapped_attribute.logical_attribute_id, mapped_attribute.dimensional_attribute_id)
+        AND modeled_attribute.status = 'active'
+       WHERE mapped_attribute.mapping_object_id = mapping.mapping_object_id
+         AND mapped_attribute.attribute_mapping_status = 'active'
+         AND mapped_attribute.attribute_mapping_transformation_document IS NOT NULL
+   ))
    AND (%s::VARCHAR IS NULL OR entity.modeled_entity_type = %s)
    AND (%s::BIGINT IS NULL OR source_system.system_id = %s)
    AND (%s::VARCHAR IS NULL OR lower(btrim(source_system.system_code)) = %s)
@@ -180,14 +193,14 @@ SELECT attribute_mapping.mapping_attribute_id, attribute_mapping.workflow_run_id
  jsonb_build_object('system_id', source_system.system_id, 'system_code',
      source_system.system_code, 'system_name', source_system.system_name) AS source_system,
  attribute_mapping.attribute_mapping_status AS status,
-     attribute_mapping.attribute_mapping_is_locked AS is_locked,
+     coalesce(attribute_mapping.attribute_mapping_is_locked,
+         attribute.is_locked OR entity.is_locked OR object_mapping.object_mapping_is_locked)
+         AS is_locked,
  attribute_mapping.updated_time AS updated_at
 """
 
 _ATTRIBUTE_BASE_SQL = """
-  FROM workflow.mapping_attribute AS attribute_mapping
-  JOIN workflow.mapping_object AS object_mapping ON object_mapping.mapping_object_id =
-      attribute_mapping.mapping_object_id
+  FROM workflow.mapping_object AS object_mapping
   JOIN model.model AS target_model ON target_model.model_id = object_mapping.model_id
   JOIN workflow.modeled_entity AS entity ON entity.model_id = object_mapping.model_id
    AND entity.modeled_entity_type = object_mapping.modeled_entity_type
@@ -196,6 +209,8 @@ _ATTRIBUTE_BASE_SQL = """
   JOIN workflow.modeled_attribute AS attribute ON attribute.model_id = entity.model_id
    AND attribute.modeled_entity_type = entity.modeled_entity_type
    AND attribute.modeled_entity_id = entity.modeled_entity_id
+  LEFT JOIN workflow.mapping_attribute AS attribute_mapping ON
+      attribute_mapping.mapping_object_id = object_mapping.mapping_object_id
    AND attribute.modeled_attribute_id = coalesce(attribute_mapping.logical_attribute_id,
        attribute_mapping.dimensional_attribute_id)
   JOIN core.system AS source_system ON source_system.system_id = object_mapping.source_system_id
@@ -206,15 +221,17 @@ MAPPING_ATTRIBUTES_SQL: LiteralString = (
     + _ATTRIBUTE_BASE_SQL
     + """
  WHERE target_model.tenant_id = %s AND target_model.model_id = %s AND target_model.is_active
+   AND (attribute.status = 'active' OR attribute_mapping.mapping_attribute_id IS NOT NULL)
    AND (%s::VARCHAR IS NULL OR entity.modeled_entity_type = %s)
    AND (%s::BIGINT IS NULL OR source_system.system_id = %s)
    AND (%s::VARCHAR IS NULL OR lower(btrim(source_system.system_code)) = %s)
 
  AND (%s::VARCHAR IS NULL OR attribute_mapping.attribute_mapping_status = %s)
- AND (%s::BOOLEAN IS NULL OR attribute_mapping.attribute_mapping_is_locked = %s)
+ AND (%s::BOOLEAN IS NULL OR coalesce(attribute_mapping.attribute_mapping_is_locked,
+     attribute.is_locked OR entity.is_locked OR object_mapping.object_mapping_is_locked) = %s)
  AND (%s::BIGINT IS NULL OR object_mapping.mapping_object_id = %s)
  ORDER BY object_mapping.object_dependency_order, attribute.ordinal_position,
-     attribute_mapping.mapping_attribute_id
+     object_mapping.mapping_object_id, attribute.modeled_attribute_id
  LIMIT %s OFFSET %s
 """
 )

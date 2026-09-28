@@ -82,6 +82,20 @@ def normalize_model_key_value[T](value: T) -> T:
     return value
 
 
+def has_mapping_transformation_content(value: object) -> bool:
+    """Recognize content without treating false/zero custom rules as blanks."""
+    if isinstance(value, dict):
+        return any(
+            has_mapping_transformation_content(item)
+            for item in cast(dict[str, object], value).values()
+        )
+    if isinstance(value, list):
+        return any(has_mapping_transformation_content(item) for item in cast(list[object], value))
+    if isinstance(value, str):
+        return bool(value.strip())
+    return value is not None
+
+
 class ModelingRecord(BaseModel):
     """Exact ID-free modeling record; database and audit IDs are never fields."""
 
@@ -697,8 +711,7 @@ class LogicalAttributeRecord(ModelingRecord):
         if self.logical_attribute_is_natural_key and self.logical_attribute_is_surrogate_key:
             raise ValueError("A Logical Attribute cannot be both natural and surrogate key.")
         if (
-            self.logical_attribute_is_natural_key
-            or self.logical_attribute_is_surrogate_key
+            self.logical_attribute_is_natural_key or self.logical_attribute_is_surrogate_key
         ) and self.logical_attribute_is_nullable:
             raise ValueError("A Logical key Attribute cannot be nullable.")
         _require_unique_sources(self.sources, "Logical Attribute sources")

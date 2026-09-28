@@ -40,18 +40,18 @@ def test_parent_lock_preserves_children_even_when_their_own_locks_are_open() -> 
 
 
 @pytest.mark.parametrize("existing", [True, False])
-def test_unselected_attributes_are_preserved_only_when_already_authored(
+def test_unselected_attributes_are_preserved_even_when_blank(
     existing: bool,
 ) -> None:
     preparation = mapping_preparation(existing=existing, attribute_count=2)
     plan = preparation.plan.model_copy(
-        update={"operation": "generate", "selected_attribute_ids": (701,)}
+        update={"selected_attribute_ids": (701,)}
     )
     readiness = assess_mapping_readiness(plan=plan, context=preparation.context)
-    assert readiness.ready == existing
+    assert readiness.ready
     assert [row.action for row in readiness.headers[0].attribute_actions] == [
         "extend" if existing else "author",
-        "preserve" if existing else "blocked",
+        "preserve",
     ]
 
 
@@ -101,7 +101,9 @@ async def test_declared_physical_references_are_checked_against_frozen_sources(
         "schema_version": "1.0",
         "object_mapping": {
             "object_dependency_order": 0,
-            "mapping_transformation_document": {"source_objects": sources},
+            "mapping_transformation_document": {
+                "source_objects": sources, "steps": ["Read inputs."]
+            },
         },
         "attribute_mappings": [
             {
@@ -127,7 +129,7 @@ async def test_declared_physical_references_are_checked_against_frozen_sources(
 
 async def test_missing_evidence_returns_a_fixed_actionable_diagnostic() -> None:
     validator = CompleteMappingCandidateValidator(preparation=mapping_preparation())
-    value = await validator.validate(
+    value = validator.parse_validated(
         {
             "schema_version": "1.0",
             "object_mapping": None,
@@ -137,8 +139,8 @@ async def test_missing_evidence_returns_a_fixed_actionable_diagnostic() -> None:
             ],
         }
     )
-    assert value.issues[0].code == "mapping.missing_join_evidence"
-    assert "Add or correct source relationships" in value.issues[0].message
+    assert value.warnings[0].code == "mapping.missing_join_evidence"
+    assert "Add or correct source relationships" in value.warnings[0].message
 
 
 @pytest.mark.parametrize(
@@ -170,7 +172,7 @@ async def test_missing_evidence_only_identifies_a_printable_frozen_attribute(
                 "context": preparation.context.model_copy(update={"target": target}),
             }
         )
-    value = await CompleteMappingCandidateValidator(preparation=preparation).validate(
+    value = CompleteMappingCandidateValidator(preparation=preparation).parse_validated(
         {
             "schema_version": "1.0",
             "object_mapping": None,
@@ -180,12 +182,12 @@ async def test_missing_evidence_only_identifies_a_printable_frozen_attribute(
             ],
         }
     )
-    assert value.issues[0].code == "mapping.missing_transformation_rule"
+    assert value.warnings[0].code == "mapping.missing_transformation_rule"
     fixed = (
         "A required transformation rule is missing. "
         "Add the relevant attribute lineage or business assertion."
     )
-    assert value.issues[0].message == (
+    assert value.warnings[0].message == (
         f"Attribute {attribute_name}: {fixed}" if prefixed else fixed
     )
 

@@ -184,6 +184,8 @@ class MappingWorkflow:
             first_rejected_issues: tuple[ModelValidationIssue, ...] = ()
             completed = 0
             unmatched = 0
+            partial = 0
+            empty = 0
             for index, preparation in enumerate(preparations):
                 plan = preparation.plan.agent_plan
                 _validate_plan(
@@ -193,8 +195,7 @@ class MappingWorkflow:
                     expected_model_revision=expected_model_revision,
                 )
                 if any(
-                    issue.code == "context.identity_drift"
-                    for issue in preparation.readiness.issues
+                    issue.code == "context.identity_drift" for issue in preparation.readiness.issues
                 ):
                     raise MappingRunContextUnavailableError()
                 await self._lifecycle.append_event(
@@ -218,6 +219,7 @@ class MappingWorkflow:
                 pair_message = "Existing Mapping preserved; no authoring was needed."
                 pair_attempt = 1
                 pair_failed = False
+                pair_warning = False
                 rejected_changes, rejected_issues = (), ()
                 try:
                     if not preparation.readiness.ready:
@@ -287,18 +289,50 @@ class MappingWorkflow:
                         )
                         result = validator.parse_validated(outcome.candidate)
                         changes += result.changes
-                        no_source = result.normalized.outcome == "no_applicable_source"
+                        no_source = (
+                            result.normalized.outcome == "no_applicable_source"
+                            and not result.has_transformations
+                        )
                         unmatched += int(no_source)
-                        pair_stage = (
-                            "mapping.pair_no_source" if no_source else "mapping.pair_completed"
-                        )
-                        pair_message = (
-                            "No applicable source found; no Mapping created."
-                            if no_source
-                            else "Complete Object and Attribute Mapping validated."
-                        )
+                        partial += int(result.is_partial)
+                        empty += int(not result.has_transformations and not no_source)
+                        if not result.has_transformations:
+                            pair_stage = (
+                                "mapping.pair_no_source" if no_source else "mapping.pair_empty"
+                            )
+                            pair_message = (
+                                "No transformations available. Selected transformations are blank; "
+                                "no new Mapping pair was created."
+                            )
+                        else:
+                            pair_stage = (
+                                "mapping.pair_partial"
+                                if result.is_partial
+                                else "mapping.pair_completed"
+                            )
+                            pair_message = (
+                                f"{result.mapped_attribute_count} of {result.attribute_count} "
+                                "Attributes have transformations. "
+                                + (
+                                    "Object transformation available. "
+                                    if result.has_object_transformation
+                                    else "Object transformation is blank. "
+                                )
+                                + "Missing selected transformations are blank."
+                            )
+                        if result.warnings:
+                            pair_message = (
+                                pair_message
+                                + " "
+                                + " ".join(
+                                    dict.fromkeys(issue.message for issue in result.warnings)
+                                )
+                            )[:2000]
+                        pair_warning = result.is_partial or bool(result.warnings)
                         pair_attempt = outcome.attempt_count
-                        warning |= outcome.was_repaired or bool(outcome.warning_codes)
+                        warning |= (
+                            outcome.was_repaired or bool(outcome.warning_codes) or pair_warning
+                        )
                         final_attempt = max(final_attempt, outcome.attempt_count)
                         completed += 1
                 except (
@@ -335,7 +369,7 @@ class MappingWorkflow:
                         sequence=sequence,
                         attempt=pair_attempt,
                         stage=pair_stage,
-                        status="warning" if pair_failed else "running",
+                        status="warning" if pair_failed or pair_warning else "running",
                         message=pair_message,
                         current=preparation.plan.selection_ordinal,
                         total=len(preparations),
@@ -343,7 +377,8 @@ class MappingWorkflow:
                     ),
                 )
                 sequence += 1
-            # A partial draft contains only complete, validated pairs. A failure
+            # A partial draft contains validated transformations, including explicit
+            # blanks for omitted selected output. A failure
             # with no successful changes must not be reported as a successful no-op.
             if failures and not changes:
                 rejected_changes, rejected_issues = first_rejected_changes, first_rejected_issues
@@ -372,7 +407,8 @@ class MappingWorkflow:
                     warning=warning,
                     message=(
                         f"Mapping completed with no effective change; {unmatched} pairs "
-                        f"had no applicable source, {len(failures)} failed."
+                        f"had no applicable source, {empty} returned no output, "
+                        f"{partial} have partial mappings, {len(failures)} failed."
                     ),
                 )
 
@@ -393,7 +429,8 @@ class MappingWorkflow:
                     stage="mapping.backend_validation",
                     status="warning" if warning else "running",
                     message=(
-                        f"{completed} of {len(preparations)} Mapping targets completed; "
+                        f"{completed} of {len(preparations)} Mapping targets assessed; "
+                        f"{partial} have partial mappings; {empty} returned no output; "
                         f"{unmatched} had no applicable source; {len(failures)} failed. "
                         "Review the draft and run events."
                     ),

@@ -91,7 +91,7 @@ function MappingObjectDetailView({
       />
       <section className="mapping-transformation-panel" aria-label="Entity transformation">
         <header><h2>Entity transformation</h2></header>
-        {detail.mapping_document === null ? <p className="detail-empty">Entity transformation is not authored.</p>
+        {detail.mapping_document === null ? null
           : <MappingLogicDocument document={detail.mapping_document} path="Entity transformation" />}
       </section>
       {children}

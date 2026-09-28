@@ -437,6 +437,9 @@ export function WorkflowRunMonitor({
           draftRevision={validatedDraft.draft_revision}
           failedMappingPairs={isPartialMappingRun(validatedDraft)
             ? validatedDraft.mapping_outcome?.failed_pair_count ?? 0 : 0}
+          missingMappingPairs={validatedDraft.model_workflow === "mapping"
+            ? (validatedDraft.mapping_outcome?.partial_pair_count ?? 0)
+              + (validatedDraft.mapping_outcome?.empty_pair_count ?? 0) : 0}
           isPending={applyMutation.isPending}
           error={applyMutation.error}
           returnFocusRef={applyTrigger}
@@ -493,6 +496,8 @@ function WorkflowRunDetailView({
 }) {
   const partialMapping = isPartialMappingRun(run);
   const mappingOutcome = run.model_workflow === "mapping" ? run.mapping_outcome : null;
+  const incompletePairs = mappingOutcome?.partial_pair_count ?? 0;
+  const emptyPairs = mappingOutcome?.empty_pair_count ?? 0;
   const mappingFailures = run.mapping_failures ?? [];
   const failureEvent = [...events]
     .reverse()
@@ -546,16 +551,28 @@ function WorkflowRunDetailView({
       ) : null}
 
       {!physicalMetadata ? <>
-      {mappingOutcome && mappingOutcome.failed_pair_count > 0 ? (
+      {mappingOutcome && (mappingOutcome.failed_pair_count > 0 || incompletePairs > 0 || emptyPairs > 0) ? (
         <section className="workflow-draft-review workflow-mapping-outcome" aria-label="Mapping pair outcomes">
           <header><strong>{isActiveRun(run) ? "Mapping generation is underway"
             : partialMapping ? "Successful mappings are available" : "Mappings need attention"}</strong></header>
           <p>
-            {mappingOutcome.completed_pair_count} generated · {mappingOutcome.failed_pair_count} failed
+            {mappingOutcome.completed_pair_count + incompletePairs} generated
+            {incompletePairs > 0 ? ` · ${incompletePairs} incomplete` : ""}
+            {mappingOutcome.failed_pair_count > 0 ? ` · ${mappingOutcome.failed_pair_count} failed` : ""}
+            {emptyPairs > 0 ? ` · ${emptyPairs} without output` : ""}
             {mappingOutcome.preserved_pair_count > 0 ? ` · ${mappingOutcome.preserved_pair_count} preserved` : ""}
             {mappingOutcome.no_source_pair_count > 0 ? ` · ${mappingOutcome.no_source_pair_count} without an applicable source` : ""}
           </p>
-          <p>{isActiveRun(run)
+          {incompletePairs > 0 || emptyPairs > 0 ? <p>{isActiveRun(run)
+            ? "Generation continues for the remaining pairs. Review the results when the run finishes."
+            : run.model_change_set_status === "applied" || appliedRunId === run.workflow_run_id
+              ? "Available mappings applied. Missing selected transformations remain blank."
+              : run.model_change_set_status === "validated"
+                ? "Apply the available mappings. Missing selected transformations will be blank."
+                : incompletePairs > 0 ? "Incomplete pairs have missing transformations. Review this run before generating again."
+                  : "No mapping output was generated for the empty pairs."}
+            {mappingOutcome.failed_pair_count > 0 ? " Failed pairs remain unchanged." : ""}
+          </p> : <p>{isActiveRun(run)
             ? "Generation continues for the remaining pairs. Review the results when the run finishes."
             : partialMapping
             ? run.model_change_set_status === "applied" || appliedRunId === run.workflow_run_id
@@ -563,7 +580,7 @@ function WorkflowRunDetailView({
               : run.model_change_set_status === "validated"
                 ? "Apply the successful mappings. Failed pairs remain unchanged; resolve their issues before running them again."
                 : "Failed pairs remain unchanged. Resolve their issues before running them again."
-            : "No successful draft is available. Resolve the issues below before running again."}</p>
+            : "No successful draft is available. Resolve the issues below before running again."}</p>}
           {mappingFailures.length > 0 ? (
             <div className="workflow-draft-review-scroll" role="region" aria-label="Failed Mapping pairs" tabIndex={0}>
               <table aria-label="Failed Mapping pairs">
@@ -576,7 +593,7 @@ function WorkflowRunDetailView({
                 ))}</tbody>
               </table>
             </div>
-          ) : <p>Failure details are unavailable. Refresh runs to reload them.</p>}
+          ) : mappingOutcome.failed_pair_count > 0 ? <p>Failure details are unavailable. Refresh runs to reload them.</p> : null}
           {run.mapping_failures_truncated ? <small>
             Showing {mappingFailures.length} of {mappingOutcome.failed_pair_count} failed pairs. The summary includes all failures.
           </small> : null}
@@ -777,6 +794,7 @@ function ApplyDraftConfirmation({
   runId,
   draftRevision,
   failedMappingPairs,
+  missingMappingPairs,
   isPending,
   error,
   returnFocusRef,
@@ -787,6 +805,7 @@ function ApplyDraftConfirmation({
   runId: number;
   draftRevision: number;
   failedMappingPairs: number;
+  missingMappingPairs: number;
   isPending: boolean;
   error: Error | null;
   returnFocusRef: RefObject<HTMLButtonElement | null>;
@@ -858,7 +877,7 @@ function ApplyDraftConfirmation({
         <header>
           <div>
             <small>Governed transition</small>
-            <h2 id="workflow-draft-confirmation-title">{failedMappingPairs > 0
+            <h2 id="workflow-draft-confirmation-title">{failedMappingPairs > 0 || missingMappingPairs > 0
               ? "Apply successful mappings?" : `Apply validated ${label} draft?`}</h2>
           </div>
           <button
@@ -878,6 +897,9 @@ function ApplyDraftConfirmation({
         </p>
         {failedMappingPairs > 0 ? <p>
           Only successful mappings in this draft will be applied. {failedMappingPairs} failed {failedMappingPairs === 1 ? "pair remains" : "pairs remain"} unchanged.
+        </p> : null}
+        {missingMappingPairs > 0 ? <p>
+          Missing selected transformations replace previous values with blanks. Locked and unselected mappings remain unchanged.
         </p> : null}
         {error ? <p className="inline-error" role="alert">{safeApplyFailure(error)}</p> : null}
         <footer>

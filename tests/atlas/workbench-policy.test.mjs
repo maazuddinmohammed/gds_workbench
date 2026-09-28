@@ -57,6 +57,20 @@ test('default Mapping documents require real inputs, aliases, steps and field ru
  const result=codes(validate(value));assert.ok(result.includes('mapping.object-steps'));assert.ok(result.includes('mapping.attribute-rule'));
  object.mapping_transformation_document.steps=['Read c and preserve one row per customer.'];assert.ok(codes(validate(value)).includes('mapping.source-alias'));
 });
+test('partial Mapping policy accepts explicit blanks and validates returned Attribute evidence', () => {
+  const branch={modeled_entity_type:'logical_entity',modeled_entity_schema_name:'silver',modeled_entity_name:'Customer',source_system_code:'CRM'};
+  const object={...branch,object_mapping_status:'active',mapping_transformation_document:null};
+  const attribute={...branch,modeled_attribute_name:'ID',attribute_mapping_status:'active',attribute_mapping_transformation_document:{source_attributes:[{...phys,attribute_name:'CustomerID'}],transformation:'Use source CustomerID.'}};
+  const value=new Map([loaded('mapping_object',Object.keys(branch),[object]),loaded('mapping_attribute',[...Object.keys(branch),'modeled_attribute_name'],[attribute])]);
+  const metadata=new Map([loaded('source_attribute',[],[],[{...phys,attribute_name:'CustomerID'}])]);
+  assert.deepEqual(codes(validate(value,metadata)),[]);
+  attribute.attribute_mapping_transformation_document.source_attributes[0].attribute_name='Missing';
+  assert.ok(codes(validate(value,metadata)).includes('mapping.attribute-exists'));
+  attribute.attribute_mapping_transformation_document=null;
+  assert.deepEqual(codes(validate(value,metadata)),[]);
+  object.mapping_transformation_document={steps:['Read customer rows.'],source_objects:[]};
+  assert.deepEqual(codes(validate(value,metadata)),[]);
+});
 test('shared run reports skipped evidence and server-only checks without claiming business proof',()=>{
  const result=run('model',new Map(),null,{includeQuality:false});assert.equal(result.valid,true);
  assert.ok(result.checks.some(check=>check.id==='local.evidence'&&check.status==='not_run'));

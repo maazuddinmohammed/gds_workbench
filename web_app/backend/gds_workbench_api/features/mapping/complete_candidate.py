@@ -25,6 +25,12 @@ from .reconciliation import MappingCandidateReconciler
 class CompleteMappingCandidateResult:
     normalized: CompleteMappingCandidateV1
     changes: tuple[StageModelChange, ...]
+    warnings: tuple[AgentValidationIssue, ...]
+    has_transformations: bool
+    has_object_transformation: bool
+    is_partial: bool
+    mapped_attribute_count: int
+    attribute_count: int
 
 
 class CompleteMappingCandidateValidator:
@@ -37,42 +43,6 @@ class CompleteMappingCandidateValidator:
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
         try:
             parsed = CompleteMappingCandidateV1.model_validate(candidate, strict=True)
-            if parsed.issues:
-                # Echo only an Attribute name present in the frozen target, never
-                # arbitrary provider text, prompts or source values.
-                attribute_names = {
-                    attribute.attribute_name
-                    for attribute in self._preparation.context.target.attributes
-                }
-                return AgentCandidateValidation(
-                    issues=tuple(
-                        AgentValidationIssue(
-                            code=f"mapping.{issue.code}",
-                            path=("issues", index),
-                            message=(
-                                f"Attribute {issue.modeled_attribute_name}: "
-                                if issue.modeled_attribute_name in attribute_names
-                                and issue.modeled_attribute_name.isprintable()
-                                else ""
-                            ) + {
-                                "missing_join_evidence": (
-                                    "Required join evidence is missing. "
-                                    "Add or correct source relationships or business assertions."
-                                ),
-                                "missing_transformation_rule": (
-                                    "A required transformation rule is missing. "
-                                    "Add the relevant attribute lineage or business assertion."
-                                ),
-                                "preserved_mapping_conflict": (
-                                    "The requested mapping conflicts with preserved "
-                                    "Object or Attribute logic. "
-                                    "Review selection and locks."
-                                ),
-                            }[issue.code],
-                        )
-                        for index, issue in enumerate(parsed.issues)
-                    )
-                )
             MappingCandidateReconciler(preparation=self._preparation).reconcile(candidate=parsed)
         except ValidationError as error:
             return AgentCandidateValidation(issues=pydantic_validation_issues(error))
@@ -93,9 +63,69 @@ class CompleteMappingCandidateValidator:
             parsed = CompleteMappingCandidateV1.model_validate(candidate, strict=True)
         except ValidationError:
             raise InvalidRequestError("The Mapping candidate is invalid.") from None
-        if parsed.issues:
-            raise InvalidRequestError("Resolve Mapping evidence issues before staging a draft.")
         changes = MappingCandidateReconciler(preparation=self._preparation).reconcile(
             candidate=parsed
         )
-        return CompleteMappingCandidateResult(normalized=parsed, changes=changes)
+        header = self._preparation.context.headers[0]
+        object_document = header.transformation_document
+        attributes: dict[int, object] = {
+            item.modeled_attribute_id: item.transformation_document
+            if item.status == "active"
+            else None
+            for item in header.attribute_mappings
+        }
+        names = {
+            item.attribute_name.casefold(): item.attribute_id
+            for item in header.modeled_entity.attributes
+            if item.status == "active"
+        }
+        for change in changes:
+            for record in change.records:
+                if change.dataset == "mapping_object":
+                    object_document = record["mapping_transformation_document"]
+                else:
+                    name = str(record["modeled_attribute_name"]).casefold()
+                    attributes[names[name]] = record["attribute_mapping_transformation_document"]
+        mapped_count = sum(
+            attributes.get(attribute_id) is not None for attribute_id in names.values()
+        )
+        has_transformations = object_document is not None or mapped_count > 0
+        known_names = {item.attribute_name for item in self._preparation.context.target.attributes}
+        warnings = tuple(
+            AgentValidationIssue(
+                code=f"mapping.{issue.code}",
+                path=("issues", index),
+                message=(
+                    f"Attribute {issue.modeled_attribute_name}: "
+                    if issue.modeled_attribute_name in known_names
+                    and issue.modeled_attribute_name.isprintable()
+                    else ""
+                )
+                + {
+                    "missing_join_evidence": (
+                        "Required join evidence is missing. "
+                        "Add or correct source relationships or business assertions."
+                    ),
+                    "missing_transformation_rule": (
+                        "A required transformation rule is missing. "
+                        "Add the relevant attribute lineage or business assertion."
+                    ),
+                    "preserved_mapping_conflict": (
+                        "The requested mapping conflicts with preserved Object or Attribute logic. "
+                        "Review selection and locks."
+                    ),
+                }[issue.code],
+            )
+            for index, issue in enumerate(parsed.issues)
+        )
+        return CompleteMappingCandidateResult(
+            normalized=parsed,
+            changes=changes,
+            warnings=warnings,
+            has_transformations=has_transformations,
+            has_object_transformation=object_document is not None,
+            is_partial=has_transformations
+            and (object_document is None or mapped_count < len(names)),
+            mapped_attribute_count=mapped_count,
+            attribute_count=len(names),
+        )

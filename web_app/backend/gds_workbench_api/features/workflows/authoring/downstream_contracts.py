@@ -14,10 +14,10 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "example": "logical_to_silver",
         },
         "operation": {
-            "description": "build authors missing transformations; extend "
-            "preserves existing authored content while adding "
-            "actionable coverage. Read readiness for the exact "
-            "per-record action.",
+            "description": "build authors a new pair; extend regenerates selected, unlocked "
+            "transformations in an existing pair. Omitted or null selected output clears "
+            "saved documents; locked and unselected content is preserved. generate selects "
+            "the effective operation per pair. Read readiness for the exact per-record action.",
             "value_schema": mapping_input_schemas()["operation"],
             "example": "build",
         },

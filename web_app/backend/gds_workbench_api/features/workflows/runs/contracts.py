@@ -55,6 +55,8 @@ class MappingRunOutcome(BaseModel):
     preserved_pair_count: int = Field(ge=0)
     no_source_pair_count: int = Field(ge=0)
     failed_pair_count: int = Field(ge=0)
+    partial_pair_count: int = Field(default=0, ge=0)
+    empty_pair_count: int = Field(default=0, ge=0)
 
 
 class MappingPairFailure(BaseModel):

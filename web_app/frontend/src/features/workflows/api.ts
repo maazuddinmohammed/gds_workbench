@@ -100,6 +100,8 @@ export interface CreateWorkflowRunCommand {
 export type WorkflowRunFilterState = WorkflowRunState | "";
 
 export interface MappingRunOutcome {
+  partial_pair_count?: number;
+  empty_pair_count?: number;
   completed_pair_count: number;
   preserved_pair_count: number;
   no_source_pair_count: number;

@@ -446,8 +446,21 @@ def _mapped_context_bundle(mode: str) -> AgentContextBundle:
         "logical_submodel": candidate["submodels"],
         "logical_entity": candidate["entities"],
         "logical_attribute": candidate["attributes"],
-        "mapping_object": [{"modeled_entity_type": "logical_entity", "modeled_entity_schema_name": "silver", "modeled_entity_name": "Customer", "source_system_code": "CRM", "output_template_code": None, "object_dependency_order": 0, "mapping_transformation_document": {"kind":"select"}, "object_mapping_status": "active", "object_mapping_is_locked": False}],
-        "mapping_attribute": [{"modeled_entity_type": "logical_entity", "modeled_entity_schema_name": "silver", "modeled_entity_name": "Customer", "modeled_attribute_name": "Customer Id", "source_system_code": "CRM", "output_template_code": None, "attribute_mapping_transformation_document": {"kind":"direct"}, "attribute_mapping_status": "active", "attribute_mapping_is_locked": False}],
+        "mapping_object": [{
+            "modeled_entity_type": "logical_entity",
+            "modeled_entity_schema_name": "silver", "modeled_entity_name": "Customer",
+            "source_system_code": "CRM", "output_template_code": None,
+            "object_dependency_order": 0, "mapping_transformation_document": {"kind": "select"},
+            "object_mapping_status": "active", "object_mapping_is_locked": False,
+        }],
+        "mapping_attribute": [{
+            "modeled_entity_type": "logical_entity",
+            "modeled_entity_schema_name": "silver", "modeled_entity_name": "Customer",
+            "modeled_attribute_name": "Customer Id", "source_system_code": "CRM",
+            "output_template_code": None,
+            "attribute_mapping_transformation_document": {"kind": "direct"},
+            "attribute_mapping_status": "active", "attribute_mapping_is_locked": False,
+        }],
     }
 
     bundle = _validation_context(bundle, graph=graph)
@@ -1051,8 +1064,8 @@ async def test_full_graph_mapping_failure_is_repaired_before_handoff(mode: str) 
         },
         {
             "code": "candidate.active_dependency_invalid",
-            "path": ["mapping_object", "mapping_transformation_document"],
-            "message": "Active Mapping Object requires active Entity and transformation.",
+            "path": ["mapping_object", "modeled_entity_name"],
+            "message": "Active Mapping Object requires an active Entity.",
         },
         {
             "code": "candidate.active_dependency_invalid",
@@ -1076,7 +1089,11 @@ async def test_full_graph_mapping_failure_is_repaired_before_handoff(mode: str) 
         assert page["items"][0]["modeled_entity_name"] == "Customer"
     else:
         dependencies = repaired["original_context"]["read_only_dependencies"]
-        assert any(item["dataset"] == "mapping_object" and item["record"]["modeled_entity_name"] == "Customer" for item in dependencies)
+        assert any(
+            item["dataset"] == "mapping_object"
+            and item["record"]["modeled_entity_name"] == "Customer"
+            for item in dependencies
+        )
     assert len(handoff.calls) == 1
     assert bundle.snapshot is not None and bundle.physical_scope is not None
     assert validate_future_graph(
@@ -1116,7 +1133,12 @@ async def test_post_policy_graph_failure_retains_canonical_rejected_draft() -> N
         snapshot=snapshot,
         embedded_context=cast(JsonValue, context.model_dump(mode="json")),
     )
-    agent = _AgentExecutor(responses=[_candidate(), _candidate()])
+    candidates = [_candidate(), _candidate()]
+    for candidate in candidates:
+        # Partial Mapping is valid; an active Mapping pointing at an inactive
+        # modeled Attribute remains a real full-graph integrity violation.
+        cast(dict[str, Any], candidate)["attributes"][0]["logical_attribute_status"] = "inactive"
+    agent = _AgentExecutor(responses=cast(list[JsonValue | Exception], candidates))
     service, _, _, handoff, lifecycle = _service(agent=agent, context_bundle=bundle)
 
     with pytest.raises(AgentCandidateValidationError):

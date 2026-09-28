@@ -137,7 +137,7 @@ function Get-AtlasModelPolicy($States, $MetadataStates, $Model) {
     foreach ($record in @($rows['mapping_object'])) { if ($null -ne $record -and (Get-Active $record) -eq $true) { $mappingObjects[(Get-PolicyTuple @($record.modeled_entity_type, $record.modeled_entity_schema_name, $record.modeled_entity_name, $record.source_system_code))] = $record } }
     foreach ($record in @($changed['mapping_object'])) {
         if ($null -eq $record -or (Get-Active $record) -ne $true -or ((Get-Property $record 'output_template_code') -and $record.output_template_code -cne 'mapping_object_default')) { continue }
-        $document = Get-Property $record 'mapping_transformation_document'; $steps = Get-Property $document 'steps'
+        $document = Get-Property $record 'mapping_transformation_document'; if ($null -eq $document) { continue }; $steps = Get-Property $document 'steps'
         if ($steps -isnot [Array] -or -not $steps.Count -or @($steps | Where-Object { $_ -isnot [string] -or [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) { Add-PolicyIssue $issues 'mapping.object-steps' 'mapping_object' 'mapping_transformation_document' 'An active Mapping branch needs concise ordered transformation steps.'; continue }
         $dimensional = $record.modeled_entity_type -ceq 'dimensional_entity'
         if ($dimensional -and $null -ne (Get-Property $document 'source_objects')) { Add-PolicyIssue $issues 'mapping.source-kind' 'mapping_object' 'mapping_transformation_document' 'Dimensional Mapping uses modeled source identities; physical source fields must be null or absent.' }
@@ -162,7 +162,7 @@ function Get-AtlasModelPolicy($States, $MetadataStates, $Model) {
     }
     foreach ($record in @($changed['mapping_attribute'])) {
         if ($null -eq $record -or (Get-Active $record) -ne $true -or ((Get-Property $record 'output_template_code') -and $record.output_template_code -cne 'mapping_attribute_default')) { continue }
-        $document = Get-Property $record 'attribute_mapping_transformation_document'; $rule = Get-Property $document 'transformation'
+        $document = Get-Property $record 'attribute_mapping_transformation_document'; if ($null -eq $document) { continue }; $rule = Get-Property $document 'transformation'
         if ($rule -isnot [string] -or [string]::IsNullOrWhiteSpace($rule)) { Add-PolicyIssue $issues 'mapping.attribute-rule' 'mapping_attribute' 'attribute_mapping_transformation_document' 'Every active mapped Attribute needs an explicit transformation or generated/framework population rule.'; continue }
         $object = $mappingObjects[(Get-PolicyTuple @($record.modeled_entity_type, $record.modeled_entity_schema_name, $record.modeled_entity_name, $record.source_system_code))]
         $dimensional = $record.modeled_entity_type -ceq 'dimensional_entity'
@@ -178,7 +178,7 @@ function Get-AtlasModelPolicy($States, $MetadataStates, $Model) {
             foreach ($source in $sources) {
                 $missingSource = if ($layer) { -not $sourceAttributes[$layer].ContainsKey((Get-PolicyTuple @((Get-Property $source ($layer + '_entity_schema_name')), (Get-Property $source ($layer + '_entity_name')), (Get-Property $source ($layer + '_attribute_name'))))) } else { $MetadataStates.Count -gt 0 -and -not $physicalAttributes.ContainsKey((Get-PolicyPhysical $source $true)) }
                 if ($missingSource) { Add-PolicyIssue $issues 'mapping.attribute-exists' 'mapping_attribute' 'attribute_mapping_transformation_document' 'A Mapping source Attribute does not exist in applied source context.' }
-                if ($inputs -isnot [Array] -or @($inputs | Where-Object { if ($layer) { (Get-PolicyTuple @((Get-Property $_ ($layer + '_entity_schema_name')), (Get-Property $_ ($layer + '_entity_name')))) -ceq (Get-PolicyTuple @((Get-Property $source ($layer + '_entity_schema_name')), (Get-Property $source ($layer + '_entity_name')))) } else { (Get-PolicyPhysical $_) -ceq (Get-PolicyPhysical $source) } }).Count -eq 0) { Add-PolicyIssue $issues 'mapping.parent-input' 'mapping_attribute' 'attribute_mapping_transformation_document' 'An Attribute source must belong to an Object-level query input in the same System branch.' }
+                if ($null -ne (Get-Property $object 'mapping_transformation_document') -and ($inputs -isnot [Array] -or @($inputs | Where-Object { if ($layer) { (Get-PolicyTuple @((Get-Property $_ ($layer + '_entity_schema_name')), (Get-Property $_ ($layer + '_entity_name')))) -ceq (Get-PolicyTuple @((Get-Property $source ($layer + '_entity_schema_name')), (Get-Property $source ($layer + '_entity_name')))) } else { (Get-PolicyPhysical $_) -ceq (Get-PolicyPhysical $source) } }).Count -eq 0)) { Add-PolicyIssue $issues 'mapping.parent-input' 'mapping_attribute' 'attribute_mapping_transformation_document' 'An Attribute source must belong to an Object-level query input in the same System branch.' }
             }
         }
     }

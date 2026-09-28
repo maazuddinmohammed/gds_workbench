@@ -8,6 +8,54 @@ import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 
 describe("Mapping journey", () => {
+  it.each(["logical", "dimensional"] as const)("keeps missing %s Attribute transformations blank without inventing Mapping records", async (layer) => {
+    const base = mappingFetchStub();
+    const entity = { ...mappingTarget, entity_type: `${layer}_entity` };
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/mapping/objects/81")) return jsonResponse({ ...mappingObjectDetail,
+        target: entity, mapping_document: null });
+      if (url.includes("/mapping/attributes?")) return jsonResponse({ model_id: 18,
+        model_revision: 18, next_cursor: null,
+        items: Array.from({ length: 10 }, (_, index) => ({ ...mappingAttribute,
+          mapping_attribute_id: index < 5 ? 91 + index : null,
+          workflow_run_id: index < 5 ? 1048 : null,
+          status: index < 5 ? "active" : null,
+          updated_at: index < 5 ? mappingAttribute.updated_at : null,
+          target: { ...mappingAttribute.target, entity, attribute_id: 702 + index,
+            attribute_name: `field_${index + 1}`, ordinal_position: index + 1 },
+        })),
+      });
+      const match = /\/mapping\/attributes\/(\d+)$/.exec(url);
+      if (match) {
+        const index = Number(match[1]) - 91;
+        return jsonResponse({ ...mappingAttributeDetail, mapping_attribute_id: 91 + index,
+          target: { ...mappingAttribute.target, entity, attribute_id: 702 + index,
+            attribute_name: `field_${index + 1}`, ordinal_position: index + 1 },
+          mapping_document: { transformation: `TRIM(source_${index + 1})` },
+        });
+      }
+      return base(input, init);
+    });
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: [`/tenants/7/mapping/models/18/objects/81?layer=${layer}`] }) })} />);
+    const grid = await screen.findByRole("table", { name: "Attribute Mappings" });
+    expect(await within(grid).findByText("TRIM(source_5)")).toBeVisible();
+    expect(within(grid).getAllByRole("row")).toHaveLength(11);
+    for (const row of within(grid).getAllByRole("row").slice(6)) {
+      expect(within(row).queryByRole("checkbox")).not.toBeInTheDocument();
+      expect(row.querySelector(".mapping-document-column")).toBeEmptyDOMElement();
+      expect(within(row).getByText("Not mapped")).toBeVisible();
+      expect(row.querySelector(".mapping-column-record-info")).toBeEmptyDOMElement();
+    }
+    expect(screen.getByRole("region", { name: "Entity transformation" }).textContent).toBe("Entity transformation");
+    await userEvent.setup().click(within(grid).getByRole("checkbox", { name: "Select loaded Mapping Attributes" }));
+    expect(within(grid).getAllByRole("checkbox", { checked: true })).toHaveLength(6);
+    expect(fetcher.mock.calls.filter(([input]) => /\/mapping\/attributes\/\d+$/.test(String(input)))).toHaveLength(5);
+    expect(fetcher.mock.calls.some(([input]) => String(input).includes("/mapping/attributes/null"))).toBe(false);
+    expect(screen.getByRole("region", { name: "Attribute Mappings spreadsheet" })).toHaveAttribute("tabindex", "0");
+  });
+
   it.each(["logical", "dimensional"] as const)("shows one Entity transformation above Attributes only after Show details in the %s layer", async (layer) => {
     const base = mappingFetchStub();
     const entityType = layer === "logical" ? "logical_entity" : "dimensional_entity";
@@ -196,7 +244,7 @@ describe("Mapping journey", () => {
     expect(within(emailRow).getByText("Validate address")).toBeVisible();
     const unauthoredRow = within(table).getByRole("checkbox", { name: "Select Mapping Attributes 93" }).closest("tr")!;
     const emptyRow = within(table).getByRole("checkbox", { name: "Select Mapping Attributes 94" }).closest("tr")!;
-    expect(within(unauthoredRow).getByText("Not authored")).toBeVisible();
+    expect(unauthoredRow.querySelector(".mapping-document-column")).toBeEmptyDOMElement();
     expect(within(emptyRow).getByText("No fields")).toBeVisible();
     expect(within(table).queryByRole("link")).not.toBeInTheDocument();
   });
@@ -1223,7 +1271,7 @@ it("retains Object and Attribute choices across scope modes, detail navigation a
   ]);
 });
 
-it("selects unlocked Attributes across every page and rejects excluded missing mappings", async () => {
+it("selects unlocked Attributes across every page and permits excluded missing mappings", async () => {
   const fetcher = mappingFetchStub({ generationTargets: [{
     ...mappingTarget, source_system: sourceSystem, entity_name: "customer", mapping_object_id: 81,
     object_order: 0, has_sources: true, is_locked: false,
@@ -1239,16 +1287,18 @@ it("selects unlocked Attributes across every page and rejects excluded missing m
   const dialog = within(await screen.findByRole("dialog"));
   await user.click(await dialog.findByRole("button", { name: "Choose Attributes for customer from CRM" }));
   await user.click(dialog.getByRole("button", { name: "Clear Attribute selection" }));
-  expect(dialog.getByRole("button", { name: "Generate mappings" })).toBeDisabled();
-  expect(dialog.getByRole("alert")).toHaveTextContent("missing Attributes excluded");
+  expect(dialog.getByRole("button", { name: "Generate mappings" })).toBeEnabled();
+  expect(dialog.queryByRole("alert")).not.toBeInTheDocument();
   await user.click(dialog.getByRole("button", { name: "Next Attributes" }));
   expect(dialog.getByRole("checkbox", { name: "Generate customer.field_51 from CRM" })).not.toBeChecked();
   await user.click(dialog.getByRole("button", { name: "Select all unlocked Attributes" }));
   expect(dialog.getByRole("checkbox", { name: "Generate customer.field_51 from CRM" })).toBeChecked();
+  await user.click(dialog.getByRole("checkbox", { name: "Generate customer.field_51 from CRM" }));
+  expect(dialog.getByRole("button", { name: "Generate mappings" })).toBeEnabled();
   await user.click(dialog.getByRole("button", { name: "Generate mappings" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   const call = fetcher.mock.calls.find(([input, init]) => String(input).endsWith("/models/18/runs") && init?.method === "POST");
   expect(JSON.parse(String(call?.[1]?.body)).mapping_targets[0].selected_attribute_ids).toEqual(
-    Array.from({ length: 51 }, (_, index) => 801 + index),
+    Array.from({ length: 50 }, (_, index) => 801 + index),
   );
 });

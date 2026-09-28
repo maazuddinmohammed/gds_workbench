@@ -13,7 +13,8 @@ export function isTenantWorkflowConflict(error: unknown): boolean {
 export function isPartialMappingRun(run: WorkflowRunRecord | undefined): boolean {
   return run?.model_workflow === "mapping"
     && (run.workflow_run_state === "completed" || run.workflow_run_state === "completed_with_repair")
-    && (run.mapping_outcome?.failed_pair_count ?? 0) > 0;
+    && ((run.mapping_outcome?.failed_pair_count ?? 0) > 0
+      || (run.mapping_outcome?.partial_pair_count ?? 0) > 0);
 }
 
 export function RunStateBadge({ state, partial = false }: {
@@ -53,7 +54,7 @@ export function workflowStageLabel(stage: string): string {
 export function WorkflowEventProgress({ event }: { event: WorkflowRunEvent }) {
   // Pair outcomes identify frozen selection positions, not execution progress.
   if (["mapping.pair_completed", "mapping.pair_preserved", "mapping.pair_no_source",
-    "mapping.pair_failed"].includes(event.stage)) return null;
+    "mapping.pair_failed", "mapping.pair_partial", "mapping.pair_empty"].includes(event.stage)) return null;
   if (event.current === null || event.total === null || event.total < 1) return null;
   const label = workflowStageLabel(event.stage);
   return (

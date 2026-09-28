@@ -66,6 +66,11 @@
   function active(record, field = null) {
     return field ? record?.[field] === "active" : core.active(record) !== false;
   }
+  function hasTransformationContent(value) {
+    if (value && typeof value === "object") return Object.values(value).some(hasTransformationContent);
+    if (typeof value === "string") return /[^\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/u.test(value);
+    return value != null;
+  }
   function issue(issues, code, dataset, field, message, record = null) {
     issues.push({ code, dataset, record, field, message });
   }
@@ -493,6 +498,21 @@
     const issues = [];
     const invalid = (dataset, field, message) => issue(issues,
       "active_dependency_invalid", dataset, field, message);
+    for (const [dataset, field, status] of [
+      ["mapping_object", "mapping_transformation_document", "object_mapping_status"],
+      ["mapping_attribute", "attribute_mapping_transformation_document", "attribute_mapping_status"],
+    ]) {
+      const identity = record => tuple([mappingObjectKey(record), record.modeled_attribute_name]);
+      const baseline = new Map(records(model, dataset, "baseline").map(record => [identity(record), record]));
+      for (const record of records(model, dataset, "pending")) {
+        const original = baseline.get(identity(record));
+        const document = record[field];
+        if (active(record, status) && document != null && !hasTransformationContent(document) &&
+            (!original || !active(original, status) || core.stableStringify(original[field]) !== core.stableStringify(document)))
+          issue(issues, "mapping_document_empty", dataset, field,
+            "A content-free Mapping document must be explicit null; do not invent transformation logic.");
+      }
+    }
     const activeEntities = new Set([
       ...records(model, "logical_entity").filter((record) =>
         active(record, "logical_entity_status")).map(entityKey),
@@ -537,18 +557,22 @@
       }
     }
     const activeMappings = new Set();
+    const objectTransformations = new Set();
+    const existingMappings = new Set(records(model, "mapping_object", "baseline").map(mappingObjectKey));
+    const codeAuthoringEntities = new Set(["generated_code", "generated_code_source_system"]
+      .flatMap((dataset) => records(model, dataset, "pending")).map(entityKey));
     const mappingSystems = new Map();
     for (const record of records(model, "mapping_object")) {
       if (!active(record, "object_mapping_status")) continue;
       const entity = entityKey(record);
       const system = normalized(record.source_system_code);
-      if (!activeEntities.has(entity) ||
-          record.mapping_transformation_document === null) {
-        invalid("mapping_object", "mapping_transformation_document",
-          "Active Mapping Object requires an active Entity and transformation.");
+      if (!activeEntities.has(entity)) {
+        invalid("mapping_object", "modeled_entity_name",
+          "Active Mapping Object requires an active Entity.");
         continue;
       }
       activeMappings.add(mappingObjectKey(record));
+      if (record.mapping_transformation_document != null) objectTransformations.add(mappingObjectKey(record));
       if (!mappingSystems.has(entity)) mappingSystems.set(entity, new Set());
       mappingSystems.get(entity).add(system);
     }
@@ -556,12 +580,12 @@
     for (const record of records(model, "mapping_attribute")) {
       if (!active(record, "attribute_mapping_status")) continue;
       if (!activeMappings.has(mappingObjectKey(record)) ||
-          !activeAttributes.has(attributeKey(record)) ||
-          record.attribute_mapping_transformation_document === null) {
+          !activeAttributes.has(attributeKey(record))) {
         invalid("mapping_attribute", "modeled_attribute_name",
           "Active Mapping Attribute requires active Mapping and modeled Attribute.");
         continue;
       }
+      if (record.attribute_mapping_transformation_document == null) continue;
       const [type, schema, entity, attribute] = JSON.parse(attributeKey(record));
       activeMappingAttributes.add(tuple([type, schema, entity, record.source_system_code, attribute]));
     }
@@ -569,17 +593,26 @@
       const names = [...activeAttributes].filter((attribute) =>
         core.stableStringify(JSON.parse(attribute).slice(0, 3)) === entity)
         .map((attribute) => JSON.parse(attribute)[3]);
-      for (const system of systems) if (names.some((name) =>
-        !activeMappingAttributes.has(tuple([...JSON.parse(entity), system, name])))) invalid(
-        "mapping_attribute", "modeled_attribute_name",
-        "Active Mapping must cover every active modeled Attribute per System.");
+      for (const system of systems) {
+        const branch = tuple([...JSON.parse(entity), system]);
+        const hasObject = objectTransformations.has(branch);
+        if (!existingMappings.has(branch) && !hasObject && !names.some((name) =>
+          activeMappingAttributes.has(tuple([...JSON.parse(entity), system, name])))) invalid(
+          "mapping_object", "mapping_transformation_document",
+          "New active Mapping requires an Object or Attribute transformation.");
+        if (!codeAuthoringEntities.has(entity)) continue;
+        if (!hasObject) invalid("mapping_object", "mapping_transformation_document",
+          "Code authoring requires an Object transformation for every mapped System.");
+        if (names.some((name) =>
+          !activeMappingAttributes.has(tuple([...JSON.parse(entity), system, name])))) invalid(
+          "mapping_attribute", "modeled_attribute_name",
+          "Code authoring must cover every active modeled Attribute per mapped System.");
+      }
     }
     const artifacts = new Map(records(model, "generated_code")
       .filter((record) => active(record, "generated_code_status"))
       .map((record) => [artifactKey(record), record]));
     const assignments = new Map();
-    const codeAuthoringEntities = new Set(["generated_code", "generated_code_source_system"]
-      .flatMap((dataset) => records(model, dataset, "pending")).map(entityKey));
     for (const record of artifacts.values()) if (!activeEntities.has(entityKey(record))) invalid(
       "generated_code", "modeled_entity_name",
       "Active Code artifact requires an active modeled Entity.");

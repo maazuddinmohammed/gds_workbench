@@ -18,6 +18,7 @@ def validate_mapping_references(
     object_document = (
         candidate.object_mapping.mapping_transformation_document
         if candidate.object_mapping
+        and candidate.object_mapping.mapping_transformation_document is not None
         else header.transformation_document
     )
     preserved = {
@@ -30,7 +31,15 @@ def validate_mapping_references(
     if (
         preserved
         and candidate.object_mapping
-        and header.transformation_document is not None
+        and candidate.object_mapping.mapping_transformation_document is not None
+        and (
+            header.transformation_document is not None
+            or any(
+                attribute.modeled_attribute_id in preserved
+                and attribute.transformation_document is not None
+                for attribute in header.attribute_mappings
+            )
+        )
         and object_document != header.transformation_document
     ):
         raise InvalidRequestError(
@@ -109,6 +118,8 @@ def validate_mapping_references(
                 used.add(key)
                 aliases.add(alias)
         for attribute in candidate.attribute_mappings:
+            if attribute.attribute_mapping_transformation_document is None:
+                continue
             sources = attribute.attribute_mapping_transformation_document.get(attributes_field)
             if sources is None:
                 continue

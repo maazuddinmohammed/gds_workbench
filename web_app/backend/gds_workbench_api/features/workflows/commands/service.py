@@ -220,6 +220,44 @@ def _raise_safe_workflow_error(error: Exception) -> Never:
         "Global default Mapping Attribute output template is unavailable",
     }:
         raise InvalidRequestError("The global Mapping output templates are unavailable.") from error
+    if message == "Selected Code Generation target lacks complete applied SQL Mapping":
+        raise WorkbenchError(
+            code="code_mapping_incomplete",
+            message="Complete Object and Attribute Mapping for the selected Entities "
+            "before generating Code.",
+        ) from error
+    if message == "Code Generation has no eligible target set":
+        raise WorkbenchError(
+            code="code_no_eligible_targets",
+            message="Code Generation needs an Entity with complete Object and Attribute Mapping.",
+        ) from error
+    if message == "Selected Code Generation System is unavailable":
+        raise WorkbenchError(
+            code="code_system_unavailable",
+            message="Choose only Systems contributing to the selected Entities. "
+            "Refresh the selection before generating SQL.",
+        ) from error
+    if message == "Active published SQL generation guide is required":
+        raise WorkbenchError(
+            code="sql_generation_guide_unavailable",
+            message="Code Generation requires an active, published SQL generation guide. "
+            "Ask an administrator to configure the default guide.",
+        ) from error
+    if (
+        message == "No usable prompt is assigned to Workflow Stage"
+        or message.startswith("No usable prompt is assigned to Workflow Stage ")
+        or message == "Resolved prompt version is unavailable to the Model"
+    ):
+        raise WorkbenchError(
+            code="workflow_prompt_unavailable",
+            message="A published prompt is unavailable for this workflow. "
+            "Review the Model's prompt settings before generating again.",
+        ) from error
+    if message == "Selected Validation System lacks complete applied Mapping":
+        raise InvalidRequestError(
+            "Validation needs an Entity with complete Object and Attribute Mapping "
+            "for each selected System."
+        ) from error
     if message in {
         "Selected Scope requires Objects",
         "Selected Scope Object IDs must be positive",
@@ -227,19 +265,15 @@ def _raise_safe_workflow_error(error: Exception) -> Never:
         "Selected Scope contains an unavailable or ineligible Object",
         "Selected Scope is required",
         "Invalid Code Generation file layout",
-        "Selected Code Generation System is unavailable",
         "Invalid description regeneration target",
         "Validation requires selected Systems and no Object selection",
         "System selection is available only for Validation",
         "Selected System Codes must be nonblank",
         "Selected System Codes must be unique",
-        "Selected Validation System lacks complete applied Mapping",
         "Agent configuration is required for this Workflow Run",
         "Agent configuration override must be complete",
         "Deterministic Workflow Run cannot use agent configuration",
         "Deterministic Workflow Run cannot use prompt overrides",
-        "No usable prompt is assigned to Workflow Stage",
-        "Resolved prompt version is unavailable to the Model",
         "Workflow Run correlation conflict",
         "Mapping route is inferred by the server",
         "Mapping requires one complete selected target and source System pair",
@@ -251,7 +285,7 @@ def _raise_safe_workflow_error(error: Exception) -> Never:
         "Selected Mapping target has a mixed or wrong-zone route",
         "Selected Mapping Object output template is unavailable",
         "Selected Mapping Attribute output template is unavailable",
-    } or message.startswith("No usable prompt is assigned to Workflow Stage "):
+    }:
         raise InvalidRequestError("The requested workflow run is invalid.") from error
 
     denial_code = _controlled_denial_code(message)
