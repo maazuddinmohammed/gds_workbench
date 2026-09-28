@@ -10,13 +10,22 @@ export function isTenantWorkflowConflict(error: unknown): boolean {
   return error instanceof ApiError && error.code === "tenant_workflow_conflict";
 }
 
-export function RunStateBadge({ state }: { state: WorkflowRunRecord["workflow_run_state"] }) {
-  const tone = state === "completed" || state === "completed_with_repair"
+export function isPartialMappingRun(run: WorkflowRunRecord | undefined): boolean {
+  return run?.model_workflow === "mapping"
+    && (run.workflow_run_state === "completed" || run.workflow_run_state === "completed_with_repair")
+    && (run.mapping_outcome?.failed_pair_count ?? 0) > 0;
+}
+
+export function RunStateBadge({ state, partial = false }: {
+  state: WorkflowRunRecord["workflow_run_state"];
+  partial?: boolean;
+}) {
+  const tone = partial ? "is-warning" : state === "completed" || state === "completed_with_repair"
     ? "is-success"
     : state === "failed"
       ? "is-danger"
       : "is-warning";
-  return <span className={`status-badge ${tone}`}>{runStateLabel(state)}</span>;
+  return <span className={`status-badge ${tone}`}>{partial ? "Partial results" : runStateLabel(state)}</span>;
 }
 
 function runStateLabel(state: WorkflowRunRecord["workflow_run_state"]): string {
@@ -42,6 +51,9 @@ export function workflowStageLabel(stage: string): string {
 }
 
 export function WorkflowEventProgress({ event }: { event: WorkflowRunEvent }) {
+  // Pair outcomes identify frozen selection positions, not execution progress.
+  if (["mapping.pair_completed", "mapping.pair_preserved", "mapping.pair_no_source",
+    "mapping.pair_failed"].includes(event.stage)) return null;
   if (event.current === null || event.total === null || event.total < 1) return null;
   const label = workflowStageLabel(event.stage);
   return (

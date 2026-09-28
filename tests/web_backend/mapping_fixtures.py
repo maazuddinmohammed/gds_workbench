@@ -83,6 +83,7 @@ def mapping_preparation(
                 ),
             ),
             "actor_principal_id": 77,
+            "selection_ordinal": 1,
             "pair": {"modeled_entity_id": 201, "source_system_id": 31},
             "operation": operation,
             "coverage_mode": "selected_targets",

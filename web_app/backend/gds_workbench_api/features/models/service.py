@@ -26,7 +26,8 @@ SELECT model.model_id,
        model.model_revision,
        scope.model_input_scope_object_count,
        latest_run.model_workflow AS latest_workflow,
-       latest_run.workflow_run_state AS latest_run_status,
+       CASE WHEN mapping_outcome.has_failed_pairs THEN 'partial_results'
+            ELSE latest_run.workflow_run_state END AS latest_run_status,
        model.updated_time AS updated_at
   FROM model.model AS model
  CROSS JOIN LATERAL (
@@ -36,7 +37,8 @@ SELECT model.model_id,
           AND model_input_scope.is_active
   ) AS scope
   LEFT JOIN LATERAL (
-       SELECT workflow_run.model_workflow,
+       SELECT workflow_run.workflow_run_id,
+              workflow_run.model_workflow,
               workflow_run.workflow_run_state
          FROM application.workflow_run AS workflow_run
         WHERE workflow_run.model_id = model.model_id
@@ -44,6 +46,36 @@ SELECT model.model_id,
                  workflow_run.workflow_run_id DESC
         LIMIT 1
   ) AS latest_run ON TRUE
+  LEFT JOIN LATERAL (
+       -- Match the Run read projection: typed events, one-based frozen ordinal,
+       -- exact target count, and only the latest terminal outcome for each pair.
+       SELECT EXISTS (
+           SELECT 1
+             FROM (
+                 SELECT row_number() OVER (ORDER BY selection.selection_order) AS ordinal,
+                        count(*) OVER () AS pair_count
+                   FROM application.workflow_run_mapping_target_selection AS selection
+                  WHERE selection.workflow_run_id = latest_run.workflow_run_id
+                    AND selection.model_id = model.model_id
+             ) AS pair
+             CROSS JOIN LATERAL (
+                 SELECT event.model_event_log_stage AS stage
+                   FROM model.model_event_log AS event
+                  WHERE event.workflow_run_id = latest_run.workflow_run_id
+                    AND event.model_id = model.model_id
+                    AND event.model_event_log_current = pair.ordinal
+                    AND event.model_event_log_total = pair.pair_count
+                    AND event.model_event_log_stage IN (
+                        'mapping.pair_completed', 'mapping.pair_preserved',
+                        'mapping.pair_no_source', 'mapping.pair_failed'
+                    )
+                  ORDER BY event.model_event_log_sequence DESC
+                  LIMIT 1
+             ) AS outcome
+            WHERE outcome.stage = 'mapping.pair_failed'
+       ) AS has_failed_pairs
+  ) AS mapping_outcome ON latest_run.model_workflow = 'mapping'
+       AND latest_run.workflow_run_state IN ('completed', 'completed_with_repair')
  WHERE model.tenant_id = %s
    AND model.is_active = %s
  ORDER BY lower(model.model_name), model.model_id

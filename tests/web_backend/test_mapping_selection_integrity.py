@@ -141,6 +141,55 @@ async def test_missing_evidence_returns_a_fixed_actionable_diagnostic() -> None:
     assert "Add or correct source relationships" in value.issues[0].message
 
 
+@pytest.mark.parametrize(
+    "attribute_name,known,prefixed",
+    [
+        ("CustomerID", True, True),
+        ("UntrustedName", False, False),
+        ("Customer\nID", True, False),
+        ("Customer\x1bID", True, False),
+    ],
+)
+async def test_missing_evidence_only_identifies_a_printable_frozen_attribute(
+    attribute_name: str,
+    known: bool,
+    prefixed: bool,
+) -> None:
+    preparation = mapping_preparation()
+    if known:
+        target = preparation.context.target
+        target = target.model_copy(
+            update={
+                "attributes": (
+                    target.attributes[0].model_copy(update={"attribute_name": attribute_name}),
+                )
+            }
+        )
+        preparation = preparation.model_copy(
+            update={
+                "context": preparation.context.model_copy(update={"target": target}),
+            }
+        )
+    value = await CompleteMappingCandidateValidator(preparation=preparation).validate(
+        {
+            "schema_version": "1.0",
+            "object_mapping": None,
+            "attribute_mappings": [],
+            "issues": [
+                {"code": "missing_transformation_rule", "modeled_attribute_name": attribute_name}
+            ],
+        }
+    )
+    assert value.issues[0].code == "mapping.missing_transformation_rule"
+    fixed = (
+        "A required transformation rule is missing. "
+        "Add the relevant attribute lineage or business assertion."
+    )
+    assert value.issues[0].message == (
+        f"Attribute {attribute_name}: {fixed}" if prefixed else fixed
+    )
+
+
 def test_mapping_support_uses_actual_lineage_in_both_execution_modes() -> None:
     preparation = mapping_preparation()
     one_shot = build_mapping_execution_context(

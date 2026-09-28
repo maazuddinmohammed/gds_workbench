@@ -72,3 +72,34 @@ directory cleanup. Maintained regression tests remain under `tests/atlas/`.
   The older seeded release-check group remains stale as expected.
 - Browser evidence: `/Users/maazuddinmohammed/.codex/visualizations/2026/09/28/01a0e575-a0ec-72f0-8054-7277131f2dfc/atlas-validation-currentness.png`
 - Final whitespace/diff check passed.
+
+## Partial Mapping application — September 28 follow-up
+
+- Reproduced missing transformation/join evidence in one Entity/System pair
+  discarding valid sibling output. Replaced the all-or-nothing authoring policy
+  with explicit partial results; complete valid pairs form a fully validated
+  draft. Failed pairs remain unchanged. All-failed runs offer no successful Apply.
+- Frozen selection ordinals identify failures even when dependency execution
+  order differs. Typed outcome events support counts and System/Schema/Entity
+  diagnostics; old events are not reinterpreted. Failed details are bounded to
+  200 with an explicit truncation flag.
+- Browser verification used a new disposable PostgreSQL fixture on port 8097
+  and a synthetic missing-join response for Order. Customer generated, the exact
+  successful draft applied, and Partial results plus Order's failure remained
+  visible after Apply. The runner and its container were disposed afterward.
+- Browser evidence:
+  `/Users/maazuddinmohammed/.codex/visualizations/2026/09/28/01a0e575-a0ec-72f0-8054-7277131f2dfc/atlas-partial-mapping-applied.png`.
+- Broad MCP/backend run: 3,052 passed; one collected test expected the old
+  private-context error. Corrected fatal-context expectation and reran the
+  affected suites: 105 passed. No unresolved failure remains from that run.
+- Disposable Mapping → Apply → Code → Validation pipeline: 20 cases passed;
+  four partial cases rechecked with reversed frozen selection order. Existing
+  failed Object/Attribute rows remain identical, or remain absent.
+- Frontend: 502 tests, types and production build passed. Web source ZIP rebuilt;
+  65 packaging tests passed. Backend Ruff/Pyright and diff checks passed.
+- Four additional disposable SQL scenarios verified sparse selection order,
+  duplicate and superseded events, legacy runs, all-failed runs, failure-list
+  bounds, tenant isolation and partial status in Model lists.
+- No live provider, Databricks, populated-database test, schema migration or
+  deployment was performed. Historical failed runs need a new generation run;
+  their discarded successful candidates cannot be recovered retroactively.

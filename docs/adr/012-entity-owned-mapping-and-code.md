@@ -66,11 +66,25 @@ file placement, and orchestration execution remain separate authorized actions.
 ## Mapping coverage and Assertion fallback
 
 Each selected Entity/System pair runs independently and must cover every
-actionable Attribute. The Run produces a successful draft only when every pair
-succeeds or has a valid no-applicable-source outcome. A provider, evidence, or
-validation failure in any pair fails the Run; other successful pairs cannot
-silently complete a partial draft. Existing Mapping or known source support
-prohibits skipping a pair as inapplicable.
+actionable Attribute. Following the explicit partial-application decision on
+2026-09-28, recoverable provider, evidence or candidate-validation failures affect
+that pair only. Complete, valid sibling pairs may form one draft, revalidated
+against the entire future Model graph before ordinary review and Apply. Failed
+pairs remain unchanged or absent; no incomplete Attribute candidate is staged.
+With no successful changes, any failed pair fails the Run, not a successful no-op.
+Authorization, Tenant Lock, worker claim, revision and finalization failures
+remain fatal. Existing Mapping or known source support prohibits skipping a pair
+as inapplicable.
+
+Typed per-pair terminal events distinguish completed, preserved, no-source and
+failed outcomes. Their one-based position identifies the immutable ordered Run
+target selection; read projections attach its frozen Entity schema/name and
+System identity without parsing event messages. The web app labels a completed
+Run with failed pairs as **Partial results**, including after Apply, and lists
+failed pairs separately. All-failed Runs expose the same diagnostics without an
+applicable draft. Legacy Runs without these events retain their recorded status.
+The validated subset uses existing ownership, lock, revision, digest, expiry,
+idempotency and Apply validation; retrying failures requires a new Run after Apply.
 
 Models may choose an existing active System with an active Connection in their
 Tenant as `default_mapping_source_system_id`. It supplies one Mapping pair only

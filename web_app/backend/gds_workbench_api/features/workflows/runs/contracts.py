@@ -48,6 +48,26 @@ type EventStatus = Literal[
 ]
 
 
+class MappingRunOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    completed_pair_count: int = Field(ge=0)
+    preserved_pair_count: int = Field(ge=0)
+    no_source_pair_count: int = Field(ge=0)
+    failed_pair_count: int = Field(ge=0)
+
+
+class MappingPairFailure(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source_system_id: int = Field(gt=0)
+    system_code: str = Field(min_length=1, max_length=100)
+    modeled_entity_id: int = Field(gt=0)
+    entity_schema_name: str = Field(min_length=1, max_length=400)
+    entity_name: str = Field(min_length=1, max_length=255)
+    message: str = Field(min_length=1, max_length=2000)
+
+
 class WorkflowRunLedgerRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -62,10 +82,13 @@ class WorkflowRunLedgerRecord(BaseModel):
     created_at: datetime
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    mapping_outcome: MappingRunOutcome | None = None
 
 
 class WorkflowRunDetail(WorkflowRunLedgerRecord):
     correlation_id: UUID
+    mapping_failures: tuple[MappingPairFailure, ...] = Field(default=(), max_length=200)
+    mapping_failures_truncated: bool = False
     token_usage: WorkflowTokenUsageSummary = Field(default_factory=WorkflowTokenUsageSummary)
     agent_sdk_code: str | None = Field(default=None, max_length=100)
     agent_provider_code: str | None = Field(default=None, max_length=100)

@@ -55,6 +55,7 @@ class MappingRunPlan(_FrozenModel):
     agent_plan: AgentRunPlan = Field(repr=False)
     actor_principal_id: int = Field(gt=0)
     pair: MappingPairIdentity
+    selection_ordinal: int = Field(gt=0)
     operation: MappingOperation
     selected_attribute_ids: tuple[int, ...] | None = None
     coverage_mode: Literal["selected_targets"]

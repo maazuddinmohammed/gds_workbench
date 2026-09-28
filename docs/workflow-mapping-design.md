@@ -10,8 +10,12 @@ Authorized for implementation. Existing stages/output schemas remain. Variables/
 Stage: mapping_authoring. Modes: One-shot and Tool-assisted.
 
 Current execution authors each frozen Entity/System pair independently. Every
-actionable Attribute is required. Any pair failure fails the Run before successful
-draft finalization; a successful sibling cannot hide missing Mapping coverage.
+actionable Attribute is required. Recoverable pair failures do not discard successful
+siblings: complete, valid pairs form a draft validated against the full future
+Model graph. The web app marks **Partial results**, lists failed pairs and permits
+explicit Apply of successful mappings only; failed pairs remain unchanged.
+With no successful changes, the Run fails. Authorization, lock, claim, revision
+and finalization failures remain fatal. See ADR 012 for the September 28 decision.
 An explicit no-applicable-source outcome remains valid only without known source
 support, an existing Mapping, or the configured default-System assignment.
 

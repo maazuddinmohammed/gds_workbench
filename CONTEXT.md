@@ -349,9 +349,13 @@ One modeled layer, selected Entity–Source System pairs, and selected modeled
 Attributes. Entity selection includes unlocked Attributes by default. Existing
 Mapping locks and deselections preserve records; a locked Entity Mapping protects
 all its Attribute Mappings. A Run freezes Entity identity and Attribute selection,
-authors each pair independently, and creates one draft only after every pair
-succeeds or has a valid no-applicable-source outcome. A failed pair fails the Run;
-successful siblings cannot produce a completed partial draft. Source-System order is not
+authors each pair independently, and stages only complete, valid pairs in one
+fully validated draft. Recoverable authoring failures produce explicit partial
+results: successful pairs can be reviewed and applied; failed pairs remain
+unchanged and are listed by System and frozen Entity identity. Missing evidence
+is never treated as no applicable source. With no successful changes, a failed
+pair fails the Run rather than completing a no-op. Authorization, lock, claim,
+revision and finalization failures still block the whole Run. Source-System order is not
 Mapping configuration; Process
 Group dependency order and Process execution order define the runtime schedule.
 Target choices cross active Entities with business Systems represented in Model

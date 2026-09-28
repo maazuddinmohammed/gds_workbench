@@ -18,6 +18,8 @@ from gds_workbench_api.features.workflows.overview.contracts import (
     WorkflowLedgerState,
     WorkflowMetric,
 )
+from gds_workbench_api.features.workflows.runs.contracts import MappingRunOutcome
+from gds_workbench_api.features.workflows.runs.service import read_mapping_run_outcomes
 
 _WORKFLOW_OVERVIEW_SQL = """
 WITH target_model AS (
@@ -258,7 +260,11 @@ def _ledger_state(metric: WorkflowMetric) -> WorkflowLedgerState:
     return "not_started"
 
 
-def _section_state(metric: WorkflowMetric) -> ModelSectionState:
+def _section_state(
+    metric: WorkflowMetric,
+    *,
+    mapping_outcome: MappingRunOutcome | None = None,
+) -> ModelSectionState:
     if metric.workflow == "scope":
         return "ready" if metric.result_count else "empty"
     if metric.latest_run_state in ("queued", "running", "failed"):
@@ -267,6 +273,13 @@ def _section_state(metric: WorkflowMetric) -> ModelSectionState:
     # applied, all targets have coverage, or the stored results are still current.
     # Later external edits remain discoverable without claiming that Run made them.
     completed = metric.latest_run_state in ("completed", "completed_with_repair")
+    if (
+        completed
+        and metric.workflow == "mapping"
+        and mapping_outcome is not None
+        and mapping_outcome.failed_pair_count
+    ):
+        return "results_available"
     if metric.result_count and (
         not completed
         or metric.latest_run_completed_at is None
@@ -323,10 +336,20 @@ class DatabaseWorkflowOverviewService:
                 _WORKFLOW_OVERVIEW_SQL,
                 (tenant_id, model_id),
             )
-        if not rows:
-            raise ModelNotFoundError()
+            if not rows:
+                raise ModelNotFoundError()
 
-        metrics = tuple(WorkflowMetric.model_validate(row) for row in rows)
+            metrics = tuple(WorkflowMetric.model_validate(row) for row in rows)
+            mapping_outcomes = await read_mapping_run_outcomes(
+                transaction,
+                tenant_id=tenant_id,
+                model_id=model_id,
+                workflow_run_ids=tuple(
+                    metric.latest_run_id
+                    for metric in metrics
+                    if metric.workflow == "mapping" and metric.latest_run_id is not None
+                ),
+            )
         result_counts: dict[OverviewWorkflow, int] = {
             metric.workflow: metric.result_count for metric in metrics
         }
@@ -378,7 +401,12 @@ class DatabaseWorkflowOverviewService:
                 ModelSectionStatus.model_validate(
                     {
                         "section": workflow.replace("_", "-"),
-                        "state": _section_state(metric),
+                        "state": _section_state(
+                            metric,
+                            mapping_outcome=mapping_outcomes.get(metric.latest_run_id)
+                            if metric.latest_run_id is not None
+                            else None,
+                        ),
                     }
                 )
             )

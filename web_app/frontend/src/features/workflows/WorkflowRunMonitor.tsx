@@ -19,6 +19,7 @@ import {
 } from "./api";
 import {
   isActiveRun,
+  isPartialMappingRun,
   RunStateBadge,
   WorkflowEventProgress,
   workflowStageLabel,
@@ -272,7 +273,7 @@ export function WorkflowRunMonitor({
               aria-label={`Latest ${label} run`}
             >
               <strong>Run {recentRuns[0].workflow_run_id}</strong>
-              <RunStateBadge state={recentRuns[0].workflow_run_state} />
+              <RunStateBadge state={recentRuns[0].workflow_run_state} partial={isPartialMappingRun(recentRuns[0])} />
               {applyMutation.data?.workflow_run_id === recentRuns[0].workflow_run_id ? (
                 <span className="workflow-run-monitor-applied">Draft applied</span>
               ) : null}
@@ -355,7 +356,7 @@ export function WorkflowRunMonitor({
                       <strong>Run {item.workflow_run_id}</strong>
                       <small>{runKind(item.workflow_execution_mode, workflow)}</small>
                     </span>
-                    <RunStateBadge state={item.workflow_run_state} />
+                    <RunStateBadge state={item.workflow_run_state} partial={isPartialMappingRun(item)} />
                   </button>
                 </li>
               ))}
@@ -434,6 +435,8 @@ export function WorkflowRunMonitor({
           label={label}
           runId={validatedDraft.workflow_run_id}
           draftRevision={validatedDraft.draft_revision}
+          failedMappingPairs={isPartialMappingRun(validatedDraft)
+            ? validatedDraft.mapping_outcome?.failed_pair_count ?? 0 : 0}
           isPending={applyMutation.isPending}
           error={applyMutation.error}
           returnFocusRef={applyTrigger}
@@ -488,6 +491,9 @@ function WorkflowRunDetailView({
   applyTriggerRef: RefObject<HTMLButtonElement | null>;
   onApply: () => void;
 }) {
+  const partialMapping = isPartialMappingRun(run);
+  const mappingOutcome = run.model_workflow === "mapping" ? run.mapping_outcome : null;
+  const mappingFailures = run.mapping_failures ?? [];
   const failureEvent = [...events]
     .reverse()
     .find((event) => event.status === "failed" || event.status === "blocked");
@@ -501,7 +507,7 @@ function WorkflowRunDetailView({
           <small>Run {run.workflow_run_id}</small>
           <strong>{runKind(run.workflow_execution_mode, run.model_workflow)}</strong>
         </div>
-        <RunStateBadge state={run.workflow_run_state} />
+        <RunStateBadge state={run.workflow_run_state} partial={partialMapping} />
       </header>
       <dl className="workflow-run-facts">
         <div><dt>Created</dt><dd>{formatDateTime(run.created_at)}</dd></div>
@@ -540,6 +546,42 @@ function WorkflowRunDetailView({
       ) : null}
 
       {!physicalMetadata ? <>
+      {mappingOutcome && mappingOutcome.failed_pair_count > 0 ? (
+        <section className="workflow-draft-review workflow-mapping-outcome" aria-label="Mapping pair outcomes">
+          <header><strong>{isActiveRun(run) ? "Mapping generation is underway"
+            : partialMapping ? "Successful mappings are available" : "Mappings need attention"}</strong></header>
+          <p>
+            {mappingOutcome.completed_pair_count} generated · {mappingOutcome.failed_pair_count} failed
+            {mappingOutcome.preserved_pair_count > 0 ? ` · ${mappingOutcome.preserved_pair_count} preserved` : ""}
+            {mappingOutcome.no_source_pair_count > 0 ? ` · ${mappingOutcome.no_source_pair_count} without an applicable source` : ""}
+          </p>
+          <p>{isActiveRun(run)
+            ? "Generation continues for the remaining pairs. Review the results when the run finishes."
+            : partialMapping
+            ? run.model_change_set_status === "applied" || appliedRunId === run.workflow_run_id
+              ? "Successful mappings applied. Failed pairs remain unchanged."
+              : run.model_change_set_status === "validated"
+                ? "Apply the successful mappings. Failed pairs remain unchanged; resolve their issues before running them again."
+                : "Failed pairs remain unchanged. Resolve their issues before running them again."
+            : "No successful draft is available. Resolve the issues below before running again."}</p>
+          {mappingFailures.length > 0 ? (
+            <div className="workflow-draft-review-scroll" role="region" aria-label="Failed Mapping pairs" tabIndex={0}>
+              <table aria-label="Failed Mapping pairs">
+                <thead><tr><th>System</th><th>Schema</th><th>Entity</th><th>Issue</th></tr></thead>
+                <tbody>{mappingFailures.map((failure) => (
+                  <tr key={`${failure.source_system_id}-${failure.modeled_entity_id}`}>
+                    <td>{failure.system_code}</td><td>{failure.entity_schema_name}</td>
+                    <td>{failure.entity_name}</td><td>{failure.message}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : <p>Failure details are unavailable. Refresh runs to reload them.</p>}
+          {run.mapping_failures_truncated ? <small>
+            Showing {mappingFailures.length} of {mappingOutcome.failed_pair_count} failed pairs. The summary includes all failures.
+          </small> : null}
+        </section>
+      ) : null}
       {draftRecovery}
       {run.model_change_set_status === "validated" ? (
         <AuthoritativeDraftReview
@@ -574,7 +616,7 @@ function WorkflowRunDetailView({
               : "Owned Tenant Lock required"}
             onClick={onApply}
           >
-            {applyPending ? "Applying…" : "Apply validated draft"}
+            {applyPending ? "Applying…" : partialMapping ? "Apply successful mappings" : "Apply validated draft"}
           </button>
         ) : null}
       </section>
@@ -734,6 +776,7 @@ function ApplyDraftConfirmation({
   label,
   runId,
   draftRevision,
+  failedMappingPairs,
   isPending,
   error,
   returnFocusRef,
@@ -743,6 +786,7 @@ function ApplyDraftConfirmation({
   label: string;
   runId: number;
   draftRevision: number;
+  failedMappingPairs: number;
   isPending: boolean;
   error: Error | null;
   returnFocusRef: RefObject<HTMLButtonElement | null>;
@@ -814,7 +858,8 @@ function ApplyDraftConfirmation({
         <header>
           <div>
             <small>Governed transition</small>
-            <h2 id="workflow-draft-confirmation-title">Apply validated {label} draft?</h2>
+            <h2 id="workflow-draft-confirmation-title">{failedMappingPairs > 0
+              ? "Apply successful mappings?" : `Apply validated ${label} draft?`}</h2>
           </div>
           <button
             ref={closeButton}
@@ -831,6 +876,9 @@ function ApplyDraftConfirmation({
           Run {runId}, draft revision {draftRevision}, will be applied to the Model under the
           current Tenant Lock. The backend rechecks every revision and digest fence.
         </p>
+        {failedMappingPairs > 0 ? <p>
+          Only successful mappings in this draft will be applied. {failedMappingPairs} failed {failedMappingPairs === 1 ? "pair remains" : "pairs remain"} unchanged.
+        </p> : null}
         {error ? <p className="inline-error" role="alert">{safeApplyFailure(error)}</p> : null}
         <footer>
           <button className="button button-secondary" type="button" disabled={isPending} onClick={onClose}>
@@ -896,6 +944,10 @@ function runKind(mode: WorkflowRunDetail["workflow_execution_mode"], workflow: M
 }
 
 function draftStatus(run: WorkflowRunDetail): string {
+  if (isPartialMappingRun(run)) {
+    if (run.model_change_set_status === "validated") return "Successful mappings ready to apply";
+    if (run.model_change_set_status === "applied") return "Successful mappings applied · partial results";
+  }
   if (run.workflow_run_state === "failed" && run.model_change_set_status === "active") {
     return "Draft retained · corrections required";
   }

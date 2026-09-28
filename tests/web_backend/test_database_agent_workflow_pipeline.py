@@ -17,7 +17,6 @@ from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.mapping.contracts import MappingTargetSelection
 from gds_workbench_api.features.mapping.read_service import DatabaseMappingReviewService
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
-    AgentExecutionFailedError,
     AgentExecutionRequest,
     AgentExecutionResult,
 )
@@ -121,6 +120,7 @@ def pipeline_database(
         ("single", False),
         ("complete", False),
         ("partial", False),
+        ("partial", True),
         ("single", True),
         ("complete", True),
         ("multi_system", False),
@@ -169,6 +169,23 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
         entra_tenant_id=actor["entra_tenant_id"],
         entra_object_id=actor["entra_object_id"],
     )
+    with fixture.connect_owner() as connection:
+        preserved_objects = connection.execute(
+            "SELECT to_jsonb(mapping) AS record FROM workflow.mapping_object mapping "
+            "WHERE model_id=%s AND modeled_entity_type=%s "
+            "AND coalesce(logical_entity_id, dimensional_entity_id)=%s "
+            "ORDER BY mapping_object_id",
+            (model_id, entity_type, scope.plan.pair.modeled_entity_id),
+        ).fetchall()
+        preserved_attributes = connection.execute(
+            "SELECT to_jsonb(attribute) AS record "
+            "FROM workflow.mapping_attribute attribute "
+            "JOIN workflow.mapping_object mapping USING(mapping_object_id, model_id) "
+            "WHERE mapping.model_id=%s AND mapping.modeled_entity_type=%s "
+            "AND coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id)=%s "
+            "ORDER BY mapping_attribute_id",
+            (model_id, entity_type, scope.plan.pair.modeled_entity_id),
+        ).fetchall()
     calls: list[tuple[str, str, int]] = []
     mapping_calls = 0
     original_execute = LocalFakeAgentAdapter.execute
@@ -179,9 +196,18 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
         nonlocal mapping_calls
         if request.workflow == "mapping":
             mapping_calls += 1
-            if bulk == "partial" and mapping_calls == 2:
+            if bulk == "partial" and mapping_calls <= 2:
                 calls.append((request.workflow, request.execution_mode, 0))
-                raise TimeoutError("Synthetic provider timeout")
+                return AgentExecutionResult(
+                    candidate={
+                        "schema_version": "1.0",
+                        "object_mapping": None,
+                        "attribute_mappings": [],
+                        "issues": [{"code": "missing_join_evidence"}],
+                    },
+                    turn_count=1,
+                    tool_call_count=0,
+                )
         result = await original_execute(self, request)
         calls.append((request.workflow, request.execution_mode, result.tool_call_count))
         return result
@@ -242,6 +268,16 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
         selected_entity_ids = sorted({row.entity_id for row in eligible})
         selected_system_codes = sorted({row.source_system.system_code for row in eligible})
         expected_pairs = {(row.entity_id, row.source_system.system_id) for row in eligible}
+        successful_entity_ids = (
+            [
+                entity
+                for entity in selected_entity_ids
+                if entity != scope.plan.pair.modeled_entity_id
+            ]
+            if bulk == "partial"
+            else selected_entity_ids
+        )
+        successful_pairs = {pair for pair in expected_pairs if pair[0] in successful_entity_ids}
         selections = [
             MappingTargetSelection(
                 modeled_entity_id=row.entity_id,
@@ -250,6 +286,11 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
             )
             for row in eligible
         ]
+        if bulk == "partial":
+            # Frozen selection and dependency execution deliberately have different orders.
+            selections.sort(
+                key=lambda target: target.modeled_entity_id == scope.plan.pair.modeled_entity_id
+            )
         for revision, workflow in enumerate(("mapping", "code_generation", "validation"), 1):
             if workflow == "mapping":
                 command = CreateWorkflowRunRequest(
@@ -270,7 +311,7 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                 command = CreateWorkflowRunRequest(
                     expected_model_revision=revision,
                     model_workflow="code_generation",
-                    selected_entity_ids=selected_entity_ids,
+                    selected_entity_ids=successful_entity_ids,
                     modeled_entity_type=entity_type,
                     code_generation_coverage_mode="selected_targets",
                     agent=selection,
@@ -310,6 +351,9 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
                     command.selected_entity_ids
                 )
                 assert all(row["selected_attribute_ids"] for row in frozen)
+                if bulk == "partial":
+                    assert frozen[0]["modeled_entity_id"] != scope.plan.pair.modeled_entity_id
+                    assert frozen[-1]["modeled_entity_id"] == scope.plan.pair.modeled_entity_id
             run_ids.append(created.workflow_run_id)
             await lifecycle.start(
                 principal,
@@ -322,38 +366,6 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
             )
             claim = await claims.claim_next(lease_duration_seconds=300)
             assert claim is not None and claim.workflow_run_id == created.workflow_run_id
-            if workflow == "mapping" and bulk == "partial":
-                with pytest.raises(AgentExecutionFailedError):
-                    await dispatcher.execute(claim)
-                detail = await runs.read_run(
-                    principal,
-                    tenant_id=scope.tenant_id,
-                    model_id=model_id,
-                    workflow_run_id=created.workflow_run_id,
-                )
-                assert detail.workflow_run_state == "failed"
-                assert detail.failure_code == "agent_execution_failed"
-                assert detail.model_change_set_status is None
-                events = await runs.list_events(
-                    principal,
-                    tenant_id=scope.tenant_id,
-                    model_id=model_id,
-                    workflow_run_id=created.workflow_run_id,
-                    after_sequence=0,
-                    page_size=200,
-                )
-                assert any(event.status == "warning" for event in events.items)
-                with fixture.connect_owner() as connection:
-                    unchanged = require_row(
-                        connection.execute(
-                            "SELECT model_revision FROM model.model WHERE model_id=%s",
-                            (model_id,),
-                        ).fetchone()
-                    )
-                assert unchanged["model_revision"] == revision
-                # A provider failure leaves no partial draft to apply and cannot
-                # advance downstream Code or Validation using incomplete coverage.
-                break
             draft = await dispatcher.execute(claim)
             assert isinstance(draft, WorkflowChangeSetHandoffResult)
             assert draft.staged_record_count > 0
@@ -366,6 +378,31 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
             assert detail.workflow_run_state in {"completed", "completed_with_repair"}
             assert detail.failure_code is None
             assert detail.model_change_set_status == "validated"
+            if workflow == "mapping":
+                assert detail.mapping_outcome is not None
+                assert detail.mapping_outcome.completed_pair_count == len(successful_pairs)
+                assert detail.mapping_outcome.failed_pair_count == int(bulk == "partial")
+                assert detail.mapping_outcome.preserved_pair_count == 0
+                assert detail.mapping_outcome.no_source_pair_count == 0
+                assert not detail.mapping_failures_truncated
+                if bulk == "partial":
+                    assert len(detail.mapping_failures) == 1
+                    failed_pair = detail.mapping_failures[0]
+                    assert failed_pair.modeled_entity_id == scope.plan.pair.modeled_entity_id
+                    assert failed_pair.source_system_id == scope.source_system_id
+                    assert "join evidence" in failed_pair.message
+                else:
+                    assert not detail.mapping_failures
+                ledger = await runs.list_runs(
+                    principal,
+                    tenant_id=scope.tenant_id,
+                    model_id=model_id,
+                    workflow="mapping",
+                    run_state=None,
+                    page_size=200,
+                    cursor=None,
+                )
+                assert ledger.items[0].mapping_outcome == detail.mapping_outcome
             with fixture.connect_owner() as connection:
                 before = require_row(
                     connection.execute(
@@ -401,18 +438,16 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
     finally:
         await services.close()
         await database.close()
-    expected_mapping_calls = expected_pair_count
-    expected_downstream_calls = (
-        []
-        if bulk == "partial"
-        else ["code_generation"] * len(selected_entity_ids)
-        + ["validation"] * len(selected_system_codes)
-    )
+    expected_mapping_calls = expected_pair_count + int(bulk == "partial")
+    expected_downstream_calls = ["code_generation"] * len(successful_entity_ids) + [
+        "validation"
+    ] * len(selected_system_codes)
     assert [workflow for workflow, _, _ in calls] == (
         ["mapping"] * expected_mapping_calls + expected_downstream_calls
     )
     assert calls[0][1] == mapping_mode
-    assert (calls[0][2] > 0) == (mapping_mode == "tool_assisted")
+    if bulk != "partial":
+        assert (calls[0][2] > 0) == (mapping_mode == "tool_assisted")
     assert all(
         mode == "tool_assisted" and count > 0 for _, mode, count in calls[expected_mapping_calls:]
     )
@@ -426,44 +461,65 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
             "USING(workflow_run_id) WHERE run.workflow_run_id=ANY(%s)",
             (run_ids,),
         ).fetchall()
-        if bulk != "partial":
-            mapping_pairs = connection.execute(
-                "SELECT coalesce(logical_entity_id, dimensional_entity_id) AS entity_id, "
-                "source_system_id FROM workflow.mapping_object "
-                "WHERE model_id=%s AND modeled_entity_type=%s AND object_mapping_status='active'",
-                (model_id, entity_type),
-            ).fetchall()
-            code_pairs = connection.execute(
-                "SELECT coalesce(code.logical_entity_id, code.dimensional_entity_id) AS entity_id, "
-                "assigned.source_system_id, code.generated_code_content, "
-                "code.code_input_digest=live.code_input_digest AS current "
-                "FROM workflow.generated_code code "
-                "JOIN workflow.generated_code_source_system assigned USING(generated_code_id) "
-                "JOIN workflow.list_code_generation_target_context(%s,%s) live "
-                "ON live.modeled_entity_id=coalesce(code.logical_entity_id, "
-                "code.dimensional_entity_id) "
-                "WHERE code.model_id=%s AND code.modeled_entity_type=%s "
-                "AND code.generated_code_status='active' "
-                "AND assigned.generated_code_source_system_status='active'",
-                (model_id, entity_type, model_id, entity_type),
-            ).fetchall()
-            assert {
-                (row["entity_id"], row["source_system_id"]) for row in mapping_pairs
-            } == expected_pairs
-            assert {
-                (row["entity_id"], row["source_system_id"]) for row in code_pairs
-            } == expected_pairs
-            assert len(code_pairs) == expected_pair_count
-            assert all(row["generated_code_content"] and row["current"] for row in code_pairs)
-    if bulk == "partial":
-        assert len(states) == 1
-        assert states[0]["workflow_run_state"] == "failed"
-        assert states[0]["model_change_set_status"] is None
-        assert states[0]["applied_event_count"] == 0
-    else:
-        assert len(states) == 3
-        assert all(row["model_change_set_status"] == "applied" for row in states)
-        assert all(row["applied_event_count"] == 1 for row in states)
+        mapping_pairs = connection.execute(
+            "SELECT coalesce(logical_entity_id, dimensional_entity_id) AS entity_id, "
+            "source_system_id FROM workflow.mapping_object "
+            "WHERE model_id=%s AND modeled_entity_type=%s AND object_mapping_status='active'",
+            (model_id, entity_type),
+        ).fetchall()
+        code_pairs = connection.execute(
+            "SELECT coalesce(code.logical_entity_id, code.dimensional_entity_id) AS entity_id, "
+            "assigned.source_system_id, code.generated_code_content, "
+            "code.code_input_digest=live.code_input_digest AS current "
+            "FROM workflow.generated_code code "
+            "JOIN workflow.generated_code_source_system assigned USING(generated_code_id) "
+            "JOIN workflow.list_code_generation_target_context(%s,%s) live "
+            "ON live.modeled_entity_id=coalesce(code.logical_entity_id, "
+            "code.dimensional_entity_id) "
+            "WHERE code.model_id=%s AND code.modeled_entity_type=%s "
+            "AND code.generated_code_status='active' "
+            "AND assigned.generated_code_source_system_status='active'",
+            (model_id, entity_type, model_id, entity_type),
+        ).fetchall()
+        existing_pairs: set[tuple[int, int]] = (
+            {(scope.plan.pair.modeled_entity_id, scope.source_system_id)}
+            if bulk == "partial" and preserved_objects
+            else set()
+        )
+        assert {
+            (row["entity_id"], row["source_system_id"]) for row in mapping_pairs
+        } == successful_pairs | existing_pairs
+        assert {
+            (row["entity_id"], row["source_system_id"]) for row in code_pairs
+        } == successful_pairs
+        assert len(code_pairs) == len(successful_pairs)
+        assert all(row["generated_code_content"] and row["current"] for row in code_pairs)
+        if bulk == "partial":
+            assert (
+                connection.execute(
+                    "SELECT to_jsonb(mapping) AS record FROM workflow.mapping_object mapping "
+                    "WHERE model_id=%s AND modeled_entity_type=%s "
+                    "AND coalesce(logical_entity_id, dimensional_entity_id)=%s "
+                    "ORDER BY mapping_object_id",
+                    (model_id, entity_type, scope.plan.pair.modeled_entity_id),
+                ).fetchall()
+                == preserved_objects
+            )
+            assert (
+                connection.execute(
+                    "SELECT to_jsonb(attribute) AS record "
+                    "FROM workflow.mapping_attribute attribute "
+                    "JOIN workflow.mapping_object mapping USING(mapping_object_id, model_id) "
+                    "WHERE mapping.model_id=%s AND mapping.modeled_entity_type=%s "
+                    "AND coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id)=%s "
+                    "ORDER BY mapping_attribute_id",
+                    (model_id, entity_type, scope.plan.pair.modeled_entity_id),
+                ).fetchall()
+                == preserved_attributes
+            )
+    assert len(states) == 3
+    assert all(row["model_change_set_status"] == "applied" for row in states)
+    assert all(row["applied_event_count"] == 1 for row in states)
 
 
 def _add_mapping_target(

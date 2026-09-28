@@ -434,7 +434,7 @@ class PostgresMappingRunPlanRepository:
         )
         try:
             plans: list[MappingRunPlan] = []
-            for row in rows:
+            for selection_ordinal, row in enumerate(rows, start=1):
                 if (
                     row.get("workflow_run_id") != common.workflow_run_id
                     or row.get("model_id") != common.model_id
@@ -452,6 +452,7 @@ class PostgresMappingRunPlanRepository:
                             ),
                             "selected_attribute_ids": row.get("selected_attribute_ids"),
                             "actor_principal_id": actor_principal_id,
+                            "selection_ordinal": selection_ordinal,
                             "pair": {
                                 "modeled_entity_id": row.get("modeled_entity_id"),
                                 "source_system_id": row.get("source_system_id"),

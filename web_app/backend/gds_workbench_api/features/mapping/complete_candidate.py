@@ -38,12 +38,23 @@ class CompleteMappingCandidateValidator:
         try:
             parsed = CompleteMappingCandidateV1.model_validate(candidate, strict=True)
             if parsed.issues:
+                # Echo only an Attribute name present in the frozen target, never
+                # arbitrary provider text, prompts or source values.
+                attribute_names = {
+                    attribute.attribute_name
+                    for attribute in self._preparation.context.target.attributes
+                }
                 return AgentCandidateValidation(
                     issues=tuple(
                         AgentValidationIssue(
                             code=f"mapping.{issue.code}",
                             path=("issues", index),
-                            message={
+                            message=(
+                                f"Attribute {issue.modeled_attribute_name}: "
+                                if issue.modeled_attribute_name in attribute_names
+                                and issue.modeled_attribute_name.isprintable()
+                                else ""
+                            ) + {
                                 "missing_join_evidence": (
                                     "Required join evidence is missing. "
                                     "Add or correct source relationships or business assertions."

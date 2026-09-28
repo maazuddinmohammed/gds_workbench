@@ -14,6 +14,126 @@ import type {
 import { WorkflowRunMonitor } from "./WorkflowRunMonitor";
 
 describe("Workflow Run monitor", () => {
+  it("does not treat frozen Mapping pair selection ordinals as execution progress", async () => {
+    const api = monitorApi();
+    const run = partialMappingRun();
+    api.readWorkflowRun.mockResolvedValue(run);
+    api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
+    const ordinals = [3, 1, 4, 2];
+    api.listWorkflowRunEvents.mockResolvedValue({
+      items: ["mapping.pair_completed", "mapping.pair_preserved", "mapping.pair_no_source", "mapping.pair_failed"]
+        .map((stage, index) => progressEvent({ stage, sequence: index + 1,
+          current: ordinals[index]!, total: 4, message: `Pair outcome ${index + 1}` })),
+      next_after_sequence: 4,
+    });
+    renderMonitor(api, vi.fn(async () => undefined), "mapping");
+    expect(await screen.findByText("Pair outcome 4")).toBeVisible();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(screen.getByText("3 of 4")).toBeVisible();
+    expect(screen.getByText("1 of 4")).toBeVisible();
+  });
+
+  it.each(["completed", "completed_with_repair"] as const)(
+    "applies only the validated successful Mapping draft when a %s run has failed pairs",
+    async (state) => {
+      const api = monitorApi();
+      const user = userEvent.setup();
+      const onApplied = vi.fn(async () => undefined);
+      const run = { ...partialMappingRun(), workflow_run_state: state };
+      api.readWorkflowRun.mockResolvedValue(run);
+      api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
+      renderMonitor(api, onApplied, "mapping");
+
+      const outcome = await screen.findByRole("region", { name: "Mapping pair outcomes" });
+      expect(outcome).toHaveTextContent("1 generated · 1 failed");
+      const failures = within(outcome).getByRole("table", { name: "Failed Mapping pairs" });
+      expect(within(failures).getAllByRole("columnheader").map((cell) => cell.textContent))
+        .toEqual(["System", "Schema", "Entity", "Issue"]);
+      expect(failures).toHaveTextContent("ERP");
+      expect(failures).toHaveTextContent("silver");
+      expect(failures).toHaveTextContent("Order");
+      expect(failures).toHaveTextContent("OrderDate requires a transformation rule.");
+      expect(screen.getAllByText("Partial results").every((badge) => badge.classList.contains("is-warning"))).toBe(true);
+      expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
+      await user.click(await screen.findByRole("button", { name: "Apply successful mappings" }));
+      const dialog = await screen.findByRole("dialog", { name: "Apply successful mappings?" });
+      expect(dialog).toHaveTextContent("1 failed pair remains unchanged.");
+      expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
+
+      api.readWorkflowRun.mockResolvedValue({ ...run, model_change_set_status: "applied" });
+      await user.click(within(dialog).getByRole("button", { name: "Apply exact draft" }));
+      await waitFor(() => expect(api.applyWorkflowDraft).toHaveBeenCalledWith(
+        7, 18, 1048, 5, 2, "d".repeat(64), expect.any(String),
+      ));
+      await waitFor(() => expect(onApplied).toHaveBeenCalledOnce());
+      const compact = await screen.findByLabelText("Latest Mapping run");
+      expect(compact).toHaveTextContent("Partial results");
+      expect(compact).toHaveTextContent("Draft applied");
+      await user.click(screen.getByRole("button", { name: "Show Mapping run activity" }));
+      expect(await screen.findByText("Successful mappings applied. Failed pairs remain unchanged.")).toBeVisible();
+      expect(screen.queryByRole("button", { name: "Apply successful mappings" })).not.toBeInTheDocument();
+    },
+  );
+
+  it("shows all-failed Mapping pairs without offering Apply and discloses bounded failures", async () => {
+    const api = monitorApi();
+    const run: WorkflowRunDetail = { ...partialMappingRun(), workflow_run_state: "failed",
+      mapping_outcome: { completed_pair_count: 0, preserved_pair_count: 0, no_source_pair_count: 0, failed_pair_count: 201 },
+      mapping_failures_truncated: true, model_change_set_id: null, model_change_set_status: null,
+      draft_revision: null, candidate_digest: null, validated_at: null };
+    api.readWorkflowRun.mockResolvedValue(run);
+    api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
+    renderMonitor(api, vi.fn(async () => undefined), "mapping");
+    const outcome = await screen.findByRole("region", { name: "Mapping pair outcomes" });
+    expect(outcome).toHaveTextContent("0 generated · 201 failed");
+    expect(outcome).toHaveTextContent("Showing 1 of 201 failed pairs. The summary includes all failures.");
+    expect(outcome).toHaveTextContent("No successful draft is available.");
+    expect(screen.queryByText("Partial results")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Apply/ })).not.toBeInTheDocument();
+    expect(api.readWorkflowDraftReview).not.toHaveBeenCalled();
+  });
+
+  it.each(["stale", "expired"])("blocks partial Mapping Apply when its draft review is %s", async (condition) => {
+    const api = monitorApi({ staleReview: condition === "stale", expiredReview: condition === "expired" });
+    const run = partialMappingRun();
+    api.readWorkflowRun.mockResolvedValue(run);
+    api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
+    renderMonitor(api, vi.fn(async () => undefined), "mapping");
+    await screen.findByRole("region", { name: "Mapping pair outcomes" });
+    await screen.findByText(condition === "expired"
+      ? "This validated draft has expired. Apply is disabled."
+      : "The authoritative draft review is unavailable or no longer matches this Run. Apply is disabled.");
+    expect(screen.queryByRole("button", { name: "Apply successful mappings" })).not.toBeInTheDocument();
+    expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
+  });
+
+  it("requires the Tenant Lock before applying successful Mapping pairs", async () => {
+    const api = monitorApi();
+    const run = partialMappingRun();
+    api.readWorkflowRun.mockResolvedValue(run);
+    api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
+    renderMonitor(api, vi.fn(async () => undefined), "mapping", 1048, undefined, false);
+    expect(await screen.findByRole("button", { name: "Apply successful mappings" })).toBeDisabled();
+    expect(screen.getByTitle("Owned Tenant Lock required")).toBeVisible();
+    expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
+  });
+
+  it.each(["queued", "running"] as const)("keeps a %s Mapping run in progress after a pair fails", async (state) => {
+    const api = monitorApi();
+    const run: WorkflowRunDetail = { ...partialMappingRun(), workflow_run_state: state,
+      model_change_set_id: null, model_change_set_status: null, draft_revision: null,
+      candidate_digest: null, validated_at: null };
+    api.readWorkflowRun.mockResolvedValue(run);
+    api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
+    renderMonitor(api, vi.fn(async () => undefined), "mapping");
+    const outcome = await screen.findByRole("region", { name: "Mapping pair outcomes" });
+    expect(outcome).toHaveTextContent("Mapping generation is underway");
+    expect(outcome).toHaveTextContent("Generation continues for the remaining pairs.");
+    expect(outcome).not.toHaveTextContent("No successful draft is available.");
+    expect(screen.queryByText("Partial results")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Apply successful mappings" })).not.toBeInTheDocument();
+  });
+
   it("updates recording token usage with the existing manual Refresh", async () => {
     const api = monitorApi();
     const user = userEvent.setup();
@@ -666,9 +786,10 @@ describe("Workflow Run monitor", () => {
 function renderMonitor(
   api: WorkflowRunMonitorApi,
   onApplied: () => Promise<void>,
-  workflow: "analysis" | "conceptual" | "validation" | "code_generation" = "conceptual",
+  workflow: "analysis" | "conceptual" | "validation" | "code_generation" | "mapping" = "conceptual",
   focusRunId: number | null = 1048,
   readOverview?: ModelsApi["readModelOverview"],
+  hasTenantLock = true,
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -685,7 +806,7 @@ function renderMonitor(
         modelId={18}
         modelRevision={5}
         workflow={workflow}
-        hasTenantLock
+        hasTenantLock={hasTenantLock}
         focusRunId={nextFocusRunId}
         onApplied={onApplied}
       />
@@ -798,6 +919,14 @@ function workflowRun(deterministic: boolean): WorkflowRunDetail {
     candidate_digest: deterministic ? null : "d".repeat(64),
     validated_at: deterministic ? null : "2026-08-25T12:00:55Z",
   };
+}
+
+function partialMappingRun(): WorkflowRunDetail {
+  return { ...workflowRun(false), model_workflow: "mapping", workflow_run_state: "completed_with_repair",
+    mapping_outcome: { completed_pair_count: 1, preserved_pair_count: 0, no_source_pair_count: 0, failed_pair_count: 1 },
+    mapping_failures: [{ source_system_id: 22, system_code: "ERP", modeled_entity_id: 42,
+      entity_schema_name: "silver", entity_name: "Order", message: "OrderDate requires a transformation rule." }],
+    mapping_failures_truncated: false };
 }
 
 function workflowDraftReview(stale: boolean, expired = false): WorkflowDraftReview {

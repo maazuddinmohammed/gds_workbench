@@ -426,6 +426,13 @@
   text-align: left;
 }
 
+.workflow-mapping-outcome { border-left: 3px solid var(--orange); }
+.workflow-mapping-outcome > p { margin: 0.6rem 0; font-size: 0.75rem; }
+.workflow-mapping-outcome table { min-width: 38rem; font-size: 0.72rem; }
+.workflow-mapping-outcome th, .workflow-mapping-outcome td { text-align: left; }
+.workflow-mapping-outcome td:last-child { min-width: 18rem; white-space: normal; overflow-wrap: anywhere; }
+.workflow-mapping-outcome .workflow-draft-review-scroll:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+
 .workflow-draft-status > div {
   display: grid;
   gap: 0.2rem;

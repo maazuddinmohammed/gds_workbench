@@ -18,6 +18,11 @@ from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.domain.snapshots.model import ModelChangeSetDataset, ModelSnapshot
 from pydantic import JsonValue
 
+from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    AgentContextToolRequestError,
+    AgentContextToolResultTooLargeError,
+    AgentExecutionFailedError,
+)
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetFinalizer as MappingChangeSetHandoff,
 )
@@ -45,6 +50,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentCandidateValidationError,
     AgentContextPolicy,
+    AgentContextTooLargeError,
     AgentExecutor,
     load_default_agent_context_policy,
     model_validation_issues,
@@ -63,6 +69,7 @@ from .execution_context import (
 from .preparation_contracts import (
     MappingOutputTemplate,
     MappingPreparation,
+    MappingRunContextUnavailableError,
 )
 
 _logger = logging.getLogger(__name__)
@@ -172,7 +179,9 @@ class MappingWorkflow:
             warning = False
             final_attempt = 1
             sequence = 2
-            failures: list[WorkbenchError] = []
+            failures: list[Exception] = []
+            first_rejected_changes: tuple[StageModelChange, ...] = ()
+            first_rejected_issues: tuple[ModelValidationIssue, ...] = ()
             completed = 0
             unmatched = 0
             for index, preparation in enumerate(preparations):
@@ -183,6 +192,11 @@ class MappingWorkflow:
                     workflow_run_id=workflow_run_id,
                     expected_model_revision=expected_model_revision,
                 )
+                if any(
+                    issue.code == "context.identity_drift"
+                    for issue in preparation.readiness.issues
+                ):
+                    raise MappingRunContextUnavailableError()
                 await self._lifecycle.append_event(
                     principal,
                     workflow_run_id=workflow_run_id,
@@ -200,6 +214,11 @@ class MappingWorkflow:
                     ),
                 )
                 sequence += 1
+                pair_stage = "mapping.pair_preserved"
+                pair_message = "Existing Mapping preserved; no authoring was needed."
+                pair_attempt = 1
+                pair_failed = False
+                rejected_changes, rejected_issues = (), ()
                 try:
                     if not preparation.readiness.ready:
                         raise InvalidRequestError(
@@ -210,122 +229,124 @@ class MappingWorkflow:
                         raise InvalidRequestError("Mapping requires an explicit execution mode.")
                     if not _has_actionable_authoring(preparation):
                         completed += 1
-                        continue
-                    validator = CompleteMappingCandidateValidator(preparation=preparation)
-                    snapshot, physical_scope = preparation.snapshot, preparation.physical_scope
-                    if snapshot is None or physical_scope is None:
-                        raise InvalidRequestError("The Mapping validation context is unavailable.")
+                    else:
+                        validator = CompleteMappingCandidateValidator(preparation=preparation)
+                        snapshot, physical_scope = preparation.snapshot, preparation.physical_scope
+                        if snapshot is None or physical_scope is None:
+                            raise MappingRunContextUnavailableError()
 
-                    async def validate_complete_candidate(
-                        value: JsonValue,
-                        validator: CompleteMappingCandidateValidator = validator,
-                        prior_changes: tuple[StageModelChange, ...] = changes,
-                        snapshot: ModelSnapshot = snapshot,
-                        physical_scope: PhysicalModelCatalog = physical_scope,
-                    ) -> AgentCandidateValidation:
-                        nonlocal rejected_changes, rejected_issues
-                        candidate_changes = validator.parse_validated(value).changes
-                        combined: dict[ModelChangeSetDataset, list[dict[str, object]]] = {}
-                        for change in (*prior_changes, *candidate_changes):
-                            combined.setdefault(change.dataset, []).extend(change.records)
-                        checked = validate_future_graph(
-                            snapshot=snapshot,
-                            staged_documents=combined,
-                            physical_scope=physical_scope,
-                        )
-                        if checked.issues:
-                            rejected_changes, rejected_issues = candidate_changes, checked.issues
-                        return AgentCandidateValidation(
-                            issues=model_validation_issues(checked.issues)
-                        )
+                        async def validate_complete_candidate(
+                            value: JsonValue,
+                            validator: CompleteMappingCandidateValidator = validator,
+                            prior_changes: tuple[StageModelChange, ...] = changes,
+                            snapshot: ModelSnapshot = snapshot,
+                            physical_scope: PhysicalModelCatalog = physical_scope,
+                        ) -> AgentCandidateValidation:
+                            nonlocal rejected_changes, rejected_issues
+                            candidate_changes = validator.parse_validated(value).changes
+                            combined: dict[ModelChangeSetDataset, list[dict[str, object]]] = {}
+                            for change in (*prior_changes, *candidate_changes):
+                                combined.setdefault(change.dataset, []).extend(change.records)
+                            checked = validate_future_graph(
+                                snapshot=snapshot,
+                                staged_documents=combined,
+                                physical_scope=physical_scope,
+                            )
+                            if checked.issues:
+                                rejected_changes = candidate_changes
+                                rejected_issues = checked.issues
+                            else:
+                                rejected_changes, rejected_issues = (), ()
+                            return AgentCandidateValidation(
+                                issues=model_validation_issues(checked.issues)
+                            )
 
-                    execution_context = build_mapping_execution_context(
-                        preparation=preparation,
-                        execution_mode=execution_mode,
-                        limits=self._context_limits,
-                    )
-                    outcome = await self._stage_runner.run(
-                        plan=plan,
-                        stage_code="mapping_authoring",
-                        resolver_values=_mapping_resolver_values(
-                            preparation,
+                        execution_context = build_mapping_execution_context(
+                            preparation=preparation,
+                            execution_mode=execution_mode,
+                            limits=self._context_limits,
+                        )
+                        outcome = await self._stage_runner.run(
+                            plan=plan,
                             stage_code="mapping_authoring",
-                            context=execution_context.embedded_context,
-                        ),
-                        context=execution_context.embedded_context,
-                        output_schema=validator.output_schema(),
-                        allowed_tool_names=(
-                            execution_context.tool_catalog.allowed_tool_names
-                            if execution_context.tool_catalog is not None
-                            else ()
-                        ),
-                        local_tool_catalog=execution_context.tool_catalog,
-                        validator=validator,
-                        final_validation=validate_complete_candidate,
-                    )
-                    result = validator.parse_validated(outcome.candidate)
-                    changes += result.changes
-                    no_source = result.normalized.outcome == "no_applicable_source"
-                    unmatched += int(no_source)
-                    await self._lifecycle.append_event(
-                        principal,
-                        workflow_run_id=workflow_run_id,
-                        workflow_run_claim_token=workflow_run_claim_token,
-                        expected_model_revision=expected_model_revision,
-                        event=AgentWorkflowEvent(
-                            sequence=sequence,
-                            attempt=outcome.attempt_count,
-                            stage="mapping.mapping_authoring",
-                            status="running",
-                            message=(
-                                f"Target Object {preparation.plan.pair.modeled_entity_id}, "
-                                f"Source System {preparation.plan.pair.source_system_id}: "
-                                + (
-                                    "No applicable source found; no Mapping created."
-                                    if no_source
-                                    else "Complete Object and Attribute Mapping validated."
-                                )
+                            resolver_values=_mapping_resolver_values(
+                                preparation,
+                                stage_code="mapping_authoring",
+                                context=execution_context.embedded_context,
                             ),
-                            current=index + 1,
-                            total=len(preparations),
-                            finding_count=0,
-                        ),
-                    )
-                    sequence += 1
-                    warning |= outcome.was_repaired or bool(outcome.warning_codes)
-                    final_attempt = max(final_attempt, outcome.attempt_count)
-                    completed += 1
-                except Exception as pair_error:
-                    if len(preparations) == 1:
-                        raise
+                            context=execution_context.embedded_context,
+                            output_schema=validator.output_schema(),
+                            allowed_tool_names=(
+                                execution_context.tool_catalog.allowed_tool_names
+                                if execution_context.tool_catalog is not None
+                                else ()
+                            ),
+                            local_tool_catalog=execution_context.tool_catalog,
+                            validator=validator,
+                            final_validation=validate_complete_candidate,
+                        )
+                        result = validator.parse_validated(outcome.candidate)
+                        changes += result.changes
+                        no_source = result.normalized.outcome == "no_applicable_source"
+                        unmatched += int(no_source)
+                        pair_stage = (
+                            "mapping.pair_no_source" if no_source else "mapping.pair_completed"
+                        )
+                        pair_message = (
+                            "No applicable source found; no Mapping created."
+                            if no_source
+                            else "Complete Object and Attribute Mapping validated."
+                        )
+                        pair_attempt = outcome.attempt_count
+                        warning |= outcome.was_repaired or bool(outcome.warning_codes)
+                        final_attempt = max(final_attempt, outcome.attempt_count)
+                        completed += 1
+                except (
+                    AgentCandidateValidationError,
+                    AgentExecutionFailedError,
+                    AgentContextTooLargeError,
+                    AgentContextToolRequestError,
+                    AgentContextToolResultTooLargeError,
+                    InvalidRequestError,
+                ) as pair_error:
+                    # Only bounded authoring failures are local to a pair. Claim,
+                    # authorization, lock, revision and unexpected errors abort the Run.
                     safe = _safe_execution_error(pair_error, finalization_attempted=False)
-                    failures.append(safe)
+                    if (
+                        not failures
+                        and isinstance(pair_error, AgentCandidateValidationError)
+                        and pair_error.candidate is not None
+                    ):
+                        first_rejected_changes = rejected_changes
+                        first_rejected_issues = rejected_issues
+                    failures.append(pair_error)
                     warning = True
-                    await self._lifecycle.append_event(
-                        principal,
-                        workflow_run_id=workflow_run_id,
-                        workflow_run_claim_token=workflow_run_claim_token,
-                        expected_model_revision=expected_model_revision,
-                        event=AgentWorkflowEvent(
-                            sequence=sequence,
-                            attempt=1,
-                            stage="mapping.mapping_authoring",
-                            status="warning",
-                            message=(
-                                f"Target Object {preparation.plan.pair.modeled_entity_id}, "
-                                f"Source System {preparation.plan.pair.source_system_id}: "
-                                f"{safe.message}"
-                            )[:2000],
-                            current=index + 1,
-                            total=len(preparations),
-                            finding_count=1,
-                        ),
-                    )
-                    sequence += 1
-            # Every frozen Entity/System pair is part of this Run's coverage.
-            # A failed pair cannot become a successful partial draft merely
-            # because another pair completed or had no applicable source.
-            if failures:
+                    pair_failed = True
+                    pair_stage = "mapping.pair_failed"
+                    pair_message = safe.message[:2000]
+                # Dependency order can differ from selection order. Keep the
+                # frozen selection ordinal so diagnostics identify the correct pair.
+                await self._lifecycle.append_event(
+                    principal,
+                    workflow_run_id=workflow_run_id,
+                    workflow_run_claim_token=workflow_run_claim_token,
+                    expected_model_revision=expected_model_revision,
+                    event=AgentWorkflowEvent(
+                        sequence=sequence,
+                        attempt=pair_attempt,
+                        stage=pair_stage,
+                        status="warning" if pair_failed else "running",
+                        message=pair_message,
+                        current=preparation.plan.selection_ordinal,
+                        total=len(preparations),
+                        finding_count=int(pair_failed),
+                    ),
+                )
+                sequence += 1
+            # A partial draft contains only complete, validated pairs. A failure
+            # with no successful changes must not be reported as a successful no-op.
+            if failures and not changes:
+                rejected_changes, rejected_issues = first_rejected_changes, first_rejected_issues
                 raise failures[0]
             # One section per dataset; each pair retains its own identity and frozen evidence.
             combined_records: dict[ModelChangeSetDataset, list[dict[str, object]]] = {}

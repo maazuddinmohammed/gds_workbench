@@ -99,6 +99,22 @@ export interface CreateWorkflowRunCommand {
 
 export type WorkflowRunFilterState = WorkflowRunState | "";
 
+export interface MappingRunOutcome {
+  completed_pair_count: number;
+  preserved_pair_count: number;
+  no_source_pair_count: number;
+  failed_pair_count: number;
+}
+
+export interface MappingRunFailure {
+  source_system_id: number;
+  system_code: string;
+  modeled_entity_id: number;
+  entity_schema_name: string;
+  entity_name: string;
+  message: string;
+}
+
 export interface WorkflowRunRecord {
   workflow_run_id: number;
   model_workflow: ModelWorkflow;
@@ -111,6 +127,7 @@ export interface WorkflowRunRecord {
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
+  mapping_outcome?: MappingRunOutcome | null;
 }
 
 export interface WorkflowRunCollection {
@@ -152,6 +169,8 @@ export interface WorkflowTokenUsage {
 }
 
 export interface WorkflowRunDetail extends WorkflowRunRecord {
+  mapping_failures?: MappingRunFailure[];
+  mapping_failures_truncated?: boolean;
   token_usage: WorkflowTokenUsage;
   correlation_id: string;
   agent_sdk_code: string | null;
