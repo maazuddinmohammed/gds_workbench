@@ -3854,10 +3854,6 @@
                 "title": "Logical Attribute Is Nullable",
                 "type": "boolean"
               },
-              "logical_attribute_is_primary_key": {
-                "title": "Logical Attribute Is Primary Key",
-                "type": "boolean"
-              },
               "logical_attribute_is_natural_key": {
                 "title": "Logical Attribute Is Natural Key",
                 "type": "boolean"
@@ -3903,7 +3899,6 @@
               "logical_attribute_definition",
               "logical_attribute_data_type",
               "logical_attribute_is_nullable",
-              "logical_attribute_is_primary_key",
               "logical_attribute_is_natural_key",
               "logical_attribute_is_surrogate_key",
               "logical_attribute_ordinal_position",

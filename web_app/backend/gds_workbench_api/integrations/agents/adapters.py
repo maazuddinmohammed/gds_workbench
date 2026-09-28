@@ -254,7 +254,7 @@ class OpenAIAgentsSdkAdapter:
                 run_config=RunConfig(
                     tracing_disabled=True,
                     trace_include_sensitive_data=False,
-                    workflow_name="GDS Workbench agent stage",
+                    workflow_name="Atlas agent stage",
                 ),
             )
             if hooks.error is not None:

@@ -303,7 +303,7 @@
       if (!uniqueSources(value.sources)) add("Logical Entity sources must be unique");
     } else if (rule === "logical_attribute") {
       if (value.logical_attribute_is_natural_key && value.logical_attribute_is_surrogate_key) add("A Logical Attribute cannot be both natural and surrogate key");
-      if ((value.logical_attribute_is_primary_key || value.logical_attribute_is_natural_key || value.logical_attribute_is_surrogate_key) && value.logical_attribute_is_nullable) add("A Logical key Attribute cannot be nullable");
+      if ((value.logical_attribute_is_natural_key || value.logical_attribute_is_surrogate_key) && value.logical_attribute_is_nullable) add("A Logical key Attribute cannot be nullable");
       if (!uniqueSources(value.sources)) add("Logical Attribute sources must be unique");
     } else if (rule === "logical_relationship") {
       validateRelationship("logical");

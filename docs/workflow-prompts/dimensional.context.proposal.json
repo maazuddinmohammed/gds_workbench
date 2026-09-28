@@ -868,10 +868,6 @@
                 "title": "Logical Attribute Is Nullable",
                 "type": "boolean"
               },
-              "logical_attribute_is_primary_key": {
-                "title": "Logical Attribute Is Primary Key",
-                "type": "boolean"
-              },
               "logical_attribute_is_natural_key": {
                 "title": "Logical Attribute Is Natural Key",
                 "type": "boolean"
@@ -917,7 +913,6 @@
               "logical_attribute_definition",
               "logical_attribute_data_type",
               "logical_attribute_is_nullable",
-              "logical_attribute_is_primary_key",
               "logical_attribute_is_natural_key",
               "logical_attribute_is_surrogate_key",
               "logical_attribute_ordinal_position",
@@ -1006,7 +1001,6 @@
           "logical_attribute_definition": "CustomerId recorded for this Customer.",
           "logical_attribute_data_type": "bigint",
           "logical_attribute_is_nullable": false,
-          "logical_attribute_is_primary_key": true,
           "logical_attribute_is_natural_key": true,
           "logical_attribute_is_surrogate_key": false,
           "logical_attribute_ordinal_position": 1,
@@ -1038,7 +1032,6 @@
           "logical_attribute_definition": "OrderId recorded for this Order.",
           "logical_attribute_data_type": "bigint",
           "logical_attribute_is_nullable": false,
-          "logical_attribute_is_primary_key": true,
           "logical_attribute_is_natural_key": true,
           "logical_attribute_is_surrogate_key": false,
           "logical_attribute_ordinal_position": 1,
@@ -1070,7 +1063,6 @@
           "logical_attribute_definition": "CustomerId recorded for this Order.",
           "logical_attribute_data_type": "bigint",
           "logical_attribute_is_nullable": false,
-          "logical_attribute_is_primary_key": false,
           "logical_attribute_is_natural_key": false,
           "logical_attribute_is_surrogate_key": false,
           "logical_attribute_ordinal_position": 2,
@@ -1112,7 +1104,6 @@
           "logical_attribute_definition": "Recorded customer display name.",
           "logical_attribute_data_type": "string",
           "logical_attribute_is_nullable": true,
-          "logical_attribute_is_primary_key": false,
           "logical_attribute_is_natural_key": false,
           "logical_attribute_is_surrogate_key": false,
           "logical_attribute_ordinal_position": 2,
@@ -3468,10 +3459,6 @@
                 "title": "Logical Attribute Is Nullable",
                 "type": "boolean"
               },
-              "logical_attribute_is_primary_key": {
-                "title": "Logical Attribute Is Primary Key",
-                "type": "boolean"
-              },
               "logical_attribute_is_natural_key": {
                 "title": "Logical Attribute Is Natural Key",
                 "type": "boolean"
@@ -3517,7 +3504,6 @@
               "logical_attribute_definition",
               "logical_attribute_data_type",
               "logical_attribute_is_nullable",
-              "logical_attribute_is_primary_key",
               "logical_attribute_is_natural_key",
               "logical_attribute_is_surrogate_key",
               "logical_attribute_ordinal_position",
@@ -3943,7 +3929,6 @@
               "logical_attribute_definition": "OrderId recorded for this Order.",
               "logical_attribute_data_type": "bigint",
               "logical_attribute_is_nullable": false,
-              "logical_attribute_is_primary_key": true,
               "logical_attribute_is_natural_key": true,
               "logical_attribute_is_surrogate_key": false,
               "logical_attribute_ordinal_position": 1,
@@ -3975,7 +3960,6 @@
               "logical_attribute_definition": "CustomerId recorded for this Order.",
               "logical_attribute_data_type": "bigint",
               "logical_attribute_is_nullable": false,
-              "logical_attribute_is_primary_key": false,
               "logical_attribute_is_natural_key": false,
               "logical_attribute_is_surrogate_key": false,
               "logical_attribute_ordinal_position": 2,

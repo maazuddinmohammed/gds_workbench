@@ -83,10 +83,17 @@ SELECT run.workflow_run_id,
            'system_code', source_system.system_code,
            'system_name', source_system.system_name,
            'system_description', source_system.system_description,
-           'is_active', source_system.is_active
+           'is_active', source_system.is_active AND (NOT fallback.is_default OR EXISTS (
+               SELECT 1 FROM core.connection AS owned_connection
+                WHERE owned_connection.tenant_id = target_model.tenant_id
+                  AND owned_connection.system_id = source_system.system_id
+                  AND owned_connection.is_active
+           )),
+           'is_default', fallback.is_default
        ) AS source_system,
        jsonb_build_object(
            'model_name', target_model.model_name,
+           'logical_entity_scd_type', target_model.logical_entity_scd_type,
            'naming_instructions', CASE run.modeled_entity_type
                WHEN 'logical_entity' THEN target_model.silver_model_naming_instructions
                ELSE target_model.gold_model_naming_instructions
@@ -114,6 +121,12 @@ SELECT run.workflow_run_id,
         selection.workflow_run_entity_selection_id
   JOIN core.system AS source_system
     ON source_system.system_id = selection.source_system_id
+ CROSS JOIN LATERAL (
+       SELECT coalesce(source_system.system_id =
+           target_model.default_mapping_source_system_id, FALSE)
+           AND workflow.is_assertion_only_mapping_target(run.model_id,
+               entity_selection.modeled_entity_id, run.modeled_entity_type) AS is_default
+ ) AS fallback
  WHERE run.workflow_run_id = %s
    AND run.model_id = %s
    AND run.actor_principal_id = %s

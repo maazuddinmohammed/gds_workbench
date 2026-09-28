@@ -1,11 +1,13 @@
-import { useState, type FormEvent, type RefObject } from "react";
+import { useRef, useState, type FormEvent, type RefObject } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
 import { ApiError } from "../../core/http";
 import type { JsonObject } from "../../shared/contracts";
+import type { SystemRecord } from "../tenants/api";
 import { reasoningEffortDisplayName, type WorkflowsApi } from "../workflows/api";
-import type { CreateModelCommand, ModelDetail } from "./api";
+import type { CreateModelCommand, LogicalEntityScdType, ModelDetail } from "./api";
+import "./model-schemas.css";
 
 const layerFields = [
   { title: "Silver settings", fields: [
@@ -21,7 +23,7 @@ const layerFields = [
 
 export function ModelForm({
   api, tenantId, hasTenantLock, initialModel, disabledReason, isPending, error,
-  onSubmit, onCancel, onDirty, nameInput,
+  onSubmit, onCancel, onDirty, nameInput, systems = [],
 }: {
   api: Pick<WorkflowsApi, "readAgentCapabilities">;
   tenantId: number;
@@ -34,14 +36,19 @@ export function ModelForm({
   onCancel?: () => void;
   onDirty?: () => void;
   nameInput?: RefObject<HTMLInputElement | null>;
+  systems?: SystemRecord[];
 }) {
-  const [logicalSchemas, setLogicalSchemas] = useState(() => initialModel?.logical_schemas.length
-    ? initialModel.logical_schemas.map((row) => ({ ...row, description: row.description ?? "" }))
-    : [{ schema_name: "", description: "" }]);
-  const [dimensionalSchemas, setDimensionalSchemas] = useState(() => initialModel?.dimensional_schemas.length
-    ? initialModel.dimensional_schemas.map((row) => ({ ...row, description: row.description ?? "" }))
-    : [{ schema_name: "", description: "" }]);
+  const [logicalSchemas, setLogicalSchemas] = useState(() => initialModel
+    ? initialModel.logical_schemas.map((row, index) => ({ ...row, description: row.description ?? "", key: index, editing: false }))
+    : [{ schema_name: "", description: "", key: 0, editing: true }]);
+  const [dimensionalSchemas, setDimensionalSchemas] = useState(() => initialModel
+    ? initialModel.dimensional_schemas.map((row, index) => ({ ...row, description: row.description ?? "", key: index, editing: false }))
+    : [{ schema_name: "", description: "", key: 0, editing: true }]);
+  const nextSchemaKey = useRef(Math.max(logicalSchemas.length, dimensionalSchemas.length));
+  const schemaToFocus = useRef<string | null>(null);
   const [agentModelCode, setAgentModelCode] = useState(initialModel?.default_agent_model_code ?? "");
+  const [mappingSourceSystemId, setMappingSourceSystemId] = useState(initialModel?.default_mapping_source_system_id?.toString() ?? "");
+  const [logicalScdType, setLogicalScdType] = useState<LogicalEntityScdType | "">(initialModel?.logical_entity_scd_type ?? "");
   const [reasoningCode, setReasoningCode] = useState(initialModel?.default_reasoning_effort_code ?? "");
   const [agentDefaultsChanged, setAgentDefaultsChanged] = useState(false);
   const [agentSettingsOpen, setAgentSettingsOpen] = useState(false);
@@ -77,6 +84,7 @@ export function ModelForm({
       dimensional_schemas: dimensionalSchemas.filter((item) => item.schema_name.trim() || item.description.trim()).map((item) => ({ schema_name: item.schema_name.trim(), description: item.description.trim() || null })),
       silver_model_naming_instructions: null,
       silver_model_audit_columns_template: null,
+      logical_entity_scd_type: logicalScdType || null,
       gold_model_naming_instructions: null,
       gold_model_technical_columns_template: null,
       gold_model_audit_columns_template: null,
@@ -86,6 +94,7 @@ export function ModelForm({
       default_reasoning_effort_code: initialModel?.default_reasoning_effort_code ?? null,
       default_max_turns: initialModel?.default_max_turns ?? null,
       default_validation_retry_count: initialModel?.default_validation_retry_count ?? null,
+      default_mapping_source_system_id: mappingSourceSystemId ? Number(mappingSourceSystemId) : null,
     };
     if (!command.model_name || command.model_name.length > 255) {
       invalid("model_name", "Enter a Model name of 1–255 characters.");
@@ -96,9 +105,14 @@ export function ModelForm({
       return;
     }
     for (const layer of ["logical", "dimensional"] as const) {
-      const schemas = command[`${layer}_schemas`];
-      if (schemas.some((item) => !item.schema_name || item.schema_name.length > 400) || new Set(schemas.map((item) => item.schema_name.toLowerCase())).size !== schemas.length) {
-        invalid(`${layer}_schema_0`, "Use a distinct, nonblank name for each configured schema.");
+      const rows = layer === "logical" ? logicalSchemas : dimensionalSchemas;
+      const invalidIndex = rows.findIndex((item, index) => {
+        const name = item.schema_name.trim();
+        return (!name && Boolean(item.description.trim())) || name.length > 400
+          || Boolean(name && rows.some((other, otherIndex) => otherIndex < index && other.schema_name.trim().toLowerCase() === name.toLowerCase()));
+      });
+      if (invalidIndex >= 0) {
+        invalid(`${layer}_schema_${invalidIndex}`, "Use a distinct, nonblank name for each configured schema.");
         return;
       }
     }
@@ -177,27 +191,109 @@ export function ModelForm({
   };
 
   return (
-    <form noValidate onSubmit={submit} onChange={onDirty} aria-busy={isPending}>
+    <form className="model-definition-form" noValidate onSubmit={submit} onChange={onDirty} aria-busy={isPending}>
           <fieldset className="create-model-fields" disabled={isPending || Boolean(disabledReason)}>
-            <label>
-              <span>Model name <small>Required</small></span>
-              <input ref={nameInput} name="model_name" required maxLength={255} autoComplete="off" defaultValue={initialModel?.model_name ?? ""}
-                aria-invalid={validationError?.field === "model_name"} aria-describedby={validationError?.field === "model_name" ? "model-form-error" : undefined} />
-            </label>
-            <label>
-              <span>Description <small>Optional</small></span>
-              <textarea name="model_description" rows={3} maxLength={2000} defaultValue={initialModel?.model_description ?? ""} />
-            </label>
+            <div className="model-definition-identity">
+              <label>
+                <span>Model name <small>Required</small></span>
+                <input ref={nameInput} name="model_name" required maxLength={255} autoComplete="off" defaultValue={initialModel?.model_name ?? ""}
+                  aria-invalid={validationError?.field === "model_name"} aria-describedby={validationError?.field === "model_name" ? "model-form-error" : undefined} />
+              </label>
+              <label>
+                <span>Description</span>
+                <textarea name="model_description" rows={2} maxLength={2000} defaultValue={initialModel?.model_description ?? ""} />
+              </label>
+            </div>
             {!initialModel ? <p className="field-help">Add source Objects to Input Scope after creating the Model.</p> : null}
-            {([{ layer: "logical", title: "Logical schemas", rows: logicalSchemas, update: setLogicalSchemas }, { layer: "dimensional", title: "Dimensional schemas", rows: dimensionalSchemas, update: setDimensionalSchemas }] as const).map(({ layer, title, rows, update }) => <details key={layer} className="create-model-settings"><summary>{title}<span>Configure before generation</span></summary><div className="create-model-fields">
-              <p className="field-help">Entities use one of these schemas. Export preserves each Entity’s saved schema.</p>
-              {rows.map((row, index) => <fieldset key={index} className="create-model-fields"><label><span>Schema name</span><input name={`${layer}_schema_${index}`} value={row.schema_name} maxLength={400} onChange={(event) => update(rows.map((item, position) => position === index ? { ...item, schema_name: event.target.value } : item))} /></label><label><span>Description</span><textarea value={row.description} maxLength={2000} rows={2} onChange={(event) => update(rows.map((item, position) => position === index ? { ...item, description: event.target.value } : item))} /></label><button type="button" className="text-action" onClick={() => { update(rows.filter((_, position) => position !== index)); onDirty?.(); }}>Remove schema</button></fieldset>)}
-              <button type="button" className="button button-secondary button-small" disabled={rows.length >= 100} onClick={() => { update([...rows, { schema_name: "", description: "" }]); onDirty?.(); }}>Add schema</button>
-            </div></details>)}
+            {([
+              { layer: "logical", title: "Logical schemas", rows: logicalSchemas, update: setLogicalSchemas },
+              { layer: "dimensional", title: "Dimensional schemas", rows: dimensionalSchemas, update: setDimensionalSchemas },
+            ] as const).map(({ layer, title, rows, update }) => (
+              <details key={layer} className="create-model-settings model-schema-settings" open={Boolean(initialModel)}>
+                <summary>{title}<span>{rows.filter((row) => row.schema_name.trim()).length}</span></summary>
+                <div className="create-model-fields">
+                  {!rows.length ? <p className="field-help">Add a schema before generation.</p> : null}
+                  {rows.map((row, index) => (
+                    <fieldset key={row.key} className={`model-schema-row${row.editing ? " is-editing" : " is-saved"}`}>
+                      <label>
+                        <span className={row.editing ? undefined : "sr-only"}>Schema name</span>
+                        <input name={`${layer}_schema_${index}`} value={row.schema_name} maxLength={400}
+                          readOnly={!row.editing}
+                          ref={(element) => {
+                            if (element && schemaToFocus.current === `${layer}:${row.key}`) {
+                              element.focus();
+                              schemaToFocus.current = null;
+                            }
+                          }}
+                          aria-invalid={validationError?.field === `${layer}_schema_${index}`}
+                          aria-describedby={validationError?.field === `${layer}_schema_${index}` ? "model-form-error" : undefined}
+                          onChange={(event) => update(rows.map((item, position) => position === index ? { ...item, schema_name: event.target.value } : item))} />
+                      </label>
+                      <label>
+                        <span className={row.editing ? undefined : "sr-only"}>Description</span>
+                        <textarea value={row.description} maxLength={2000} rows={row.editing ? 2 : 1} readOnly={!row.editing}
+                          onChange={(event) => update(rows.map((item, position) => position === index ? { ...item, description: event.target.value } : item))} />
+                      </label>
+                      <div className="model-schema-actions">
+                        <span className="status-badge is-neutral">{row.editing ? "Unsaved" : "Saved"}</span>
+                        {row.editing ? (
+                          <button type="button" className="text-action" onClick={() => {
+                            update(rows.filter((_, position) => position !== index));
+                            onDirty?.();
+                          }}>Remove schema</button>
+                        ) : (
+                          <button type="button" className="text-action" onClick={() => {
+                            schemaToFocus.current = `${layer}:${row.key}`;
+                            update(rows.map((item, position) => position === index ? { ...item, editing: true } : item));
+                          }}>Edit schema</button>
+                        )}
+                      </div>
+                    </fieldset>
+                  ))}
+                  <div className="model-schema-add">
+                    <button type="button" className="button button-secondary button-small" disabled={rows.length >= 100} onClick={() => {
+                      const key = nextSchemaKey.current++;
+                      schemaToFocus.current = `${layer}:${key}`;
+                      update([...rows, { schema_name: "", description: "", key, editing: true }]);
+                      onDirty?.();
+                    }}>Add schema</button>
+                  </div>
+                </div>
+              </details>
+            ))}
+            <details className="create-model-settings">
+              <summary>Mapping settings</summary>
+              <div className="create-model-fields model-mapping-default">
+                <label>
+                  <span>Default mapping System</span>
+                  <select name="default_mapping_source_system_id" value={mappingSourceSystemId}
+                    aria-describedby="mapping-default-system-help"
+                    onChange={(event) => setMappingSourceSystemId(event.target.value)}>
+                    <option value="">No default System</option>
+                    {mappingSourceSystemId && !systems.some((system) => String(system.system_id) === mappingSourceSystemId)
+                      ? <option value={mappingSourceSystemId}>Saved System (unavailable)</option> : null}
+                    {systems.map((system) => <option key={system.system_id} value={system.system_id}>{system.system_code}</option>)}
+                  </select>
+                </label>
+                <p id="mapping-default-system-help" className="field-help">Used when an Entity has only Assertion sources.</p>
+              </div>
+            </details>
             {layerFields.map((group) => (
               <details key={group.title} className="create-model-settings">
-                <summary>{group.title}<span>Optional</span></summary>
+                <summary>{group.title}</summary>
                 <div className="create-model-fields">
+                  {group.title === "Silver settings" ? <label>
+                    <span id="logical-scd-type-label">Logical entity SCD type</span>
+                    <select name="logical_entity_scd_type" value={logicalScdType}
+                      aria-labelledby="logical-scd-type-label"
+                      aria-describedby="logical-scd-type-help"
+                      onChange={(event) => setLogicalScdType(event.target.value as LogicalEntityScdType | "")}>
+                      <option value="">Not specified</option>
+                      <option value="type_1">SCD Type 1 — overwrite changes</option>
+                      <option value="type_2">SCD Type 2 — preserve history</option>
+                    </select>
+                    <small id="logical-scd-type-help" className="field-help">Guides Logical entity and Mapping generation.</small>
+                  </label> : null}
                   {group.fields.map((field) => (
                     <label key={field.name}>
                       <span>{field.label}{field.json ? <small>JSON object</small> : null}</span>
@@ -210,9 +306,8 @@ export function ModelForm({
               </details>
             ))}
             <details className="create-model-settings" onToggle={(event) => setAgentSettingsOpen(event.currentTarget.open)}>
-              <summary>Agent defaults<span>Optional</span></summary>
+              <summary>Agent defaults</summary>
               <div className="create-model-fields" onChange={() => setAgentDefaultsChanged(true)}>
-                <p className="field-help">Leave unset to use the available defaults when starting a Workflow Run.</p>
                 {capabilities.isPending ? <p className="field-help" aria-busy="true">Loading agent options…</p> : null}
                 {capabilities.isError ? <p role="alert">Agent options could not be loaded. <button type="button" className="text-action" onClick={() => void capabilities.refetch()}>Retry agent options</button></p> : null}
                 <label><span>Agent model</span>

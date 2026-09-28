@@ -8,15 +8,12 @@ import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 
 describe("Code Generation journey", () => {
-  it("opens as a model-first active ledger", async () => {
+  it("keeps the legacy Model picker bookmark usable", async () => {
     const fetcher = codeGenerationFetchStub();
-    const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation"] }),
     })} />);
-
-    await user.click(await screen.findByRole("link", { name: "Code generation" }));
 
     const ledger = await screen.findByRole("table", { name: "Models for Code Generation" });
     expect(within(ledger).getByText("Customer 360")).toBeVisible();
@@ -37,28 +34,34 @@ describe("Code Generation journey", () => {
       history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
     })} />);
     const ledger = await screen.findByRole("table", { name: "Code Generation target Entities" });
-    expect(within(ledger).getByText("silver_nwa.customer")).toBeVisible();
-    expect(within(ledger).getByText("gold_nwa.order_mart")).toBeVisible();
+    expect(within(ledger).getAllByRole("columnheader").slice(1, 3).map((header) => header.textContent)).toEqual(["Schema", "Entity name"]);
+    const customerRow = within(ledger).getByText("customer", { exact: true }).closest("tr")!;
+    expect(within(customerRow).getByRole("cell", { name: "silver_nwa" })).toBeVisible();
+    expect(within(customerRow).getByRole("checkbox", { name: "Select silver_nwa.customer" })).toBeVisible();
+    expect(within(ledger).getByText("order_mart", { exact: true })).toBeVisible();
     expect(screen.queryByLabelText("Target System code")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Contributing System code")).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Status"), "stale");
-    expect(within(ledger).getByText("silver_nwa.customer")).toBeVisible();
+    expect(within(ledger).getByText("customer", { exact: true })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Apply filters" }));
-    expect(within(ledger).getByText("silver_nwa.address")).toBeVisible();
-    expect(within(ledger).queryByText("silver_nwa.customer")).not.toBeInTheDocument();
+    expect(within(ledger).getByText("address", { exact: true })).toBeVisible();
+    expect(within(ledger).queryByText("customer", { exact: true })).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Status"), "");
     await user.click(screen.getByText("All Entities"));
     await user.click(screen.getByRole("checkbox", { name: "Logical Entity · gold_nwa.order_mart" }));
     await user.click(screen.getByRole("button", { name: "Done" }));
     await user.click(screen.getByRole("button", { name: "Apply filters" }));
-    expect(within(ledger).queryByText("silver_nwa.customer")).not.toBeInTheDocument();
-    expect(within(ledger).getByText("gold_nwa.order_mart")).toBeVisible();
-    await user.click(screen.getByRole("link", { name: "Dimensional" }));
+    expect(within(ledger).queryByText("customer", { exact: true })).not.toBeInTheDocument();
+    expect(within(ledger).getByText("order_mart", { exact: true })).toBeVisible();
+    await user.click(within(screen.getByRole("navigation", { name: "Code generation layer" })).getByRole("link", { name: "Dimensional" }));
     await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
       "/api/v1/tenants/7/models/18/code-generation/targets?entity_type=dimensional_entity&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     ));
-    expect(screen.getByRole("link", { name: "Dimensional" })).toHaveAttribute("aria-current", "page");
+    expect(within(screen.getByRole("navigation", { name: "Code generation layer" })).getByRole("link", { name: "Dimensional" })).toHaveAttribute("aria-current", "page");
+    const dimensionalLedger = await screen.findByRole("table", { name: "Code Generation target Entities" });
+    const orderMartRow = within(dimensionalLedger).getByText("order_mart", { exact: true }).closest("tr")!;
+    expect(within(orderMartRow).getByRole("cell", { name: "gold_nwa" })).toBeVisible();
   });
 
   it("reviews stored SQL and essential context on a dedicated full page", async () => {
@@ -636,9 +639,49 @@ it("finds and reactivates inactive Code without an eligible generation target", 
   await user.click(await screen.findByRole("button", { name: "Applied Code" }));
   const table = await screen.findByRole("table", { name: "Applied Code" });
   expect(within(table).getByText("inactive")).toBeVisible();
-  expect(within(table).getByRole("link", { name: "Show SQL details" })).toHaveAttribute("href", "/tenants/7/code-generation/models/18/artifacts/501");
+  expect(within(table).getByRole("link", { name: "Show SQL details" })).toHaveAttribute("href", "/tenants/7/code-generation/models/18/artifacts/501?layer=logical");
   await user.click(screen.getByRole("checkbox", { name: "Select Applied Code 501" }));
   await user.click(screen.getByRole("button", { name: "Activate selected" }));
   await user.click(await screen.findByRole("button", { name: "Apply this change" }));
   expect(commands[0]).toEqual({ dataset: "generated_code", record_ids: [501], action: "reactivate", expected_model_revision: 18 });
+});
+
+it.each(["Generation targets", "Applied Code"] as const)("keeps Dimensional context through %s SQL details and back into Mapping", async (view) => {
+  const base = codeGenerationFetchStub();
+  const { fetcher } = withRecordReview(vi.fn<typeof fetch>(async (input, init) => {
+    const url = String(input);
+    if (url.includes("/code-generation/targets?")) return jsonResponse({
+      model_id: 18, model_revision: 18, next_cursor: null,
+      items: [{ ...codeGenerationTargets[0], entity_type: "dimensional_entity",
+        target: { ...targetObject, entity_type: "dimensional_entity" } }],
+    });
+    if (url.endsWith("/code-generation/artifacts/501")) return jsonResponse({
+      ...generatedSqlDetail, entity_type: "dimensional_entity",
+      target: { ...targetObject, entity_type: "dimensional_entity" },
+    });
+    if (url.includes("/mapping/objects?")) return jsonResponse({ model_id: 18, model_revision: 18, items: [], next_cursor: null });
+    if (url.includes("/runs?")) return jsonResponse({ items: [], next_cursor: null });
+    return base(input, init);
+  }), {
+    model_id: 18, model_revision: 18, dataset: "generated_code", next_page: null,
+    items: [{ record_id: 501, label: "Customer · customer.sql", status: "active", is_locked: false }],
+  });
+  const router = createWorkbenchRouter({ api: createApiClient(fetcher),
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18?layer=dimensional"] }) });
+  render(<WorkbenchApp router={router} />);
+  const user = userEvent.setup();
+  if (view === "Applied Code") {
+    await user.click(await screen.findByRole("button", { name: "Applied Code" }));
+    await user.click(await screen.findByRole("link", { name: "Show SQL details" }));
+  } else {
+    await user.click(await screen.findByRole("link", { name: "Show customer.sql for silver_nwa.customer" }));
+  }
+  await screen.findByRole("heading", { name: "customer.sql", level: 1 });
+  expect(router.state.location.search).toEqual({ layer: "dimensional" });
+  await user.click(within(screen.getByRole("navigation", { name: "Model sections" })).getByRole("link", { name: "Mapping" }));
+  await screen.findByText("No Object Mappings match these filters.");
+  expect(router.state.location.search).toEqual({ layer: "dimensional" });
+  expect(fetcher).toHaveBeenCalledWith(
+    "/api/v1/tenants/7/models/18/mapping/objects?entity_type=dimensional_entity&page_size=200", expect.anything(),
+  );
 });

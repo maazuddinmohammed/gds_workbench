@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
@@ -17,8 +17,13 @@ export function MappingObjectAttributes({
   hasTenantLock: boolean;
 }) {
   const client = useQueryClient();
+  const headingId = useId();
+  const refreshButton = useRef<HTMLButtonElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [filters, setFilters] = useState<MappingFilters>({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filterId = `${headingId}-filters`;
+  const filterCount = Number(Boolean(filters.status)) + Number(filters.locked !== undefined);
   const scopedFilters = { ...filters, mappingObjectId };
   const query = useInfiniteQuery({
     queryKey: mappingQueryKeys.attributes(tenantId, modelId, scopedFilters),
@@ -28,19 +33,27 @@ export function MappingObjectAttributes({
   });
   const revisionMismatch = query.data?.pages.some((page) => page.model_revision !== modelRevision) === true;
   return (
-    <section className="detail-section mapping-object-attributes" aria-labelledby="mapping-attributes-heading">
+    <section className={`detail-section mapping-object-attributes${selectedIds.size ? " has-selection" : ""}`} aria-labelledby={headingId}>
       <header>
-        <h2 id="mapping-attributes-heading">Attribute mappings</h2>
-        <button className="button button-secondary button-small" type="button" disabled={query.isFetching}
+        <h2 id={headingId}>Attribute transformations</h2>
+        <div className="workflow-command-actions">
+        <button className="button button-secondary button-small" type="button" aria-expanded={filtersOpen}
+          aria-controls={filterId} onClick={() => setFiltersOpen(!filtersOpen)}>
+          Filters{filterCount ? ` · ${filterCount}` : ""}
+        </button>
+        <button ref={refreshButton} className="button button-secondary button-small" type="button" disabled={query.isFetching}
           onClick={() => {
             setSelectedIds(new Set());
             void Promise.all([
               query.refetch(),
+              client.invalidateQueries({ queryKey: ["mapping-attribute", tenantId, modelId] }),
+              client.invalidateQueries({ queryKey: ["mapping-objects", tenantId, modelId] }),
               client.invalidateQueries({ queryKey: ["model", tenantId, modelId] }),
               client.invalidateQueries({ queryKey: mappingQueryKeys.object(tenantId, modelId, mappingObjectId) }),
               client.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
             ]);
           }}>Refresh Attributes</button>
+        </div>
       </header>
       <ModelRecordReview api={api} tenantId={tenantId} modelId={modelId} modelRevision={modelRevision}
         dataset="mapping_attribute" selectedIds={selectedIds} hasTenantLock={hasTenantLock}
@@ -48,9 +61,11 @@ export function MappingObjectAttributes({
         onApplied={async () => {
           setSelectedIds(new Set());
           await client.invalidateQueries({ predicate: (cached) => cached.queryKey[1] === tenantId });
+          requestAnimationFrame(() => refreshButton.current?.focus());
         }}
       />
-      <MappingAttributesLedger tenantId={tenantId} modelId={modelId}
+      <MappingAttributesLedger api={api} tenantId={tenantId} modelId={modelId}
+        filtersOpen={filtersOpen} filterId={filterId}
         selectedIds={selectedIds} onSelectionChange={setSelectedIds}
         items={query.data?.pages.flatMap((page) => page.items) ?? []}
         filters={filters}

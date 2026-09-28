@@ -119,6 +119,8 @@ def _complete_model_payload() -> dict[str, object]:
         "default_reasoning_effort_code": "medium",
         "default_max_turns": 10,
         "default_validation_retry_count": 2,
+        "default_mapping_source_system_id": 32,
+        "logical_entity_scd_type": "type_2",
     }
 
 
@@ -203,6 +205,7 @@ class CreateModelTransaction:
                 "lock_expires_time": datetime(2026, 8, 24, 15, 0, tzinfo=UTC),
             }
         assert "application.create_model" in query
+        assert query.count("%s") == len(parameters)
         self.create_parameters = parameters
         return {
             "model_id": 18,
@@ -341,6 +344,8 @@ async def test_database_create_model_authorizes_lock_and_passes_full_identity_co
         "medium",
         10,
         2,
+        32,
+        "type_2",
     )
 
 
@@ -370,6 +375,7 @@ class RevisionCommandTransaction:
             self.owner_checks.append(parameters)
             return {"model_revision": 4}
         if "application.update_model" in query:
+            assert query.count("%s") == len(parameters)
             self.function_calls.append(("update", parameters))
             return {
                 "model_id": 18,
@@ -466,6 +472,8 @@ async def test_revision_commands_precheck_path_tenant_and_call_only_governed_fun
         "medium",
         10,
         2,
+        32,
+        "type_2",
     )
     assert archive_call == ("archive", identity + (18, 5))
 
@@ -476,6 +484,12 @@ async def test_revision_commands_precheck_path_tenant_and_call_only_governed_fun
         {"entra_tenant_id": "11111111-1111-1111-1111-111111111111"},
         {"silver_model_naming_instructions": "   "},
         {"default_agent_sdk_code": ""},
+        {"default_mapping_source_system_id": 0},
+        {"default_mapping_source_system_id": True},
+        {"logical_entity_scd_type": "type_3"},
+        {"logical_entity_scd_type": "SCD2"},
+        {"logical_entity_scd_type": 2},
+        {"logical_entity_scd_type": True},
         {"silver_model_audit_columns_template": {"value": "x" * (32 * 1024)}},
         {
             "default_agent_provider_code": None,
@@ -600,6 +614,11 @@ class FailingFunctionDatabase:
             "dependency_unavailable",
         ),
         ("Model is unavailable", 404, "model_not_found"),
+        (
+            "Default Mapping System is unavailable for this Tenant",
+            422,
+            "invalid_request",
+        ),
         ("Model update denied: tenant_lock_required", 409, "tenant_lock_required"),
         ("Model update denied: authorization_denied", 403, "authorization_denied"),
         ("database password=secret-value", 503, "dependency_unavailable"),
@@ -759,3 +778,16 @@ def test_runtime_wires_all_complete_model_command_routes() -> None:
     assert "put" in paths["/api/v1/tenants/{tenant_id}/models/{model_id}"]
     assert "post" in paths["/api/v1/tenants/{tenant_id}/models/{model_id}/archive"]
     assert "put" not in paths["/api/v1/tenants/{tenant_id}/models/{model_id}/input-scope"]
+
+
+@pytest.mark.parametrize("scd_type", (None, "type_1", "type_2"))
+def test_model_commands_preserve_explicit_logical_scd_choice(scd_type: str | None) -> None:
+    payload = _complete_model_payload() | {"logical_entity_scd_type": scd_type}
+    request = CompleteModelRequest.model_validate(payload)
+    update = UpdateModelRequest.model_validate(payload | {"expected_model_revision": 4})
+    assert request.logical_entity_scd_type == update.logical_entity_scd_type == scd_type
+    assert request.model_dump()["logical_entity_scd_type"] == scd_type
+
+
+def test_omitted_logical_scd_choice_is_unspecified() -> None:
+    assert CompleteModelRequest(model_name="Customer 360").logical_entity_scd_type is None

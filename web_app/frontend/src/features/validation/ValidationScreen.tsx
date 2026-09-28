@@ -84,10 +84,10 @@ export function ValidationScreen({
   };
 
   return (
-    <main className="workspace mapping-workspace validation-workspace page-enter">
-      <ModelLayerTabs tenantId={tenantId} modelId={model.model_id} layer={layer} workflow="validation" title="Validation" />
-      <header className="workflow-commandbar validation-commandbar">
+    <div className="mapping-workspace validation-workspace page-enter">
+      <header className="workflow-commandbar validation-commandbar model-section-toolbar">
         <div className="workflow-command-context validation-command-context">
+          <ModelLayerTabs tenantId={tenantId} modelId={model.model_id} layer={layer} workflow="validation" title="Validation" />
           {checkId !== undefined && groupId !== undefined ? <Link
             className="text-action"
             search={{ layer }}
@@ -100,14 +100,7 @@ export function ValidationScreen({
             aria-label="Back to Groups"
             to="/tenants/$tenantId/validation/models/$modelId"
             params={{ tenantId: String(tenantId), modelId: String(model.model_id) }}
-          >← Back to Groups</Link> : <Link
-            className="text-action"
-            aria-label="Back to Validation Models"
-            to="/tenants/$tenantId/validation"
-            params={{ tenantId: String(tenantId) }}
-          >
-            ← Back to Models
-          </Link>}
+          >← Back to Groups</Link> : null}
           <span className={canAuthor ? "lock-context is-held" : "lock-context"}>
             {permissionLabel}
           </span>
@@ -132,10 +125,6 @@ export function ValidationScreen({
           </button> : null}
         </div>
       </header>
-      <div className="workflow-context-line validation-context-line">
-        <strong>{model.model_name} · r{model.model_revision}</strong>
-        <span>Author checks for this layer using applied Mapping and current SQL when available.</span>
-      </div>
       {systemsQuery.error instanceof ApiError && systemsQuery.error.status === 403 ? (
         <p className="inline-error validation-system-error" role="alert">
           You do not have permission to load eligible Validation Systems.
@@ -218,6 +207,6 @@ export function ValidationScreen({
           }}
         />
       ) : null}
-    </main>
+    </div>
   );
 }

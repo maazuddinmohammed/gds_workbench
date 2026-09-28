@@ -163,7 +163,6 @@ class LogicalAttributeSummary(ContractModel):
     logical_attribute_name: str = Field(min_length=1, max_length=255)
     logical_attribute_data_type: str = Field(min_length=1, max_length=100)
     logical_attribute_is_nullable: bool
-    logical_attribute_is_primary_key: bool
     logical_attribute_is_natural_key: bool
     logical_attribute_is_surrogate_key: bool
     logical_attribute_ordinal_position: int = Field(gt=0)

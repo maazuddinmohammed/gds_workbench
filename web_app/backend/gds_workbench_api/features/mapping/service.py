@@ -322,7 +322,10 @@ class MappingWorkflow:
                         ),
                     )
                     sequence += 1
-            if failures and not completed:
+            # Every frozen Entity/System pair is part of this Run's coverage.
+            # A failed pair cannot become a successful partial draft merely
+            # because another pair completed or had no applicable source.
+            if failures:
                 raise failures[0]
             # One section per dataset; each pair retains its own identity and frozen evidence.
             combined_records: dict[ModelChangeSetDataset, list[dict[str, object]]] = {}

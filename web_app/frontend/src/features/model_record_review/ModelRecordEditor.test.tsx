@@ -86,8 +86,16 @@ it("clears the whole layer only after confirming its server-derived impact diges
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Clear logical layer" }));
   await screen.findByRole("button", { name: "Delete 250 records permanently" });
+  expect(screen.getByText("250 records to delete")).toBeVisible();
+  expect(screen.getByText("Logical", { exact: true })).toBeVisible();
+  expect(screen.getByText("Mapping", { exact: true })).toBeVisible();
+  await user.click(screen.getByText("Logical", { exact: true }));
+  expect(screen.getByText("Logical entity")).toBeVisible();
+  expect(screen.getAllByText("230 records").some((item) => item.closest("summary")?.parentElement?.classList.contains("model-delete-workflow"))).toBe(true);
+  expect(screen.queryByRole("table", { name: "Review changes" })).not.toBeInTheDocument();
+  await user.click(screen.getByText("Scope notes", { exact: true }));
   expect(screen.getByText("Physical tables remain unchanged.")).toBeVisible();
-  expect(screen.getByText(/every Logical entity, attribute, relationship, and submodel/)).toBeVisible();
+  expect(screen.getByText("Includes all records in this layer, across pages and filters.")).toBeVisible();
   expect(screen.queryByRole("button", { name: "Record history" })).not.toBeInTheDocument();
   expect(api.previewModelRecordReview.mock.calls[0]?.[2]).toEqual({ dataset: "logical_entity", record_ids: [], layer: "logical", action: "delete", expected_model_revision: 7 });
   expect(api.applyModelRecordReview).not.toHaveBeenCalled();

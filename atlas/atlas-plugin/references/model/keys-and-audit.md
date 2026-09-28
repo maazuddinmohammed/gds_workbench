@@ -14,7 +14,6 @@ Confirmed shared defaults for Logical and Dimensional builds. Explicit user choi
 For a Logical own surrogate, use the [Logical Attribute contract](logical.md):
 
 ```text
-logical_attribute_is_primary_key = true
 logical_attribute_is_surrogate_key = true
 logical_attribute_is_natural_key = false
 logical_attribute_is_nullable = false
@@ -25,7 +24,7 @@ logical_attribute_ordinal_position = 1
 A Dimensional own surrogate uses `dimensional_attribute_key_role="surrogate"`, a permitted key/technical role, non-nullability and ordinal 1. Use its published dataset schema for the remaining fields; Logical boolean key flags are not Dimensional fields.
 
 - A surrogate does not prove uniqueness of the business grain, deduplicate repeated loads or reconcile customers across Systems. Retain the complete business-key definition and supporting evidence.
-- Mark each component of an evidenced Logical natural-key tuple as natural; the tuple is the identifier, not necessarily each component alone. Do not mark the generated surrogate as natural. Logical primary/natural/surrogate flags require non-nullability under the current schema.
+- Mark each component of an evidenced Logical natural-key tuple as natural; the tuple is the identifier, not necessarily each component alone. Do not mark the generated surrogate as natural. Logical natural/surrogate flags require non-nullability under the current schema.
 - Do not relabel a source business identifier as the target's generated key. Preserve actual physical source names and keys in lineage. If a source identifier collides with the generated name, choose a meaningful distinct modeled name under the naming guide; never silently merge the two meanings.
 
 ## Audit policy
@@ -47,7 +46,7 @@ After business Attributes and any selected Source audit fields, use this shared 
 
 The other nine types and all missing nullability settings require the approved template or a user decision before affected definitions are finalized. Do not invent hash semantics, flag values, timestamps or identities. Multiple contributing Systems need a confirmed provenance rule; never choose one arbitrarily.
 
-Mark the approved audit fields as audit columns using the layer's schema; being in the audit block does not make a field a surrogate or primary key. Preserve any evidenced source-namespace component of business identity. If its key/nullability requirements conflict with the configured audit projection, resolve that conflict rather than silently dropping part of the natural-key tuple.
+Mark the approved audit fields as audit columns using the layer's schema; being in the audit block does not make a field a surrogate or natural key. Preserve any evidenced source-namespace component of business identity. If its key/nullability requirements conflict with the configured audit projection, resolve that conflict rather than silently dropping part of the natural-key tuple.
 
 Optional Source audit fields precede that block, only where meaningful source values exist:
 
@@ -66,7 +65,7 @@ Implemented backend projection:
 
 - New active Logical entities receive an own first BIGINT surrogate; new dimensions, facts and bridges receive their configured own first surrogate. Existing approved table identities are preserved. Multiple own surrogates, source-derived generated identities and business-name collisions are rejected rather than silently relabeled.
 - Business Attributes retain relative order after the own surrogate; configured audit fields follow. Dimensional foreign-key projection does not displace the own surrogate.
-- SourceSystemID may retain physical lineage. Other configured framework audit fields remain source-less. Logical projection preserves existing provenance primary/natural-key flags rather than deleting a component of business identity.
+- SourceSystemID may retain physical lineage. Other configured framework audit fields remain source-less. Logical projection preserves existing provenance natural-key flags rather than deleting a component of business identity.
 - Reapplying the same approved candidate yields no redundant attribute edits. These projection rules do not prove business grain or normalization quality; run the shared technical and modeling review.
 - The nine framework populations and Type 2 history fields remain the external orchestration consumer contract. Inspect that consumer when its configured behavior is unclear; the local build does not deploy it.
 

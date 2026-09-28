@@ -937,7 +937,7 @@
       ]
     },
     "authoring_policy": {
-      "description": "Model name, naming instructions and audit/technical templates. Apply only recorded policy to transformation content; use existing modeled Attributes.",
+      "description": "Model name, naming instructions and audit/technical templates, plus logical_entity_scd_type history guidance. For Logical targets type_1 overwrites current values; type_2 preserves versions. Null is unspecified. Do not infer keys or invent history Attributes. Apply only recorded policy to transformation content; use existing modeled Attributes.",
       "schema": {
         "$defs": {
           "JsonObject": {
@@ -955,6 +955,22 @@
             "minLength": 1,
             "title": "Model Name",
             "type": "string"
+          },
+          "logical_entity_scd_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "type_1",
+                  "type_2"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Logical Entity Scd Type"
           },
           "naming_instructions": {
             "anyOf": [
@@ -1000,6 +1016,7 @@
       "example": {
         "audit_columns_template": null,
         "model_name": "Customer Model",
+        "logical_entity_scd_type": "type_2",
         "naming_instructions": "Use PascalCase names.",
         "technical_columns_template": null
       }

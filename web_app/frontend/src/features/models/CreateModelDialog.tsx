@@ -3,17 +3,19 @@ import { useMutation } from "@tanstack/react-query";
 
 import { trapDialogFocus, useDialogFocus } from "../../shared/dialog";
 import type { WorkflowsApi } from "../workflows/api";
+import type { SystemRecord } from "../tenants/api";
 import type { CreateModelCommand, ModelCommandResult, ModelsApi } from "./api";
 import { ModelForm } from "./ModelForm";
 
 export function CreateModelDialog({
-  api, tenantId, hasTenantLock, onClose, onCreated,
+  api, tenantId, hasTenantLock, onClose, onCreated, systems,
 }: {
   api: Pick<ModelsApi, "createModel"> & Pick<WorkflowsApi, "readAgentCapabilities">;
   tenantId: number;
   hasTenantLock: boolean;
   onClose: () => void;
   onCreated: (created: ModelCommandResult) => void;
+  systems: SystemRecord[];
 }) {
   const nameInput = useRef<HTMLInputElement>(null);
   const mutation = useMutation({
@@ -31,7 +33,7 @@ export function CreateModelDialog({
           <h2 id="create-model-heading">Create Model</h2>
           <button className="panel-close" type="button" aria-label="Close Model creation" disabled={mutation.isPending} onClick={onClose}>×</button>
         </header>
-        <ModelForm api={api} tenantId={tenantId} hasTenantLock={hasTenantLock} nameInput={nameInput}
+        <ModelForm api={api} tenantId={tenantId} hasTenantLock={hasTenantLock} nameInput={nameInput} systems={systems}
           isPending={mutation.isPending} error={mutation.error} onCancel={onClose}
           onSubmit={(command) => mutation.mutate(command)} />
       </section>

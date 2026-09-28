@@ -109,7 +109,7 @@ function EditorControl({ field, value, onChange }: { field: Editor["fields"][num
   return <label htmlFor={id}>{field.label}{!field.required ? " (optional)" : ""}
     {field.kind === "choice" ? <select id={id} value={text} required={field.required} onChange={(event) => onChange(event.target.value || null)}>
       {!field.required ? <option value="">Not specified</option> : null}
-      {field.options.map((option) => <option key={option} value={option}>{option.replaceAll("_", " ")}</option>)}
+      {field.options.map((option) => <option key={option} value={option}>{field.name === "dimensional_attribute_key_role" && option === "business" ? "Natural key" : option.replaceAll("_", " ")}</option>)}
     </select> : field.kind === "multiline" || field.kind === "lines" ? <textarea id={id} rows={3} value={text}
       required={field.required && field.kind !== "lines"} maxLength={field.maximum_length ?? undefined}
       onChange={(event) => onChange(field.kind === "lines" ? event.target.value.split("\n") : event.target.value || null)} />

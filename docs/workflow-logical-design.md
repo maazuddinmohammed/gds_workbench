@@ -46,7 +46,7 @@ not prove active status, confidence, meaning, or that a record is unlocked.
 - Entities retain definition, type/type detail, grain, dependency order,
   confidence, status, lock, Submodel memberships, and their existing sources.
 - Attributes retain parent Entity name, name, definition, data type, nullability,
-  primary/natural/surrogate key flags, ordinal position, audit flag, status, lock,
+  natural/surrogate key flags, ordinal position, audit flag, status, lock,
   and sources. There is no existing Logical Attribute confidence field.
 - Relationships retain complete Attribute endpoints, name, definition,
   cardinality, confidence, relationship basis, cardinality basis, status, and lock.
@@ -261,7 +261,6 @@ This example illustrates record shapes, not a complete production data model.
       "logical_attribute_definition": "CustomerId recorded for this Customer.",
       "logical_attribute_data_type": "bigint",
       "logical_attribute_is_nullable": false,
-      "logical_attribute_is_primary_key": true,
       "logical_attribute_is_natural_key": true,
       "logical_attribute_is_surrogate_key": false,
       "logical_attribute_ordinal_position": 1,
@@ -292,7 +291,6 @@ This example illustrates record shapes, not a complete production data model.
       "logical_attribute_definition": "OrderId recorded for this Order.",
       "logical_attribute_data_type": "bigint",
       "logical_attribute_is_nullable": false,
-      "logical_attribute_is_primary_key": true,
       "logical_attribute_is_natural_key": true,
       "logical_attribute_is_surrogate_key": false,
       "logical_attribute_ordinal_position": 1,
@@ -323,7 +321,6 @@ This example illustrates record shapes, not a complete production data model.
       "logical_attribute_definition": "CustomerId recorded for this Order.",
       "logical_attribute_data_type": "bigint",
       "logical_attribute_is_nullable": false,
-      "logical_attribute_is_primary_key": false,
       "logical_attribute_is_natural_key": false,
       "logical_attribute_is_surrogate_key": false,
       "logical_attribute_ordinal_position": 2,
@@ -710,7 +707,7 @@ membership_is_locked. Sources use the exact variants described above.
 
 Each Attribute contains logical_entity_name, logical_attribute_name,
 logical_attribute_definition, logical_attribute_data_type,
-logical_attribute_is_nullable, logical_attribute_is_primary_key,
+logical_attribute_is_nullable,
 logical_attribute_is_natural_key, logical_attribute_is_surrogate_key,
 logical_attribute_ordinal_position, logical_attribute_is_audit_column,
 logical_attribute_status, logical_attribute_is_locked, sources.
@@ -1315,7 +1312,7 @@ membership_is_locked. Sources use the exact variants described above.
 
 Each Attribute contains logical_entity_name, logical_attribute_name,
 logical_attribute_definition, logical_attribute_data_type,
-logical_attribute_is_nullable, logical_attribute_is_primary_key,
+logical_attribute_is_nullable,
 logical_attribute_is_natural_key, logical_attribute_is_surrogate_key,
 logical_attribute_ordinal_position, logical_attribute_is_audit_column,
 logical_attribute_status, logical_attribute_is_locked, sources.

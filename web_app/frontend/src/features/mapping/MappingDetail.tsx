@@ -2,12 +2,14 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { DetailState, Fact } from "../../shared/ui";
+import { formatRequiredDateTime } from "../../shared/presentation";
 
 import { ApiError } from "../../core/http";
 import type { MappingAttributeDetail, MappingObjectDetail } from "./api";
 import { mappingQueryKeys, type MappingApi } from "./api";
 import { MappingDocumentView } from "./MappingDocumentView";
 import { MappingObjectAttributes } from "./MappingObjectAttributes";
+import { MappingLogicDocument } from "./MappingLogicDocument";
 
 export function MappingObjectDetailPage({
   api,
@@ -72,34 +74,38 @@ function MappingObjectDetailView({
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
   return (
-    <article className="workflow-detail-page mapping-detail-page page-enter">
+    <article className="workflow-detail-page mapping-detail-page mapping-object-detail page-enter">
       <DetailHeader
         tenantId={tenantId}
         modelId={modelId}
         layer={detail.target.entity_type === "logical_entity" ? "logical" : "dimensional"}
-        eyebrow={`Object Mapping ${detail.mapping_object_id}`}
-        title={`${detail.target.entity_schema_name}.${detail.target.entity_name}`}
+        eyebrow="Entity mapping"
+        title={detail.target.entity_name}
         status={detail.status}
         locked={detail.is_locked}
         headingRef={heading}
+        context={<dl className="mapping-identity-strip">
+          <Fact label="System" value={detail.source_system.system_code} />
+          <Fact label="Schema" value={detail.target.entity_schema_name} />
+        </dl>}
       />
-      <section className="detail-section detail-primary" aria-labelledby="mapping-object-context">
-        <header><h2 id="mapping-object-context">Mapping context</h2></header>
-        <div className="endpoint-comparison">
-          <section><small>Entity</small><h3>{detail.target.entity_schema_name}.{detail.target.entity_name}</h3><span>{humanize(detail.target.entity_type)}</span></section>
-        </div>
-        <details className="support-record-details"><summary>Source and template details</summary>
-        <dl className="detail-fact-grid">
-          <Fact label="Source System" value={detail.source_system.system_code} />
-          <Fact label="Entity order" value={String(detail.dependency_order)} />
-        </dl>
-        <OutputTemplate template={detail.output_template} />
-        </details>
+      <section className="mapping-transformation-panel" aria-label="Entity transformation">
+        <header><h2>Entity transformation</h2></header>
+        {detail.mapping_document === null ? <p className="detail-empty">Entity transformation is not authored.</p>
+          : <MappingLogicDocument document={detail.mapping_document} path="Entity transformation" />}
       </section>
       {children}
-      <details className="detail-section detail-disclosure mapping-transformation">
-        <summary>Object transformation</summary>
-        <MappingDocumentView title="Transformation document" document={detail.mapping_document} />
+      <details className="mapping-inspector-details"><summary>Mapping details</summary>
+        <dl className="detail-fact-grid">
+          <Fact label="Object Mapping" value={String(detail.mapping_object_id)} />
+          <Fact label="Entity order" value={String(detail.dependency_order)} />
+          <Fact label="Updated" value={formatRequiredDateTime(detail.updated_at)} />
+          <Fact label="Created" value={formatRequiredDateTime(detail.created_at)} />
+        </dl>
+        <OutputTemplate template={detail.output_template} />
+        {detail.mapping_document !== null ? <details className="support-record-details"><summary>Original document</summary>
+          <pre className="mapping-original-document" tabIndex={0}><code>{JSON.stringify(detail.mapping_document, null, 2)}</code></pre>
+        </details> : null}
       </details>
     </article>
   );
@@ -123,6 +129,7 @@ function MappingAttributeDetailView({
         tenantId={tenantId}
         modelId={modelId}
         parentObjectId={detail.parent_object_mapping.mapping_object_id}
+        layer={target.entity.entity_type === "logical_entity" ? "logical" : "dimensional"}
         eyebrow={`Attribute Mapping ${detail.mapping_attribute_id}`}
         title={`${target.entity.entity_schema_name}.${target.entity.entity_name}.${target.attribute_name}`}
         status={detail.status}
@@ -131,13 +138,18 @@ function MappingAttributeDetailView({
       />
       <section className="detail-section detail-primary" aria-labelledby="mapping-attribute-context">
         <header><h2 id="mapping-attribute-context">Mapping context</h2></header>
-        <div className="endpoint-comparison">
-          <section><small>Attribute</small><h3>{target.entity.entity_schema_name}.{target.entity.entity_name}.{target.attribute_name}</h3><span>{target.data_type}</span></section>
-        </div>
+        <dl className="detail-fact-grid">
+          <Fact label="Schema" value={target.entity.entity_schema_name} />
+          <Fact label="Entity name" value={target.entity.entity_name} />
+          <Fact label="Attribute" value={target.attribute_name} />
+          <Fact label="Data type" value={target.data_type} />
+          <Fact label="Source System" value={detail.source_system.system_code} />
+        </dl>
         <details className="support-record-details"><summary>Source and template details</summary>
         <dl className="detail-fact-grid">
-          <Fact label="Source System" value={detail.source_system.system_code} />
           <Fact label="Ordinal" value={String(target.ordinal_position)} />
+          <Fact label="Updated" value={formatRequiredDateTime(detail.updated_at)} />
+          <Fact label="Created" value={formatRequiredDateTime(detail.created_at)} />
         </dl>
         <OutputTemplate template={detail.output_template} />
         </details>
@@ -148,6 +160,7 @@ function MappingAttributeDetailView({
         <dl className="detail-fact-grid">
           <div><dt>Object Mapping</dt><dd>
             <Link className="text-action" to="/tenants/$tenantId/mapping/models/$modelId/objects/$mappingObjectId"
+              search={{ layer: target.entity.entity_type === "logical_entity" ? "logical" : "dimensional" }}
               params={{ tenantId: String(tenantId), modelId: String(modelId), mappingObjectId: String(detail.parent_object_mapping.mapping_object_id) }}>
               Object Mapping {detail.parent_object_mapping.mapping_object_id}
             </Link>
@@ -171,6 +184,7 @@ function DetailHeader({
   status,
   locked,
   headingRef,
+  context,
 }: {
   tenantId: number;
   modelId: number;
@@ -181,6 +195,7 @@ function DetailHeader({
   status: string;
   locked: boolean;
   headingRef: React.RefObject<HTMLHeadingElement | null>;
+  context?: ReactNode;
 }) {
   return (
     <header className="workflow-detail-header">
@@ -193,12 +208,13 @@ function DetailHeader({
             : "/tenants/$tenantId/mapping/models/$modelId"}
           params={{ tenantId: String(tenantId), modelId: String(modelId),
             ...(parentObjectId ? { mappingObjectId: String(parentObjectId) } : {}) }}
-          search={parentObjectId ? {} : { layer }}
+          search={layer ? { layer } : {}}
         >
           ← {parentObjectId ? "Back to Object Mapping" : "Back to Object mappings"}
         </Link>
         <p className="eyebrow">{eyebrow}</p>
         <h1 ref={headingRef} tabIndex={-1}>{title}</h1>
+        {context}
       </div>
       <div className="detail-badge-stack">
         <span className={`status-badge ${statusTone(status)}`}>{humanize(status)}</span>

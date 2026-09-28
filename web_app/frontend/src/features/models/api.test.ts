@@ -37,6 +37,7 @@ describe("Models HTTP adapter", () => {
     const command: Parameters<ReturnType<typeof createModelsApi>["createModel"]>[1] = {
       model_name: "Customer", model_description: null,
       logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null, silver_model_audit_columns_template: null,
+      logical_entity_scd_type: "type_2",
       gold_model_naming_instructions: null, gold_model_technical_columns_template: null,
       gold_model_audit_columns_template: null, default_agent_sdk_code: null,
       default_agent_provider_code: null, default_agent_model_code: null,

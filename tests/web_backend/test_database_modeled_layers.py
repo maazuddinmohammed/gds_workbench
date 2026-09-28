@@ -256,11 +256,10 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
                     logical_attribute_definition,
                     logical_attribute_data_type,
                     logical_attribute_is_nullable,
-                    logical_attribute_is_primary_key,
                     logical_attribute_is_surrogate_key,
                     logical_attribute_ordinal_position
                 ) VALUES (%s, %s, 'Customer ID', 'Stable Customer ID.',
-                          'BIGINT', FALSE, TRUE, TRUE, 1)
+                          'BIGINT', FALSE, TRUE, 1)
                 RETURNING logical_attribute_id
                 """,
                 (model_id, customer_id),

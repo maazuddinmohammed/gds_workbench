@@ -52,6 +52,8 @@ class ModelDetail(BaseModel):
     model_input_scope_object_count: int = Field(ge=0)
     logical_schemas: tuple[ModelSchemaDefinition, ...] = ()
     dimensional_schemas: tuple[ModelSchemaDefinition, ...] = ()
+    default_mapping_source_system_id: int | None = Field(default=None, gt=0)
+    logical_entity_scd_type: Literal["type_1", "type_2"] | None = None
     silver_model_naming_instructions: str | None = None
     silver_model_audit_columns_template: JsonValue | None = None
     gold_model_naming_instructions: str | None = None

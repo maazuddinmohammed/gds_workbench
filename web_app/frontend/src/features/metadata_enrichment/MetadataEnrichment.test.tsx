@@ -343,13 +343,13 @@ describe("current metadata enrichment workspace", () => {
     const api = metadataFixture({ failOnce: true }); const user = userEvent.setup();
     let table = await screen.findByRole("table", { name: "Object metadata" });
     expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["", "Source Tenant", "Schema", "Object", "Object description", "Zone", "Attributes", "Actions", "Details"]);
-    await user.type(screen.getByLabelText("Source Tenant code"), " NWA ");
-    await user.type(screen.getByLabelText("System code"), " CRM ");
+    await user.selectOptions(screen.getByLabelText("Source Tenant code"), "NWA");
+    await user.selectOptions(screen.getByLabelText("System code"), "CRM");
     await user.selectOptions(screen.getByLabelText("Zone"), "source");
     await user.type(screen.getByLabelText("Schema or Object name"), " customer ");
     await user.click(screen.getByRole("button", { name: "Apply filters" }));
     await waitFor(() => expect(api.listModelInputScope).toHaveBeenLastCalledWith(7, 18, {
-      sourceTenantCode: " NWA ", systemCode: " CRM ", zone: "source", objectName: " customer ",
+      sourceTenantCode: "NWA", systemCode: "CRM", zone: "source", objectName: " customer ",
     }, 200, undefined));
     table = screen.getByRole("table", { name: "Object metadata" });
     expect(screen.queryByText(/Complete missing/)).not.toBeInTheDocument();

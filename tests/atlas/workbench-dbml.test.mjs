@@ -37,7 +37,6 @@ test("local DBML renders complete and submodel files from the effective Model", 
         logical_attribute_data_type: "bigint",
         logical_attribute_ordinal_position: 1,
         logical_attribute_is_nullable: false,
-        logical_attribute_is_primary_key: true,
         logical_attribute_is_natural_key: false,
         logical_attribute_is_surrogate_key: true,
         logical_attribute_is_audit_column: false,
@@ -65,7 +64,7 @@ test("local DBML renders complete and submodel files from the effective Model", 
   ]);
   const logical = documents.find((document) => document.path === "logical_complete.dbml");
   assert.match(logical.content, /Table "silver"\."Customer"/);
-  assert.match(logical.content, /"CustomerID" bigint \[pk, not null/);
+  assert.match(logical.content, /"CustomerID" bigint \[unique, not null/);
   assert.equal(logical.table_count, 1);
 });
 
@@ -99,4 +98,46 @@ test("local DBML rejects relationships whose effective endpoints are missing", (
     () => dbml.render(loaded, { model_id: 41, model_name: "Orders", model_revision: 1 }),
     /inactive or missing endpoint/,
   );
+});
+
+test("natural-key tuples remain composite and repeat across declared history", () => {
+  for (const layer of ["logical", "dimensional"]) {
+    const entity = { [`${layer}_entity_schema_name`]: layer === "logical" ? "silver" : "gold", [`${layer}_entity_name`]: "Customer" };
+    const attribute = (name, ordinal, surrogate) => ({
+      ...entity,
+      [`${layer}_attribute_name`]: name,
+      [`${layer}_attribute_definition`]: surrogate ? "Generated row identity." : "Part of business identity.",
+      [`${layer}_attribute_data_type`]: "bigint",
+      [`${layer}_attribute_ordinal_position`]: ordinal,
+      [`${layer}_attribute_is_nullable`]: false,
+      [`${layer}_attribute_status`]: "active",
+      ...(layer === "logical" ? {
+        logical_attribute_is_surrogate_key: surrogate,
+        logical_attribute_is_natural_key: !surrogate,
+      } : {
+        dimensional_attribute_role: "key",
+        dimensional_attribute_key_role: surrogate ? "surrogate" : "business",
+        dimensional_attribute_change_behavior: "fixed",
+      }),
+    });
+    const columns = [attribute("CustomerID", 1, true), attribute("SystemID", 2, false), attribute("CustomerCode", 3, false)];
+    const details = { logical_entity_scd_type: "type_1" };
+    const loaded = new Map([
+      ["model_details", state([details])],
+      [`${layer}_entity`, state([{ ...entity, [`${layer}_entity_status`]: "active", submodels: [] }])],
+      [`${layer}_attribute`, state(columns)],
+    ]);
+    const model = { model_id: 41, model_name: "Customer Operations", model_revision: 1 };
+    const current = dbml.render(loaded, model, { modelType: layer })[0].content;
+    assert.match(current, /\("SystemID", "CustomerCode"\) \[unique\]/);
+    assert.match(current, /"CustomerID" bigint \[unique, not null/);
+    assert.doesNotMatch(current, /\[pk[,\]]/);
+    if (layer === "logical") details.logical_entity_scd_type = "type_2";
+    else columns[1].dimensional_attribute_change_behavior = "historize";
+    const history = dbml.render(loaded, model, { modelType: layer })[0].content;
+    assert.match(history, /"CustomerID" bigint \[unique, not null/);
+    assert.doesNotMatch(history, /\("SystemID", "CustomerCode"\) \[unique\]/);
+    assert.doesNotMatch(history, /\[pk[,\]]/);
+    assert.match(history, layer === "logical" ? /Natural key\./ : /Key role: business\./);
+  }
 });

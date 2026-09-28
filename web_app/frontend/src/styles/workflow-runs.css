@@ -682,7 +682,6 @@
 .metadata-enrichment-screen .workflow-commandbar h1 { margin: 0.2rem 0; font-size: 1.4rem; }
 .metadata-enrichment-screen .workflow-commandbar p { max-width: 52rem; }
 .metadata-enrichment-screen .workflow-commandbar > button { align-self: center; flex-shrink: 0; }
-.enrichment-scope-note,
 .enrichment-history-note { color: var(--muted); font-size: 0.85rem; }
 .enrichment-results { padding: 1rem 0; border-top: 1px solid var(--line); }
 .enrichment-results h3 { margin: 0 0 0.75rem; }

@@ -26,14 +26,14 @@ export function EntityAttributes(props: Props) {
         return { revision: page.model_revision, next: page.next_cursor, items: page.items.map((item) => ({
           id: item.logical_attribute_id, name: item.logical_attribute_name, type: item.logical_attribute_data_type,
           nullable: item.logical_attribute_is_nullable, status: item.logical_attribute_status, locked: item.logical_attribute_is_locked,
-          role: [item.logical_attribute_is_primary_key && "Primary key", item.logical_attribute_is_natural_key && "Natural key", item.logical_attribute_is_surrogate_key && "Surrogate key", item.logical_attribute_is_audit_column && "Audit"].filter(Boolean).join(" · ") || "—",
+          role: [item.logical_attribute_is_natural_key && "Natural key", item.logical_attribute_is_surrogate_key && "Surrogate key", item.logical_attribute_is_audit_column && "Audit"].filter(Boolean).join(" · ") || "—",
         })) };
       }
       const page = await props.api.listDimensionalAttributes(tenantId, modelId, { dimensionalEntityId: entityId, ...(status ? { status } : {}) }, 200, pageParam);
       return { revision: page.model_revision, next: page.next_cursor, items: page.items.map((item) => ({
         id: item.dimensional_attribute_id, name: item.dimensional_attribute_name, type: item.dimensional_attribute_data_type,
         nullable: item.dimensional_attribute_is_nullable, status: item.dimensional_attribute_status, locked: item.dimensional_attribute_is_locked,
-        role: [item.dimensional_attribute_key_role !== "none" ? `${item.dimensional_attribute_key_role} key` : item.dimensional_attribute_role, item.dimensional_attribute_is_grain_component && "Grain"].filter(Boolean).join(" · ").replaceAll("_", " "),
+        role: [item.dimensional_attribute_key_role === "business" ? "Natural key" : item.dimensional_attribute_key_role !== "none" ? `${item.dimensional_attribute_key_role} key` : item.dimensional_attribute_role, item.dimensional_attribute_is_audit_column && "Audit", item.dimensional_attribute_is_grain_component && "Grain"].filter(Boolean).join(" · ").replaceAll("_", " "),
       })) };
     },
     getNextPageParam: (page) => page.next ?? undefined,

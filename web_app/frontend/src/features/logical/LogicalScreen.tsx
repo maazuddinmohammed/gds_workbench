@@ -115,12 +115,9 @@ export function LogicalScreen({
 
   return (
     <div className="logical-page page-enter">
-      <header className="workflow-commandbar model-layer-commandbar logical-commandbar">
-        <h1>Logical</h1>
+      <header className="workflow-commandbar model-section-toolbar logical-commandbar">
+        <h1 className="model-section-title sr-only">Logical</h1>
         <div className="workflow-command-context">
-          <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
-            {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
-          </span>
           <nav className="workflow-tabs" aria-label="Logical views">
             {([
               ["entities", "Entities"],
@@ -138,6 +135,9 @@ export function LogicalScreen({
               </button>
             ))}
           </nav>
+          <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
+            {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
+          </span>
         </div>
         <div className="workflow-command-actions">
           <ModelLayerActions api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="logical" onApplied={() => setSelectedIds(new Set())} />

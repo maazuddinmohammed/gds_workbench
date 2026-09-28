@@ -39,7 +39,7 @@ Never parse generated DDL back into Metadata or maintain independent definitions
 | Batch column | Set `batch_attribute_name` only to the actual active batch Attribute established by the target policy; null when none exists. Column names alone do not establish batch semantics. |
 | Remaining fields | Follow published Object/Attribute schemas and shared defaults; preserve unrelated existing values. Silver/Gold unused transformation fields do not carry Mapping logic. |
 
-The Metadata schema has no primary-key constraint field, relationship graph or Entity dependency-order field. Keep these in the Model/target-definition context and applicable DDL design; do not add properties to Metadata records. Likewise, surrogate metadata alone does not create a database-generated identity.
+Neither modeled Attribute roles nor Metadata define a physical primary-key constraint. Preserve modeled relationships and Entity dependency order in the Model/target-definition context, and decide physical constraints explicitly in applicable DDL design; do not add properties to Metadata records. Likewise, surrogate metadata alone does not create a database-generated identity.
 
 `attribute_inferred_data_type` remains distinct from physical type. Preserve applicable existing values and follow its shared field rules; registration is not an excuse to overwrite inferred types or launch unrelated enrichment.
 

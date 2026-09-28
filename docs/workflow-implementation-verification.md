@@ -34,7 +34,7 @@ is part of this change.
 The implementation provides fourteen independently editable default prompt
 configurations across the existing workflows. Metadata enrichment uses separate
 Object and Attribute prompt identities under its existing run. The catalog
-contains 171 workflow/stage variable registrations. Readers query frozen
+contains 173 workflow/stage variable registrations. Readers query frozen
 precomputed evidence using natural keys, optional selectors, bounded pages, and
 run-bound cursors. Explicitly selecting no tools is supported.
 

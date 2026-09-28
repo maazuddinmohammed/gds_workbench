@@ -14,6 +14,7 @@ from gds_etl_workbench.domain.authorization import (
 from gds_etl_workbench.domain.errors import (
     AuthorizationDeniedError,
     DependencyUnavailableError,
+    InvalidRequestError,
     TenantLockedError,
     TenantLockRequiredError,
     TenantNotFoundError,
@@ -43,7 +44,7 @@ SELECT created.model_id,
        created.updated_time AS updated_at
   FROM application.create_model(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS created
 """
 
@@ -63,7 +64,7 @@ SELECT updated.model_id,
        updated.updated_time AS updated_at
   FROM application.update_model(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS updated
 """
 
@@ -271,6 +272,8 @@ def _complete_model_parameters(request: CompleteModelRequest) -> tuple[object, .
         request.default_reasoning_effort_code,
         request.default_max_turns,
         request.default_validation_retry_count,
+        request.default_mapping_source_system_id,
+        request.logical_entity_scd_type,
     )
 
 
@@ -295,6 +298,10 @@ def _raise_safe_command_error(error: Exception) -> Never:
         raise ModelRevisionConflictError() from error
     if message == "A referenced Model schema cannot be removed or renamed":
         raise ModelSchemaConflictError() from error
+    if message == "Default Mapping System is unavailable for this Tenant":
+        raise InvalidRequestError(
+            "Choose an active default Mapping System with a Connection in this Tenant."
+        ) from error
     if message == "Model is unavailable":
         raise ModelNotFoundError() from error
     denial_code = _controlled_denial_code(message)

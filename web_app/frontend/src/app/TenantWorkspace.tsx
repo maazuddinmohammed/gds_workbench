@@ -7,14 +7,11 @@ import { roleLabel } from "../features/tenants/presentation";
 import {
   Avatar,
   Brand,
-  CodeIcon,
   DatabaseIcon,
   HomeIcon,
-  MappingIcon,
   ModelIcon,
   PanelToggleIcon,
   PromptsIcon,
-  ValidationIcon,
 } from "../shared/ui";
 import { useStoredBoolean } from "../shared/useStoredBoolean";
 
@@ -124,43 +121,13 @@ export function TenantWorkspace({
           </Link>
           <Link
             aria-label="Models"
-            className={`nav-item${activeNav === "models" ? " is-active" : ""}`}
+            className={`nav-item${["models", "mapping", "code-generation", "validation"].includes(activeNav) ? " is-active" : ""}`}
             data-short-label="Models"
             to="/tenants/$tenantId/models"
             params={{ tenantId }}
             title="Models"
           >
             <ModelIcon /><span className="nav-item-label">Models</span>
-          </Link>
-          <Link
-            aria-label="Mapping"
-            className={`nav-item${activeNav === "mapping" ? " is-active" : ""}`}
-            data-short-label="Mapping"
-            to="/tenants/$tenantId/mapping"
-            params={{ tenantId }}
-            title="Mapping"
-          >
-            <MappingIcon /><span className="nav-item-label">Mapping</span>
-          </Link>
-          <Link
-            aria-label="Code generation"
-            className={`nav-item${activeNav === "code-generation" ? " is-active" : ""}`}
-            data-short-label="Code"
-            to="/tenants/$tenantId/code-generation"
-            params={{ tenantId }}
-            title="Code generation"
-          >
-            <CodeIcon /><span className="nav-item-label">Code generation</span>
-          </Link>
-          <Link
-            aria-label="Validation"
-            className={`nav-item${activeNav === "validation" ? " is-active" : ""}`}
-            data-short-label="Validation"
-            to="/tenants/$tenantId/validation"
-            params={{ tenantId }}
-            title="Validation"
-          >
-            <ValidationIcon /><span className="nav-item-label">Validation</span>
           </Link>
           <Link
             aria-label="Prompts"

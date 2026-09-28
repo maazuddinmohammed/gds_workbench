@@ -1,4 +1,4 @@
-# GDS Workbench design system
+# Atlas design system
 
 Use this document before changing `web_app/frontend`. It records the current
 product language and interaction rules. Existing CSS remains the implementation
@@ -6,7 +6,7 @@ source of truth.
 
 ## Product character
 
-GDS Workbench is a governance-first data workspace. It should feel calm,
+Atlas is a governance-first data workspace. It should feel calm,
 precise, dense, and trustworthy—not promotional.
 
 - Prefer warm-neutral surfaces, dark readable type, and a restrained
@@ -27,6 +27,7 @@ precise, dense, and trustworthy—not promotional.
 | Shared buttons, typography, entry states | `web_app/frontend/src/styles/metadata.css` |
 | App shell and Tenant workspace | `web_app/frontend/src/styles/tenant-workspace.css` |
 | Model workspace, tables, badges | `web_app/frontend/src/styles/models-scope.css` |
+| Model identity and horizontal navigation | `web_app/frontend/src/styles/model-workspace-overrides.css` |
 | Workflow command bars, drawers, dialogs | `web_app/frontend/src/styles/profiling.css` |
 | Workflow run monitor and events | `web_app/frontend/src/styles/workflow-runs.css` |
 | Feature-specific exceptions | Other files imported by `web_app/frontend/src/styles.css` |
@@ -92,23 +93,47 @@ No formal numeric spacing scale exists. Reuse nearby values and these patterns:
 
 - Desktop: `15rem` workspace navigation, `4.5rem` sticky top bar, flexible
   workspace. Its explicit control collapses the navigation to `4.75rem`.
-- Model pages add a `13.5rem` guided-journey rail inside the workspace. Its own
-  control collapses the rail to `4.25rem` without changing workspace navigation.
-- Remember both choices independently across route changes. Collapsed links keep
+- Workspace navigation contains Home, Metadata, Models and Prompts. Model-owned
+  Mapping, Code generation and Validation appear in the Model navigation.
+- Model pages use a persistent identity header and one horizontal navigation row:
+  Overview, Settings, Input scope, Assertions, Enrichment, Profiling, Analysis,
+  Conceptual, Logical, Dimensional, Mapping, Code generation and Validation.
+- Keep the row scrollable, with explicit previous/next controls, visible active
+  state and Arrow/Home/End keyboard navigation. Preserve the selected
+  Logical/Dimensional layer when moving between Model sections or detail pages.
+- Model tabs use a minimalist ribbon: a circle above each semibold label and a
+  fine terracotta underline for the active section. Connect circles in three
+  groups: Overview, Settings, Input scope and Assertions; Enrichment through
+  Dimensional; Mapping through Validation. Leave a gap between groups.
+  The first group is manual navigation: neutral gray circles with no run-status
+  text, regardless of saved records or returned section states.
+  The second and third groups show a short status below each label using explicit
+  backend section states, without Object or record counts. Distinguish
+  Completed from Results available: stored results may have been authored outside
+  the web application, and a completed run alone does not imply current coverage.
+  Latest Running, Queued or Failed states remain visible even with older results.
+  Loading, unavailable data and revision conflicts must never imply Not run.
+  All sections remain clickable. A soft gray inset highlight follows hover
+  and keyboard focus without moving labels; disable its motion for reduced-motion
+  preferences. Hide disabled overflow arrows and reveal the active tab after
+  navigation or viewport resizing. Refresh section status is an explicit action
+  beside the Model revision/lock context; do not poll for these statuses.
+- Remember workspace navigation collapse across route changes. Collapsed links keep
   an accessible name and a native tooltip; the reveal control always remains
   reachable.
-- At `58rem`, the Model journey becomes a horizontal/top region. At `42rem`, the
-  workspace navigation becomes a hideable bottom region.
+- At `42rem`, workspace navigation becomes a hideable bottom region. Model
+  navigation remains a horizontally scrollable row.
 - At `42rem`, page controls and high-density regions stack.
 
 Use the shared dependency-free outline icons from `shared/ui.tsx` for shell
 navigation. Keep them at `24×24`, `1.8px` stroke, rounded caps and joins. Do not
 use emoji, Unicode symbols, or an unrelated icon family.
 
-The workspace navigation and Model journey use warm-neutral rail surfaces,
-terracotta active markers, and a pale terracotta active fill. Keep the rail
-header to its single left-aligned Hide/Show control; Tenant and Model identity
-remain in the top bar.
+Workspace navigation uses warm-neutral surfaces, terracotta active markers and
+a pale terracotta active fill. Model tabs use a quiet status ribbon and underline
+without boxed backgrounds. Keep the workspace rail header to its
+single left-aligned Hide/Show control. Tenant context stays in the top bar; the
+Model header shows its name, description, revision and Tenant Lock state.
 
 Every layout child in a flexible grid must use `min-width: 0`. Wide tables use a
 scroll container and an intentional `min-width`; do not squeeze or silently
@@ -125,6 +150,18 @@ Use this order when applicable:
 5. Primary table or ledger.
 6. Inspector, drawer, or dialog for one selected record.
 7. Empty, loading, and error state in the same content location.
+
+Inside a Model, the active tab supplies the visible section title. Do not repeat
+it in a large heading below the tabs; retain a visually hidden semantic heading
+for assistive technology. Record-specific detail headings remain visible.
+Use one compact toolbar: subsection/layer selection and context first, supporting
+actions next and the primary action last. Follow with recent runs, filters and
+the results ledger. Model identity and revision stay in the shared header.
+
+Overview uses an unboxed summary: separate Logical and Dimensional schema lists,
+with status and updated time aligned to the right on desktop. Schema labels wrap
+without truncation; metadata moves below the lists on narrow screens. Keep the
+workflow ledger close below this summary.
 
 The Metadata catalog uses a full-width Excel Change Set above a left section
 rail and the selected sheet. Keep the page heading to “Metadata catalog”;
@@ -158,6 +195,10 @@ the existing row drawer with Edit.
   then the backend revalidates.
 - Put errors next to the affected action. Preserve user input after a recoverable
   failure.
+- Use consistent select triggers. Multi-select menus float beneath their trigger
+  without shifting the page; keep checkbox rows compact, searchable and keyboard
+  accessible. Searching must preserve selected values and must not submit the form.
+  Escape returns focus to the trigger; clicking an option label keeps the menu open.
 
 ### Tables and ledgers
 
@@ -182,6 +223,10 @@ the existing row drawer with Edit.
 - Dialog: make or confirm a bounded decision.
 - Modal dialogs require a label, initial focus, focus trap, Escape handling, and
   focus restoration.
+- Clear-layer previews lead with the total deletion count and collapsed workflow
+  sections, then counts by record type and affected-record details. Show Record,
+  Status and Lock, without repetitive Change/Reason columns. Keep blocked issues,
+  permanent-delete confirmation, revision/digest protection and pagination intact.
 - Use an opaque/light dialog body. Transparency belongs only in the surrounding
   scrim or restrained shell material.
 
@@ -256,6 +301,8 @@ Before completing a frontend change:
 - Code Generation and Validation use prominent Logical/Dimensional links, with
   Silver/Gold context and the selected layer retained in navigation and runs.
 - Code Generation filters show an Object multi-select followed by Status.
+  Its ledger separates Schema and Entity name, in that order, and shows all
+  contributing System codes.
   Generate SQL offers all unlocked or selected Objects, then all or selected
   contributing Systems, then combined or separate SQL files. Show the effective
   Object/System/file count. Preserve selection while searching and explain why
@@ -278,19 +325,37 @@ Before completing a frontend change:
 - Models offers Create Model only to Super Admins and Tenant Admins; the backend
   enforces the same restriction. Require a name and an owned Tenant Lock to save.
   Keep description, Silver/Gold policy settings, and registered agent defaults optional.
-  Edit Logical and Dimensional schema names with optional descriptions in Model settings;
+  Saved Logical and Dimensional schemas appear as muted read-only rows with a
+  Saved label and explicit Edit action. Add schema creates an editable Unsaved row.
+  Keep optional descriptions alongside each schema;
   each layer requires configured schemas before generation.
   Preserve form values on failure and open the new Model after creation.
 - Model Settings has Definition and Prompts pages. Definition reuses the creation
   form for schema lists, naming rules, column policies and agent defaults.
+  Silver settings includes Logical entity SCD type: Not specified, Type 1
+  (overwrite changes), or Type 2 (preserve history). Preserve the saved choice
+  when other settings are edited. It guides Logical and Mapping authoring;
+  saving it does not change existing Entities or execute history processing.
+  Use a compact form with thin dividers and short labels. Saved schemas use compact
+  muted rows; show labels on editable rows. Prompt assignments show readable names
+  and version/provenance, with machine identifiers and digests available in Details.
   Saving requires Architect or higher, an owned Tenant Lock and the loaded Model
   revision. Archived Models are read-only. Preserve unsaved fields on errors and
   stale revisions; require explicit discard before refreshing a dirty form.
   Preserve unchanged agent defaults without requiring a capabilities lookup.
+  Offer an optional default Mapping System from the Tenant's existing Systems.
+  Keep it in a collapsed Mapping settings section alongside Silver/Gold settings,
+  with compact helper text.
+  It applies only to assertion-only Entities without physical or Logical source
+  support; backend eligibility remains authoritative.
 - Enrichment opens on current physical metadata. Keep Workflow history separate
   and collapsed; show run state, date, and scope count, with consumption on demand.
 - Scoped Object filters appear in this order: Source Tenant code, System code,
   Schema or Object name, then Zone. Visual and keyboard order must match.
+  Tenant and System are dropdowns sourced from complete saved Model Input Scope,
+  independent of the filtered page. Preserve revision/load errors and explicit
+  refresh. Mapping System choices include eligible target Systems and retained
+  Mapping results, including the configured fallback when eligible.
 - Use Schema before Object in scoped metadata tables. Object details contain
   Attribute descriptions and inferred types. Row Actions contain only Edit;
   Show details opens the Object's Attributes. Put selection before Schema and
@@ -311,14 +376,32 @@ Before completing a frontend change:
 - Logical Attributes live inside Entity details, including review actions and
   their source mapping links. Logical and Dimensional provenance use the same
   Source/Rationale/Status table and structured detail renderer as Mapping.
-- Mapping opens Entity mappings directly at the Model level. An Entity's Show
-  details action opens its source/target context and its Attribute mappings table.
-  Attribute filters, pagination, refresh, and review actions stay within that
-  Entity; Attribute details return to their parent Entity. Keep the Entity
-  transformation available in a disclosure below the Attribute table.
-- Mapping separates Logical and Dimensional with prominent layer links above its
+  Both Entity ledgers show separate Schema and Entity name columns, in that order.
+- Mapping opens a compact Entity mappings ledger at the Model level. Show details
+  opens a separate Entity detail page with its Entity transformation displayed
+  once in a focused panel above the Attribute transformations spreadsheet. Keep
+  the System and Schema beside the Entity identity. Render authored logic first,
+  sources below it, and repeated source records as compact tables. Attribute
+  rows pivot transformation-document fields into separate columns, with target
+  name/type first and compact status at the end. Retain custom fields and show
+  nested source records as tables inside their cells. Keep nested table headings
+  on one line and source identifiers intact; let their content size the source
+  column and scroll within the spreadsheet on narrow screens. Omit a repeated
+  document target name only when it exactly matches the target Attribute. Keep audit and
+  template metadata in inline Record info; do not link out to a second Attribute
+  transformation page. Existing Attribute detail URLs remain addressable.
+  Show review actions only after selection; reveal Attribute
+  filters on demand. Keep template metadata and the original Entity document in
+  collapsed Mapping details. Keep transformations and Attributes off the Entity ledger.
+  Humanize template field labels and structured values; preserve
+  custom fields and distinguish unauthored from empty documents. Long content
+  expands inside its cell. Attribute filters, pagination, refresh, and review
+  actions stay within that Entity.
+- Mapping separates Logical and Dimensional with layer links in its
   command bar. Keep the layer in the URL, server-side ledger filters,
-  schema-qualified Entity labels and return navigation. Generate inherits that layer.
+  separate System, Schema and Entity name columns in that order, and return navigation.
+  Entity and Attribute Mapping results use dense spreadsheet-style tables with
+  sticky headers and contained keyboard-accessible scrolling. Generate inherits that layer.
   Label retained Mapping Object order as Entity order. There is no System-order
   editor or Dependencies tab; legacy view query parameters open the Entity ledger.
   Show execution mode, Model and reasoning effort first, followed by the same
@@ -343,7 +426,7 @@ Before completing a frontend change:
 
 ### Manual Assertions
 
-- Put Assertions before Analysis in the Model journey. Show Documents, then the
+- Put Assertions after Input scope, in the manual navigation group. Show Documents, then the
   selected Document's Records, then Record details. Keep records filtered to their
   parent Document and provide Back to Documents / Back to the named Document links.
 - Add Assertion explicitly offers New document or Existing document. Select an

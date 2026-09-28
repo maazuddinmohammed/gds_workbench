@@ -287,24 +287,6 @@
   overflow-wrap: anywhere;
 }
 
-.drawer-table-scroll {
-  max-height: 31rem;
-  margin-top: 1.2rem;
-  overflow: auto;
-  border: 1px solid var(--line);
-  background: white;
-}
-
-.drawer-table-scroll table {
-  min-width: 34rem;
-}
-
-.drawer-table-scroll th,
-.drawer-table-scroll td {
-  padding: 0.58rem;
-  font-size: 0.66rem;
-}
-
 .profile-attribute {
   display: grid;
   gap: 0.18rem;

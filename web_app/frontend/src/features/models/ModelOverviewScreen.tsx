@@ -51,7 +51,7 @@ export function ModelOverviewScreen({
 
   return (
     <TenantWorkspace home={homeQuery.data} activeNav="models" model={modelQuery.data}>
-      <ModelWorkspaceShell model={modelQuery.data} activeStage="overview">
+      <ModelWorkspaceShell api={api} tenantLock={homeQuery.data.lock} model={modelQuery.data} activeStage="overview">
         <ModelOverviewView
           model={modelQuery.data}
           overview={overviewQuery.data}
@@ -73,27 +73,36 @@ function ModelOverviewView({
 }) {
   return (
     <div className="model-overview page-enter">
-      <header className="model-overview-header">
-        <div>
-          <p className="eyebrow">Model overview</p>
-          <h1>{model.model_name}</h1>
-          <p>{model.model_description ?? "No description provided."}</p>
-        </div>
-        <div className="model-overview-facts" aria-label="Model facts">
-          <DetailFact label="Revision" value={`r${model.model_revision}`} />
-          <DetailFact label="Logical schemas" value={model.logical_schemas.map((item) => item.schema_name).join(", ") || "None configured"} />
-          <DetailFact label="Dimensional schemas" value={model.dimensional_schemas.map((item) => item.schema_name).join(", ") || "None configured"} />
-          <DetailFact label="Status" value={model.is_active ? "Active" : "Archived"} />
-          <DetailFact label="Updated" value={formatDateTime(model.updated_at) ?? "—"} />
-        </div>
+      <h1 className="model-section-title sr-only">Overview</h1>
+      <header className="model-overview-header" aria-label="Model summary">
+        <dl className="model-overview-schemas">
+          {[
+            { label: "Logical schemas", schemas: model.logical_schemas },
+            { label: "Dimensional schemas", schemas: model.dimensional_schemas },
+          ].map(({ label, schemas }) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{schemas.length ? <ul aria-label={label} role="list">
+                {schemas.map((schema) => <li key={schema.schema_name}>{schema.schema_name}</li>)}
+              </ul> : <span className="model-schema-empty">None configured</span>}</dd>
+            </div>
+          ))}
+        </dl>
+        <dl className="model-overview-meta">
+          <div><dt>Status</dt><dd>
+            <span className={`status-badge ${model.is_active ? "is-success" : "is-neutral"}`}>
+              {model.is_active ? "Active" : "Archived"}
+            </span>
+          </dd></div>
+          <div><dt>Updated</dt><dd>
+            <time dateTime={model.updated_at}>{formatDateTime(model.updated_at) ?? "—"}</time>
+          </dd></div>
+        </dl>
       </header>
 
       <section className="workflow-ledger" aria-labelledby="workflow-ledger-heading">
         <header>
-          <div>
-            <p className="eyebrow">Current model journey</p>
-            <h2 id="workflow-ledger-heading">Workflow ledger</h2>
-          </div>
+          <h2 id="workflow-ledger-heading">Workflow ledger</h2>
         </header>
         {overview.model_revision !== model.model_revision ? (
           <div className="surface-state is-error" role="alert">
@@ -226,13 +235,4 @@ function qualityWarningLabel(warning: QualityWarningCode): string {
     logical_results_unavailable: "Logical results unavailable",
   };
   return labels[warning];
-}
-
-function DetailFact({ label, value }: { label: string; value: string }) {
-  return (
-    <span>
-      <small>{label}</small>
-      <strong>{value}</strong>
-    </span>
-  );
 }

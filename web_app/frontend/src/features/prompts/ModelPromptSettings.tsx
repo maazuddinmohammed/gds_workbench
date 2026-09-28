@@ -15,7 +15,6 @@ import {
   loadAssignableTenantPromptVersions,
   promptQueryKeys,
   type ModelPromptAssignmentState,
-  type PromptAssignmentTarget,
   type PromptsApi,
 } from "./api";
 import { humanize, modeLabel, shortDigest } from "./PromptsLedger";
@@ -53,7 +52,7 @@ export function ModelPromptSettings({
       cell: ({ row }) => (
         <span className="prompt-stage-cell">
           <strong>{humanize(row.original.model_workflow)}</strong>
-          <small>{row.original.workflow_stage_name} · {row.original.workflow_stage_code}</small>
+          <small>{row.original.workflow_stage_name}</small>
         </span>
       ),
     },
@@ -65,10 +64,22 @@ export function ModelPromptSettings({
     {
       id: "effective",
       header: "Effective Prompt",
-      cell: ({ row }) => row.original.effective_assignment ? (
-        <AssignmentIdentity assignment={row.original.effective_assignment} />
-      ) : (
-        <span className="prompt-assignment-none">No effective Prompt</span>
+      cell: ({ row }) => (
+        <div className="prompt-template-name">
+          {row.original.effective_assignment
+            ? <strong>{row.original.effective_assignment.prompt_template_name}</strong>
+            : <span className="prompt-assignment-none">No effective Prompt</span>}
+          <details className="model-prompt-audit">
+            <summary aria-label={`${row.original.workflow_stage_name} Prompt details`}>Details</summary>
+            <dl>
+              <div><dt>Stage code</dt><dd><code>{row.original.workflow_stage_code}</code></dd></div>
+              {row.original.effective_assignment ? <>
+                <div><dt>Prompt code</dt><dd><code>{row.original.effective_assignment.prompt_template_code}</code></dd></div>
+                <div><dt>Version digest</dt><dd><code>{row.original.effective_assignment.prompt_template_digest}</code></dd></div>
+              </> : null}
+            </dl>
+          </details>
+        </div>
       ),
     },
     {
@@ -77,9 +88,6 @@ export function ModelPromptSettings({
       cell: ({ row }) => row.original.effective_assignment ? (
         <span className="prompt-assignment-provenance">
           <strong>v{row.original.effective_assignment.prompt_template_version_number}</strong>
-          <code title={row.original.effective_assignment.prompt_template_digest}>
-            {shortDigest(row.original.effective_assignment.prompt_template_digest)}
-          </code>
           <small>{sourceLabel(row.original.effective_source)}</small>
         </span>
       ) : (
@@ -120,16 +128,15 @@ export function ModelPromptSettings({
 
   return (
     <section className="model-prompt-settings page-enter" aria-labelledby="model-prompts-heading">
-      <header className="model-prompts-commandbar">
-        <div>
-          <p className="eyebrow">Model Settings</p>
-          <h1 id="model-prompts-heading">Prompts</h1>
-          <p>Review the exact effective Prompt version for every agentic workflow stage.</p>
-        </div>
-        <div>
+      <h1 className="model-section-title sr-only" id="model-prompts-heading">Prompts</h1>
+      <header className="model-prompts-commandbar model-section-toolbar">
+        <div className="workflow-command-context">
+          <ModelSettingsTabs model={model} active="prompts" />
           <span className={canAssign ? "lock-context is-held" : "lock-context"}>
             {permissionLabel}
           </span>
+        </div>
+        <div className="workflow-command-actions">
           <button
             className="button button-secondary button-small"
             type="button"
@@ -143,11 +150,7 @@ export function ModelPromptSettings({
           </button>
         </div>
       </header>
-      <ModelSettingsTabs model={model} active="prompts" />
-      <div className="model-prompts-context">
-        <strong>{model.model_name} · revision {model.model_revision}</strong>
-        <span>Use global removes the Model override. Tenant versions must be active and published.</span>
-      </div>
+      <p className="model-prompts-context">Global defaults are read-only. Model overrides use active, published Tenant versions.</p>
 
       {query.isPending ? (
         <div className="surface-state" aria-busy="true">Loading effective Prompt assignments…</div>
@@ -189,16 +192,6 @@ export function ModelPromptSettings({
           </table>
         </div>
       )}
-
-      <section className="global-default-gap" aria-labelledby="global-default-heading">
-        <div>
-          <strong id="global-default-heading">Global defaults are read-only here</strong>
-          <span>The API exposes effective global assignments but no global-default mutation route.</span>
-        </div>
-        <button className="button button-secondary button-small" type="button" disabled>
-          Global assignment unavailable
-        </button>
-      </section>
 
       {configure ? (
         <PromptAssignmentDialog
@@ -351,6 +344,7 @@ function PromptAssignmentDialog({
                   <span>
                     <strong>Use global</strong>
                     <small>
+                      Removes this Model’s override.{" "}
                       {assignment.global_assignment
                         ? `${assignment.global_assignment.prompt_template_name} · v${assignment.global_assignment.prompt_template_version_number}`
                         : "No global default is configured; effective source becomes none."}
@@ -413,15 +407,6 @@ function PromptAssignmentDialog({
         </form>
       </section>
     </div>
-  );
-}
-
-function AssignmentIdentity({ assignment }: { assignment: PromptAssignmentTarget }) {
-  return (
-    <span className="prompt-template-name">
-      <strong>{assignment.prompt_template_name}</strong>
-      <code>{assignment.prompt_template_code}</code>
-    </span>
   );
 }
 

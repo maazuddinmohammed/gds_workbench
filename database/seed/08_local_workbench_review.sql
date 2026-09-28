@@ -452,11 +452,11 @@ BEGIN
     INSERT INTO workflow.logical_attribute (
         model_id, logical_entity_id, logical_attribute_name,
         logical_attribute_definition, logical_attribute_data_type,
-        logical_attribute_is_nullable, logical_attribute_is_primary_key,
+        logical_attribute_is_nullable,
         logical_attribute_is_natural_key, logical_attribute_ordinal_position
     ) VALUES (
         v_model_id, v_logical_customer_id, 'Customer ID',
-        'Stable Customer business identifier.', 'BIGINT', FALSE, TRUE, TRUE, 1
+        'Stable Customer business identifier.', 'BIGINT', FALSE, TRUE, 1
     ) RETURNING logical_attribute_id INTO v_logical_customer_key_id;
     INSERT INTO workflow.logical_attribute (
         model_id, logical_entity_id, logical_attribute_name,
@@ -469,11 +469,11 @@ BEGIN
     INSERT INTO workflow.logical_attribute (
         model_id, logical_entity_id, logical_attribute_name,
         logical_attribute_definition, logical_attribute_data_type,
-        logical_attribute_is_nullable, logical_attribute_is_primary_key,
+        logical_attribute_is_nullable,
         logical_attribute_is_natural_key, logical_attribute_ordinal_position
     ) VALUES (
         v_model_id, v_logical_order_id, 'Order ID',
-        'Stable Order business identifier.', 'BIGINT', FALSE, TRUE, TRUE, 1
+        'Stable Order business identifier.', 'BIGINT', FALSE, TRUE, 1
     ) RETURNING logical_attribute_id INTO v_logical_order_key_id;
     INSERT INTO workflow.logical_attribute (
         model_id, logical_entity_id, logical_attribute_name,

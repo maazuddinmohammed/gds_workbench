@@ -5,10 +5,9 @@ import { initials } from "./presentation";
 
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
-    <div className={compact ? "brand is-compact" : "brand"} aria-label="GDS Workbench">
-      <span className="brand-mark">G</span>
-      <strong>GDS</strong>
-      <span>Workbench</span>
+    <div className={compact ? "brand is-compact" : "brand"} aria-label="Atlas">
+      <span className="brand-mark">A</span>
+      <strong>Atlas</strong>
     </div>
   );
 }
@@ -40,7 +39,7 @@ export function DetailState({ label, error = false }: { label: string; error?: b
 export function ErrorPage() {
   return (
     <main className="message-page">
-      <p className="eyebrow">GDS Workbench</p>
+      <p className="eyebrow">Atlas</p>
       <h1>Workspace unavailable</h1>
       <p>The requested information could not be loaded.</p>
       <Link className="button button-primary" to="/">Choose a Tenant</Link>

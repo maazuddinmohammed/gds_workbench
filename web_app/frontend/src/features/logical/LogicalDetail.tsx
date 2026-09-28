@@ -212,7 +212,6 @@ function LogicalAttributeView({
         </dl>
         <h3>Keys</h3>
         <dl className="detail-fact-grid">
-          <Fact label="Primary key" value={attribute.logical_attribute_is_primary_key ? "Yes" : "No"} />
           <Fact label="Natural key" value={attribute.logical_attribute_is_natural_key ? "Yes" : "No"} />
           <Fact label="Surrogate key" value={attribute.logical_attribute_is_surrogate_key ? "Yes" : "No"} />
         </dl>

@@ -132,6 +132,70 @@ REVOKE ALL ON FUNCTION workflow.list_model_input_sources(BIGINT) FROM PUBLIC;
 -- Source evidence for an Entity/System pair. Logical inputs include physical
 -- Objects and peer Logical lookups; Dimensional inputs are Logical Entities.
 -- Modeled sources require an applied Mapping for the selected source System.
+-- A configured default System may label Assertion-defined generated data, but
+-- never replace a missing physical/Logical source or failed lineage prerequisite.
+CREATE FUNCTION workflow.is_assertion_only_mapping_target(
+    p_model_id BIGINT, p_target_entity_id BIGINT, p_modeled_entity_type VARCHAR(30)
+)
+RETURNS BOOLEAN
+LANGUAGE SQL STABLE SECURITY INVOKER SET search_path = pg_catalog
+AS $is_assertion_only_mapping_target$
+    WITH target AS MATERIALIZED (
+        SELECT * FROM workflow.modeled_entity AS entity
+         WHERE entity.model_id = p_model_id AND entity.modeled_entity_id = p_target_entity_id
+           AND entity.modeled_entity_type = p_modeled_entity_type AND entity.status = 'active'
+    ), support AS (
+        SELECT source.support_source_type, source.modeling_assertion_record_id
+          FROM target JOIN workflow.logical_entity_source_mapping AS source
+            ON target.modeled_entity_type = 'logical_entity' AND source.model_id = target.model_id
+           AND source.logical_entity_id = target.modeled_entity_id
+         WHERE source.logical_entity_source_mapping_status = 'active'
+        UNION ALL
+        SELECT source.support_source_type, source.modeling_assertion_record_id
+          FROM target JOIN workflow.logical_attribute_source_mapping AS source
+            ON target.modeled_entity_type = 'logical_entity' AND source.model_id = target.model_id
+           AND source.logical_entity_id = target.modeled_entity_id
+          JOIN workflow.logical_attribute AS attribute
+            ON attribute.logical_attribute_id = source.logical_attribute_id
+           AND attribute.model_id = target.model_id AND attribute.logical_attribute_status = 'active'
+         WHERE source.logical_attribute_source_mapping_status = 'active'
+        UNION ALL
+        SELECT source.support_source_type, source.modeling_assertion_record_id
+          FROM target JOIN workflow.dimensional_entity_source_mapping AS source
+            ON target.modeled_entity_type = 'dimensional_entity' AND source.model_id = target.model_id
+           AND source.dimensional_entity_id = target.modeled_entity_id
+         WHERE source.dimensional_entity_source_mapping_status = 'active'
+        UNION ALL
+        SELECT source.support_source_type, source.modeling_assertion_record_id
+          FROM target JOIN workflow.dimensional_attribute_source_mapping AS source
+            ON target.modeled_entity_type = 'dimensional_entity' AND source.model_id = target.model_id
+           AND source.dimensional_entity_id = target.modeled_entity_id
+          JOIN workflow.dimensional_attribute AS attribute
+            ON attribute.dimensional_attribute_id = source.dimensional_attribute_id
+           AND attribute.model_id = target.model_id
+           AND attribute.dimensional_attribute_status = 'active'
+         WHERE source.dimensional_attribute_source_mapping_status = 'active'
+    ), assertions AS (
+        SELECT (document.tenant_id IS NULL OR document.tenant_id = target_model.tenant_id)
+           AND (document.system_id IS NULL OR document.system_id =
+                target_model.default_mapping_source_system_id) AS matches_default
+          FROM support
+          JOIN model.modeling_assertion_record AS assertion
+            ON assertion.model_id = p_model_id
+           AND assertion.modeling_assertion_record_id = support.modeling_assertion_record_id
+           AND assertion.modeling_assertion_record_status = 'active'
+          JOIN model.modeling_assertion_document AS document
+            ON document.modeling_assertion_document_id = assertion.modeling_assertion_document_id
+           AND document.is_active
+          JOIN model.model AS target_model ON target_model.model_id = p_model_id
+         WHERE support.support_source_type = 'assertion'
+    )
+    SELECT EXISTS (SELECT 1 FROM assertions WHERE matches_default)
+       AND NOT EXISTS (SELECT 1 FROM assertions WHERE matches_default IS NOT TRUE)
+       AND NOT EXISTS (SELECT 1 FROM support WHERE support_source_type <> 'assertion');
+$is_assertion_only_mapping_target$;
+REVOKE ALL ON FUNCTION workflow.is_assertion_only_mapping_target(BIGINT, BIGINT, VARCHAR) FROM PUBLIC;
+
 CREATE FUNCTION workflow.list_mapping_source_objects(
     p_model_id BIGINT, p_target_entity_id BIGINT,
     p_modeled_entity_type VARCHAR(30), p_source_system_id BIGINT
@@ -149,6 +213,13 @@ AS $list_mapping_source_objects$
          WHERE entity.model_id = p_model_id
            AND entity.modeled_entity_type = p_modeled_entity_type
            AND entity.modeled_entity_id = p_target_entity_id AND entity.status = 'active'
+           AND NOT EXISTS (
+               SELECT 1 FROM model.model AS target_model
+                WHERE target_model.model_id = p_model_id
+                  AND target_model.default_mapping_source_system_id = p_source_system_id
+                  AND workflow.is_assertion_only_mapping_target(
+                      p_model_id, p_target_entity_id, p_modeled_entity_type)
+           )
     )
     SELECT support.logical_entity_source_mapping_id, target.modeled_entity_id,
            CASE WHEN support.logical_entity_source_mapping_id IS NULL THEN 'candidate' ELSE 'support' END,

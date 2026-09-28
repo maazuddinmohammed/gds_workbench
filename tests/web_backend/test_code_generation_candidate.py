@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from gds_workbench_api.features.mapping import ModeledEntityReference
-
 from typing import Literal, cast
 
 import pytest
@@ -12,6 +10,7 @@ from gds_workbench_api.features.code_generation.candidate import (
 from gds_workbench_api.features.code_generation.contracts import (
     SqlArtifactDownload,
 )
+from gds_workbench_api.features.mapping import ModeledEntityReference
 from pydantic import JsonValue
 
 
@@ -195,7 +194,12 @@ def test_individual_download_contract_has_no_artifact_specific_size_cap() -> Non
     artifact = SqlArtifactDownload(
         generated_sql_artifact_id=1,
         artifact_name="customer.sql",
-        target=ModeledEntityReference(entity_type="logical_entity", entity_id=501, entity_schema_name="silver", entity_name="Customer"),
+        target=ModeledEntityReference(
+            entity_type="logical_entity",
+            entity_id=501,
+            entity_schema_name="silver",
+            entity_name="Customer",
+        ),
         entity_type="logical_entity",
         generated_sql=large_sql,
         generated_sql_byte_count=len(large_sql.encode()),
@@ -217,6 +221,46 @@ def test_output_schema_is_bounded_and_does_not_expose_database_ids() -> None:
     properties = cast(dict[str, dict[str, object]], artifact_schema["properties"])
     assert "exact opaque" in cast(str, properties["target_ref"]["description"])
     assert "semicolon" in cast(str, properties["generated_sql"]["description"])
+
+
+@pytest.mark.asyncio
+async def test_each_entity_requires_only_its_mapped_systems_including_default() -> None:
+    validator = CodeGenerationCandidateValidator(
+        targets=(
+            CodeGenerationTargetReference(
+                target_ref="customer",
+                modeled_entity_id=501,
+                source_system_codes=("CRM",),
+                file_layout="per_system",
+            ),
+            CodeGenerationTargetReference(
+                target_ref="orders",
+                modeled_entity_id=502,
+                source_system_codes=("ERP", "WEB"),
+                file_layout="per_system",
+            ),
+            CodeGenerationTargetReference(
+                target_ref="calendar",
+                modeled_entity_id=503,
+                source_system_codes=("DEFAULT",),
+                file_layout="per_system",
+            ),
+        ),
+    )
+    artifacts = [
+        _artifact("customer", "SELECT 1 AS CustomerID", systems=["CRM"]),
+        _artifact("orders", "SELECT 1 AS OrderID", systems=["ERP"]),
+        _artifact("orders", "SELECT 1 AS OrderID", systems=["WEB"])
+        | {"artifact_name": "orders_web.sql"},
+        _artifact("calendar", "SELECT 1 AS DayID", systems=["DEFAULT"]),
+    ]
+    assert (await validator.validate(cast(JsonValue, {"artifacts": artifacts}))).issues == ()
+    missing_system = artifacts[:2] + artifacts[3:]
+    result = await validator.validate(cast(JsonValue, {"artifacts": missing_system}))
+    assert result.issues[0].code == "candidate.source_system_coverage"
+    missing_entity = artifacts[:3]
+    result = await validator.validate(cast(JsonValue, {"artifacts": missing_entity}))
+    assert result.issues[0].code == "candidate.target_coverage"
 
 
 @pytest.mark.asyncio
@@ -245,9 +289,7 @@ async def test_selected_file_layout_is_enforced_and_preserved_names_cannot_be_re
     ]
     correct = [combined] if layout == "combined" else separate
     wrong = separate if layout == "combined" else [combined]
-    assert not (
-        await validator.validate(cast(JsonValue, {"artifacts": correct}))
-    ).issues
+    assert not (await validator.validate(cast(JsonValue, {"artifacts": correct}))).issues
     assert (await validator.validate(cast(JsonValue, {"artifacts": wrong}))).issues[
         0
     ].code == "candidate.file_layout"
@@ -284,7 +326,10 @@ async def test_requested_transformation_layout_rejects_loading_sql_and_implicit_
         cast(JsonValue, {"artifacts": [_artifact("target_1", sql, systems=["CRM"])]})
     )
     assert result.issues[0].code == "candidate.transformation_sql_contract"
-    valid = "CREATE OR REPLACE TEMPORARY VIEW temp_customer AS SELECT 1 AS id; SELECT id FROM temp_customer"
+    valid = (
+        "CREATE OR REPLACE TEMPORARY VIEW temp_customer AS SELECT 1 AS id; "
+        "SELECT id FROM temp_customer"
+    )
     assert not (
         await validator.validate(
             cast(

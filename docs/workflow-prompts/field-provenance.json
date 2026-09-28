@@ -1166,6 +1166,26 @@
       "line": 80,
       "declaration": "inferred_cardinality VARCHAR(20) NOT NULL DEFAULT 'unknown',",
       "notes": "Analysis-owned From-to-To inference; unknown when evidence is insufficient. Observed cardinality is derived separately from validation counts."
+    },
+    {
+      "prompt_path": "logical_entity_scd_type",
+      "status": "model_policy_projection",
+      "table": "model.model",
+      "column": "logical_entity_scd_type",
+      "file": "database/04_model.sql",
+      "line": 57,
+      "declaration": "logical_entity_scd_type VARCHAR(10),",
+      "notes": "Frozen nullable Model history guidance for Logical Entities and Logical-to-Silver Mapping. Type 1/type 2 are authoring intent, not automatic schema or data changes."
+    },
+    {
+      "prompt_path": "authoring_policy.logical_entity_scd_type",
+      "status": "model_policy_projection",
+      "table": "model.model",
+      "column": "logical_entity_scd_type",
+      "file": "database/04_model.sql",
+      "line": 57,
+      "declaration": "logical_entity_scd_type VARCHAR(10),",
+      "notes": "Frozen nullable Model history guidance for Logical Entities and Logical-to-Silver Mapping. Type 1/type 2 are authoring intent, not automatic schema or data changes."
     }
   ]
 }

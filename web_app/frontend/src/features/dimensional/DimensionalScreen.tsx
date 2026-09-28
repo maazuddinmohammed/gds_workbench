@@ -117,12 +117,9 @@ export function DimensionalScreen({
 
   return (
     <div className="dimensional-page page-enter">
-      <header className="workflow-commandbar model-layer-commandbar dimensional-commandbar">
-        <h1>Dimensional</h1>
+      <header className="workflow-commandbar model-section-toolbar dimensional-commandbar">
+        <h1 className="model-section-title sr-only">Dimensional</h1>
         <div className="workflow-command-context">
-          <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
-            {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
-          </span>
           <nav className="workflow-tabs" aria-label="Dimensional views">
             {([
               ["objects", "Objects"],
@@ -141,6 +138,9 @@ export function DimensionalScreen({
               </button>
             ))}
           </nav>
+          <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
+            {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
+          </span>
         </div>
         <div className="workflow-command-actions">
           <ModelLayerActions api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="dimensional" onApplied={() => setSelectedIds(new Set())} />

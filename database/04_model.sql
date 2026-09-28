@@ -53,6 +53,8 @@ CREATE TABLE model.model (
     model_revision BIGINT NOT NULL DEFAULT 1,
     logical_schemas JSONB NOT NULL DEFAULT '[]'::JSONB,
     dimensional_schemas JSONB NOT NULL DEFAULT '[]'::JSONB,
+    default_mapping_source_system_id BIGINT,
+    logical_entity_scd_type VARCHAR(10),
     silver_model_naming_instructions TEXT,
     silver_model_audit_columns_template JSONB,
     gold_model_naming_instructions TEXT,
@@ -71,6 +73,8 @@ CREATE TABLE model.model (
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     CONSTRAINT fk_model_tenant FOREIGN KEY (tenant_id)
         REFERENCES core.tenant (tenant_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_model_default_mapping_system FOREIGN KEY (default_mapping_source_system_id)
+        REFERENCES core.system (system_id) ON DELETE NO ACTION,
     CONSTRAINT uq_model_id_tenant UNIQUE (model_id, tenant_id),
     CONSTRAINT ck_model_name CHECK (reference.is_nonblank(model_name)),
     CONSTRAINT ck_model_description CHECK (
@@ -79,6 +83,9 @@ CREATE TABLE model.model (
     ),
     CONSTRAINT ck_model_revision CHECK (model_revision > 0),
     CONSTRAINT ck_model_logical_schemas CHECK (model.valid_schema_list(logical_schemas)),
+    CONSTRAINT ck_model_logical_entity_scd_type CHECK (
+        logical_entity_scd_type IS NULL OR logical_entity_scd_type IN ('type_1', 'type_2')
+    ),
     CONSTRAINT ck_model_dimensional_schemas CHECK (model.valid_schema_list(dimensional_schemas)),
     CONSTRAINT ck_model_silver_naming_instructions CHECK (
         silver_model_naming_instructions IS NULL

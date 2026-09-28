@@ -63,6 +63,26 @@ Apply remain required. Process registration continues to reference registered
 physical Objects, Attributes, and explicit external artifact paths. Deployment,
 file placement, and orchestration execution remain separate authorized actions.
 
+## Mapping coverage and Assertion fallback
+
+Each selected Entity/System pair runs independently and must cover every
+actionable Attribute. The Run produces a successful draft only when every pair
+succeeds or has a valid no-applicable-source outcome. A provider, evidence, or
+validation failure in any pair fails the Run; other successful pairs cannot
+silently complete a partial draft. Existing Mapping or known source support
+prohibits skipping a pair as inapplicable.
+
+Models may choose an existing active System with an active Connection in their
+Tenant as `default_mapping_source_system_id`. It supplies one Mapping pair only
+for an Entity supported by active Assertions, with no active physical or Logical
+Entity/Attribute source support. Explicit Assertion document Tenant/System scope
+must match the Model/default or be unspecified. This cannot relabel known source
+provenance or bypass unavailable upstream Mapping. The server marks the pair
+`source_system.is_default=true` and supplies no physical/peer source candidates.
+Authoring requires explicit generation rules for every actionable Attribute;
+missing rules fail validation instead of generating invented data or skipping
+the pair. Generated Code retains the ordinary source-System coverage checks.
+
 ## Compatibility and verification
 
 Model Snapshot payload version is 2.0. Catalogs reject removed Binding and Mapping

@@ -7,7 +7,7 @@ import type { TenantHomeRecord, TenantsApi } from "../tenants/api";
 import { ModelWorkspaceShell, type ModelStage } from "./ModelWorkspaceShell";
 import type { ModelDetail, ModelsApi } from "./api";
 
-export type ModelRouteApi = Pick<TenantsApi, "readTenantHome"> & Pick<ModelsApi, "readModel">;
+export type ModelRouteApi = Pick<TenantsApi, "readTenantHome"> & Pick<ModelsApi, "readModel" | "readModelOverview">;
 
 export interface ModelRouteContext {
   home: TenantHomeRecord;
@@ -50,7 +50,7 @@ export function ModelRouteFrame({
   const context = { home: homeQuery.data, model: modelQuery.data };
   return (
     <TenantWorkspace home={context.home} activeNav="models" model={context.model}>
-      <ModelWorkspaceShell model={context.model} activeStage={activeStage}>
+      <ModelWorkspaceShell api={api} tenantLock={context.home.lock} model={context.model} activeStage={activeStage}>
         {children(context)}
       </ModelWorkspaceShell>
     </TenantWorkspace>

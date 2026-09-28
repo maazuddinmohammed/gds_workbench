@@ -12,6 +12,7 @@ import pytest
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
     GeneratedCodeRecord,
+    LogicalAttributeRecord,
     ProfilingProfileRecord,
     ValidationCheckRecord,
 )
@@ -113,6 +114,28 @@ def test_model_schemas_forbid_removed_authoring_metadata() -> None:
         assert schema["x-gds-database-ids-included"] is False
         assert schema["x-gds-change-set-eligible"] is True
         assert forbidden.isdisjoint(schema["properties"])
+
+
+def test_logical_attribute_contract_uses_key_origins_without_primary_key() -> None:
+    schema = build_model_dataset_schema(DATASETS_BY_NAME["logical_attribute"])
+    assert "logical_attribute_is_primary_key" not in schema["properties"]
+    record = complete_model_graph()["logical_attribute"][0]
+    validated = LogicalAttributeRecord.model_validate_json(json.dumps(record))
+    assert validated.logical_attribute_is_natural_key
+    assert not validated.logical_attribute_is_surrogate_key
+    assert not validated.logical_attribute_is_audit_column
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        LogicalAttributeRecord.model_validate_json(
+            json.dumps({**record, "logical_attribute_is_primary_key": True})
+        )
+    with pytest.raises(ValidationError, match="cannot be nullable"):
+        LogicalAttributeRecord.model_validate_json(
+            json.dumps({**record, "logical_attribute_is_nullable": True})
+        )
+    with pytest.raises(ValidationError, match="both natural and surrogate"):
+        LogicalAttributeRecord.model_validate_json(
+            json.dumps({**record, "logical_attribute_is_surrogate_key": True})
+        )
 
 
 def test_every_custom_model_record_validator_is_exported_for_local_parity() -> None:

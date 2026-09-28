@@ -311,6 +311,27 @@ export async function loadMappingGenerationTargets(
   }
 }
 
+export async function loadMappingFilterSystems(
+  api: Pick<MappingTransport, "listMappingGenerationTargets" | "listMappingObjects">,
+  tenantId: number,
+  modelId: number,
+  entityType: MappingEntityType,
+): Promise<{ modelRevision: number; codes: string[] }> {
+  const targets = await loadMappingGenerationTargets(api, tenantId, modelId, entityType);
+  const codes = new Map(targets.items.map((item) => [item.source_system.system_code.toLowerCase(), item.source_system.system_code]));
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  for (let page = 0; page < 250; page += 1) {
+    const saved = await api.listMappingObjects(tenantId, modelId, { entityType }, 200, cursor);
+    if (saved.model_revision !== targets.modelRevision) throw new Error("Mapping filter revision changed while loading");
+    for (const row of saved.items) codes.set(row.source_system.system_code.toLowerCase(), row.source_system.system_code);
+    if (!saved.next_cursor) return { modelRevision: targets.modelRevision, codes: [...codes.values()].sort((a, b) => a.localeCompare(b)) };
+    if (cursors.has(saved.next_cursor)) throw new Error("Mapping filter cursor repeated");
+    cursors.add(saved.next_cursor); cursor = saved.next_cursor;
+  }
+  throw new Error("Mapping filters exceed the supported bounded selection");
+}
+
 function mappingCollectionPath(
   tenantId: number,
   modelId: number,

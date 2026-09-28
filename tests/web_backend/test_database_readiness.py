@@ -107,6 +107,7 @@ async def test_readiness_rejects_an_additional_session_login_membership(
         ("list_tenant_visible_objects", ("BIGINT",)),
         ("list_model_object_eligibility", ("BIGINT",)),
         ("list_model_attribute_eligibility", ("BIGINT",)),
+        ("is_assertion_only_mapping_target", ("BIGINT", "BIGINT", "VARCHAR")),
         (
             "list_code_generation_target_context",
             ("BIGINT", "VARCHAR", "VARCHAR"),

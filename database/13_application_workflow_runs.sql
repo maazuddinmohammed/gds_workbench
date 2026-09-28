@@ -1946,10 +1946,30 @@ BEGIN
             SELECT 1 FROM workflow.modeled_entity AS entity
              WHERE entity.model_id = p_model_id AND entity.modeled_entity_type = p_modeled_entity_type
                AND entity.modeled_entity_id = v_mapping_object_id AND entity.status = 'active' AND NOT entity.is_locked
-        ) OR NOT EXISTS (
+        ) OR NOT (EXISTS (
             SELECT 1 FROM workflow.list_model_input_sources(p_model_id) AS input
             JOIN core.system AS system ON system.system_id = input.source_system_id AND system.is_active
              WHERE input.source_system_id = v_mapping_system_id
+        ) OR EXISTS (
+            SELECT 1 FROM model.model AS target_model
+            JOIN core.system AS system ON system.system_id = target_model.default_mapping_source_system_id
+              AND system.is_active
+             WHERE target_model.model_id = p_model_id
+               AND target_model.default_mapping_source_system_id = v_mapping_system_id
+               AND workflow.is_assertion_only_mapping_target(p_model_id,
+                   v_mapping_object_id, p_modeled_entity_type)
+        )) OR EXISTS (
+            SELECT 1 FROM model.model AS target_model
+             WHERE target_model.model_id = p_model_id
+               AND target_model.default_mapping_source_system_id = v_mapping_system_id
+               AND workflow.is_assertion_only_mapping_target(p_model_id,
+                   v_mapping_object_id, p_modeled_entity_type)
+               AND NOT EXISTS (
+                   SELECT 1 FROM core.connection AS owned_connection
+                    WHERE owned_connection.tenant_id = target_model.tenant_id
+                      AND owned_connection.system_id = v_mapping_system_id
+                      AND owned_connection.is_active
+               )
         ) OR EXISTS (
             SELECT 1 FROM workflow.mapping_object AS mapping
              WHERE mapping.model_id = p_model_id AND mapping.modeled_entity_type = p_modeled_entity_type

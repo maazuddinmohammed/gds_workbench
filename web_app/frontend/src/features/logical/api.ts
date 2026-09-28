@@ -115,7 +115,6 @@ export interface LogicalAttribute {
   logical_attribute_name: string;
   logical_attribute_data_type: string;
   logical_attribute_is_nullable: boolean;
-  logical_attribute_is_primary_key: boolean;
   logical_attribute_is_natural_key: boolean;
   logical_attribute_is_surrogate_key: boolean;
   logical_attribute_ordinal_position: number;

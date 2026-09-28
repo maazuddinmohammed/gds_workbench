@@ -742,6 +742,7 @@ SELECT entity.modeled_entity_type,
        generated.artifact_name,
        generated.artifact_type,
        generated.generated_code_digest,
+       btrim(generated.code_input_digest::TEXT) AS code_input_digest,
        generated.generated_code_status,
        coalesce(array_agg(system.system_code ORDER BY lower(system.system_code))
            FILTER (WHERE assignment.generated_code_source_system_status = 'active'
@@ -2513,7 +2514,8 @@ SELECT attribute.{config.attribute_id}
                 normalize_model_key_value(str(row["modeled_entity_name"])),
             )
             context = contexts.get(entity_key)
-            if context is None:
+            if context is None or row.get("code_input_digest") != context["code_input_digest"]:
+                # Match authoring and ledger reads: stale Code is not Validation evidence.
                 continue
             code_entries.append(
                 {

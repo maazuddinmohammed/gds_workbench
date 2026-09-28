@@ -25,6 +25,12 @@ function Get-AtlasModelPolicy($States, $MetadataStates, $Model) {
         $changed[$name] = @($changeList); $added[$name] = @($addList); $rows[$name] = @($state.Effective); $originals[$name] = $baseline
     }
     $details = if ($rows.ContainsKey('model_details') -and $rows.model_details.Count -gt 0) { $rows.model_details[0] } else { $Model }
+    foreach ($state in $States) {
+        if ($state.Dataset.name -ceq 'model_details' -and @($state.Baseline).Count -gt 0 -and @($state.Pending).Count -gt 0 -and
+            (Get-Property $state.Baseline[0] 'logical_entity_scd_type') -cne (Get-Property $state.Pending[0] 'logical_entity_scd_type')) {
+            Add-PolicyIssue $issues 'model_policy_read_only' 'model_details' 'logical_entity_scd_type' 'Logical SCD type must be changed through Model settings.'
+        }
+    }
     foreach ($dataset in @('conceptual_object', 'conceptual_relationship', 'logical_submodel', 'logical_entity', 'logical_attribute', 'logical_relationship', 'dimensional_submodel', 'dimensional_entity', 'dimensional_attribute', 'dimensional_relationship')) {
         $override = Get-Property $details $(if ($dataset.StartsWith('dimensional')) {'gold_model_naming_instructions'} else {'silver_model_naming_instructions'})
         foreach ($record in @($added[$dataset])) {
@@ -84,7 +90,7 @@ function Get-AtlasModelPolicy($States, $MetadataStates, $Model) {
             if ($surrogates.Count -ne 1 -or (Get-Property $surrogate $ordinalField) -ne 1 -or (Get-Property $surrogate ($attributeDataset + '_is_nullable')) -ne $false -or
                 (Normalize-Value 'model' 'value' (Get-Property $surrogate ($attributeDataset + '_data_type'))) -cne 'bigint' -or
                 @((Get-Property $surrogate 'sources') | Where-Object { $null -ne $_ }).Count -gt 0 -or
-                ($layer -ceq 'logical' -and ((Get-Property $surrogate 'logical_attribute_is_primary_key') -ne $true -or (Get-Property $surrogate 'logical_attribute_is_natural_key') -or (Get-Property $surrogate 'logical_attribute_is_audit_column')))) {
+                ($layer -ceq 'logical' -and ((Get-Property $surrogate 'logical_attribute_is_natural_key') -or (Get-Property $surrogate 'logical_attribute_is_audit_column')))) {
                 Add-PolicyIssue $issues 'model.own-surrogate' $attributeDataset $attributeField 'Every new Entity, including facts and bridges, needs one generated non-null BIGINT own surrogate at ordinal 1 without physical sources.'
             }
             $prefix = if ($layer -ceq 'logical') {'silver'} else {'gold'}

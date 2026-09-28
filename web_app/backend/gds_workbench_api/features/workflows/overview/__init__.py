@@ -2,6 +2,9 @@
 
 from gds_workbench_api.features.workflows.overview.contracts import (
     LedgerWorkflow,
+    ModelSection,
+    ModelSectionState,
+    ModelSectionStatus,
     ModelWorkflowOverview,
     QualityWarningCode,
     WorkflowLedgerEntry,
@@ -20,6 +23,9 @@ from gds_workbench_api.features.workflows.overview.service import (
 __all__ = [
     "DatabaseWorkflowOverviewService",
     "LedgerWorkflow",
+    "ModelSection",
+    "ModelSectionState",
+    "ModelSectionStatus",
     "ModelWorkflowOverview",
     "QualityWarningCode",
     "WorkflowLedgerEntry",

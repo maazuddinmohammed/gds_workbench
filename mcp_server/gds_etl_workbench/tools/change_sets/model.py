@@ -252,6 +252,7 @@ SELECT %s,
        repeat(md5(
            'policy:' || jsonb_build_object(
                'model_id', model.model_id,
+               'logical_entity_scd_type', model.logical_entity_scd_type,
                'silver_model_naming_instructions',
                    model.silver_model_naming_instructions,
                'silver_model_audit_columns_template',

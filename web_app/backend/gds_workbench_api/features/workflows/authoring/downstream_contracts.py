@@ -146,13 +146,16 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
         },
         "authoring_policy": {
             "description": "Model name, naming instructions and "
-            "audit/technical templates. Apply only "
+            "audit/technical templates, plus logical_entity_scd_type history guidance. "
+            "For Logical targets type_1 overwrites current values; type_2 preserves versions. "
+            "Null is unspecified. Do not infer keys or invent history Attributes. Apply only "
             "recorded policy to transformation content; "
             "use existing modeled Attributes.",
             "value_schema": mapping_input_schemas()["authoring_policy"],
             "example": {
                 "audit_columns_template": None,
                 "model_name": "Customer Model",
+                "logical_entity_scd_type": "type_2",
                 "naming_instructions": "Use PascalCase names.",
                 "technical_columns_template": None,
             },

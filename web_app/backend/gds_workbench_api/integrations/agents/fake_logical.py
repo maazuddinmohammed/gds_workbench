@@ -77,7 +77,6 @@ def fake_logical_candidate(
                     ),
                     "logical_attribute_data_type": "string",
                     "logical_attribute_is_nullable": True,
-                    "logical_attribute_is_primary_key": False,
                     "logical_attribute_is_natural_key": False,
                     "logical_attribute_is_surrogate_key": False,
                     "logical_attribute_ordinal_position": ordinal,

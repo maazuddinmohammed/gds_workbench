@@ -166,7 +166,6 @@ def complete_model_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]
                 "OrderID",
                 1,
                 source_order_id,
-                primary=True,
                 natural=True,
             ),
             logical_attribute("Order", "CustomerID", 2, source_order_customer_id),
@@ -175,7 +174,6 @@ def complete_model_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]
                 "CustomerID",
                 1,
                 source_customer_id,
-                primary=True,
                 natural=True,
             ),
         ],
@@ -375,7 +373,6 @@ def logical_attribute(
     ordinal: int,
     source: dict[str, object],
     *,
-    primary: bool = False,
     natural: bool = False,
 ) -> dict[str, object]:
     return {
@@ -385,7 +382,6 @@ def logical_attribute(
         "logical_attribute_definition": f"{name} attribute.",
         "logical_attribute_data_type": "bigint",
         "logical_attribute_is_nullable": False,
-        "logical_attribute_is_primary_key": primary,
         "logical_attribute_is_natural_key": natural,
         "logical_attribute_is_surrogate_key": False,
         "logical_attribute_ordinal_position": ordinal,

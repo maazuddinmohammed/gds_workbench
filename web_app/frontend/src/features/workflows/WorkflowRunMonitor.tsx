@@ -96,9 +96,12 @@ export function WorkflowRunMonitor({
       setExpanded(true);
     }
     if (focusRunId !== null) {
-      void queryClient.invalidateQueries({
-        queryKey: workflowRunQueryKeys.recent(tenantId, modelId, workflow),
-      });
+      void Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: workflowRunQueryKeys.recent(tenantId, modelId, workflow),
+        }),
+        queryClient.invalidateQueries({ queryKey: ["model-overview", tenantId, modelId] }),
+      ]);
     }
   }, [focusRunId, modelId, queryClient, tenantId, workflow]);
   useEffect(() => {
@@ -206,6 +209,7 @@ export function WorkflowRunMonitor({
           ),
         }),
         queryClient.invalidateQueries({ queryKey: ["model", tenantId, modelId] }),
+        queryClient.invalidateQueries({ queryKey: ["model-overview", tenantId, modelId] }),
         queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
         onApplied(),
       ]);
@@ -232,7 +236,10 @@ export function WorkflowRunMonitor({
     || eventsQuery.isFetching
     || draftReviewQuery.isFetching;
   const refreshAll = async () => {
-    const refreshes: Promise<unknown>[] = [recentQuery.refetch()];
+    const refreshes: Promise<unknown>[] = [
+      recentQuery.refetch(),
+      queryClient.invalidateQueries({ queryKey: ["model-overview", tenantId, modelId] }),
+    ];
     if (selectedRunId !== null) {
       refreshes.push(runQuery.refetch(), eventsQuery.refetch());
       if (workflow === "metadata_enrichment") {

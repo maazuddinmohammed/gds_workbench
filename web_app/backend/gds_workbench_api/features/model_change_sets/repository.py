@@ -330,6 +330,7 @@ SELECT %s,
        repeat(md5(
            'policy:' || jsonb_build_object(
                'model_id', target_model.model_id,
+               'logical_entity_scd_type', target_model.logical_entity_scd_type,
                'silver_model_naming_instructions',
                    target_model.silver_model_naming_instructions,
                'silver_model_audit_columns_template',

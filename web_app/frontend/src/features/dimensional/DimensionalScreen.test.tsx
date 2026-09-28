@@ -12,8 +12,10 @@ describe("Model Dimensional", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={dimensionalRouter(dimensionalFetchStub())} />);
 
-    expect(await screen.findByRole("table", { name: "Dimensional Objects" })).toBeVisible();
-    expect(screen.getByText("gold.sales_fact")).toBeVisible();
+    const ledger = await screen.findByRole("table", { name: "Dimensional Objects" });
+    expect(within(ledger).getAllByRole("columnheader").slice(1, 3).map((cell) => cell.textContent)).toEqual(["Schema", "Entity name"]);
+    expect(within(ledger).getByRole("cell", { name: "gold" })).toBeVisible();
+    expect(within(ledger).getByText("sales_fact")).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Open Dimensional Object 301" }));
 
     expect(await screen.findByRole("heading", { name: "gold.sales_fact" })).toBeVisible();

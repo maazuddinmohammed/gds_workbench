@@ -1,1 +1,1 @@
-"""GDS Workbench FastAPI backend."""
+"""Atlas FastAPI backend."""

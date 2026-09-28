@@ -8,10 +8,6 @@ textarea:focus-visible {
   outline-offset: 2px;
 }
 
-.model-rail {
-  overflow-y: auto;
-}
-
 .prompts-workspace,
 .prompt-detail-workspace {
   width: min(92rem, 100%);
@@ -153,9 +149,12 @@ textarea:focus-visible {
   border-top: 1px solid var(--line-strong);
 }
 
-.prompt-table-scroll table,
-.model-prompts-table-scroll table {
+.prompt-table-scroll table {
   min-width: 76rem;
+}
+
+.model-prompts-table-scroll table {
+  min-width: 60rem;
 }
 
 .prompt-table-scroll tbody tr,
@@ -642,45 +641,15 @@ textarea:focus-visible {
   border-top: 0;
 }
 
-.global-default-gap {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1.5rem;
-  margin-top: 1.8rem;
-  padding: 1rem 0;
-  border-top: 1px solid var(--line-strong);
-  border-bottom: 1px solid var(--line);
-}
-
-.global-default-gap span {
-  margin: 0.3rem 0 0;
-  color: var(--muted);
-  font-size: 0.66rem;
-}
-
 .model-prompt-settings {
-  width: min(80rem, 100%);
-  margin: 0 auto;
-}
-
-.model-prompts-commandbar {
-  min-height: 7.4rem;
+  min-width: 0;
 }
 
 .model-prompts-context {
-  display: flex;
-  min-height: 3.2rem;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  border-bottom: 1px solid var(--line);
+  margin: 0.75rem 0;
   color: var(--muted);
-  font-size: 0.65rem;
-}
-
-.model-prompts-context strong {
-  color: var(--ink);
+  font-size: 0.74rem;
+  line-height: 1.5;
 }
 
 .model-prompts-table-scroll {
@@ -688,20 +657,31 @@ textarea:focus-visible {
   border-top: 1px solid var(--line-strong);
 }
 
-.global-default-gap {
-  margin-top: 1rem;
-  padding: 0.8rem;
-  border: 1px dashed var(--line-strong);
-  background: var(--soft);
+.model-prompt-audit > summary {
+  color: var(--muted);
+  font-size: 0.68rem;
+  cursor: pointer;
 }
 
-.global-default-gap > div {
+.model-prompt-audit dl {
   display: grid;
-  gap: 0.15rem;
+  gap: 0.6rem;
+  max-width: 28rem;
+  margin: 0.65rem 0 0;
 }
 
-.global-default-gap strong {
-  font-size: 0.72rem;
+.model-prompt-audit dt {
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.model-prompt-audit dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.model-prompt-audit dd code {
+  font-size: 0.68rem;
 }
 
 .prompt-assignment-dialog {
@@ -797,9 +777,7 @@ textarea:focus-visible {
   .prompts-command-actions,
   .prompt-detail-actions,
   .model-prompts-commandbar > div:last-child,
-  .prompt-editor-actions,
-  .global-default-gap,
-  .model-prompts-context {
+  .prompt-editor-actions {
     align-items: stretch;
     flex-direction: column;
   }
@@ -807,8 +785,7 @@ textarea:focus-visible {
   .prompts-command-actions .button,
   .prompt-detail-actions .button,
   .model-prompts-commandbar .button,
-  .prompt-editor-actions .button,
-  .global-default-gap .button {
+  .prompt-editor-actions .button {
     width: 100%;
   }
 

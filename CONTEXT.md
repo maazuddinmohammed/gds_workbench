@@ -320,6 +320,16 @@ constant-valued Attributes required by the Model policy. Each Entity belongs to 
 configured Logical schema; physical registration is a later handoff.
 _Avoid_: Conceptual decomposition, physical copy
 
+**Logical Entity SCD Type**:
+The optional Model setting `logical_entity_scd_type` supplies change-history
+guidance to Logical authoring and Logical-to-Silver Mapping: `type_1` overwrites
+current values; `type_2` preserves versions; null leaves the choice unspecified.
+It does not create key or history Attributes, prove source change behavior, alter
+existing data, or override a Dimensional Entity's `change_behavior`. Change it
+through governed Model settings; Snapshots and staged Model details preserve it
+as read-only context. A saved change advances the Model revision.
+_Avoid_: Automatic history migration, inferred primary key
+
 **Dimensional Model**:
 An optional business-process and grain-oriented Model layer containing Facts,
 Dimensions, Bridges, Attributes, and Relationships. It selects applied active
@@ -339,15 +349,21 @@ One modeled layer, selected Entity–Source System pairs, and selected modeled
 Attributes. Entity selection includes unlocked Attributes by default. Existing
 Mapping locks and deselections preserve records; a locked Entity Mapping protects
 all its Attribute Mappings. A Run freezes Entity identity and Attribute selection,
-authors each pair independently, and combines successful results into one draft
-for explicit Apply. Source-System order is not Mapping configuration; Process
+authors each pair independently, and creates one draft only after every pair
+succeeds or has a valid no-applicable-source outcome. A failed pair fails the Run;
+successful siblings cannot produce a completed partial draft. Source-System order is not
+Mapping configuration; Process
 Group dependency order and Process execution order define the runtime schedule.
 Target choices cross active Entities with business Systems represented in Model
 Input Scope; Bronze provenance comes from ingestion lineage. Logical Mapping uses
 eligible scoped Source/Bronze inputs. Dimensional Mapping uses applied Logical
 Entities with an active Logical Mapping for that System. Saved source links provide
 evidence. Each pair produces complete actionable Attribute coverage or an explicit
-no-applicable-source outcome. See ADR 012 for the current ownership contract.
+no-applicable-source outcome. An optional Model default Mapping System assigns
+one pair to Entities supported only by active applicable Assertions, with no
+physical or Logical source provenance. The default requires explicit generation
+rules and cannot skip authoring or substitute for unavailable source lineage.
+See ADR 012 for the current ownership contract.
 _Avoid_: Attribute-only top-level workflow, Mapping System ordering
 
 **Mapping Transformation Document**:

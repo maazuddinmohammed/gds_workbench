@@ -9,6 +9,7 @@ from uuid import UUID
 import pytest
 from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
+from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_workbench_api.features.mapping.preparation_contracts import (
     MappingPreparation,
     MappingRunContext,
@@ -44,7 +45,7 @@ from gds_workbench_api.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
-from mapping_fixtures import mapping_preparation
+from mapping_fixtures import mapping_preparation, mapping_validation_preparation
 from pydantic import JsonValue
 
 
@@ -60,7 +61,9 @@ class _RecordingFake:
 
 class _Lifecycle:
     def __init__(self) -> None:
-        self.starts: list[tuple[RequestPrincipal, int, int, int, str, str | None, int]] = []
+        self.starts: list[
+            tuple[RequestPrincipal, int, int, int, str, str | None, int]
+        ] = []
         self.append_event = AsyncMock()
         self.fail = AsyncMock()
 
@@ -101,6 +104,7 @@ def _executor(
     policy: AgentContextPolicy | None = None,
     *,
     lifecycle: _Lifecycle | None = None,
+    additional_preparations: tuple[MappingPreparation, ...] = (),
 ) -> tuple[MappingWorkflow, AsyncMock, AsyncMock, AsyncMock]:
     async def finalize(
         _: RequestPrincipal,
@@ -158,7 +162,7 @@ def _executor(
         preparation_service=cast(
             MappingPreparationService,
             SimpleNamespace(
-                prepare=AsyncMock(return_value=(preparation,)),
+                prepare=AsyncMock(return_value=(preparation, *additional_preparations)),
             ),
         ),
         agent_executor=agent,
@@ -231,7 +235,9 @@ async def test_mapping_local_fake_completes_each_mode(
 ) -> None:
     agent = _RecordingFake()
     preparation = mapping_preparation(
-        execution_mode=mode, attribute_count=4, modeled_entity_type=layer,
+        execution_mode=mode,
+        attribute_count=4,
+        modeled_entity_type=layer,
     )
     assert preparation.snapshot is not None
     service, handoff, no_op, fail = _executor(preparation, agent)
@@ -261,13 +267,167 @@ async def test_mapping_local_fake_completes_each_mode(
 
 
 @pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))
+@pytest.mark.parametrize("failed_pair_first", (False, True))
+async def test_mapping_cannot_complete_with_a_missing_selected_system(
+    mode: WorkflowExecutionMode,
+    failed_pair_first: bool,
+) -> None:
+    class IncompleteSystemAgent(_RecordingFake):
+        async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
+            result = await super().execute(request)
+            context = cast(dict[str, JsonValue], request.context)
+            original = cast(dict[str, JsonValue], context["original_context"])
+            values = cast(dict[str, JsonValue], original["values"])
+            system = cast(dict[str, JsonValue], values["source_system"])
+            if system["system_code"] == "GDS":
+                candidate = cast(dict[str, JsonValue], result.candidate)
+                return result.model_copy(
+                    update={
+                        "candidate": {**candidate, "attribute_mappings": []},
+                    }
+                )
+            return result
+
+    first = mapping_preparation(execution_mode=mode)
+    pair = first.plan.pair.model_copy(update={"source_system_id": 41})
+    plan = first.plan.model_copy(update={"pair": pair})
+    context = first.context.model_copy(
+        update={
+            "pair": pair,
+            "source_system": first.context.source_system.model_copy(
+                update={
+                    "system_id": 41,
+                    "system_code": "GDS",
+                    "system_name": "GDS",
+                }
+            ),
+        }
+    )
+    second = first.model_copy(
+        update={
+            "plan": plan,
+            "context": context,
+            "readiness": assess_mapping_readiness(plan=plan, context=context),
+        }
+    )
+    preparations = (second, first) if failed_pair_first else (first, second)
+    agent = IncompleteSystemAgent()
+    service, handoff, no_op, fail = _executor(
+        preparations[0], agent, additional_preparations=preparations[1:]
+    )
+
+    with pytest.raises(WorkbenchError):
+        await _execute(service)
+
+    # Both pairs are attempted independently; incomplete Attribute coverage never
+    # turns into a completed draft just because another System succeeded.
+    assert len(agent.requests) == 3
+    handoff.assert_not_awaited()
+    no_op.assert_not_awaited()
+    fail.assert_awaited_once()
+
+
+@pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))
 @pytest.mark.parametrize("layer", ("logical_entity", "dimensional_entity"))
-async def test_mapping_records_no_applicable_source_without_fabricating_a_mapping(
+async def test_mapping_authors_every_selected_entity_individually(
     mode: WorkflowExecutionMode,
     layer: ModeledEntityType,
 ) -> None:
+    first = mapping_preparation(execution_mode=mode, attribute_count=3, modeled_entity_type=layer)
+    pair = first.plan.pair.model_copy(update={"modeled_entity_id": 202})
+    plan = first.plan.model_copy(
+        update={
+            "pair": pair,
+            "agent_plan": first.plan.agent_plan.model_copy(
+                update={"selected_entity_ids": (202,)}
+            ),
+        }
+    )
+    entity = first.context.target.model_copy(
+        update={
+            "entity_id": 202,
+            "entity_name": "CustomerArchive",
+        }
+    )
+    context = first.context.model_copy(
+        update={
+            "pair": pair,
+            "target": entity,
+            "headers": (
+                first.context.headers[0].model_copy(
+                    update={
+                        "modeled_entity_id": 202,
+                        "modeled_entity": entity,
+                    }
+                ),
+            ),
+            "sources": tuple(
+                source.model_copy(update={"modeled_entity_id": 202})
+                for source in first.context.sources
+            ),
+        }
+    )
+    second = mapping_validation_preparation(plan, context)
+    assert first.snapshot is not None and second.snapshot is not None
+    section_name = layer.removesuffix("_entity")
+    first_section = getattr(first.snapshot, section_name)
+    second_section = getattr(second.snapshot, section_name)
+    snapshot = first.snapshot.model_copy(
+        update={
+            section_name: first_section.model_copy(
+                update={
+                    "entities": (
+                        *first_section.entities,
+                        *second_section.entities,
+                    ),
+                    "attributes": (
+                        *first_section.attributes,
+                        *second_section.attributes,
+                    ),
+                }
+            ),
+        }
+    )
+    agent = _RecordingFake()
+    service, handoff, no_op, fail = _executor(
+        first.model_copy(update={"snapshot": snapshot}),
+        agent,
+        additional_preparations=(second.model_copy(update={"snapshot": snapshot}),),
+    )
+    result = await _execute(service)
+
+    assert isinstance(result, WorkflowChangeSetHandoffResult)
+    assert result.staged_record_count == 8
+    assert len(agent.requests) == 2
+    changes = handoff.call_args.kwargs["changes"]
+    objects = next(
+        change.records for change in changes if change.dataset == "mapping_object"
+    )
+    assert {record["modeled_entity_name"] for record in objects} == {
+        "Customer",
+        "CustomerArchive",
+    }
+    handoff.assert_awaited_once()
+    no_op.assert_not_awaited()
+    fail.assert_not_awaited()
+
+
+@pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))
+@pytest.mark.parametrize("layer", ("logical_entity", "dimensional_entity"))
+@pytest.mark.parametrize("mapped_sibling", (False, True))
+async def test_mapping_records_no_applicable_source_without_fabricating_a_mapping(
+    mode: WorkflowExecutionMode,
+    layer: ModeledEntityType,
+    mapped_sibling: bool,
+) -> None:
     class NoSourceAgent(_RecordingFake):
         async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
+            context = cast(dict[str, JsonValue], request.context)
+            original = cast(dict[str, JsonValue], context["original_context"])
+            values = cast(dict[str, JsonValue], original["values"])
+            system = cast(dict[str, JsonValue], values["source_system"])
+            if mapped_sibling and system["system_code"] == "CRM":
+                return await super().execute(request)
             self.requests.append(request)
             return AgentExecutionResult(
                 candidate={
@@ -280,24 +440,47 @@ async def test_mapping_records_no_applicable_source_without_fabricating_a_mappin
                 tool_call_count=0,
             )
 
-    preparation = mapping_preparation(execution_mode=mode, modeled_entity_type=layer)
-    context = preparation.context.model_copy(update={"dependency": None, "sources": ()})
-    preparation = preparation.model_copy(
+    applicable = mapping_preparation(execution_mode=mode, modeled_entity_type=layer)
+    pair = applicable.plan.pair.model_copy(update={"source_system_id": 41})
+    plan = applicable.plan.model_copy(update={"pair": pair})
+    context = applicable.context.model_copy(
         update={
-            "context": context,
-            "readiness": assess_mapping_readiness(
-                plan=preparation.plan, context=context
+            "pair": pair,
+            "dependency": None,
+            "sources": (),
+            "source_system": applicable.context.source_system.model_copy(
+                update={"system_id": 41, "system_code": "GDS", "system_name": "GDS"}
             ),
         }
     )
+    preparation = applicable.model_copy(
+        update={
+            "plan": plan,
+            "context": context,
+            "readiness": assess_mapping_readiness(plan=plan, context=context),
+        }
+    )
     agent, lifecycle = NoSourceAgent(), _Lifecycle()
-    service, handoff, no_op, fail = _executor(preparation, agent, lifecycle=lifecycle)
+    service, handoff, no_op, fail = _executor(
+        preparation, agent, lifecycle=lifecycle,
+        additional_preparations=(applicable,) if mapped_sibling else (),
+    )
     result = await _execute(service)
-    assert isinstance(result, AuthoringNoOpReceipt)
-    assert len(agent.requests) == 1
-    handoff.assert_not_awaited()
+    assert len(agent.requests) == (2 if mapped_sibling else 1)
+    if mapped_sibling:
+        assert isinstance(result, WorkflowChangeSetHandoffResult)
+        handoff.assert_awaited_once()
+        no_op.assert_not_awaited()
+        changes = handoff.call_args.kwargs["changes"]
+        assert {
+            record["source_system_code"] for change in changes for record in change.records
+        } == {"CRM"}
+        assert result.staged_record_count == 2
+    else:
+        assert isinstance(result, AuthoringNoOpReceipt)
+        handoff.assert_not_awaited()
+        no_op.assert_awaited_once()
     fail.assert_not_awaited()
-    no_op.assert_awaited_once()
     assert any(
         "No applicable source found" in call.kwargs["event"].message
         for call in lifecycle.append_event.call_args_list
@@ -316,7 +499,9 @@ async def test_mapping_large_descriptions_reach_the_agent_unchanged(
     raw["target"]["attributes"][0]["attribute_definition"] = long_description
     raw["sources"][0]["object"]["object_description"] = long_description
     attribute_description = "x" * 1_100_000
-    raw["sources"][0]["object"]["attributes"][0]["attribute_description"] = attribute_description
+    raw["sources"][0]["object"]["attributes"][0]["attribute_description"] = (
+        attribute_description
+    )
     entity = raw["headers"][0]["modeled_entity"]
     entity["entity_definition"] = long_description
     entity["grain"] = long_description
@@ -370,7 +555,9 @@ async def test_mapping_requires_private_validation_context_before_provider() -> 
     assert "snapshot" not in preparation.model_dump()
     assert "physical_scope" not in preparation.model_dump()
     agent = _RecordingFake()
-    service, handoff, _, fail = _executor(preparation.model_copy(update={"snapshot": None}), agent)
+    service, handoff, _, fail = _executor(
+        preparation.model_copy(update={"snapshot": None}), agent
+    )
     from gds_etl_workbench.domain.errors import InvalidRequestError
 
     with pytest.raises(InvalidRequestError):

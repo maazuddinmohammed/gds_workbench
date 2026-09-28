@@ -85,7 +85,6 @@ LOGICAL = LayerConfig(
         "logical_attribute_definition",
         "logical_attribute_data_type",
         "logical_attribute_is_nullable",
-        "logical_attribute_is_primary_key",
         "logical_attribute_is_natural_key",
         "logical_attribute_is_surrogate_key",
         "logical_attribute_ordinal_position",

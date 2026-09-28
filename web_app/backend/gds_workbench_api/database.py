@@ -65,6 +65,11 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
              WHERE table_schema = 'model' AND table_name = 'model'
                AND column_name IN ('logical_schemas', 'dimensional_schemas')
                AND data_type = 'jsonb' AND is_nullable = 'NO')
+       AND EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'model' AND table_name = 'model'
+                      AND column_name = 'logical_entity_scd_type'
+                      AND data_type = 'character varying'
+                      AND character_maximum_length = 10 AND is_nullable = 'YES')
        AND to_regclass('workflow.generated_code') IS NOT NULL
        AND to_regclass('model.model_event_log') IS NOT NULL AS schema_ready,
        current_user = 'gds_web_write'
@@ -136,14 +141,15 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
                'gds_web_write', to_regprocedure(required_usage_function.signature), 'EXECUTE'
            ), FALSE)
        )
-       AND has_function_privilege(
+       AND coalesce(has_function_privilege(
            'gds_web_write',
+           to_regprocedure(
            'application.create_model(uuid,uuid,character varying,bigint,'
            'character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,'
            'character varying,character varying,character varying,'
-           'character varying,integer,integer)',
+           'character varying,integer,integer,bigint,character varying)'),
            'EXECUTE'
-       )
+       ), FALSE)
        AND has_function_privilege(
            'gds_web_write',
            'workflow.list_tenant_visible_objects(bigint)',
@@ -176,6 +182,12 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
            'bigint,bigint,character varying,bigint)',
            'EXECUTE'
        )
+       AND coalesce(has_function_privilege(
+           'gds_web_write',
+           to_regprocedure('workflow.is_assertion_only_mapping_target('
+               'bigint,bigint,character varying)'),
+           'EXECUTE'
+       ), FALSE)
        AND has_function_privilege(
            'gds_web_write',
            'workflow.list_code_generation_target_context('
@@ -350,9 +362,9 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND (SELECT count(*) = 26
               FROM application.workflow_stage
              WHERE is_active)
-       AND (SELECT count(*) = 171
+       AND (SELECT count(*) = 173
               FROM application.workflow_stage_variable)
-       AND (SELECT count(*) = 171
+       AND (SELECT count(*) = 173
               FROM application.workflow_stage_variable
              WHERE is_active) AS application_reference_ready
 """

@@ -7,7 +7,7 @@ objects installed by `database/01_reference.sql` through
 `database/19_runtime_integrity.sql`. It excludes seed data plus preflight and
 verification queries.
 
-Inventory totals: **100 tables, 93 functions, and 23 installed triggers**.
+Inventory totals: **100 tables, 94 functions, and 23 installed triggers**.
 
 Read the schemas in dependency order:
 
@@ -268,6 +268,7 @@ Each entry gives purpose, then execution order.
 - `application.review_metadata_records` — Apply exact authorized lock, status, or description changes with parent locks, physical revisions, idempotency and audit. Description audit receipts retain a digest rather than the text.
 - `workflow.list_model_input_sources` — Resolve active Model Input Scope Objects to business Systems; Source uses its Connection, Bronze uses active ingestion lineage. Independent of orchestration dependency order.
 - `workflow.list_mapping_source_objects` — Discover all route-eligible Mapping source candidates for a target/System pair. Saved Entity links supplement discovery; source Systems have no Mapping dependency-order records.
+- `workflow.is_assertion_only_mapping_target` — Identify active Entities supported only by active Assertions matching the Model's default System and Tenant; exclude physical and Logical provenance from fallback eligibility.
 
 - `workflow.tr_validation_group_layer` — Derive a new Validation Group’s modeled layer from its authoring Run, preserve it through manual review, and reject cross-layer reassignment.
 

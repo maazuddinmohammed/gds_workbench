@@ -126,6 +126,7 @@ class ModelDetailsRecord(ModelingRecord):
     gold_model_audit_columns_template: JsonObject | None
     logical_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
     dimensional_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
+    logical_entity_scd_type: Literal["type_1", "type_2"] | None = None
 
     @model_validator(mode="after")
     def validate_policy_fields(self) -> ModelDetailsRecord:
@@ -683,7 +684,6 @@ class LogicalAttributeRecord(ModelingRecord):
     logical_attribute_definition: NonblankText
     logical_attribute_data_type: Code100
     logical_attribute_is_nullable: bool
-    logical_attribute_is_primary_key: bool
     logical_attribute_is_natural_key: bool
     logical_attribute_is_surrogate_key: bool
     logical_attribute_ordinal_position: int = Field(gt=0)
@@ -697,8 +697,7 @@ class LogicalAttributeRecord(ModelingRecord):
         if self.logical_attribute_is_natural_key and self.logical_attribute_is_surrogate_key:
             raise ValueError("A Logical Attribute cannot be both natural and surrogate key.")
         if (
-            self.logical_attribute_is_primary_key
-            or self.logical_attribute_is_natural_key
+            self.logical_attribute_is_natural_key
             or self.logical_attribute_is_surrogate_key
         ) and self.logical_attribute_is_nullable:
             raise ValueError("A Logical key Attribute cannot be nullable.")

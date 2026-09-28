@@ -85,12 +85,9 @@ export function ConceptualScreen({
 
   return (
     <div className="conceptual-page page-enter">
-      <header className="workflow-commandbar model-layer-commandbar conceptual-commandbar">
-        <h1>Conceptual</h1>
+      <header className="workflow-commandbar model-section-toolbar conceptual-commandbar">
+        <h1 className="model-section-title sr-only">Conceptual</h1>
         <div className="workflow-command-context">
-          <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
-            {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
-          </span>
           <nav className="workflow-tabs" aria-label="Conceptual views">
             <button
               className={view === "objects" ? "is-active" : ""}
@@ -109,6 +106,9 @@ export function ConceptualScreen({
               Relationships
             </button>
           </nav>
+          <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
+            {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
+          </span>
         </div>
         <div className="workflow-command-actions">
           <ModelLayerActions api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="conceptual" onApplied={() => setSelectedIds(new Set())} />

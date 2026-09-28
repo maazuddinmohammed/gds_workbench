@@ -53,12 +53,13 @@ export function LogicalEntitiesLedger({
 }) {
   const columns = useMemo<ColumnDef<LogicalEntity>[]>(() => [
     reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.logical_entity_id, "Logical Entities"),
+    { accessorKey: "logical_entity_schema_name", header: "Schema" },
     {
       accessorKey: "logical_entity_name",
-      header: "Logical Entity",
+      header: "Entity name",
       cell: ({ row }) => (
         <span className="endpoint-cell">
-          <strong>{row.original.logical_entity_schema_name}.{row.original.logical_entity_name}</strong>
+          <strong>{row.original.logical_entity_name}</strong>
           <span>{humanize(row.original.logical_entity_type)}</span>
         </span>
       ),
@@ -131,7 +132,7 @@ export function LogicalEntitiesLedger({
         <div className="empty-state compact">No Logical Entities match these filters.</div>
       ) : (
         <div className="workflow-table-scroll table-scroll">
-          <table aria-label="Logical Entities">
+          <table className="modeled-entity-ledger" aria-label="Logical Entities">
             <thead>
               {table.getHeaderGroups().map((group) => (
                 <tr key={group.id}>

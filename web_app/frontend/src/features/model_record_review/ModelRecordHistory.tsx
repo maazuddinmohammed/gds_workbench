@@ -48,6 +48,7 @@ export function ModelRecordHistory({ api, tenantId, modelId, modelRevision, data
             <td>{item.label}</td><td>{item.status}</td><td>{item.is_locked ? "Locked" : "Open"}</td>
             {dataset === "generated_code" ? <td><Link className="text-action"
               to="/tenants/$tenantId/code-generation/models/$modelId/artifacts/$artifactId"
+              search={{ layer: entityType === "dimensional_entity" ? "dimensional" : "logical" }}
               params={{ tenantId: String(tenantId), modelId: String(modelId), artifactId: String(item.record_id) }}
             >Show SQL details</Link></td> : null}
           </tr>)}</tbody>

@@ -24,7 +24,7 @@ describe("tenant entry", () => {
     const selected = screen.getByRole("button", { name: /Northwind Analytics/ });
     expect(selected).toHaveAttribute("aria-pressed", "true");
 
-    await user.click(screen.getByRole("button", { name: /Enter Workbench/ }));
+    await user.click(screen.getByRole("button", { name: /Enter Atlas/ }));
 
     expect(await screen.findByRole("heading", { name: "Tenant Lock" })).toBeVisible();
     expect(router.state.location.pathname).toBe("/tenants/7");
@@ -404,7 +404,7 @@ describe("Models ledger", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Enter a Model name");
     expect(posted).toBe(0);
     await user.type(name, "  Customer 360  ");
-    await user.type(within(dialog).getByRole("textbox", { name: "Description Optional" }), "Customer domain");
+    await user.type(within(dialog).getAllByRole("textbox", { name: "Description" })[0]!, "Customer domain");
     await user.click(within(dialog).getByText("Silver settings"));
     const template = within(dialog).getByRole("textbox", { name: /Silver audit columns template/ });
     await user.click(template);
@@ -537,49 +537,38 @@ describe("Models ledger", () => {
 });
 
 describe("Model overview", () => {
-  it("keeps the workspace and Model journey collapse choices independent across navigation", async () => {
+  it("keeps Model sections visible when workspace navigation is collapsed", async () => {
     const router = createWorkbenchRouter({
       api: createApiClient(tenantFetchStub()),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18"] }),
     });
     const user = userEvent.setup();
     render(<WorkbenchApp router={router} />);
-
-    await screen.findByRole("heading", { name: "Customer 360" });
+    await screen.findByRole("heading", { name: "Overview" });
     const workspaceNavigation = screen.getByLabelText("Workspace navigation");
-    const modelJourney = screen.getByLabelText("Model journey");
-    expect(within(modelJourney).queryByText("Customer 360")).not.toBeInTheDocument();
-    expect(within(modelJourney).queryByText("Revision 18")).not.toBeInTheDocument();
-    expect(within(modelJourney).getByRole("button", {
-      name: "Collapse model journey",
-    })).toHaveAttribute("title", "Collapse model journey");
-    await user.click(within(workspaceNavigation).getByRole("button", {
-      name: "Collapse workspace navigation",
-    }));
-    await user.click(within(modelJourney).getByRole("button", {
-      name: "Collapse model journey",
-    }));
-
+    const modelSections = screen.getByRole("navigation", { name: "Model sections" });
+    expect(within(workspaceNavigation).queryByRole("link", { name: "Mapping" })).not.toBeInTheDocument();
+    expect(within(modelSections).getAllByRole("link").map((item) => item.getAttribute("aria-label"))).toEqual([
+      "Overview", "Settings", "Model Input Scope", "Assertions", "Metadata enrichment", "Profiling",
+      "Analysis", "Conceptual", "Logical", "Dimensional", "Mapping", "Code generation", "Validation",
+    ]);
+    await user.click(within(workspaceNavigation).getByRole("button", { name: "Collapse workspace navigation" }));
     expect(workspaceNavigation).toHaveAttribute("data-collapsed", "true");
-    expect(modelJourney).toHaveAttribute("data-collapsed", "true");
-    await user.click(within(modelJourney).getByRole("link", { name: "Model Input Scope" }));
-
+    await user.click(within(modelSections).getByRole("link", { name: "Model Input Scope" }));
     expect(await screen.findByRole("table", { name: "Active Model Input Scope" })).toBeVisible();
-    const persistedWorkspaceNavigation = screen.getByLabelText("Workspace navigation");
-    const persistedModelJourney = screen.getByLabelText("Model journey");
-    expect(within(persistedWorkspaceNavigation).getByRole("button", {
-      name: "Expand workspace navigation",
-    })).toHaveAttribute("aria-expanded", "false");
-    expect(within(persistedModelJourney).getByRole("button", {
-      name: "Expand model journey",
-    })).toHaveAttribute("aria-expanded", "false");
-
-    await user.click(within(persistedWorkspaceNavigation).getByRole("button", {
-      name: "Expand workspace navigation",
-    }));
-
-    expect(persistedWorkspaceNavigation).toHaveAttribute("data-collapsed", "false");
-    expect(persistedModelJourney).toHaveAttribute("data-collapsed", "true");
+    expect(screen.getByLabelText("Workspace navigation")).toHaveAttribute("data-collapsed", "true");
+    const tabs = screen.getByRole("navigation", { name: "Model sections" });
+    expect(within(tabs).getByRole("link", { name: "Model Input Scope" })).toHaveAttribute("aria-current", "page");
+    within(tabs).getByRole("link", { name: "Overview" }).focus();
+    await user.keyboard("{ArrowRight}");
+    expect(within(tabs).getByRole("link", { name: "Settings" })).toHaveFocus();
+    await user.hover(within(tabs).getByRole("link", { name: "Mapping" }));
+    expect(within(tabs).getByRole("link", { name: "Settings" })).toHaveFocus();
+    expect(within(tabs).getByRole("link", { name: "Model Input Scope" })).toHaveAttribute("aria-current", "page");
+    await user.keyboard("{End}");
+    expect(within(tabs).getByRole("link", { name: "Validation" })).toHaveFocus();
+    await user.keyboard("{ArrowRight}");
+    expect(within(tabs).getByRole("link", { name: "Overview" })).toHaveFocus();
   });
 
   it("orients the selected Model and links Scope within the active Tenant", async () => {
@@ -589,7 +578,7 @@ describe("Model overview", () => {
     });
     render(<WorkbenchApp router={router} />);
 
-    expect(await screen.findByRole("heading", { name: "Customer 360" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Overview" })).toBeVisible();
     expect(screen.getByText("Cross-system customer domain")).toBeVisible();
     const ledger = screen.getByRole("table", { name: "Model workflow ledger" });
     expect(within(ledger).getByText("25 Objects")).toBeVisible();
@@ -639,8 +628,8 @@ describe("Active Scope", () => {
     await screen.findByRole("table", { name: "Active Model Input Scope" });
 
     await user.selectOptions(screen.getByLabelText("Zone"), "bronze");
-    await user.type(screen.getByLabelText("System code"), " CRM ");
-    await user.type(screen.getByLabelText("Source Tenant code"), " GRDM ");
+    await user.selectOptions(screen.getByLabelText("System code"), "CRM");
+    await user.selectOptions(screen.getByLabelText("Source Tenant code"), "GRDM");
     await user.type(screen.getByLabelText("Schema or Object name"), " Customer_Raw ");
     await user.click(screen.getByRole("button", { name: "Apply filters" }));
 

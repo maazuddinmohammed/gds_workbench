@@ -19,6 +19,10 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
     "model_details": (
         "Configure logical_schemas and dimensional_schemas before generating each layer.",
         "Treat Model policy as authoritative when it differs from default naming guidance.",
+        "Preserve logical_entity_scd_type in staged Model details; "
+        "change it only in Model settings.",
+        "Logical SCD type_1 overwrites values; type_2 preserves versions; null is unspecified. "
+        "The setting is guidance, not proof of keys, history Attributes or source behavior.",
     ),
     "model_input_scope": (
         "Select only Source or Bronze Objects whose source Tenant is the Model Tenant.",

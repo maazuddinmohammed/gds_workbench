@@ -56,6 +56,34 @@ def test_edit_definition_preserves_all_other_fields(dataset: EditableDataset) ->
     assert {field for field in original if original[field] != updated[field]} == {name}
 
 
+def test_logical_attribute_editor_exposes_key_origins_and_audit_classification() -> None:
+    review = review_graph(complete_model_graph())
+    editor = model_record_editor(
+        review,
+        ModelRecordEditorRequest(
+            dataset="logical_attribute", record_id=1, expected_model_revision=1
+        ),
+    )
+    field_names = {field.name for field in editor.fields}
+    assert "logical_attribute_is_primary_key" not in field_names
+    assert {
+        "logical_attribute_is_surrogate_key",
+        "logical_attribute_is_natural_key",
+        "logical_attribute_is_audit_column",
+    } <= field_names
+    with pytest.raises(WorkbenchError):
+        prepare_model_record_edit(
+            review,
+            SaveModelRecordRequest(
+                dataset="logical_attribute",
+                record_id=1,
+                expected_model_revision=1,
+                changes={"logical_attribute_is_primary_key": True},
+            ),
+            complete_physical_scope(),
+        )
+
+
 @pytest.mark.parametrize(
     "changes",
     [

@@ -8,15 +8,206 @@ import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 
 describe("Mapping journey", () => {
-  it("opens Mapping as a model-first ledger", async () => {
-    const fetcher = mappingFetchStub();
+  it.each(["logical", "dimensional"] as const)("shows one Entity transformation above Attributes only after Show details in the %s layer", async (layer) => {
+    const base = mappingFetchStub();
+    const entityType = layer === "logical" ? "logical_entity" : "dimensional_entity";
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      const response = await base(input, init);
+      const url = String(input);
+      if (!/\/mapping\/(objects|attributes)(?:\?|\/)/.test(url)) return response;
+      const body = await response.json();
+      for (const row of Array.isArray(body.items) ? body.items : [body]) {
+        row.target = url.includes("/mapping/attributes")
+          ? { ...row.target, entity: { ...row.target.entity, entity_type: entityType } }
+          : { ...row.target, entity_type: entityType };
+        if (url.endsWith("/mapping/objects/81")) row.mapping_document = {
+          source_objects: [{ object_name: "crm_customer" }], ...row.mapping_document,
+        };
+      }
+      return jsonResponse(body);
+    });
+    const router = createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: [`/tenants/7/mapping/models/18?layer=${layer}`] }) });
+    render(<WorkbenchApp router={router} />);
     const user = userEvent.setup();
+    const grid = await screen.findByRole("table", { name: "Object Mappings" });
+    expect(within(grid).queryByRole("columnheader", { name: "Entity transformation" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Entity transformation" })).not.toBeInTheDocument();
+    expect(fetcher.mock.calls.some(([input]) => /\/mapping\/objects\/\d+$/.test(String(input)))).toBe(false);
+    expect(within(grid).queryByText("Standard Object Mapping")).not.toBeInTheDocument();
+    expect(within(grid).queryByRole("columnheader", { name: "Attributes" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Show Attributes|Show Attribute mappings/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "Attribute Mappings" })).not.toBeInTheDocument();
+    expect(fetcher.mock.calls.some(([input]) => String(input).includes("/mapping/attributes"))).toBe(false);
+    await user.click(screen.getByRole("link", { name: "Open Object Mapping 81" }));
+    const attributes = await screen.findByRole("table", { name: "Attribute Mappings" });
+    const transformation = screen.getByRole("region", { name: "Entity transformation" });
+    expect(screen.getAllByRole("heading", { name: "Entity transformation" })).toHaveLength(1);
+    expect(transformation).toBeVisible();
+    expect(within(transformation).getByText("customer_raw.is_deleted = false")).toBeVisible();
+    expect(within(transformation).getByText("customer_address_raw")).toBeVisible();
+    const sources = within(transformation).getByRole("region", { name: "Sources" });
+    expect(within(transformation).getByText("customer_raw.is_deleted = false")
+      .compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(transformation.compareDocumentPosition(attributes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText("Object transformation", { exact: true })).not.toBeInTheDocument();
+    expect(await within(attributes).findByText("crm_customer.customer_name")).toBeVisible();
+    expect(within(attributes).getByText("Normalize whitespace")).toBeVisible();
+    expect(within(attributes).getByRole("columnheader", { name: "Source attributes" })).toBeVisible();
+    expect(within(attributes).getByRole("columnheader", { name: "Transformation steps" })).toBeVisible();
+    expect(router.state.location.pathname).toBe("/tenants/7/mapping/models/18/objects/81");
+    expect(router.state.location.search).toEqual({ layer });
+    expect(within(attributes).queryByRole("link", { name: /Open Attribute Mapping/ })).not.toBeInTheDocument();
+    expect(within(attributes).getByLabelText("Record info for customer_name")).toBeVisible();
+    await user.click(screen.getByRole("link", { name: "Back to Object mappings" }));
+    expect(await screen.findByRole("table", { name: "Object Mappings" })).toBeVisible();
+    expect(screen.queryByRole("table", { name: "Attribute Mappings" })).not.toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/tenants/7/mapping/models/18");
+    expect(router.state.location.search).toEqual({ layer });
+  });
+
+  it("refreshes Entity and Attribute transformations on details without reading them again on the ledger", async () => {
+    let refreshed = false;
+    const base = mappingFetchStub();
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      const updated = refreshed ? "2026-08-25T10:00:00Z" : mappingObject.updated_at;
+      if (url.endsWith("/mapping/objects/81")) return jsonResponse({ ...mappingObjectDetail,
+        updated_at: updated, mapping_document: { steps: [refreshed ? "Use current source" : "Use original source"] } });
+      if (url.endsWith("/mapping/attributes/91")) return jsonResponse({ ...mappingAttributeDetail,
+        updated_at: updated, mapping_document: { transformation: refreshed ? "TRIM(current_name)" : "TRIM(original_name)" } });
+      const response = await base(input, init);
+      if (/\/mapping\/(objects|attributes)\?/.test(url)) {
+        const page = await response.json();
+        return jsonResponse({ ...page, items: page.items.map((row: object) => ({ ...row, updated_at: updated })) });
+      }
+      return response;
+    });
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18"] }) })} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("link", { name: "Open Object Mapping 81" }));
+    expect(await screen.findByText("Use original source")).toBeVisible();
+    expect(await screen.findByText("TRIM(original_name)")).toBeVisible();
+    refreshed = true;
+    await user.click(screen.getByRole("button", { name: "Refresh Attributes" }));
+    expect(await screen.findByText("TRIM(current_name)")).toBeVisible();
+    expect(await screen.findByText("Use current source")).toBeVisible();
+    expect(screen.queryByText("TRIM(original_name)")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: "Back to Object mappings" }));
+    await screen.findByRole("table", { name: "Object Mappings" });
+    expect(screen.queryByText("Use current source")).not.toBeInTheDocument();
+    expect(fetcher.mock.calls.filter(([input]) => String(input).endsWith("/mapping/objects/81"))).toHaveLength(2);
+    expect(fetcher.mock.calls.filter(([input]) => String(input).endsWith("/mapping/attributes/91"))).toHaveLength(2);
+    const ledgerReads = fetcher.mock.calls.filter(([input]) => String(input).includes("/mapping/objects?")).length;
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(fetcher.mock.calls.filter(([input]) => String(input).includes("/mapping/objects?"))).toHaveLength(ledgerReads + 2));
+    expect(fetcher.mock.calls.filter(([input]) => String(input).endsWith("/mapping/objects/81"))).toHaveLength(2);
+    expect(screen.queryByRole("table", { name: "Attribute Mappings" })).not.toBeInTheDocument();
+    expect(fetcher.mock.calls.filter(([input]) => String(input).endsWith("/mapping/attributes/91"))).toHaveLength(2);
+  });
+
+  it("withholds changed Attribute transformations until Refresh reconciles their rows", async () => {
+    let refreshed = false;
+    const base = mappingFetchStub();
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      const updated = "2026-08-25T10:00:00Z";
+      if (url.endsWith("/mapping/attributes/91")) return jsonResponse({ ...mappingAttributeDetail,
+        updated_at: updated, mapping_document: { transformation: "Current safe attribute transformation" } });
+      if (refreshed && url.includes("/mapping/attributes?")) return jsonResponse({
+        model_id: 18, model_revision: 18, next_cursor: null, items: [{ ...mappingAttribute, updated_at: updated }],
+      });
+      return base(input, init);
+    });
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18/objects/81"] }) })} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Mapping changed. Refresh");
+    expect(screen.queryByText("Current safe attribute transformation")).not.toBeInTheDocument();
+    refreshed = true;
+    await userEvent.setup().click(screen.getByRole("button", { name: "Refresh Attributes" }));
+    expect(await screen.findByText("Current safe attribute transformation")).toBeVisible();
+  });
+
+  it("keeps a failed Attribute transformation local to its cell and retries the safe read", async () => {
+    let attempts = 0;
+    const base = mappingFetchStub();
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).endsWith("/mapping/attributes/91") && attempts++ === 0) {
+        return jsonResponse({ error: { code: "unavailable", message: "DO NOT DISPLAY RAW ERROR" } }, 503);
+      }
+      return base(input, init);
+    });
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18/objects/81"] }) })} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Transformation could not be loaded.");
+    expect(screen.getByRole("table", { name: "Attribute Mappings" })).toBeVisible();
+    expect(screen.queryByText("DO NOT DISPLAY RAW ERROR")).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Retry transformation" }));
+    expect(await screen.findByText("Normalize whitespace")).toBeVisible();
+  });
+
+  it("pivots the union of Attribute fields while preserving absent, null, empty, and unauthored values", async () => {
+    const documents = [
+      { source_attributes: ["crm_customer.customer_name"], target_attribute_name: "customer_name",
+        transformation: "TRIM(customer_name)", nullable_rule: null, enabled: false, weight: 0, blank_text: "" },
+      { transformation: "LOWER(email)", target_attribute_name: "email_alias", custom_rule: "Validate address" },
+      null,
+      {},
+    ];
+    const details = ["customer_name", "email", "customer_id", "region"].map((attribute_name, index) => ({
+      ...mappingAttributeDetail,
+      mapping_attribute_id: 91 + index,
+      target: { ...mappingAttribute.target, attribute_id: 702 + index, attribute_name, ordinal_position: 2 + index },
+      mapping_document: documents[index],
+    }));
+    const base = mappingFetchStub();
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/mapping/attributes?")) return jsonResponse({
+        model_id: 18, model_revision: 18, items: details, next_cursor: null,
+      });
+      const detail = details.find((item) => url.endsWith(`/mapping/attributes/${item.mapping_attribute_id}`));
+      return detail ? jsonResponse(detail) : base(input, init);
+    });
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18/objects/81"] }),
+    })} />);
+    const table = await screen.findByRole("table", { name: "Attribute Mappings" });
+    await within(table).findByRole("columnheader", { name: "Custom rule" });
+    const headerRow = within(table).getAllByRole("row")[0];
+    if (!headerRow) throw new Error("Attribute Mappings must have a header row.");
+    const headers = within(headerRow).getAllByRole("columnheader").map((header) => header.textContent);
+    expect(headers.slice(1)).toEqual([
+      "Target Attribute", "Transformation", "Source attributes", "Target attribute name", "Nullable rule", "Enabled",
+      "Weight", "Blank text", "Custom rule", "Status", "Record info",
+    ]);
+    const nameRow = within(table).getByRole("checkbox", { name: "Select Mapping Attributes 91" }).closest("tr")!;
+    const emailRow = within(table).getByRole("checkbox", { name: "Select Mapping Attributes 92" }).closest("tr")!;
+    const nameNullable = nameRow.cells[headers.indexOf("Nullable rule")];
+    const emailNullable = emailRow.cells[headers.indexOf("Nullable rule")];
+    if (!nameNullable || !emailNullable) throw new Error("Both rows must have a Nullable rule cell.");
+    expect(within(nameNullable).getByText("Not set")).toBeVisible();
+    expect(within(emailNullable).getByText("Not provided")).toBeVisible();
+    expect(within(nameRow).getByText("false")).toBeVisible();
+    expect(within(nameRow).getByText("0")).toBeVisible();
+    expect(within(nameRow).getByText('""')).toBeVisible();
+    expect(within(emailRow).getByText("email_alias")).toBeVisible();
+    expect(within(emailRow).getByText("Validate address")).toBeVisible();
+    const unauthoredRow = within(table).getByRole("checkbox", { name: "Select Mapping Attributes 93" }).closest("tr")!;
+    const emptyRow = within(table).getByRole("checkbox", { name: "Select Mapping Attributes 94" }).closest("tr")!;
+    expect(within(unauthoredRow).getByText("Not authored")).toBeVisible();
+    expect(within(emptyRow).getByText("No fields")).toBeVisible();
+    expect(within(table).queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("keeps the legacy Mapping Model picker addressable", async () => {
+    const fetcher = mappingFetchStub();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping"] }),
     })} />);
 
-    await user.click(await screen.findByRole("link", { name: "Mapping" }));
     expect(await screen.findByRole("table", { name: "Models for Mapping" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Open Customer 360 Mapping" })).toBeVisible();
   });
@@ -30,15 +221,15 @@ describe("Mapping journey", () => {
     })} />);
 
     expect(await screen.findByRole("table", { name: "Object Mappings" })).toBeVisible();
-    expect(screen.queryByLabelText("Model journey")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Model sections" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "Dependencies" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add System dependency" })).not.toBeInTheDocument();
     expect(fetcher.mock.calls.some(([input]) => String(input).includes("/mapping/dependencies"))).toBe(false);
-    expect(screen.getByRole("link", { name: "Back to Mapping Models" })).toBeVisible();
+    expect(within(screen.getByRole("navigation", { name: "Model sections" })).getByRole("link", { name: "Overview" })).toBeVisible();
 
-    expect(screen.getByRole("link", { name: "Logical" })).toHaveAttribute("aria-current", "page");
+    expect(within(screen.getByRole("navigation", { name: "Mapping layer" })).getByRole("link", { name: "Logical" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByLabelText("Entity type")).not.toBeInTheDocument();
-    await user.type(screen.getByLabelText("Source System code"), " CRM ");
+    await user.selectOptions(screen.getByLabelText("Source System code"), "CRM");
     await user.selectOptions(screen.getByLabelText("Mapping status"), "inactive");
     await user.selectOptions(screen.getByLabelText("Mapping lock"), "false");
     await user.click(screen.getByRole("button", { name: "Apply Mapping filters" }));
@@ -49,7 +240,7 @@ describe("Mapping journey", () => {
     );
   });
 
-  it("reviews Object and Attribute Mapping documents on dedicated pages", async () => {
+  it("reviews Entity logic and inline Attribute records without leaving the spreadsheet", async () => {
     const fetcher = mappingFetchStub();
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({
@@ -59,44 +250,106 @@ describe("Mapping journey", () => {
 
     await screen.findByRole("table", { name: "Object Mappings" });
     expect(await screen.findByRole("table", { name: "Object Mappings" })).toBeVisible();
-    expect(screen.getByText("silver_nwa.customer")).toBeVisible();
+    const mappings = within(screen.getByRole("table", { name: "Object Mappings" }));
+    expect(mappings.getAllByRole("columnheader").slice(1, 4).map((header) => header.textContent)).toEqual(["System", "Schema", "Entity name"]);
+    expect(mappings.getByRole("cell", { name: "silver_nwa" })).toBeVisible();
+    expect(mappings.getByRole("cell", { name: "customer" })).toBeVisible();
+    expect(mappings.getByRole("cell", { name: "CRM" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Object Mappings spreadsheet" })).toHaveAttribute("tabindex", "0");
     await user.click(screen.getByRole("link", { name: "Open Object Mapping 81" }));
 
-    const objectHeading = await screen.findByRole("heading", { name: "silver_nwa.customer", level: 1 });
+    const objectHeading = await screen.findByRole("heading", { name: "customer", level: 1 });
     expect(objectHeading).toHaveFocus();
-    expect(await screen.findByRole("table", { name: "Attribute Mappings" })).toBeVisible();
+    const identity = within(objectHeading.closest("header")!);
+    expect(identity.getByText("System")).toBeVisible();
+    expect(identity.getByText("CRM")).toBeVisible();
+    expect(identity.getByText("Schema")).toBeVisible();
+    expect(identity.getByText("silver_nwa")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Mapping context" })).not.toBeInTheDocument();
+    const attributes = await screen.findByRole("table", { name: "Attribute Mappings" });
+    expect(attributes).toBeVisible();
+    await within(attributes).findByRole("columnheader", { name: "Source attributes" });
+    const headerRow = within(attributes).getAllByRole("row")[0];
+    if (!headerRow) throw new Error("Attribute Mappings must have a header row.");
+    const headers = within(headerRow).getAllByRole("columnheader").slice(1).map((header) => header.textContent);
+    expect(headers[0]).toBe("Target Attribute");
+    expect(headers.slice(1, -2)).toEqual(expect.arrayContaining(["Source attributes", "Transformation steps"]));
+    expect(headers.slice(-2)).toEqual(["Status", "Record info"]);
+    expect(headers).toHaveLength(5);
+    const recordInfoToggle = within(attributes).getByLabelText("Record info for customer_name");
+    const attributeRow = recordInfoToggle.closest("tr")!;
+    const targetCell = attributeRow.cells[1];
+    const statusCell = attributeRow.cells[attributeRow.cells.length - 2];
+    if (!targetCell || !statusCell) throw new Error("Attribute Mappings must have target and status cells.");
+    expect(within(targetCell).getByText("customer_name")).toBeVisible();
+    expect(within(targetCell).getByText("string")).toBeVisible();
+    expect(within(statusCell).getByText("Active")).toBeVisible();
+    expect(within(statusCell).getByText("Open")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Attribute transformations" })).toBeVisible();
     expect(fetcher).toHaveBeenCalledWith(
       "/api/v1/tenants/7/models/18/mapping/attributes?mapping_object_id=81&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
     expect(screen.queryByRole("button", { name: "Attribute mappings" })).not.toBeInTheDocument();
-    await user.click(screen.getByText("Object transformation", { exact: true }));
-    expect(screen.getByRole("heading", { name: "Transformation document" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Entity transformation" })).toBeVisible();
     expect(screen.getByText("Join strategy")).toBeVisible();
-    expect(screen.getByRole("list", { name: 'Transformation document["join_strategy"]["joins"]' })).toHaveTextContent("customer_address_raw");
+    expect(screen.getByRole("table", { name: 'Entity transformation["join_strategy"]["joins"]' })).toHaveTextContent("customer_address_raw");
     expect(screen.getByText("customer_raw")).toBeVisible();
     expect(screen.queryByText(JSON.stringify(mappingObjectDetail.mapping_document))).not.toBeInTheDocument();
+    const mappingDetails = screen.getByText("Mapping details").closest("details")!;
+    expect(mappingDetails).not.toHaveAttribute("open");
+    expect(within(mappingDetails).getByText("Standard Object Mapping")).not.toBeVisible();
+    expect(attributes.compareDocumentPosition(mappingDetails) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await user.click(within(mappingDetails).getByText("Mapping details"));
+    expect(within(mappingDetails).getByText("Standard Object Mapping")).toBeVisible();
+    expect(within(mappingDetails).getByText("mapping.object.standard")).toBeVisible();
+    expect(within(mappingDetails).getByText("Entity order")).toBeVisible();
+    expect(within(mappingDetails).getByText("Updated")).toBeVisible();
+    expect(within(mappingDetails).getByText("Created")).toBeVisible();
 
-    await user.click(screen.getByRole("link", { name: "Open Attribute Mapping 91" }));
+    expect(within(attributes).queryByRole("link")).not.toBeInTheDocument();
+    const recordInfo = recordInfoToggle.closest("details")!;
+    expect(recordInfo).not.toHaveAttribute("open");
+    expect(within(recordInfo).getByText("Standard Attribute Mapping")).not.toBeVisible();
+    await user.click(recordInfoToggle);
+    expect(recordInfo).toHaveAttribute("open");
+    expect(within(recordInfo).getByText("91")).toBeVisible();
+    expect(within(recordInfo).getByText("2")).toBeVisible();
+    expect(within(recordInfo).getByText("Created")).toBeVisible();
+    expect(within(recordInfo).getByText("Updated")).toBeVisible();
+    expect(within(recordInfo).getByText("Standard Attribute Mapping")).toBeVisible();
+    expect(within(recordInfo).getByText("mapping.attribute.standard")).toBeVisible();
+    const originalDocument = within(recordInfo).getByText("Original document").closest("details")!;
+    expect(originalDocument).not.toHaveAttribute("open");
+    await user.click(within(recordInfo).getByText("Original document"));
+    expect(within(originalDocument).getByText(JSON.stringify(mappingAttributeDetail.mapping_document, null, 2), {
+      normalizer: (text) => text,
+    })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "customer", level: 1 })).toBeVisible();
+    await user.click(screen.getByRole("link", { name: "Back to Object mappings" }));
+    expect(await screen.findByRole("table", { name: "Object Mappings" })).toBeVisible();
+  });
 
-    const attributeHeading = await screen.findByRole("heading", {
-      name: "silver_nwa.customer.customer_name", level: 1,
-    });
-    expect(attributeHeading).toHaveFocus();
+  it("keeps legacy Attribute Mapping URLs addressable with focused return navigation", async () => {
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(mappingFetchStub()),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18/attributes/91"] }),
+    })} />);
+    const user = userEvent.setup();
+    const heading = await screen.findByRole("heading", { name: "silver_nwa.customer.customer_name", level: 1 });
+    expect(heading).toHaveFocus();
     expect(screen.getByText("crm_customer.customer_name")).toBeVisible();
     expect(screen.getByText("Normalize whitespace")).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Parent Object Mapping" })).toBeVisible();
     expect(screen.getAllByRole("heading", { level: 2 }).map((item) => item.textContent)).toEqual([
       "Mapping context", "Transformation document", "Parent Object Mapping",
     ]);
     expect(screen.getAllByText("mapping.attribute.standard")).toHaveLength(1);
     expect(screen.queryByText("c".repeat(64))).not.toBeInTheDocument();
     await user.click(screen.getByText("Source and template details"));
+    expect(screen.getByText("Created")).toBeVisible();
+    expect(screen.getByText("Updated")).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Back to Object Mapping" }));
-    expect(await screen.findByRole("heading", { name: "silver_nwa.customer", level: 1 })).toHaveFocus();
+    expect(await screen.findByRole("heading", { name: "customer", level: 1 })).toHaveFocus();
     expect(await screen.findByRole("table", { name: "Attribute Mappings" })).toBeVisible();
-    await user.click(screen.getByRole("link", { name: "Back to Object mappings" }));
-    expect(await screen.findByRole("table", { name: "Object Mappings" })).toBeVisible();
   });
 
   it("follows opaque Mapping cursors and refreshes the active ledger", async () => {
@@ -114,7 +367,7 @@ describe("Mapping journey", () => {
     await user.click(screen.getByRole("button", { name: "Refresh" }));
     expect(fetcher.mock.calls.filter(([input]) => (
       String(input).includes("/mapping/objects?")
-    ))).toHaveLength(objectCallsBeforeRefresh + 1);
+    ))).toHaveLength(objectCallsBeforeRefresh + 3);
 
     await screen.findByRole("table", { name: "Object Mappings" });
     await user.click(screen.getByRole("button", { name: "Load more Object Mappings" }));
@@ -122,7 +375,7 @@ describe("Mapping journey", () => {
       "/api/v1/tenants/7/models/18/mapping/objects?entity_type=logical_entity&page_size=200&cursor=objects-next",
       expect.objectContaining({ credentials: "same-origin" }),
     );
-    expect(await screen.findByText("silver_nwa.contact")).toBeVisible();
+    expect(await screen.findByRole("cell", { name: "contact" })).toBeVisible();
   });
 
   it("keeps Attribute filters, pagination, and refresh within the parent Object", async () => {
@@ -134,17 +387,32 @@ describe("Mapping journey", () => {
     })} />);
     await screen.findByRole("table", { name: "Attribute Mappings" });
     expect(screen.queryByLabelText("Entity type")).not.toBeInTheDocument();
+    const filtersToggle = screen.getByRole("button", { name: "Filters" });
+    expect(filtersToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByLabelText("Mapping status")).not.toBeVisible();
+    expect(screen.getByLabelText("Mapping lock")).not.toBeVisible();
+    await user.click(filtersToggle);
+    expect(filtersToggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText("Mapping status")).toBeVisible();
+    expect(screen.getByLabelText("Mapping lock")).toBeVisible();
     await user.click(screen.getByRole("checkbox", { name: "Select Mapping Attributes 91" }));
     await user.selectOptions(screen.getByLabelText("Mapping status"), "inactive");
     await user.click(screen.getByRole("button", { name: "Apply Mapping filters" }));
     expect(await screen.findByRole("checkbox", { name: "Select Mapping Attributes 91" })).not.toBeChecked();
+    expect(filtersToggle).toHaveAccessibleName("Filters · 1");
+    await user.click(filtersToggle);
+    expect(filtersToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByLabelText("Mapping status")).not.toBeVisible();
     await user.click(screen.getByRole("button", { name: "Load more Attribute Mappings" }));
-    expect(await screen.findByRole("link", { name: "Open Attribute Mapping 92" })).toBeVisible();
+    expect(await screen.findByRole("checkbox", { name: "Select Mapping Attributes 92" })).toBeVisible();
     expect(fetcher).toHaveBeenCalledWith(
       "/api/v1/tenants/7/models/18/mapping/attributes?status=inactive&mapping_object_id=81&page_size=200&cursor=attributes-next",
       expect.objectContaining({ credentials: "same-origin" }),
     );
+    await user.click(filtersToggle);
+    expect(screen.getByLabelText("Mapping status")).toHaveValue("inactive");
     await user.click(screen.getByRole("button", { name: "Clear" }));
+    expect(filtersToggle).toHaveAccessibleName("Filters");
     await user.click(await screen.findByRole("checkbox", { name: "Select Mapping Attributes 91" }));
     await user.click(screen.getByRole("button", { name: "Refresh Attributes" }));
     expect(await screen.findByRole("checkbox", { name: "Select Mapping Attributes 91" })).not.toBeChecked();
@@ -164,7 +432,7 @@ describe("Mapping journey", () => {
       history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18/objects/81"] }),
     })} />);
     expect(await screen.findByText(message)).toBeVisible();
-    expect(screen.getByRole("button", { name: "Lock selected" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Lock selected", hidden: true })).toBeDisabled();
     expect(screen.getByRole("link", { name: "Back to Object mappings" })).toBeVisible();
   });
 
@@ -423,7 +691,7 @@ describe("Mapping journey", () => {
     })} />);
 
     await screen.findByRole("table", { name: "Object Mappings" });
-    if (layer === "dimensional_entity") await user.click(screen.getByRole("link", { name: "Dimensional" }));
+    if (layer === "dimensional_entity") await user.click(within(screen.getByRole("navigation", { name: "Mapping layer" })).getByRole("link", { name: "Dimensional" }));
     await user.click(await screen.findByRole("button", { name: "Generate mappings" }));
     await user.click(screen.getByText("Advanced settings"));
     const dialog = await screen.findByRole("dialog", { name: "Generate mappings" });
@@ -685,6 +953,7 @@ const mappingAttributeDetail = {
     is_locked: true,
   },
   mapping_document: {
+    target_attribute_name: "customer_name",
     source_attributes: ["crm_customer.customer_name"],
     transformation_steps: [{ step: 1, instruction: "Normalize whitespace" }],
   },
@@ -761,11 +1030,18 @@ it.each([["Object mappings", "mapping_object", 81], ["Attribute mappings", "mapp
   }
   const selection = await screen.findByRole("checkbox", { name: new RegExp(`^Select Mapping .* ${recordId}$`) });
   await user.click(selection);
+  expect(screen.getByRole("checkbox", { name: new RegExp(`^Select Mapping .* ${recordId}$`) })).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: new RegExp(`^Select Mapping .* ${recordId}$`) })).toHaveFocus();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Lock selected" })).toBeEnabled());
   await user.click(screen.getByRole("button", { name: "Lock selected" }));
   const apply = await screen.findByRole("button", { name: "Apply this change" });
   expect(commands[0]).toEqual({ dataset, record_ids: [recordId], action: "lock", expected_model_revision: 18 });
   await user.click(apply);
   expect(commands[1]).toEqual({ ...commands[0], expected_plan_digest: "c".repeat(64) });
+  const refreshName = view === "Attribute mappings" ? "Refresh Attributes" : "Refresh";
+  await waitFor(() => expect(screen.getByRole("button", { name: refreshName })).toHaveFocus());
+  expect(screen.getByRole("button", { name: refreshName })).toBeVisible();
+  expect(screen.getByRole("checkbox", { name: new RegExp(`^Select Mapping .* ${recordId}$`) })).not.toBeChecked();
 });
 
 
@@ -841,9 +1117,9 @@ it("keeps layer filters and detail navigation scoped to Dimensional", async () =
     history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18"] }) });
   render(<WorkbenchApp router={router} />);
   await user.click(await screen.findByRole("checkbox", { name: "Select Mapping Objects 81" }));
-  await user.click(screen.getByRole("link", { name: "Dimensional" }));
+  await user.click(within(screen.getByRole("navigation", { name: "Mapping layer" })).getByRole("link", { name: "Dimensional" }));
   expect(await screen.findByRole("checkbox", { name: "Select Mapping Objects 81" })).not.toBeChecked();
-  expect(screen.getByRole("link", { name: "Dimensional" })).toHaveAttribute("aria-current", "page");
+  expect(within(screen.getByRole("navigation", { name: "Mapping layer" })).getByRole("link", { name: "Dimensional" })).toHaveAttribute("aria-current", "page");
   expect(fetcher).toHaveBeenCalledWith(
     "/api/v1/tenants/7/models/18/mapping/objects?entity_type=dimensional_entity&page_size=200", expect.anything(),
   );
@@ -851,10 +1127,44 @@ it("keeps layer filters and detail navigation scoped to Dimensional", async () =
   await user.click(await screen.findByRole("link", { name: "Open Object Mapping 81" }));
   await user.click(await screen.findByRole("link", { name: "Back to Object mappings" }));
   expect(await screen.findByRole("table", { name: "Object Mappings" })).toBeVisible();
-  expect(screen.getByRole("link", { name: "Dimensional" })).toHaveAttribute("aria-current", "page");
+  expect(within(screen.getByRole("navigation", { name: "Mapping layer" })).getByRole("link", { name: "Dimensional" })).toHaveAttribute("aria-current", "page");
   expect(fetcher).toHaveBeenCalledWith(
     "/api/v1/tenants/7/models/18/mapping/objects?entity_type=dimensional_entity&page_size=200", expect.anything(),
   );
+});
+
+it("retains the Dimensional layer across Mapping, Code generation, and Validation Model tabs", async () => {
+  const base = mappingFetchStub();
+  const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+    const url = String(input);
+    if (url.includes("/code-generation/targets?") || url.includes("/validation/systems?")) {
+      return jsonResponse({ model_id: 18, model_revision: 18, items: [], next_cursor: null, is_truncated: false });
+    }
+    if (url.includes("/validation/ledger?")) return jsonResponse({ model_id: 18, model_revision: 18, groups: [] });
+    if (url.includes("/runs?")) return jsonResponse({ items: [], next_cursor: null });
+    return base(input, init);
+  });
+  const user = userEvent.setup();
+  const router = createWorkbenchRouter({ api: createApiClient(fetcher),
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18?layer=dimensional"] }) });
+  render(<WorkbenchApp router={router} />);
+  await screen.findByRole("table", { name: "Object Mappings" });
+  for (const [tab, heading, path, layerNav] of [
+    ["Code generation", "Code generation", "code-generation", "Code generation layer"],
+    ["Validation", "Validation", "validation", "Validation layer"],
+    ["Mapping", "Mapping", "mapping", "Mapping layer"],
+  ] as const) {
+    await user.click(within(screen.getByRole("navigation", { name: "Model sections" })).getByRole("link", { name: tab }));
+    await screen.findByRole("heading", { name: heading, level: 1 });
+    expect(router.state.location.pathname).toBe(`/tenants/7/${path}/models/18`);
+    expect(router.state.location.search).toEqual({ layer: "dimensional" });
+    expect(within(screen.getByRole("navigation", { name: layerNav })).getByRole("link", { name: "Dimensional" })).toHaveAttribute("aria-current", "page");
+    expect(within(screen.getByRole("navigation", { name: "Model sections" })).getByRole("link", { name: tab })).toHaveAttribute("aria-current", "page");
+  }
+  const workflowDataCalls = fetcher.mock.calls.map(([input]) => String(input)).filter((url) =>
+    /\/(?:code-generation\/targets|validation\/(?:systems|ledger)|mapping\/objects)\?/.test(url));
+  expect(workflowDataCalls).toHaveLength(5);
+  expect(workflowDataCalls.every((url) => url.includes("entity_type=dimensional_entity"))).toBe(true);
 });
 
 it("retains Object and Attribute choices across scope modes, detail navigation and search", async () => {

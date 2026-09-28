@@ -211,7 +211,9 @@ function DimensionalAttributeView({
         </dl>
         <h3>Keys and grain</h3>
         <dl className="detail-fact-grid">
-          <Fact label="Key role" value={humanize(attribute.dimensional_attribute_key_role)} />
+          <Fact label="Surrogate key" value={attribute.dimensional_attribute_key_role === "surrogate" ? "Yes" : "No"} />
+          <Fact label="Natural key" value={attribute.dimensional_attribute_key_role === "business" ? "Yes" : "No"} />
+          {attribute.dimensional_attribute_key_role === "foreign" ? <Fact label="Foreign key" value="Yes" /> : null}
           <Fact label="Grain component" value={attribute.dimensional_attribute_is_grain_component ? "Yes" : "No"} />
         </dl>
         {attribute.dimensional_attribute_role === "measure"

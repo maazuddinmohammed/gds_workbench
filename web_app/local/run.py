@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start one isolated, disposable local GDS Workbench stack."""
+"""Start one isolated, disposable local Atlas stack."""
 
 from __future__ import annotations
 
@@ -176,7 +176,7 @@ def run_local(*, frontend_port: int, api_port: int) -> int:
         )
         result = 0
         try:
-            print(f"Workbench: http://127.0.0.1:{frontend_port}")
+            print(f"Atlas: http://127.0.0.1:{frontend_port}")
             subprocess.run(
                 [*compose, "up", "--build", "--abort-on-container-exit"],
                 check=True,

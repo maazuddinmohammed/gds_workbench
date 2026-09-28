@@ -93,11 +93,16 @@ export function CodeGenerationLedger({
       ),
     },
     {
+      id: "schema",
+      accessorFn: (row) => row.target.entity_schema_name,
+      header: "Schema",
+    },
+    {
       id: "target",
-      header: "Entity",
+      header: "Entity name",
       cell: ({ row }) => (
         <span className="code-target-name">
-          <strong>{targetName(row.original)}</strong>
+          <strong>{row.original.target.entity_name}</strong>
           <span>
             {row.original.entity_type === "logical_entity" ? "Logical Entity" : "Dimensional Entity"}
           </span>
@@ -110,13 +115,10 @@ export function CodeGenerationLedger({
       cell: ({ row }) => (
         <span className="code-source-systems">
           <span className="chip-list">
-            {row.original.source_systems.slice(0, 3).map((system) => (
+            {row.original.source_systems.map((system) => (
               <span key={system.system_id}>{system.system_code}</span>
             ))}
           </span>
-          {row.original.source_system_count > 3 ? (
-            <small>+{row.original.source_system_count - 3} more</small>
-          ) : null}
         </span>
       ),
     },
@@ -165,6 +167,7 @@ export function CodeGenerationLedger({
                 className="text-action"
                 aria-label={`Show ${artifact.artifact_name} for ${targetName(row.original)}`}
                 to="/tenants/$tenantId/code-generation/models/$modelId/artifacts/$artifactId"
+                search={{ layer: row.original.entity_type === "logical_entity" ? "logical" : "dimensional" }}
                 params={{
                   tenantId: String(tenantId),
                   modelId: String(modelId),

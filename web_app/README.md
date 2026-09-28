@@ -1,4 +1,4 @@
-# GDS Workbench web application
+# Atlas web application
 
 The supported production deployment is one Azure Databricks App:
 

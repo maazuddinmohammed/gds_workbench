@@ -197,6 +197,19 @@ def validate_future_graph(
         return _failed(staged, "locks", candidate_digest, lock_issues)
 
     scope_issues: list[ModelValidationIssue] = []
+    if staged.get("model_details") and effective["model_details"]:
+        previous = effective["model_details"][0]
+        changed = staged["model_details"][0]
+        if getattr(previous, "logical_entity_scd_type", None) != getattr(
+            changed, "logical_entity_scd_type", None
+        ):
+            _issue(
+                scope_issues,
+                "model_policy_read_only",
+                "model_details",
+                ("logical_entity_scd_type",),
+                "Logical SCD type must be changed through Model settings.",
+            )
     _validate_model_details(future, physical_scope, scope_issues)
     _validate_physical_scope(future, physical_scope, scope_issues, retained_keys=retained_keys)
     if scope_issues:

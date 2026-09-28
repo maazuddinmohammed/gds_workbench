@@ -1,0 +1,60 @@
+/* Preserve native select semantics and keyboard behaviour with a quiet trigger. */
+.app-shell select:not([multiple]) {
+  appearance: none;
+  min-height: 2.55rem;
+  padding: .55rem 2.2rem .55rem .75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-small);
+  color: var(--ink);
+  background-color: var(--surface);
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: right 1rem center, right .75rem center;
+  background-size: .25rem .25rem;
+  background-repeat: no-repeat;
+  cursor: pointer;
+  transition: border-color 140ms ease;
+}
+.app-shell select:not([multiple]):hover { border-color: var(--muted); }
+.app-shell select:not([multiple]):disabled { color: var(--muted); background-color: var(--soft); cursor: default; }
+.app-shell select option { color: var(--ink); background: var(--surface); }
+
+.multi-select-field { position: relative; min-width: 0; }
+.multi-select-field > span { display: block; margin-bottom: .35rem; color: var(--muted); font-size: .61rem; font-weight: 700; letter-spacing: .075em; text-transform: uppercase; }
+.multi-select-field summary {
+  display: flex; align-items: center; gap: .65rem; min-height: 2.55rem;
+  padding: .55rem .75rem; border: 1px solid var(--line-strong); border-radius: var(--radius-small);
+  background: var(--surface); color: var(--ink); cursor: pointer; list-style: none; font-size: .75rem;
+  transition: border-color 140ms ease;
+}
+.multi-select-field summary:hover { border-color: var(--muted); }
+.multi-select-field summary::-webkit-details-marker { display: none; }
+.multi-select-field summary::after { content: ""; width: .35rem; height: .35rem; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg); margin: -.2rem .1rem 0 auto; flex: 0 0 auto; }
+.multi-select-field details[open] summary { border-color: var(--orange); }
+.multi-select-field details[open] summary::after { transform: rotate(225deg); margin-top: .2rem; }
+.multi-select-field summary span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.multi-select-options {
+  position: absolute; inset: auto 0; z-index: 12; min-width: 0; margin-top: .4rem;
+  padding: .45rem; border: 1px solid var(--line); border-radius: var(--radius-medium);
+  background: var(--surface); box-shadow: var(--shadow-soft);
+  animation: select-menu-enter 120ms var(--ease-fluid);
+}
+.multi-select-field .multi-select-search { display: block; padding: .1rem; margin: 0; }
+.multi-select-field .multi-select-search input { width: 100%; min-width: 0; min-height: 2.2rem; padding: .5rem .65rem; font-size: .75rem; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--soft); }
+.multi-select-options > [role="group"] { max-height: min(16rem, 40vh); overflow-y: auto; overscroll-behavior: contain; }
+.multi-select-field .multi-select-options > [role="group"] > label {
+  display: flex; flex-direction: row; align-items: center; gap: .6rem; width: 100%;
+  min-height: 2.5rem; margin: 0; padding: .55rem .6rem; border-radius: .35rem; cursor: pointer;
+}
+.multi-select-field .multi-select-options > [role="group"] > label:hover { background: var(--soft); }
+.multi-select-field .multi-select-options > [role="group"] > label.is-selected { background: var(--blue-soft); }
+.multi-select-field .multi-select-options input[type="checkbox"] { appearance: auto; width: 1rem; height: 1rem; min-width: 1rem; min-height: 1rem; margin: 0; padding: 0; flex: 0 0 1rem; accent-color: var(--orange); cursor: pointer; }
+.multi-select-field .multi-select-options label span { color: var(--ink); font-size: .77rem; line-height: 1.4; font-weight: 400; letter-spacing: normal; text-transform: none; overflow-wrap: anywhere; }
+.multi-select-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .4rem .75rem; padding: .55rem .35rem; }
+.multi-select-actions .text-action, .multi-select-footer .text-action { font-size: .71rem; }
+.multi-select-options > [role="group"] > p { margin: .75rem .6rem; color: var(--muted); font-size: .77rem; }
+.multi-select-footer { display: flex; justify-content: space-between; align-items: center; gap: .75rem; border-top: 1px solid var(--line); margin-top: .4rem; padding: .55rem .35rem .15rem; color: var(--muted); font-size: .71rem; }
+@keyframes select-menu-enter { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell select:not([multiple]), .multi-select-field summary { transition: none; }
+  .multi-select-options { animation: none; }
+}

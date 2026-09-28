@@ -6,6 +6,7 @@ import { formatRequiredDateTime, zoneLabel } from "../../shared/presentation";
 import type { ModelDetail } from "../models/api";
 import type { ModelInputScopeApi, ModelInputScopeFilters, ModelInputScopeObject } from "../model_input_scope/api";
 import { ScopeFilterForm } from "../model_input_scope/ModelInputScopeScreen";
+import { useScopeFilterChoices } from "../model_input_scope/scopeFilterChoices";
 import type { MetadataApi, ObjectAttribute, ReviewMetadataRecordsCommand } from "../metadata/api";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
 import { WorkflowTokenUsage } from "../workflows/WorkflowTokenUsage";
@@ -42,12 +43,13 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
+  const sourceChoices = useScopeFilterChoices(api, tenantId, model.model_id, model.model_revision);
   const detail = useQuery({
     queryKey: ["model-input-scope-object", tenantId, model.model_id, objectId],
     queryFn: () => api.readModelInputScopeObject(tenantId, model.model_id, objectId!), enabled: objectId !== null,
   });
   const refreshMetadata = async () => {
-    await Promise.all(["model-input-scope", "model-input-scope-object", "metadata-object", "metadata-objects", "metadata-rows", "workflow-run-enrichment-scope"]
+    await Promise.all(["model-input-scope", "model-scope-filter-choices", "model-input-scope-object", "metadata-object", "metadata-objects", "metadata-rows", "workflow-run-enrichment-scope"]
       .map((prefix) => client.invalidateQueries({ queryKey: [prefix, tenantId] })));
   };
   const review = useMutation({
@@ -130,19 +132,24 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
     : "Could not save. Check the record lock and your Tenant Lock, then refresh.";
 
   return <div className="metadata-enrichment-screen page-enter">
-    <header className="workflow-commandbar">
-      <h1>Enrichment</h1>
-      <div className="target-review-actions">
+    <header className="workflow-commandbar model-section-toolbar">
+      <h1 className="model-section-title sr-only">Enrichment</h1>
+      <div className="workflow-command-context">
+        <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
+          {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
+        </span>
+      </div>
+      <div className="workflow-command-actions">
         <button className="button button-secondary button-small" type="button" disabled={busy || objects.isFetching || detail.isFetching} onClick={() => void refresh()}>Refresh</button>
-        {objectId === null ? <button className="button button-primary button-small" type="button" disabled={!hasTenantLock || busy || refreshRequired || changed} title={hasTenantLock ? undefined : "Owned Tenant Lock required"} onClick={() => setRunDialog("object")}>Run object enrichment</button> : null}
         <button className={`button button-${objectId === null ? "secondary" : "primary"} button-small`} type="button" disabled={!hasTenantLock || busy || refreshRequired || changed || (objectId !== null && (!current || current.is_locked || current.source_tenant_id !== tenantId))} title={hasTenantLock ? undefined : "Owned Tenant Lock required"} onClick={() => setRunDialog("attribute")}>Run attribute enrichment</button>
+        {objectId === null ? <button className="button button-primary button-small" type="button" disabled={!hasTenantLock || busy || refreshRequired || changed} title={hasTenantLock ? undefined : "Owned Tenant Lock required"} onClick={() => setRunDialog("object")}>Run object enrichment</button> : null}
       </div>
     </header>
     <EnrichmentHistory api={api} tenantId={tenantId} modelId={model.model_id} focusRunId={recentRunId} onRefresh={refresh} controls={lockControls} disabled={busy} />
     {!editor && review.isError ? <div role="alert"><p>{error}</p>{uncertain ? <button type="button" className="button button-secondary button-small" onClick={() => { if (pendingReview.current) review.mutate(pendingReview.current); }}>Retry same save</button> : null}</div> : null}
     {notice ? <p role="status">{notice}</p> : null}
     {objectId === null ? <section className="workflow-surface" aria-label="Current metadata">
-      <ScopeFilterForm ariaLabel="Filter Enrichment Objects" onApply={(nextFilters) => {
+      <ScopeFilterForm sourceChoices={sourceChoices} ariaLabel="Filter Enrichment Objects" onApply={(nextFilters) => {
         if (busy) return;
         setSelectedIds(new Set());
         setFilters(nextFilters);

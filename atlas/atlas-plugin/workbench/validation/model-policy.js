@@ -24,6 +24,12 @@
       added.set(dataset, (value.pending || []).filter(record => !originals.has(core.stableStringify(core.key("model", value.definition, record)))));
     }
     const details = rows(loaded, "model_details")[0] || context.model || {};
+    const modelDetails = loaded.get("model_details");
+    if (modelDetails?.baseline?.length && modelDetails.pending?.length &&
+        (modelDetails.baseline[0].logical_entity_scd_type ?? null) !==
+        (modelDetails.pending[0].logical_entity_scd_type ?? null)) {
+      add("model_policy_read_only", "model_details", "logical_entity_scd_type", "Logical SCD type must be changed through Model settings.");
+    }
     for (const dataset of ["conceptual_object", "conceptual_relationship", "logical_submodel", "logical_entity", "logical_attribute", "logical_relationship", "dimensional_submodel", "dimensional_entity", "dimensional_attribute", "dimensional_relationship"]) {
       const override = dataset.startsWith("dimensional") ? details.gold_model_naming_instructions : details.silver_model_naming_instructions;
       for (const record of added.get(dataset) || []) {
@@ -70,7 +76,7 @@
         if (!newEntities.has(name)) continue; // Preserve approved historical layouts.
         const surrogates = columns.filter(attribute => layer === "logical" ? attribute.logical_attribute_is_surrogate_key : attribute.dimensional_attribute_key_role === "surrogate");
         const surrogate = surrogates[0];
-        if (surrogates.length !== 1 || surrogate?.[`${layer}_attribute_ordinal_position`] !== 1 || surrogate?.[`${layer}_attribute_is_nullable`] !== false || norm(surrogate?.[`${layer}_attribute_data_type`]) !== "bigint" || surrogate?.sources?.length || (layer === "logical" && (!surrogate.logical_attribute_is_primary_key || surrogate.logical_attribute_is_natural_key || surrogate.logical_attribute_is_audit_column))) add("model.own-surrogate", attributeDataset, attributeField, "Every new Entity, including facts and bridges, needs one generated non-null BIGINT own surrogate at ordinal 1 without physical sources.");
+        if (surrogates.length !== 1 || surrogate?.[`${layer}_attribute_ordinal_position`] !== 1 || surrogate?.[`${layer}_attribute_is_nullable`] !== false || norm(surrogate?.[`${layer}_attribute_data_type`]) !== "bigint" || surrogate?.sources?.length || (layer === "logical" && (surrogate.logical_attribute_is_natural_key || surrogate.logical_attribute_is_audit_column))) add("model.own-surrogate", attributeDataset, attributeField, "Every new Entity, including facts and bridges, needs one generated non-null BIGINT own surrogate at ordinal 1 without physical sources.");
         const naming = layer === "logical" ? details.silver_model_naming_instructions : details.gold_model_naming_instructions;
         if (surrogate && !naming && !surrogate[attributeField]?.endsWith(layer === "logical" ? "ID" : "Key")) add("model.key-suffix", attributeDataset, attributeField, `The own surrogate uses the ${layer === "logical" ? "ID" : "Key"} suffix under the default policy.`);
         const template = layer === "logical" ? details.silver_model_audit_columns_template : details.gold_model_audit_columns_template;

@@ -9,11 +9,13 @@ import type {
   ProfilingObject,
 } from "./api";
 import { WorkflowTable } from "./shared";
+import { SourceCodeFilter, SourceFilterNotice, type ScopeFilterChoices } from "../model_input_scope/scopeFilterChoices";
 
 export function ProfilingResults({
   tenantId,
   modelId,
   filters,
+  sourceChoices,
   items,
   isLoading,
   isError,
@@ -23,6 +25,7 @@ export function ProfilingResults({
   tenantId: number;
   modelId: number;
   filters: ProfilingFilters;
+  sourceChoices: ScopeFilterChoices;
   items: ProfilingObject[];
   isLoading: boolean;
   isError: boolean;
@@ -90,7 +93,7 @@ export function ProfilingResults({
       aria-label="Profiling result review"
       tabIndex={-1}
     >
-      <ProfilingFilterForm filters={filters} onApply={onApplyFilters} />
+      <ProfilingFilterForm filters={filters} sourceChoices={sourceChoices} onApply={onApplyFilters} />
       {isLoading ? (
         <div className="surface-state" aria-busy="true">Loading profiling results…</div>
       ) : revisionMismatch ? (
@@ -113,9 +116,11 @@ export function ProfilingResults({
 
 function ProfilingFilterForm({
   filters,
+  sourceChoices,
   onApply,
 }: {
   filters: ProfilingFilters;
+  sourceChoices: ScopeFilterChoices;
   onApply: (filters: ProfilingFilters) => void;
 }) {
   const form = useForm({
@@ -147,28 +152,16 @@ function ProfilingFilterForm({
     >
       <form.Field name="sourceTenantCode">
         {(field) => (
-          <label>
-            <span>Source Tenant code</span>
-            <input
-              aria-label="Source Tenant code"
-              value={field.state.value}
-              onBlur={field.handleBlur}
-              onChange={(event) => field.handleChange(event.target.value)}
-            />
-          </label>
+          <SourceCodeFilter label="Source Tenant code" value={field.state.value}
+            codes={sourceChoices.tenantCodes} isLoading={sourceChoices.isLoading}
+            isUnavailable={sourceChoices.isUnavailable} onChange={field.handleChange} />
         )}
       </form.Field>
       <form.Field name="systemCode">
         {(field) => (
-          <label>
-            <span>System code</span>
-            <input
-              aria-label="System code"
-              value={field.state.value}
-              onBlur={field.handleBlur}
-              onChange={(event) => field.handleChange(event.target.value)}
-            />
-          </label>
+          <SourceCodeFilter label="System code" value={field.state.value}
+            codes={sourceChoices.systemCodes} isLoading={sourceChoices.isLoading}
+            isUnavailable={sourceChoices.isUnavailable} onChange={field.handleChange} />
         )}
       </form.Field>
       <form.Field name="objectSchema">
@@ -212,6 +205,7 @@ function ProfilingFilterForm({
           Clear
         </button>
       </div>
+      <SourceFilterNotice unavailable={sourceChoices.isUnavailable} />
     </form>
   );
 }

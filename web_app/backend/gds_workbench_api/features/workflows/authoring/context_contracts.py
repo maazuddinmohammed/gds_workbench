@@ -1725,10 +1725,6 @@ INPUT_SHAPES: dict[str, Any] = {
                             "title": "Logical Attribute Is Nullable",
                             "type": "boolean",
                         },
-                        "logical_attribute_is_primary_key": {
-                            "title": "Logical Attribute Is Primary Key",
-                            "type": "boolean",
-                        },
                         "logical_attribute_is_natural_key": {
                             "title": "Logical Attribute Is Natural Key",
                             "type": "boolean",
@@ -1768,7 +1764,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "logical_attribute_definition",
                         "logical_attribute_data_type",
                         "logical_attribute_is_nullable",
-                        "logical_attribute_is_primary_key",
                         "logical_attribute_is_natural_key",
                         "logical_attribute_is_surrogate_key",
                         "logical_attribute_ordinal_position",
@@ -3264,6 +3259,14 @@ INPUT_SHAPES: dict[str, Any] = {
             "type": "object",
         },
     },
+    "logical.logical_entity_scd_type": {
+        "description": "Frozen Model guidance for Logical Entity change history. type_1 means "
+        "overwrite current values; type_2 means preserve versions. Null means unspecified. "
+        "This setting does not create history columns, prove a natural key, or change saved "
+        "Entities. Use supported source evidence and configured policy; report missing "
+        "requirements rather than inventing keys or history Attributes.",
+        "schema": {"enum": ["type_1", "type_2", None]},
+    },
     "logical.schemas": {
         "description": "Configured logical schema names and placement "
         "descriptions. Assign every Entity to one listed schema.",
@@ -3525,10 +3528,6 @@ INPUT_SHAPES: dict[str, Any] = {
                             "title": "Logical Attribute Is Nullable",
                             "type": "boolean",
                         },
-                        "logical_attribute_is_primary_key": {
-                            "title": "Logical Attribute Is Primary Key",
-                            "type": "boolean",
-                        },
                         "logical_attribute_is_natural_key": {
                             "title": "Logical Attribute Is Natural Key",
                             "type": "boolean",
@@ -3568,7 +3567,6 @@ INPUT_SHAPES: dict[str, Any] = {
                         "logical_attribute_definition",
                         "logical_attribute_data_type",
                         "logical_attribute_is_nullable",
-                        "logical_attribute_is_primary_key",
                         "logical_attribute_is_natural_key",
                         "logical_attribute_is_surrogate_key",
                         "logical_attribute_ordinal_position",
@@ -3931,6 +3929,7 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         "naming_instructions": "logical.naming_instructions",
         "audit_columns": "logical.audit_columns",
         "schemas": "logical.schemas",
+        "logical_entity_scd_type": "logical.logical_entity_scd_type",
     },
     "dimensional": {
         "gds_context": "gds_context",
@@ -4724,7 +4723,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "logical_attribute_definition": "CustomerId recorded for this Customer.",
                 "logical_attribute_data_type": "bigint",
                 "logical_attribute_is_nullable": False,
-                "logical_attribute_is_primary_key": True,
                 "logical_attribute_is_natural_key": True,
                 "logical_attribute_is_surrogate_key": False,
                 "logical_attribute_ordinal_position": 1,
@@ -4756,7 +4754,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "logical_attribute_definition": "OrderId recorded for this Order.",
                 "logical_attribute_data_type": "bigint",
                 "logical_attribute_is_nullable": False,
-                "logical_attribute_is_primary_key": True,
                 "logical_attribute_is_natural_key": True,
                 "logical_attribute_is_surrogate_key": False,
                 "logical_attribute_ordinal_position": 1,
@@ -4788,7 +4785,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "logical_attribute_definition": "CustomerId recorded for this Order.",
                 "logical_attribute_data_type": "bigint",
                 "logical_attribute_is_nullable": False,
-                "logical_attribute_is_primary_key": False,
                 "logical_attribute_is_natural_key": False,
                 "logical_attribute_is_surrogate_key": False,
                 "logical_attribute_ordinal_position": 2,
@@ -4890,6 +4886,7 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
             ],
         },
         "schemas": [{"schema_name": "silver", "description": "Logical model schema."}],
+        "logical_entity_scd_type": "type_2",
     },
     "dimensional": {
         "gds_context": [
@@ -5003,7 +5000,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "logical_attribute_definition": "CustomerId recorded for this Customer.",
                 "logical_attribute_data_type": "bigint",
                 "logical_attribute_is_nullable": False,
-                "logical_attribute_is_primary_key": True,
                 "logical_attribute_is_natural_key": True,
                 "logical_attribute_is_surrogate_key": False,
                 "logical_attribute_ordinal_position": 1,
@@ -5035,7 +5031,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "logical_attribute_definition": "OrderId recorded for this Order.",
                 "logical_attribute_data_type": "bigint",
                 "logical_attribute_is_nullable": False,
-                "logical_attribute_is_primary_key": True,
                 "logical_attribute_is_natural_key": True,
                 "logical_attribute_is_surrogate_key": False,
                 "logical_attribute_ordinal_position": 1,
@@ -5067,7 +5062,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "logical_attribute_definition": "CustomerId recorded for this Order.",
                 "logical_attribute_data_type": "bigint",
                 "logical_attribute_is_nullable": False,
-                "logical_attribute_is_primary_key": False,
                 "logical_attribute_is_natural_key": False,
                 "logical_attribute_is_surrogate_key": False,
                 "logical_attribute_ordinal_position": 2,
@@ -5111,7 +5105,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                 "logical_attribute_definition": "Recorded customer display name.",
                 "logical_attribute_data_type": "string",
                 "logical_attribute_is_nullable": True,
-                "logical_attribute_is_primary_key": False,
                 "logical_attribute_is_natural_key": False,
                 "logical_attribute_is_surrogate_key": False,
                 "logical_attribute_ordinal_position": 2,
@@ -5624,7 +5617,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "logical_attribute_definition": "OrderId recorded for this Order.",
                         "logical_attribute_data_type": "bigint",
                         "logical_attribute_is_nullable": False,
-                        "logical_attribute_is_primary_key": True,
                         "logical_attribute_is_natural_key": True,
                         "logical_attribute_is_surrogate_key": False,
                         "logical_attribute_ordinal_position": 1,
@@ -5656,7 +5648,6 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
                         "logical_attribute_definition": "CustomerId recorded for this Order.",
                         "logical_attribute_data_type": "bigint",
                         "logical_attribute_is_nullable": False,
-                        "logical_attribute_is_primary_key": False,
                         "logical_attribute_is_natural_key": False,
                         "logical_attribute_is_surrogate_key": False,
                         "logical_attribute_ordinal_position": 2,

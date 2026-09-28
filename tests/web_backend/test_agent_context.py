@@ -305,7 +305,6 @@ def _dimensional_snapshot() -> ModelSnapshot:
         logical_attribute_definition="Customer ID",
         logical_attribute_data_type="bigint",
         logical_attribute_is_nullable=False,
-        logical_attribute_is_primary_key=True,
         logical_attribute_is_natural_key=True,
         logical_attribute_is_surrogate_key=False,
         logical_attribute_ordinal_position=1,

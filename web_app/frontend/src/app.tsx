@@ -69,7 +69,6 @@ import { ModelSettingsScreen } from "./features/models/ModelSettingsScreen";
 import { ModelRouteFrame } from "./features/models/ModelRouteFrame";
 import { ModelInputScopeScreen } from "./features/model_input_scope/ModelInputScopeScreen";
 import { TenantRouteFrame } from "./app/TenantRouteFrame";
-import { WorkspaceModelRouteFrame } from "./app/WorkspaceModelRouteFrame";
 import { canAuthorModels } from "./features/tenants/presentation";
 import {
   ErrorPage,
@@ -80,15 +79,11 @@ interface RouterContext {
   queryClient: QueryClient;
 }
 
-interface MappingRouteSearch {
-  layer?: "logical" | "dimensional";
-}
-
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: () => <Outlet />,
   notFoundComponent: () => (
     <main className="message-page">
-      <p className="eyebrow">GDS Workbench</p>
+      <p className="eyebrow">Atlas</p>
       <h1>Page not found</h1>
       <Link className="button button-primary" to="/">
         Choose a Tenant
@@ -140,21 +135,21 @@ const tenantMappingRoute = createRoute({
 const tenantMappingModelRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/mapping/models/$modelId",
+  validateSearch: modelLayerSearch,
   component: TenantMappingModel,
-  validateSearch: (search: Record<string, unknown>): MappingRouteSearch => ({
-    ...(search.layer === "logical" || search.layer === "dimensional" ? { layer: search.layer } : {}),
-  }),
 });
 
 const tenantMappingObjectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/mapping/models/$modelId/objects/$mappingObjectId",
+  validateSearch: modelLayerSearch,
   component: TenantMappingObject,
 });
 
 const tenantMappingAttributeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/mapping/models/$modelId/attributes/$mappingAttributeId",
+  validateSearch: modelLayerSearch,
   component: TenantMappingAttribute,
 });
 
@@ -167,13 +162,14 @@ const tenantCodeGenerationRoute = createRoute({
 const tenantCodeGenerationModelRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/code-generation/models/$modelId",
-  component: TenantCodeGenerationModel,
   validateSearch: modelLayerSearch,
+  component: TenantCodeGenerationModel,
 });
 
 const tenantGeneratedSqlArtifactRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/code-generation/models/$modelId/artifacts/$artifactId",
+  validateSearch: modelLayerSearch,
   component: TenantGeneratedSqlArtifact,
 });
 
@@ -219,146 +215,168 @@ const tenantPromptTemplateRoute = createRoute({
 const tenantModelSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/settings",
+  validateSearch: modelLayerSearch,
   component: TenantModelSettings,
 });
 
 const tenantModelPromptSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/settings/prompts",
+  validateSearch: modelLayerSearch,
   component: TenantModelPromptSettings,
 });
 
 const tenantModelRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId",
+  validateSearch: modelLayerSearch,
   component: ModelOverview,
 });
 
 const tenantModelInputScopeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/input-scope",
+  validateSearch: modelLayerSearch,
   component: ModelInputScope,
 });
 
 const tenantModelProfilingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/profiling",
-  validateSearch: validateProfilingRouteSearch,
+  validateSearch: (search) => ({ ...validateProfilingRouteSearch(search), ...modelLayerSearch(search) }),
   component: ModelProfiling,
 });
 
 const tenantModelProfilingDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/profiling/$objectId",
-  validateSearch: validateProfilingRouteSearch,
+  validateSearch: (search) => ({ ...validateProfilingRouteSearch(search), ...modelLayerSearch(search) }),
   component: ModelProfilingDetail,
 });
 
 const tenantModelAnalysisRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/analysis",
+  validateSearch: modelLayerSearch,
   component: ModelAnalysis,
 });
 
 const tenantModelAnalysisDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/analysis/$findingId",
+  validateSearch: modelLayerSearch,
   component: ModelAnalysisDetail,
 });
 
 const tenantModelAssertionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/assertions",
+  validateSearch: modelLayerSearch,
   component: ModelAssertions,
 });
 
 const tenantModelAssertionDocumentRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/assertions/documents/$documentId",
+  validateSearch: modelLayerSearch,
   component: ModelAssertionDocument,
 });
 
 const tenantModelAssertionRecordRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/assertions/records/$recordId",
+  validateSearch: modelLayerSearch,
   component: ModelAssertionRecord,
 });
 
 const tenantModelMetadataEnrichmentRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/metadata-enrichment",
+  validateSearch: modelLayerSearch,
   component: ModelMetadataEnrichment,
 });
 
 const tenantModelConceptualRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/conceptual",
+  validateSearch: modelLayerSearch,
   component: ModelConceptual,
 });
 
 const tenantModelConceptualObjectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/conceptual/objects/$objectId",
+  validateSearch: modelLayerSearch,
   component: ModelConceptualObject,
 });
 
 const tenantModelConceptualRelationshipRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/conceptual/relationships/$relationshipId",
+  validateSearch: modelLayerSearch,
   component: ModelConceptualRelationship,
 });
 
 const tenantModelLogicalRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/logical",
+  validateSearch: modelLayerSearch,
   component: ModelLogical,
 });
 
 const tenantModelLogicalEntityRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/logical/entities/$entityId",
+  validateSearch: modelLayerSearch,
   component: ModelLogicalEntity,
 });
 
 const tenantModelLogicalAttributeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/logical/attributes/$attributeId",
+  validateSearch: modelLayerSearch,
   component: ModelLogicalAttribute,
 });
 
 const tenantModelLogicalRelationshipRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/logical/relationships/$relationshipId",
+  validateSearch: modelLayerSearch,
   component: ModelLogicalRelationship,
 });
 
 const tenantModelLogicalSubmodelRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/logical/submodels/$submodelId",
+  validateSearch: modelLayerSearch,
   component: ModelLogicalSubmodel,
 });
 
 const tenantModelDimensionalRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/dimensional",
+  validateSearch: modelLayerSearch,
   component: ModelDimensional,
 });
 
 const tenantModelDimensionalObjectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/dimensional/objects/$entityId",
+  validateSearch: modelLayerSearch,
   component: ModelDimensionalObject,
 });
 
 const tenantModelDimensionalAttributeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/dimensional/attributes/$attributeId",
+  validateSearch: modelLayerSearch,
   component: ModelDimensionalAttribute,
 });
 
 const tenantModelDimensionalRelationshipRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/dimensional/relationships/$relationshipId",
+  validateSearch: modelLayerSearch,
   component: ModelDimensionalRelationship,
 });
 
@@ -535,11 +553,11 @@ function TenantMappingModel() {
   const numericModelId = Number(modelId);
   const { layer = "logical" } = tenantMappingModelRoute.useSearch();
   return (
-    <WorkspaceModelRouteFrame
+    <ModelRouteFrame
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
-      activeNav="mapping"
+      activeStage="mapping"
       loadingLabel="Loading Mapping"
     >
       {({ home, model }) => (
@@ -553,7 +571,7 @@ function TenantMappingModel() {
           hasAppPermission={canAuthorModels(home.tenant.effective_role)}
         />
       )}
-    </WorkspaceModelRouteFrame>
+    </ModelRouteFrame>
   );
 }
 
@@ -596,15 +614,15 @@ function TenantMappingDetail({
 }) {
   if (!Number.isSafeInteger(detailId) || detailId <= 0) return <ErrorPage />;
   return (
-    <WorkspaceModelRouteFrame
+    <ModelRouteFrame
       api={api}
       tenantId={tenantId}
       modelId={modelId}
-      activeNav="mapping"
+      activeStage="mapping"
       loadingLabel="Loading Mapping"
     >
       {({ home, model }) => (
-        <main className="workspace mapping-workspace">
+        <div className="mapping-workspace">
           {kind === "object" ? (
             <MappingObjectDetailPage api={api} tenantId={tenantId} modelId={modelId} mappingObjectId={detailId}
               modelRevision={model.model_revision}
@@ -613,9 +631,9 @@ function TenantMappingDetail({
           ) : (
             <MappingAttributeDetailPage api={api} tenantId={tenantId} modelId={modelId} mappingAttributeId={detailId} />
           )}
-        </main>
+        </div>
       )}
-    </WorkspaceModelRouteFrame>
+    </ModelRouteFrame>
   );
 }
 
@@ -646,11 +664,11 @@ function TenantCodeGenerationModel() {
   const numericTenantId = Number(tenantId);
   const numericModelId = Number(modelId);
   return (
-    <WorkspaceModelRouteFrame
+    <ModelRouteFrame
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
-      activeNav="code-generation"
+      activeStage="code-generation"
       loadingLabel="Loading Code Generation"
     >
       {({ home, model }) => (
@@ -664,7 +682,7 @@ function TenantCodeGenerationModel() {
           hasAppPermission={canAuthorModels(home.tenant.effective_role)}
         />
       )}
-    </WorkspaceModelRouteFrame>
+    </ModelRouteFrame>
   );
 }
 
@@ -678,15 +696,15 @@ function TenantGeneratedSqlArtifact() {
     return <ErrorPage />;
   }
   return (
-    <WorkspaceModelRouteFrame
+    <ModelRouteFrame
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
-      activeNav="code-generation"
+      activeStage="code-generation"
       loadingLabel="Loading stored SQL"
     >
       {({ home, model }) => (
-        <main className="workspace mapping-workspace code-generation-workspace">
+        <div className="mapping-workspace code-generation-workspace">
           <GeneratedSqlDetailPage
             api={api}
             tenantId={numericTenantId}
@@ -695,9 +713,9 @@ function TenantGeneratedSqlArtifact() {
             hasTenantLock={home.lock.owned_by_current_principal === true}
             hasAppPermission={canAuthorModels(home.tenant.effective_role)}
           />
-        </main>
+        </div>
       )}
-    </WorkspaceModelRouteFrame>
+    </ModelRouteFrame>
   );
 }
 
@@ -728,11 +746,11 @@ function TenantValidationModel() {
   const numericTenantId = Number(tenantId);
   const numericModelId = Number(modelId);
   return (
-    <WorkspaceModelRouteFrame
+    <ModelRouteFrame
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
-      activeNav="validation"
+      activeStage="validation"
       loadingLabel="Loading Validation"
     >
       {({ home, model }) => (
@@ -748,7 +766,7 @@ function TenantValidationModel() {
           checkId={checkId === undefined ? undefined : Number(checkId)}
         />
       )}
-    </WorkspaceModelRouteFrame>
+    </ModelRouteFrame>
   );
 }
 

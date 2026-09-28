@@ -108,7 +108,8 @@
       "audit_columns_template": null,
       "model_name": "Customer Model",
       "naming_instructions": "Use PascalCase names.",
-      "technical_columns_template": null
+      "technical_columns_template": null,
+      "logical_entity_scd_type": null
     },
     "readiness": {
       "headers": [

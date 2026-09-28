@@ -132,7 +132,6 @@ def project_logical_audit_policy(
                     ),
                     logical_attribute_data_type="BIGINT",
                     logical_attribute_is_nullable=False,
-                    logical_attribute_is_primary_key=True,
                     logical_attribute_is_natural_key=False,
                     logical_attribute_is_surrogate_key=True,
                     logical_attribute_ordinal_position=1,
@@ -260,9 +259,6 @@ def _policy_attribute(
         logical_attribute_definition=column.definition or column.semantic_name,
         logical_attribute_data_type=column.data_type,
         logical_attribute_is_nullable=column.nullable,
-        logical_attribute_is_primary_key=(
-            existing.logical_attribute_is_primary_key if existing else False
-        ),
         logical_attribute_is_natural_key=(
             existing.logical_attribute_is_natural_key if existing else False
         ),

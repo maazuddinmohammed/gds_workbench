@@ -50,12 +50,13 @@ export function DimensionalObjectsLedger({
 }) {
   const columns = useMemo<ColumnDef<DimensionalObject>[]>(() => [
     reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.dimensional_entity_id, "Dimensional Objects"),
+    { accessorKey: "dimensional_entity_schema_name", header: "Schema" },
     {
       accessorKey: "dimensional_entity_name",
-      header: "Dimensional Object",
+      header: "Entity name",
       cell: ({ row }) => (
         <span className="endpoint-cell">
-          <strong>{row.original.dimensional_entity_schema_name}.{row.original.dimensional_entity_name}</strong>
+          <strong>{row.original.dimensional_entity_name}</strong>
           <span>{humanize(row.original.dimensional_entity_type)}</span>
         </span>
       ),
@@ -135,7 +136,7 @@ export function DimensionalObjectsLedger({
         <div className="empty-state compact">No Dimensional Objects match these filters.</div>
       ) : (
         <div className="workflow-table-scroll table-scroll">
-          <table aria-label="Dimensional Objects">
+          <table className="modeled-entity-ledger" aria-label="Dimensional Objects">
             <thead>
               {table.getHeaderGroups().map((group) => (
                 <tr key={group.id}>
@@ -312,7 +313,7 @@ export function DimensionalAttributesLedger({
     {
       accessorKey: "dimensional_attribute_key_role",
       header: "Key role",
-      cell: ({ getValue }) => humanize(getValue<string>()),
+      cell: ({ getValue }) => getValue<string>() === "business" ? "Natural key" : humanize(getValue<string>()),
     },
     {
       accessorKey: "dimensional_attribute_additivity",

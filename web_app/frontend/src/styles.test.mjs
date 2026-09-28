@@ -22,6 +22,7 @@ describe("stylesheet Module manifest", () => {
         '@import "./styles/prompts.css";',
         '@import "./styles/workflow-runs.css";',
         '@import "./styles/model-targets.css";',
+        '@import "./shared/select-controls.css";',
         "",
       ].join("\n"),
     );

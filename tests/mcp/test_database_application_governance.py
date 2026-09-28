@@ -90,7 +90,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "create_model",
         "uuid, uuid, character varying, bigint, character varying, character varying, "
         "jsonb, jsonb, text, jsonb, text, jsonb, jsonb, character varying, character varying, "
-        "character varying, character varying, integer, integer",
+        "character varying, character varying, integer, integer, bigint, character varying",
     ),
     (
         "create_output_template",
@@ -103,7 +103,8 @@ APPLICATION_WEB_FUNCTIONS = (
         "character varying, character varying, character varying, character varying, "
         "character varying, integer, integer, bigint[], character varying[], character varying, "
         "character varying, uuid, jsonb, character varying, character varying, "
-        "bigint, bigint, bigint, character varying, bigint, jsonb, jsonb, character varying, bigint[]",
+        "bigint, bigint, bigint, character varying, bigint, jsonb, jsonb, "
+        "character varying, bigint[]",
     ),
     (
         "delete_model_records",
@@ -210,7 +211,8 @@ APPLICATION_WEB_FUNCTIONS = (
         "update_model",
         "uuid, uuid, character varying, bigint, bigint, character varying, "
         "character varying, jsonb, jsonb, text, jsonb, text, jsonb, jsonb, character varying, "
-        "character varying, character varying, character varying, integer, integer",
+        "character varying, character varying, character varying, integer, integer, "
+        "bigint, character varying",
     ),
     (
         "update_output_template",

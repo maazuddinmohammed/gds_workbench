@@ -31,6 +31,36 @@ test('Mapping coverage and Code assignment cannot borrow a same-name Entity in a
   assert.ok(graph.validateActiveDependencies(loaded).some(issue => issue.message.includes('exactly one')));
 });
 
+test('every Entity/System branch needs complete Attributes and exactly one Code assignment', () => {
+  const systems = ['CRM', 'ERP', 'BILLING', 'SUPPORT', 'DEFAULT'];
+  const entities = [entity('silver_a'), entity('silver_b')];
+  const attributes = entities.flatMap(record => ['CustomerID', 'CustomerName'].map(logical_attribute_name => ({...attribute(record.logical_entity_schema_name), logical_attribute_name})));
+  const objects = entities.flatMap(record => systems.map(source_system_code => ({...mapping(record.logical_entity_schema_name), source_system_code})));
+  const columns = objects.flatMap(record => ['CustomerID', 'CustomerName'].map(modeled_attribute_name => ({...record, modeled_attribute_name, attribute_mapping_status:'active', attribute_mapping_transformation_document:{transformation:'Use the evidenced value or explicit generation rule.', source_attributes:[]}})));
+  const artifacts = objects.map(record => ({...record, artifact_name:`${record.source_system_code}.sql`, generated_code_status:'active'}));
+  const assignments = artifacts.map(record => ({...record, generated_code_source_system_status:'active'}));
+  const loaded = new Map([
+    ['logical_entity',state(entities)],['logical_attribute',state(attributes)],
+    ['mapping_object',state(objects,objects)],['mapping_attribute',state(columns,columns)],
+    ['generated_code',state(artifacts,artifacts)],['generated_code_source_system',state(assignments,assignments)],
+    ['validation_group',state(systems.map(system_code=>({tenant_code:'T',system_code,validation_group_name:'Release',is_active:true})))],
+    ['validation_check',state(systems.map(system_code=>({tenant_code:'T',system_code,validation_group_name:'Release',validation_check_name:'RequiredValues',is_active:true})))],
+  ]);
+  assert.deepEqual(graph.validateActiveDependencies(loaded), []);
+  const lastColumn = columns.pop();
+  assert.ok(graph.validateActiveDependencies(loaded).some(issue=>issue.message.includes('cover every')));
+  columns.push(lastColumn);
+  const lastAssignment = assignments.pop();
+  assert.ok(graph.validateActiveDependencies(loaded).some(issue=>issue.message.includes('exactly one')));
+  assignments.push(lastAssignment);
+  assignments.push({...lastAssignment,artifact_name:artifacts[0].artifact_name});
+  assert.ok(graph.validateActiveDependencies(loaded).some(issue=>issue.message.includes('exactly one')));
+  assignments.pop();
+  loaded.get('validation_group').records[0].system_code='UNMAPPED';
+  assert.ok(graph.validateActiveDependencies(loaded).some(issue=>issue.dataset==='validation_group'));
+  assert.ok(graph.validateActiveDependencies(loaded).some(issue=>issue.dataset==='validation_check'));
+});
+
 test('DBML renders same-name Entities with independent columns and qualified relationships', () => {
   const loaded = new Map([
     ['logical_entity', state([entity('silver_a'), entity('silver_b')])],

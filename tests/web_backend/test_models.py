@@ -65,6 +65,7 @@ class StaticModelService:
             model_description="Cross-system customer domain",
             model_revision=18,
             model_input_scope_object_count=25,
+            logical_entity_scd_type="type_2",
             silver_model_naming_instructions="Use business names.",
             silver_model_audit_columns_template={"columns": ["created_at"]},
             gold_model_naming_instructions=None,
@@ -128,6 +129,7 @@ def test_model_detail_exposes_server_stored_settings_without_raw_prompts() -> No
     assert response.status_code == 200
     detail = response.json()
     assert detail["model_name"] == "Customer 360"
+    assert detail["logical_entity_scd_type"] == "type_2"
     assert detail["default_agent_provider_code"] == "microsoft_foundry"
     assert detail["model_input_scope_object_count"] == 25
     assert "prompt_text" not in detail
@@ -144,6 +146,7 @@ class ModelTransaction:
     ) -> dict[str, Any] | None:
         if "FROM model.model AS model" in query:
             assert parameters == (7, 18)
+            assert "model.logical_entity_scd_type" in query
             return {
                 "model_id": 18,
                 "tenant_id": 7,
@@ -151,6 +154,7 @@ class ModelTransaction:
                 "model_description": "Cross-system customer domain",
                 "model_revision": 18,
                 "model_input_scope_object_count": 25,
+                "logical_entity_scd_type": "type_1",
                 "silver_model_naming_instructions": None,
                 "silver_model_audit_columns_template": None,
                 "gold_model_naming_instructions": None,
@@ -290,4 +294,5 @@ async def test_database_model_detail_is_authorized_and_tenant_scoped() -> None:
     )
 
     assert detail.model_name == "Customer 360"
+    assert detail.logical_entity_scd_type == "type_1"
     assert detail.model_input_scope_object_count == 25

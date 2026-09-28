@@ -9,6 +9,19 @@ Authorized for implementation. Existing stages/output schemas remain. Variables/
 
 Stage: mapping_authoring. Modes: One-shot and Tool-assisted.
 
+Current execution authors each frozen Entity/System pair independently. Every
+actionable Attribute is required. Any pair failure fails the Run before successful
+draft finalization; a successful sibling cannot hide missing Mapping coverage.
+An explicit no-applicable-source outcome remains valid only without known source
+support, an existing Mapping, or the configured default-System assignment.
+
+The optional Model default Mapping System covers Entities supported only by
+active applicable Assertions, with no physical or Logical source provenance.
+`source_system.is_default=true` identifies this assignment; source candidates are
+empty. Explicit Assertion generation rules must support every output field.
+Other scoped Systems, missing source lineage, and incomplete business rules cannot
+be replaced by the default. See ADR 012 for its eligibility and ownership rules.
+
 ## Confirmed default output-template fields — 2026-09-08
 
 Object Mapping contains `source_objects` and `steps`; both values

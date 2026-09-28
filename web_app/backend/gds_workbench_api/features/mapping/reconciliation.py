@@ -97,13 +97,20 @@ class MappingCandidateReconciler:
                     and getattr(attribute, f"{layer}_attribute_status") == "active"
                     for source in attribute.sources
                 )
-            if header.is_authored or known_source:
+            if (
+                header.is_authored
+                or known_source
+                or self._preparation.context.source_system.is_default
+            ):
                 raise InvalidRequestError(
                     "Known source evidence or an existing Mapping requires complete authoring. "
                     "Report missing transformation evidence instead of skipping the target."
                 )
             return ()
-        if not self._preparation.context.sources:
+        if (
+            not self._preparation.context.sources
+            and not self._preparation.context.source_system.is_default
+        ):
             raise InvalidRequestError("No source is available; return no_applicable_source.")
         readiness = self._preparation.readiness.headers[0]
         object_actionable = readiness.action in {"author", "extend"}

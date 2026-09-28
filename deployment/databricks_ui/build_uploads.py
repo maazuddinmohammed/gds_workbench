@@ -31,6 +31,7 @@ _APP_ROOT_FILES = (
 )
 _FRONTEND_ROOT_FILES = (
     "index.html",
+    "public/assets/atlas.svg",
     "package.json",
     "tsconfig.build.json",
     "tsconfig.json",

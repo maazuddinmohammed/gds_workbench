@@ -15,6 +15,7 @@ import type {
   AssertionRecordFilters,
 } from "./api";
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
+import { SourceCodeFilter, SourceFilterNotice } from "../model_input_scope/scopeFilterChoices";
 
 interface LedgerState {
   isLoading: boolean;
@@ -25,6 +26,7 @@ interface LedgerState {
 }
 
 export function AssertionDocumentsLedger({
+  sourceChoices,
   tenantId,
   modelId,
   items,
@@ -33,6 +35,7 @@ export function AssertionDocumentsLedger({
   onApplyFilters,
   onLoadMore,
 }: {
+  sourceChoices: { codes: string[]; isLoading: boolean; isUnavailable: boolean };
   tenantId: number;
   modelId: number;
   items: AssertionDocument[];
@@ -134,8 +137,11 @@ export function AssertionDocumentsLedger({
             {(field) => <TextFilter label="Document name prefix" field={field} />}
           </form.Field>
           <form.Field name="sourceSystemCode">
-            {(field) => <TextFilter label="Source System code" field={field} />}
+            {(field) => <SourceCodeFilter label="Source System code" value={field.state.value}
+              codes={sourceChoices.codes} isLoading={sourceChoices.isLoading}
+              isUnavailable={sourceChoices.isUnavailable} onChange={field.handleChange} />}
           </form.Field>
+          <SourceFilterNotice unavailable={sourceChoices.isUnavailable} />
           <form.Field name="active">
             {(field) => (
               <label>

@@ -23,9 +23,10 @@ import type {
   ModelInputScopeObject,
 } from "./api";
 import { AddScopeDialog } from "./AddScopeDialog";
+import { SourceCodeFilter, SourceFilterNotice, scopeFilterChoicesKey, useScopeFilterChoices, type ScopeFilterChoices } from "./scopeFilterChoices";
 
 type ModelInputScopeScreenApi = Pick<TenantsApi, "readTenantHome">
-  & Pick<ModelsApi, "readModel">
+  & Pick<ModelsApi, "readModel" | "readModelOverview">
   & ModelInputScopeApi;
 
 export function ModelInputScopeScreen({
@@ -60,6 +61,7 @@ export function ModelInputScopeScreen({
     queryFn: () => api.readModel(tenantId, modelId),
     enabled: validIds,
   });
+  const sourceChoices = useScopeFilterChoices(api, tenantId, modelId, modelQuery.data?.model_revision);
   const scopeQuery = useInfiniteQuery({
     queryKey: ["model-input-scope", tenantId, modelId, filters],
     queryFn: ({ pageParam }) => api.listModelInputScope(tenantId, modelId, filters, 200, pageParam),
@@ -81,13 +83,14 @@ export function ModelInputScopeScreen({
 
   return (
     <TenantWorkspace home={homeQuery.data} activeNav="models" model={modelQuery.data}>
-      <ModelWorkspaceShell model={modelQuery.data} activeStage="scope">
+      <ModelWorkspaceShell api={api} tenantLock={homeQuery.data.lock} model={modelQuery.data} activeStage="scope">
         <ScopeView
           tenantId={tenantId}
           modelInputScopeObjectCount={modelQuery.data.model_input_scope_object_count}
           objects={scopeQuery.data?.pages.flatMap((page) => page.items) ?? []}
+          sourceChoices={sourceChoices}
           onAdd={() => setAddOpen(true)}
-          onRefresh={() => void Promise.all([scopeQuery.refetch(), modelQuery.refetch(), homeQuery.refetch()])}
+          onRefresh={() => void Promise.all([scopeQuery.refetch(), sourceChoices.refetch(), modelQuery.refetch(), homeQuery.refetch()])}
           isLoading={scopeQuery.isPending}
           isError={scopeQuery.isError}
           selectedObjectId={detailObjectId}
@@ -113,6 +116,7 @@ export function ModelInputScopeScreen({
             queryClient.invalidateQueries({ queryKey: ["model-overview", tenantId, modelId] }),
             queryClient.invalidateQueries({ queryKey: ["scope-candidates", tenantId, modelId] }),
             queryClient.invalidateQueries({ queryKey: ["scope-search-options", tenantId, modelId] }),
+            queryClient.invalidateQueries({ queryKey: scopeFilterChoicesKey(tenantId, modelId) }),
           ]); }} /> : null}
       </ModelWorkspaceShell>
     </TenantWorkspace>
@@ -123,6 +127,7 @@ function ScopeView({
   tenantId,
   modelInputScopeObjectCount,
   objects,
+  sourceChoices,
   isLoading,
   isError,
   selectedObjectId,
@@ -138,6 +143,7 @@ function ScopeView({
   tenantId: number;
   modelInputScopeObjectCount: number;
   objects: ModelInputScopeObject[];
+  sourceChoices: ScopeFilterChoices;
   isLoading: boolean;
   isError: boolean;
   selectedObjectId: number | null;
@@ -212,16 +218,15 @@ function ScopeView({
 
   return (
     <div className="scope-page page-enter">
-      <header className="section-bar">
-        <div>
-          <h1>Input Scope</h1>
-        </div>
-        <div className="workflow-command-actions"><span>{objects.length} of {modelInputScopeObjectCount} Objects</span>
+      <h1 className="model-section-title sr-only">Input Scope</h1>
+      <header className="section-bar model-section-toolbar">
+        <span>{objects.length} of {modelInputScopeObjectCount} Objects</span>
+        <div className="workflow-command-actions">
           <button className="button button-secondary button-small" type="button" onClick={onRefresh}>Refresh</button>
           <button className="button button-primary button-small" type="button" onClick={onAdd}>Add Objects</button>
         </div>
       </header>
-      <ScopeFilterForm onApply={onFiltersChange} />
+      <ScopeFilterForm sourceChoices={sourceChoices} onApply={onFiltersChange} />
       <div className={`scope-data-layout${selectedObjectId ? " has-inspector" : ""}`}>
         <section className="scope-ledger" aria-label="Active Model Input Scope ledger">
           {isLoading ? (
@@ -403,9 +408,11 @@ function ScopeDetailDrawer({
 
 export function ScopeFilterForm({
   ariaLabel = "Filter active Model Input Scope",
+  sourceChoices,
   onApply,
 }: {
   ariaLabel?: string;
+  sourceChoices: ScopeFilterChoices;
   onApply: (filters: ModelInputScopeFilters) => void;
 }) {
   const form = useForm({
@@ -430,28 +437,16 @@ export function ScopeFilterForm({
     >
       <form.Field name="sourceTenantCode">
         {(field) => (
-          <label>
-            <span>Source Tenant code</span>
-            <input
-              maxLength={100}
-              value={field.state.value}
-              onBlur={field.handleBlur}
-              onChange={(event) => field.handleChange(event.target.value)}
-            />
-          </label>
+          <SourceCodeFilter label="Source Tenant code" value={field.state.value}
+            codes={sourceChoices.tenantCodes} isLoading={sourceChoices.isLoading}
+            isUnavailable={sourceChoices.isUnavailable} onChange={field.handleChange} />
         )}
       </form.Field>
       <form.Field name="systemCode">
         {(field) => (
-          <label>
-            <span>System code</span>
-            <input
-              maxLength={100}
-              value={field.state.value}
-              onBlur={field.handleBlur}
-              onChange={(event) => field.handleChange(event.target.value)}
-            />
-          </label>
+          <SourceCodeFilter label="System code" value={field.state.value}
+            codes={sourceChoices.systemCodes} isLoading={sourceChoices.isLoading}
+            isUnavailable={sourceChoices.isUnavailable} onChange={field.handleChange} />
         )}
       </form.Field>
       <form.Field name="objectName">
@@ -496,6 +491,7 @@ export function ScopeFilterForm({
         </button>
         <button className="button button-primary" type="submit">Apply filters</button>
       </div>
+      <SourceFilterNotice unavailable={sourceChoices.isUnavailable} />
     </form>
   );
 }

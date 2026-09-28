@@ -285,7 +285,13 @@ describe("governed Prompts experience", () => {
     const table = await screen.findByRole("table", { name: "Effective Model Prompt assignments" });
     expect(within(table).getByText("Tenant entity review")).toBeVisible();
     expect(within(table).getAllByText("Model override")[0]).toBeVisible();
-    expect(screen.getByRole("button", { name: "Global assignment unavailable" })).toBeDisabled();
+    const audit = within(table).getByLabelText("Entity review Prompt details");
+    expect(within(table).getByText("logical.entity_review", { exact: true })).not.toBeVisible();
+    await user.click(audit);
+    expect(within(table).getByText("logical.entity_review", { exact: true })).toBeVisible();
+    expect(within(table).getByText(digestC, { exact: true })).toBeVisible();
+    await user.click(audit);
+    expect(screen.getByText("Global defaults are read-only. Model overrides use active, published Tenant versions.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Configure Entity review Prompt" }));
     const dialog = await screen.findByRole("dialog", { name: "Entity review" });
     expect(within(dialog).getByRole("button", {

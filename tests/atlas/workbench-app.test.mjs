@@ -42,6 +42,40 @@ test('columns preserve identity and draft labels never claim staging',async()=>{
  assert.ok([...document.querySelectorAll('button')].some(button=>button.textContent==='Reload local files'));
  assert.equal([...document.querySelectorAll('button')].some(button=>['Apply','Stage'].includes(button.textContent.trim())),false);dom.window.close();
 });
+test('Model settings owned by the web app remain visible and read-only in the editor', async () => {
+ const root=workspace();state(root,{model:{id:7,name:'Sales'}});
+ const row={model_name:'Sales',model_purpose:'Customer reporting',logical_entity_scd_type:'type_2'};
+ const definition=dataset('model_details',[],[row]);
+ definition.schema={type:'object','x-gds-change-set-eligible':true,properties:{model_name:{type:'string'},model_purpose:{type:'string'},logical_entity_scd_type:{anyOf:[{type:'string',enum:['type_1','type_2']},{type:'null'}]}}};
+ snapshot(root,'model',[definition]);root.directory('model-change-set').file('model_details.json',JSON.stringify([row]));
+ const {api,document,dom}=await app(root);await api.switchArea('model','model_details');
+ document.querySelector('[data-source="changeset"]').click();document.querySelector('[data-row-action]').click();document.querySelector('[data-action="edit-detail-draft"]').click();
+ const scd=document.querySelector('[data-row-field="logical_entity_scd_type"]');
+ assert.equal(scd.value,'"type_2"');assert.equal(scd.disabled,true);
+ assert.match(scd.closest('.row-editor-field').textContent,/Model settings/);
+ assert.equal(document.querySelector('[data-row-field="model_purpose"]').disabled,false);
+ dom.window.close();
+});
+test('Mapping sheets expose System first and filter complete Entity/System branches', async () => {
+ const root=workspace();state(root,{model:{id:7,name:'Sales'}});
+ const key=['modeled_entity_type','modeled_entity_schema_name','modeled_entity_name','source_system_code'];
+ const branches=['CRM','ERP'].map(source_system_code=>({modeled_entity_type:'logical_entity',modeled_entity_schema_name:'silver',modeled_entity_name:'Customer',source_system_code}));
+ snapshot(root,'model',[
+  dataset('mapping_object',key,branches),
+  dataset('mapping_attribute',[...key,'modeled_attribute_name'],branches.map(row=>({...row,modeled_attribute_name:'CustomerID'}))),
+ ]);
+ const {api,document,win,dom}=await app(root);
+ for(const name of ['mapping_object','mapping_attribute']){
+  await api.switchArea('model',name);
+  const filters=document.querySelectorAll('.multi-filter');
+  assert.equal(filters[0].querySelector('summary span').textContent,'Source system');
+  const crm=filters[0].querySelector('input[value="CRM"]');crm.checked=true;crm.dispatchEvent(new win.Event('change',{bubbles:true}));
+  assert.equal(document.querySelectorAll('.data-table tbody tr').length,1);
+  assert.match(document.querySelector('.data-table tbody').textContent,/CRM/);
+  assert.doesNotMatch(document.querySelector('.data-table tbody').textContent,/ERP/);
+ }
+ dom.window.close();
+});
 test('DBML displays the complete effective Model despite record view filters',async()=>{
  const root=workspace();state(root,{model:{id:7,name:'Sales'}});snapshot(root,'metadata',[]);snapshot(root,'model',[dataset('conceptual_object',['conceptual_object_name'],[{conceptual_object_name:'Customer',conceptual_object_status:'active',conceptual_object_type:'party'}])]);
  root.directory('model-change-set').file('conceptual_object.json',JSON.stringify([{conceptual_object_name:'Order',conceptual_object_status:'active',conceptual_object_type:'event'}]));

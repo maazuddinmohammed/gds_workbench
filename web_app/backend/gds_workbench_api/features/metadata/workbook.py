@@ -85,7 +85,7 @@ def build_metadata_workbook(
         raise MetadataWorkbookBuildError("XLSX workbook initialization failed")
     workbook.remove(active_sheet)
     fixed_time = datetime(2000, 1, 1, tzinfo=UTC)
-    workbook.properties.creator = "GDS Workbench"
+    workbook.properties.creator = "Atlas"
     workbook.properties.created = fixed_time
     workbook.properties.modified = fixed_time
 

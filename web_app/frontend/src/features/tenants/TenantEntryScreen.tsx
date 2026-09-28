@@ -168,7 +168,7 @@ export function TenantEntryScreen({
               if (selectedTenantId) selectMutation.mutate(selectedTenantId);
             }}
           >
-            {selectMutation.isPending ? "Entering…" : "Enter Workbench"}
+            {selectMutation.isPending ? "Entering…" : "Enter Atlas"}
             <span aria-hidden="true">→</span>
           </button>
         </footer>

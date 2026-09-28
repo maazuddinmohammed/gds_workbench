@@ -442,7 +442,7 @@ def mapping_validation_preparation(
                 attribute.attribute_name,
                 index,
                 source_attribute,
-                primary=index == 1,
+                natural=index == 1,
             )
         )
         record[layer + "_entity_schema_name"] = entity.entity_schema_name
@@ -483,7 +483,7 @@ def mapping_validation_preparation(
         graph["logical_entity"] = [input_entity]
         graph["logical_attribute"] = [
             logical_attribute(
-                "CustomerInput", "customer_id", 1, source_attribute, primary=True
+                "CustomerInput", "customer_id", 1, source_attribute, natural=True
             )
         ]
     identity = {

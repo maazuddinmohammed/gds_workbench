@@ -187,6 +187,8 @@
 
   function prepareLayer(loaded, layer) {
     const spec = layerSpecification(layer);
+    const logicalHistory = layer === "logical" && rows(loaded, "model_details")
+      .some((record) => record.logical_entity_scd_type === "type_2");
     const submodels = rows(loaded, spec.submodelDataset)
       .filter((record) => record[spec.submodelStatus] === "active")
       .map((record) => ({ name: record[spec.submodelName], definition: record[spec.submodelDefinition] }))
@@ -241,9 +243,9 @@
       if (record[`${layer}_attribute_is_audit_column`]) notes.push("Audit Attribute.");
       const attribute = {
         name: record[spec.attributeName], type: record[spec.attributeType], ordinal: record[spec.attributeOrdinal], nullable: record[spec.attributeNullable],
-        primary: logical ? record.logical_attribute_is_primary_key : keyRole === "surrogate",
         natural: logical ? record.logical_attribute_is_natural_key : keyRole === "business",
-        surrogate: logical ? record.logical_attribute_is_surrogate_key : false,
+        surrogate: logical ? record.logical_attribute_is_surrogate_key : keyRole === "surrogate",
+        historized: logicalHistory || (!logical && record.dimensional_attribute_change_behavior === "historize"),
         notes: notes.filter((value) => value !== null && value !== undefined && oneLine(value)),
       };
       if (!attributesByEntity.has(entityKey)) attributesByEntity.set(entityKey, []);
@@ -277,12 +279,11 @@
   function keySettings(attributes) {
     const inline = new Map();
     const indexes = [];
-    const primary = attributes.filter((item) => item.primary);
-    const natural = attributes.filter((item) => item.natural && !item.primary);
-    const surrogate = attributes.filter((item) => item.surrogate && !item.primary);
+    // Business identity repeats across historical versions; its role alone is
+    // insufficient to declare a unique physical tuple for a historized Entity.
+    const natural = attributes.some((item) => item.historized) ? [] : attributes.filter((item) => item.natural);
+    const surrogate = attributes.filter((item) => item.surrogate);
     const add = (name, setting) => inline.set(normalize(name), [...(inline.get(normalize(name)) || []), setting]);
-    if (primary.length === 1) add(primary[0].name, "pk");
-    else if (primary.length) indexes.push([primary.map((item) => item.name), "pk"]);
     if (natural.length === 1) add(natural[0].name, "unique");
     else if (natural.length) indexes.push([natural.map((item) => item.name), "unique"]);
     surrogate.forEach((item) => add(item.name, "unique"));

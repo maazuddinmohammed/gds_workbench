@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useSearch } from "@tanstack/react-router";
 
 import type { TenantHomeRecord, TenantsApi } from "../tenants/api";
 import { canAuthorModels } from "../tenants/presentation";
@@ -72,16 +72,15 @@ export function ModelSettingsScreen({ api, home, model }: {
   const busy = mutation.isPending || refreshing;
 
   return <section className="model-settings-page page-enter" aria-labelledby="model-settings-heading">
-    <header className="models-commandbar">
-      <div><p className="eyebrow">Model Settings</p><h1 id="model-settings-heading" ref={heading} tabIndex={-1}>Definition</h1></div>
+    <h1 className="model-section-title sr-only" id="model-settings-heading" ref={heading} tabIndex={-1}>Definition</h1>
+    <header className="models-commandbar model-section-toolbar">
+      <ModelSettingsTabs model={model} active="definition" />
       <button className="button button-secondary button-small" type="button" disabled={busy} onClick={() => {
         if (dirty) setConfirmRefresh(true);
         else { mutation.reset(); void refresh(); }
       }}>{refreshing ? "Refreshing…" : "Refresh saved settings"}</button>
     </header>
-    <ModelSettingsTabs model={model} active="definition" />
-    <p className="field-help">Schemas, naming rules, technical columns and agent defaults apply to future generation. Existing Entity schemas stay unchanged.</p>
-    <p className={disabledReason ? "lock-context" : "lock-context is-held"}>{disabledReason ?? "Tenant Lock held · Model settings available"}</p>
+    {disabledReason ? <p className="lock-context">{disabledReason}</p> : null}
     {confirmRefresh ? <div className="model-settings-refresh" role="alert">
       <p>Refreshing replaces your unsaved edits with the saved Model settings.</p>
       <button className="button button-secondary button-small" type="button" onClick={() => setConfirmRefresh(false)}>Keep editing</button>
@@ -90,17 +89,19 @@ export function ModelSettingsScreen({ api, home, model }: {
     {refreshFailed ? <p role="alert">Saved settings could not be loaded. Your edits are preserved. Retry Refresh saved settings.</p> : null}
     {savedRevision !== null ? <p role="status">Model settings saved at revision {savedRevision}.</p> : null}
     <ModelForm key={`${modelId}:${formVersion}`} api={api} tenantId={tenantId} initialModel={initialModel}
+      systems={home.systems}
       hasTenantLock={hasTenantLock} disabledReason={disabledReason} isPending={busy} error={mutation.error}
       onDirty={() => { setDirty(true); setSavedRevision(null); }} onSubmit={(command) => mutation.mutate(command)} />
   </section>;
 }
 
 export function ModelSettingsTabs({ model, active }: { model: ModelDetail; active: "definition" | "prompts" }) {
+  const { layer } = useSearch({ strict: false });
   const params = { tenantId: String(model.tenant_id), modelId: String(model.model_id) };
   return <nav className="models-mode-tabs model-settings-tabs" aria-label="Model settings pages">
     <Link className={active === "definition" ? "is-active" : ""} to="/tenants/$tenantId/models/$modelId/settings"
-      params={params} aria-current={active === "definition" ? "page" : undefined}>Definition</Link>
+      params={params} search={layer ? { layer } : {}} aria-current={active === "definition" ? "page" : undefined}>Definition</Link>
     <Link className={active === "prompts" ? "is-active" : ""} to="/tenants/$tenantId/models/$modelId/settings/prompts"
-      params={params} aria-current={active === "prompts" ? "page" : undefined}>Prompts</Link>
+      params={params} search={layer ? { layer } : {}} aria-current={active === "prompts" ? "page" : undefined}>Prompts</Link>
   </nav>;
 }

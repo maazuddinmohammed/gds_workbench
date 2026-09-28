@@ -198,7 +198,7 @@ def create_app(
     """Create one independently testable Workbench API process."""
 
     app = FastAPI(
-        title="GDS Workbench API",
+        title="Atlas API",
         version="0.1.0",
         docs_url=None,
         redoc_url=None,

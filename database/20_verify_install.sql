@@ -21,8 +21,8 @@ DECLARE
         'application.review_metadata_records(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,uuid)',
         'application.archive_model(uuid,uuid,character varying,bigint,bigint)',
         'application.set_principal_last_tenant(uuid,uuid,character varying,bigint)',
-        'application.create_model(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer)',
-        'application.update_model(uuid,uuid,character varying,bigint,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer)',
+        'application.create_model(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer,bigint,character varying)',
+        'application.update_model(uuid,uuid,character varying,bigint,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer,bigint,character varying)',
         'application.save_prompt_template(uuid,uuid,character varying,bigint,bigint,character varying,bigint,character varying,character varying,text,boolean,timestamp with time zone)',
         'application.save_prompt_template_draft(uuid,uuid,character varying,bigint,bigint,text,text,text,timestamp with time zone,text[])',
         'application.transition_prompt_template_version(uuid,uuid,character varying,bigint,character varying,character varying)',
@@ -373,6 +373,19 @@ BEGIN
            AND function_record.proname = 'list_mapping_source_objects'
            AND oidvectortypes(function_record.proargtypes) =
                'bigint, bigint, character varying, bigint'
+           AND function_record.provolatile = 's'
+           AND NOT function_record.prosecdef
+           AND function_record.proconfig =
+               ARRAY['search_path=pg_catalog']::TEXT[]
+    ) OR NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc AS function_record
+          JOIN pg_catalog.pg_namespace AS namespace_record
+            ON namespace_record.oid = function_record.pronamespace
+         WHERE namespace_record.nspname = 'workflow'
+           AND function_record.proname = 'is_assertion_only_mapping_target'
+           AND oidvectortypes(function_record.proargtypes) =
+               'bigint, bigint, character varying'
            AND function_record.provolatile = 's'
            AND NOT function_record.prosecdef
            AND function_record.proconfig =
@@ -1006,7 +1019,9 @@ BEGIN
                       'default_agent_model_code',
                       'default_reasoning_effort_code',
                       'default_max_turns',
-                      'default_validation_retry_count'
+                      'default_validation_retry_count',
+                      'default_mapping_source_system_id',
+                      'logical_entity_scd_type'
                   ]) AS web_only_model_column(name)
             WHERE has_column_privilege(
                       'gds_app_write',
@@ -1233,7 +1248,9 @@ BEGIN
                       'default_agent_model_code',
                       'default_reasoning_effort_code',
                       'default_max_turns',
-                      'default_validation_retry_count'
+                      'default_validation_retry_count',
+                      'default_mapping_source_system_id',
+                      'logical_entity_scd_type'
                   ]) AS web_only_model_column(name)
             WHERE has_column_privilege(
                       'gds_web_write', 'model.model',
@@ -1491,6 +1508,7 @@ BEGIN
                    'workflow.list_model_object_eligibility(bigint)',
                    'workflow.list_model_attribute_eligibility(bigint)',
                    'workflow.list_model_input_sources(bigint)',
+                   'workflow.is_assertion_only_mapping_target(bigint,bigint,character varying)',
                    'workflow.list_mapping_source_objects(bigint,bigint,character varying,bigint)',
                    'workflow.list_code_generation_target_context(bigint,character varying,character varying)'
                ]) AS web_workflow_function(signature)

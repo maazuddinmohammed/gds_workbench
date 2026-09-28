@@ -109,7 +109,7 @@ EXPECTED_NAMES = {
     "logical": FOUNDATIONAL_NAMES
     | CONCEPTUAL_NAMES
     | LOGICAL_NAMES
-    | {"naming_instructions", "audit_columns", "schemas"},
+    | {"naming_instructions", "audit_columns", "schemas", "logical_entity_scd_type"},
     "dimensional": LOGICAL_NAMES
     | DIMENSIONAL_NAMES
     | {

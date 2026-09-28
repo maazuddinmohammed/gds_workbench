@@ -180,6 +180,8 @@ def project_context_inputs(
         )
         values["schemas"] = deepcopy(details[f"{workflow}_schemas"])
         values["audit_columns"] = deepcopy(details[f"{layer}_model_audit_columns_template"])
+        if workflow == "logical":
+            values["logical_entity_scd_type"] = details.get("logical_entity_scd_type")
         if workflow == "dimensional":
             values["technical_columns"] = deepcopy(details["gold_model_technical_columns_template"])
     return {name: values[name] for name in WORKFLOW_INPUTS[workflow]}

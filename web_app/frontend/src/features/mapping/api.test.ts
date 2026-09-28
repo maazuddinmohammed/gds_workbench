@@ -4,8 +4,11 @@ import { createHttpRequest } from "../../core/http";
 import {
   createMappingApi,
   loadActiveMappingOutputTemplates,
+  loadMappingFilterSystems,
   loadMappingGenerationTargets,
   type MappingApi,
+  type MappingGenerationTarget,
+  type MappingObject,
   type OutputTemplateTargetType,
 } from "./api";
 
@@ -191,6 +194,91 @@ describe("Mapping target loader", () => {
     )).rejects.toThrow(
       "Mapping target cursor repeated",
     );
+  });
+});
+
+describe("Mapping filter System loader", () => {
+  const target: MappingGenerationTarget = {
+    entity_type: "logical_entity", entity_id: 701, entity_schema_name: "silver", entity_name: "customer",
+    source_system: { system_id: 2, system_code: "ERP", system_name: "ERP" },
+    mapping_object_id: null, object_order: 0, is_locked: false, has_sources: true, attributes: [],
+  };
+  const saved: MappingObject = {
+    mapping_object_id: 81, workflow_run_id: 1048, target,
+    source_system: { system_id: 3, system_code: "RETIRED", system_name: "Retained System" },
+    dependency_order: 0, status: "inactive", is_locked: true, updated_at: "2026-09-27T00:00:00Z",
+  };
+  const targetPage = { model_id: 18, model_revision: 4, items: [target], next_cursor: null };
+  const savedPage = { model_id: 18, model_revision: 4, items: [saved], next_cursor: null };
+
+  it("unions every target and retained Mapping page, including fallback Systems, without duplicate codes", async () => {
+    const listMappingGenerationTargets = vi.fn<MappingApi["listMappingGenerationTargets"]>()
+      .mockResolvedValueOnce({ ...targetPage, next_cursor: "targets-next" })
+      .mockResolvedValueOnce({ ...targetPage, items: [{
+        ...target, entity_id: 702, has_sources: false,
+        source_system: { system_id: 4, system_code: "ASSERTIONS", system_name: "Assertion fallback" },
+      }] });
+    const listMappingObjects = vi.fn<MappingApi["listMappingObjects"]>()
+      .mockResolvedValueOnce({ ...savedPage, next_cursor: "saved-next" })
+      .mockResolvedValueOnce({ ...savedPage, items: [
+        { ...saved, mapping_object_id: 82, source_system: target.source_system },
+        { ...saved, mapping_object_id: 83, source_system: { system_id: 5, system_code: "CRM", system_name: "CRM" } },
+      ] });
+
+    await expect(loadMappingFilterSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
+      .resolves.toEqual({ modelRevision: 4, codes: ["ASSERTIONS", "CRM", "ERP", "RETIRED"] });
+    expect(listMappingGenerationTargets.mock.calls).toEqual([
+      [7, 18, "logical_entity", 200, undefined], [7, 18, "logical_entity", 200, "targets-next"],
+    ]);
+    expect(listMappingObjects.mock.calls).toEqual([
+      [7, 18, { entityType: "logical_entity" }, 200, undefined],
+      [7, 18, { entityType: "logical_entity" }, 200, "saved-next"],
+    ]);
+  });
+
+  it("rejects repeated saved Mapping cursors instead of returning partial System choices", async () => {
+    const listMappingGenerationTargets = vi.fn<MappingApi["listMappingGenerationTargets"]>().mockResolvedValue(targetPage);
+    const listMappingObjects = vi.fn<MappingApi["listMappingObjects"]>().mockResolvedValue({ ...savedPage, next_cursor: "same" });
+
+    await expect(loadMappingFilterSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
+      .rejects.toThrow("Mapping filter cursor repeated");
+    expect(listMappingObjects).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["first", "later"] as const)("rejects revision drift on the %s saved Mapping page", async (page) => {
+    const listMappingGenerationTargets = vi.fn<MappingApi["listMappingGenerationTargets"]>().mockResolvedValue(targetPage);
+    const listMappingObjects = vi.fn<MappingApi["listMappingObjects"]>()
+      .mockResolvedValueOnce({ ...savedPage, model_revision: page === "first" ? 5 : 4, next_cursor: "saved-next" })
+      .mockResolvedValueOnce({ ...savedPage, model_revision: 5 });
+
+    await expect(loadMappingFilterSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
+      .rejects.toThrow("Mapping filter revision changed while loading");
+    expect(listMappingObjects).toHaveBeenCalledTimes(page === "first" ? 1 : 2);
+  });
+
+  it("rejects mixed target revisions before reading saved Mapping choices", async () => {
+    const listMappingGenerationTargets = vi.fn<MappingApi["listMappingGenerationTargets"]>()
+      .mockResolvedValueOnce({ ...targetPage, next_cursor: "targets-next" })
+      .mockResolvedValueOnce({ ...targetPage, model_revision: 5 });
+    const listMappingObjects = vi.fn<MappingApi["listMappingObjects"]>().mockResolvedValue(savedPage);
+
+    await expect(loadMappingFilterSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
+      .rejects.toThrow("Mapping target revision changed while loading");
+    expect(listMappingObjects).not.toHaveBeenCalled();
+  });
+
+  it.each(["targets", "saved"] as const)("rejects a later %s page failure without returning partial codes", async (collection) => {
+    const failure = new Error("Later page unavailable");
+    const listMappingGenerationTargets = vi.fn<MappingApi["listMappingGenerationTargets"]>()
+      .mockResolvedValueOnce({ ...targetPage, next_cursor: collection === "targets" ? "targets-next" : null })
+      .mockRejectedValueOnce(failure);
+    const listMappingObjects = vi.fn<MappingApi["listMappingObjects"]>()
+      .mockResolvedValueOnce({ ...savedPage, next_cursor: "saved-next" })
+      .mockRejectedValueOnce(failure);
+
+    await expect(loadMappingFilterSystems({ listMappingGenerationTargets, listMappingObjects }, 7, 18, "logical_entity"))
+      .rejects.toBe(failure);
+    expect(listMappingObjects).toHaveBeenCalledTimes(collection === "targets" ? 0 : 2);
   });
 });
 

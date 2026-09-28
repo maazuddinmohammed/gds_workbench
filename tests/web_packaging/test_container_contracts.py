@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import json
 import re
 import xml.etree.ElementTree as ET
@@ -129,19 +128,21 @@ def test_frontend_production_build_does_not_require_test_dependencies() -> None:
     assert not (ROOT / "web_app" / "frontend" / "package-lock.json").exists()
 
 
-def test_frontend_declares_a_self_contained_svg_favicon() -> None:
+def test_frontend_declares_a_local_self_contained_atlas_svg_favicon() -> None:
     index = FRONTEND_INDEX.read_text(encoding="utf-8")
 
     match = re.search(
         r'<link\s+rel="icon"\s+type="image/svg\+xml"\s+sizes="any"\s+'
-        r'href="data:image/svg\+xml;base64,([A-Za-z0-9+/=]+)"\s*/>',
+        r'href="/assets/atlas.svg"\s*/>',
         index,
     )
     assert match is not None
-    root = ET.fromstring(base64.b64decode(match.group(1), validate=True))
+    root = ET.fromstring((FRONTEND_INDEX.parent / "public" / "assets" / "atlas.svg").read_text())
     assert root.tag == "{http://www.w3.org/2000/svg}svg"
     assert root.attrib["viewBox"] == "0 0 64 64"
     assert root.find("{http://www.w3.org/2000/svg}path") is not None
+    assert all(not element.tag.endswith("script") for element in root.iter())
+    assert all(not key.endswith("href") for element in root.iter() for key in element.attrib)
 
 
 def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql() -> (

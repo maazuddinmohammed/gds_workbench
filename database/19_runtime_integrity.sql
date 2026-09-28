@@ -299,6 +299,8 @@ GRANT EXECUTE ON FUNCTION workflow.list_model_object_eligibility(BIGINT)
 TO gds_app_write, gds_web_write;
 GRANT EXECUTE ON FUNCTION workflow.list_model_attribute_eligibility(BIGINT)
 TO gds_app_write, gds_web_write;
+GRANT EXECUTE ON FUNCTION workflow.is_assertion_only_mapping_target(BIGINT, BIGINT, VARCHAR)
+TO gds_app_write, gds_web_write;
 GRANT EXECUTE ON FUNCTION workflow.list_model_input_sources(BIGINT)
 TO gds_app_write, gds_web_write;
 GRANT EXECUTE ON FUNCTION workflow.list_mapping_source_objects(
@@ -450,6 +452,8 @@ BEGIN
                        ('core.object', 'is_locked'),
                        ('model.model', 'logical_schemas'),
                        ('model.model', 'dimensional_schemas'),
+                       ('model.model', 'default_mapping_source_system_id'),
+                       ('model.model', 'logical_entity_scd_type'),
                        ('workflow.logical_entity', 'logical_entity_schema_name'),
                        ('workflow.dimensional_entity', 'dimensional_entity_schema_name'),
                        ('model.model', 'silver_model_naming_instructions'),
@@ -613,6 +617,7 @@ BEGIN
                        'bigint, bigint, character varying, bigint'
                    ),
                    ('workflow', 'list_model_input_sources', 'bigint'),
+                   ('workflow', 'is_assertion_only_mapping_target', 'bigint, bigint, character varying'),
                    ('mcp', 'get_databricks_sql_connection_values', 'bigint, text')
                ) AS required_function(
                    schema_name,
@@ -833,6 +838,7 @@ BEGIN
                    'workflow.list_model_object_eligibility(bigint)',
                    'workflow.list_model_attribute_eligibility(bigint)',
                    'workflow.list_model_input_sources(bigint)',
+                   'workflow.is_assertion_only_mapping_target(bigint,bigint,character varying)',
                    'workflow.list_mapping_source_objects(bigint,bigint,character varying,bigint)',
                    'workflow.list_code_generation_target_context(bigint,character varying,character varying)',
                    'mcp.get_databricks_sql_connection_values(bigint,text)'
@@ -964,7 +970,9 @@ BEGIN
                    'default_agent_model_code',
                    'default_reasoning_effort_code',
                    'default_max_turns',
-                   'default_validation_retry_count'
+                   'default_validation_retry_count',
+                   'default_mapping_source_system_id',
+                   'logical_entity_scd_type'
                ]) AS web_only_model_column(name)
          WHERE has_column_privilege(
                    'gds_app_write',
@@ -1141,7 +1149,9 @@ REVOKE UPDATE (
     default_agent_model_code,
     default_reasoning_effort_code,
     default_max_turns,
-    default_validation_retry_count
+    default_validation_retry_count,
+    default_mapping_source_system_id,
+    logical_entity_scd_type
 ) ON model.model FROM gds_app_write;
 GRANT INSERT ON
     mcp.model_change_set_event
@@ -1215,7 +1225,9 @@ REVOKE UPDATE (
     default_agent_model_code,
     default_reasoning_effort_code,
     default_max_turns,
-    default_validation_retry_count
+    default_validation_retry_count,
+    default_mapping_source_system_id,
+    logical_entity_scd_type
 ) ON model.model FROM gds_web_write;
 REVOKE ALL ON ALL TABLES IN SCHEMA application
 FROM gds_app_write, gds_web_write;
@@ -1264,7 +1276,9 @@ GRANT EXECUTE ON FUNCTION application.create_model(
     VARCHAR,
     VARCHAR,
     INTEGER,
-    INTEGER
+    INTEGER,
+    BIGINT,
+    VARCHAR
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.update_model(
     UUID,
@@ -1286,7 +1300,9 @@ GRANT EXECUTE ON FUNCTION application.update_model(
     VARCHAR,
     VARCHAR,
     INTEGER,
-    INTEGER
+    INTEGER,
+    BIGINT,
+    VARCHAR
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.archive_model(
     UUID,

@@ -10,6 +10,7 @@ import {
 } from "./api";
 import { ProfilingRunConfiguration } from "./ProfilingRunConfiguration";
 import { ProfilingResults } from "./ProfilingResults";
+import { useScopeFilterChoices } from "../model_input_scope/scopeFilterChoices";
 import { ProfilingRunDrawer, ProfilingRuns } from "./ProfilingRuns";
 
 type ProfilingView = "results" | "runs";
@@ -40,6 +41,7 @@ export function ProfilingScreen({
   const [runConfigurationOpen, setRunConfigurationOpen] = useState(false);
   const runReturnId = useRef<number | null>(null);
   const handledReturnObjectId = useRef<number | null>(null);
+  const sourceChoices = useScopeFilterChoices(api, tenantId, model.model_id, model.model_revision);
 
   const resultsQuery = useQuery({
     queryKey: profilingQueryKeys.results(tenantId, model.model_id, resultFilters),
@@ -114,6 +116,7 @@ export function ProfilingScreen({
               }),
         ];
     await Promise.all([
+      sourceChoices.refetch(),
       ...requests,
       queryClient.invalidateQueries({
         queryKey: ["model", tenantId, model.model_id],
@@ -124,11 +127,9 @@ export function ProfilingScreen({
 
   return (
     <div className="profiling-page page-enter">
-      <header className="workflow-commandbar">
+      <header className="workflow-commandbar model-section-toolbar">
+        <h1 className="model-section-title sr-only">Profiling</h1>
         <div className="workflow-command-context">
-          <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
-            {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
-          </span>
           <nav className="workflow-tabs" aria-label="Profiling views">
             <button
               className={view === "results" ? "is-active" : ""}
@@ -147,6 +148,9 @@ export function ProfilingScreen({
               Runs
             </button>
           </nav>
+          <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
+            {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
+          </span>
         </div>
         <div className="workflow-command-actions">
           <button
@@ -173,6 +177,7 @@ export function ProfilingScreen({
           tenantId={tenantId}
           modelId={model.model_id}
           filters={resultFilters}
+          sourceChoices={sourceChoices}
           items={resultsQuery.data?.items ?? []}
           isLoading={resultsQuery.isPending}
           isError={resultsQuery.isError}

@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 
 import { ApiError, createHttpRequest } from "../../core/http";
-import { createModelRecordReviewApi, type ModelRecordReviewApi, type ModelReviewPreview } from "./api";
+import { createModelRecordReviewApi, type ModelRecordReviewApi, type ModelReviewCommand, type ModelReviewPreview } from "./api";
 import { ModelRecordReview } from "./ModelRecordReview";
 
 const preview: ModelReviewPreview = {
@@ -31,6 +31,7 @@ function fixture() {
   const props = {
     api, tenantId: 9, modelId: 18, modelRevision: 7, dataset: "conceptual_object" as const,
     selectedIds: new Set([41]), hasTenantLock: true, disabled: false,
+    actions: ["lock", "unlock", "deactivate", "reactivate"] as ModelReviewCommand["action"][],
     onApplied: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -158,6 +159,91 @@ describe("Model record review", () => {
       view.rerender(renderReview(overrides));
       for (const button of screen.getAllByRole("button")) expect(button).toBeDisabled();
     }
+  });
+
+  it("groups deletion counts and reveals paged records without change or reason clutter", async () => {
+    const { api, renderReview } = fixture();
+    const deletion = { ...preview, changes_by_dataset: { conceptual_object: 1, conceptual_relationship: 1 },
+      items: preview.items.slice(0, 1).map((item) => ({ ...item, desired_status: "deleted" as const })), next_page: 2 };
+    api.previewModelRecordReview.mockResolvedValueOnce(deletion).mockResolvedValueOnce({
+      ...deletion, page: 2, next_page: null,
+      items: [{ ...preview.items[1]!, desired_status: "deleted" }],
+    });
+    render(renderReview({ actions: ["delete"] }));
+    const user = userEvent.setup();
+    const trigger = screen.getByRole("button", { name: "Delete selected" });
+    await user.click(trigger);
+    const dialog = await screen.findByRole("dialog", { name: "Delete records permanently" });
+    await within(dialog).findByText("2 records to delete");
+    expect(within(dialog).getByRole("table", { name: "Conceptual object affected records" })).not.toBeVisible();
+    expect(within(dialog).queryByText("Selected record.")).not.toBeInTheDocument();
+    const close = within(dialog).getByRole("button", { name: "Close review" });
+    const apply = within(dialog).getByRole("button", { name: "Delete 2 records permanently" });
+    close.focus();
+    await user.tab({ shift: true });
+    expect(apply).toHaveFocus();
+    await user.tab();
+    expect(close).toHaveFocus();
+    await user.tab();
+    expect(document.activeElement?.tagName).toBe("SUMMARY");
+    expect(document.activeElement).toHaveTextContent("Conceptual");
+    await user.click(within(dialog).getByText("Conceptual", { exact: true }));
+    await user.click(within(dialog).getByText("Conceptual object", { exact: true }));
+    const objects = within(dialog).getByRole("table", { name: "Conceptual object affected records" });
+    expect(within(objects).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Record", "Status", "Lock"]);
+    expect(within(objects).getByText("Customer")).toBeVisible();
+    await user.click(within(dialog).getByRole("button", { name: "Load more affected records" }));
+    await within(dialog).findByText("Showing 2 of 2 affected records.");
+    await user.click(within(dialog).getByText("Conceptual relationship", { exact: true }));
+    expect(within(dialog).getByText("Customer places Order")).toBeVisible();
+    expect(api.previewModelRecordReview.mock.calls[1]?.[2].expected_plan_digest).toBe(preview.plan_digest);
+    expect(api.previewModelRecordReview.mock.calls[1]?.[3]).toBe(2);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(api.applyModelRecordReview).not.toHaveBeenCalled();
+  });
+
+  it("keeps blocked deletion and a locked dependent record's governed unlock visible", async () => {
+    const { api, renderReview } = fixture();
+    api.previewModelRecordReview.mockResolvedValueOnce({ ...preview, can_apply: false,
+      changes_by_dataset: { mapping_object: 1 }, action_count: 1, total_record_count: 1,
+      items: [{ ...preview.items[0]!, dataset: "mapping_object", record_id: 900,
+        label: "silver.Customer Mapping", is_locked: true, desired_status: "deleted" }],
+      issues: [{ code: "record_locked", dataset: "mapping_object", message: "Unlock the Mapping before deleting it." }], issue_count: 1,
+    });
+    render(renderReview({ actions: ["delete"] }));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Delete selected" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Unlock the Mapping before deleting it.");
+    expect(screen.getByRole("button", { name: "Delete 1 records permanently" })).toBeDisabled();
+    const unlock = screen.getByRole("button", { name: "Review unlock for silver.Customer Mapping" });
+    expect(unlock).toBeVisible();
+    await user.click(unlock);
+    await screen.findByRole("dialog", { name: "Review unlock" });
+    expect(api.previewModelRecordReview).toHaveBeenLastCalledWith(9, 18,
+      { dataset: "mapping_object", record_ids: [900], action: "unlock", expected_model_revision: 7 }, 1);
+    expect(api.applyModelRecordReview).not.toHaveBeenCalled();
+  });
+
+  it("sums workflow sections without losing dataset counts or unknown record types", async () => {
+    const { api, renderReview } = fixture();
+    api.previewModelRecordReview.mockResolvedValueOnce({ ...preview, action_count: 8, total_record_count: 8,
+      changes_by_dataset: { logical_attribute: 3, future_record: 1, mapping_object: 2, logical_entity: 2 },
+      items: [], next_page: 2,
+    });
+    render(renderReview({ actions: ["delete"] }));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Delete selected" }));
+    const sections = await screen.findByRole("region", { name: "Records to delete" });
+    const summaries = [...sections.querySelectorAll(":scope > details > summary")];
+    expect(summaries.map((item) => item.textContent)).toEqual(["Logical5 records", "Mapping2 records", "Other records1 record"]);
+    await user.click(within(sections).getByText("Logical", { exact: true }));
+    const types = [...summaries[0]!.parentElement!.querySelectorAll(".model-delete-record-types > details > summary")];
+    expect(types.map((item) => item.textContent)).toEqual(["Logical entity2 records", "Logical attribute3 records"]);
+    await user.click(within(sections).getByText("Other records", { exact: true }));
+    expect(within(sections).getByText("Future record", { exact: true })).toBeVisible();
+    expect(api.applyModelRecordReview).not.toHaveBeenCalled();
   });
 });
 

@@ -17,7 +17,9 @@ from gds_workbench_api.features.mapping.preparation_contracts import (
     MappingRunContext,
     ModeledEntityType,
 )
-from gds_workbench_api.features.mapping.read_service import _MAPPING_GENERATION_TARGETS_SQL
+from gds_workbench_api.features.mapping.read_service import (
+    _MAPPING_GENERATION_TARGETS_SQL,
+)
 from gds_workbench_api.features.mapping.readiness import assess_mapping_readiness
 from gds_workbench_api.features.mapping.reconciliation import MappingCandidateReconciler
 from gds_workbench_api.features.workflows.authoring.plan import WorkflowExecutionMode
@@ -54,9 +56,7 @@ def test_mapping_physical_placement_and_source_tenant_are_independent() -> None:
     assert physical.source_tenant_id == 7
 
 
-@pytest.mark.parametrize(
-    "modeled_entity_type", ["logical_entity"]
-)
+@pytest.mark.parametrize("modeled_entity_type", ["logical_entity"])
 @pytest.mark.parametrize("source_zone", ["source", "bronze", "silver", "gold"])
 def test_mapping_readiness_enforces_each_route_source_zone(
     modeled_entity_type: ModeledEntityType, source_zone: str
@@ -271,12 +271,17 @@ def test_mapping_context_preserves_large_collections_and_policy_text() -> None:
     target = raw["target"]
     attribute = target["attributes"][0]
     target["attributes"] = tuple(
-        {**attribute, "attribute_id": attribute["attribute_id"] + index,
-         "ordinal_position": index + 1}
+        {
+            **attribute,
+            "attribute_id": attribute["attribute_id"] + index,
+            "ordinal_position": index + 1,
+        }
         for index in range(5001)
     )
     source = raw["sources"][0]
-    raw["sources"] = tuple({**source, "source_mapping_id": index + 1} for index in range(129))
+    raw["sources"] = tuple(
+        {**source, "source_mapping_id": index + 1} for index in range(129)
+    )
     policy = "synthetic naming guidance " * 2000
     raw["authoring"]["naming_instructions"] = policy
     context = MappingRunContext.model_validate(raw)
@@ -361,3 +366,40 @@ async def test_no_mapping_cannot_skip_attribute_lineage_without_object_support_l
             candidate
         )
     ).issues
+
+
+@pytest.mark.parametrize("layer", ("logical_entity", "dimensional_entity"))
+async def test_assertion_default_system_requires_complete_source_free_mapping(
+    layer: ModeledEntityType,
+) -> None:
+    preparation = mapping_preparation(modeled_entity_type=layer)
+    context = preparation.context.model_copy(
+        update={
+            "sources": (),
+            "source_system": preparation.context.source_system.model_copy(
+                update={"is_default": True}
+            ),
+        }
+    )
+    preparation = preparation.model_copy(
+        update={
+            "context": context,
+            "readiness": assess_mapping_readiness(
+                plan=preparation.plan, context=context
+            ),
+        }
+    )
+    validator = CompleteMappingCandidateValidator(preparation=preparation)
+    complete = mapping_candidate()
+    assert not (await validator.validate(complete)).issues
+    assert len(validator.parse_validated(complete).changes) == 2
+
+    skipped: dict[str, JsonValue] = {
+        "schema_version": "1.0",
+        "outcome": "no_applicable_source",
+        "object_mapping": None,
+        "attribute_mappings": [],
+    }
+    assert (await validator.validate(skipped)).issues
+    complete["attribute_mappings"] = []
+    assert (await validator.validate(complete)).issues

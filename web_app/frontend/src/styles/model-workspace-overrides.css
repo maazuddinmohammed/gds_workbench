@@ -1,36 +1,122 @@
-/* Keep model workspace overrides after the shared workspace rules. */
-.workspace.workspace-ledger {
-  padding-top: 0;
+/* Model-owned authoring: one horizontal row with explicit overflow controls. */
+.workspace.workspace-ledger { padding-top: 0; }
+.workspace.workspace-model { min-width: 0; padding: 0; overflow: visible; }
+.model-identity {
+  display: flex; min-width: 0; align-items: center; justify-content: space-between;
+  gap: 1.5rem; padding: 1.5rem 2rem 1.1rem; background: var(--surface);
 }
-
-.workspace.workspace-model {
-  padding: 0;
-  overflow: hidden;
+.model-identity-main { display: flex; min-width: 0; align-items: center; gap: .85rem; }
+.model-identity-main > div { min-width: 0; }
+.model-identity-symbol {
+  display: grid; flex: 0 0 2.65rem; height: 2.65rem; place-items: center;
+  border: 1px solid var(--line); border-radius: var(--radius-medium);
+  color: var(--orange); background: var(--blue-soft);
 }
-
-.button.button-small {
-  min-height: 2.15rem;
-  padding: 0.5rem 0.72rem;
-  font-size: 0.74rem;
+.model-identity-symbol svg { width: 1.5rem; height: 1.5rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.model-identity-name { display: block; font-size: 1.4rem; font-weight: 700; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.model-identity-main p { max-width: 48rem; margin: .2rem 0 0; color: var(--muted); font-size: .76rem; text-wrap: pretty; overflow-wrap: anywhere; }
+.model-identity-status { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .5rem 1rem; color: var(--muted); font-size: .72rem; overflow-wrap: anywhere; }
+.model-status-refresh { display: grid; place-items: center; padding: .25rem; border: 0; border-radius: var(--radius-small); background: transparent; color: var(--muted); cursor: pointer; }
+.model-status-refresh:hover { background: var(--soft); color: var(--ink); }
+.model-status-refresh:disabled { opacity: .5; cursor: default; }
+.model-status-refresh svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.model-lock.is-held { color: var(--green); }
+.model-navigation {
+  position: sticky; top: 4.5rem; z-index: 4; display: flex; align-items: center;
+  min-width: 0; gap: .35rem; padding: 0 1rem;
+  border-bottom: 1px solid var(--line); background: var(--surface);
 }
-
+.model-tabs { position: relative; display: flex; flex: 1; min-width: 0; gap: .1rem; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; scroll-padding-inline: .25rem; }
+.model-tab-highlight {
+  position: absolute; top: .45rem; bottom: .45rem; left: 0; pointer-events: none;
+  border-radius: var(--radius-small); background: var(--soft); opacity: 0;
+  transition: transform 190ms var(--ease-fluid), width 190ms var(--ease-fluid), opacity 120ms ease;
+}
+.model-tab-highlight.is-visible { opacity: 1; }
+.model-tab {
+  position: relative; display: flex; flex: none; flex-direction: column; align-items: flex-start; gap: .45rem; min-height: 6.25rem;
+  padding: .8rem .85rem .75rem; border: 0; color: var(--muted);
+  text-decoration: none; white-space: nowrap; font-size: .875rem; font-weight: 600;
+  transition: color 150ms ease;
+}
+.model-tab::before { position: absolute; inset: auto .85rem 0; height: 2px; border-radius: 2px 2px 0 0; background: transparent; content: ""; }
+.model-tab:hover { color: var(--ink); }
+.model-tab.is-active { color: var(--ink); font-weight: 700; }
+.model-tab.is-active::before { background: var(--orange); }
+.model-tab.is-group-end { margin-right: .8rem; }
+.model-tab::after { position: absolute; top: 1.4rem; left: 2.1rem; right: -.9rem; height: 1px; background: var(--line); content: ""; }
+.model-tab.is-group-end::after, .model-tab:last-child::after { display: none; }
+.model-stage-circle {
+  position: relative; z-index: 1; display: grid; place-items: center; flex: none;
+  width: 1.2rem; height: 1.2rem; border: 1px solid var(--line-strong); border-radius: 50%;
+  color: var(--muted); background: var(--surface);
+}
+.model-stage-circle svg { width: .85rem; height: .85rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.model-stage-circle.is-complete { border-color: var(--green); color: var(--green); background: var(--green-soft); }
+.model-stage-circle.is-failed { border-color: var(--red); color: var(--red); }
+.model-stage-circle.is-running { border-color: var(--orange); border-style: dashed; color: var(--orange); }
+.model-stage-label { margin-top: .12rem; }
+.model-stage-status { min-height: .95rem; font-size: .62rem; font-weight: 450; letter-spacing: 0; line-height: 1.4; color: var(--muted); }
+.model-stage-status.is-failed { color: var(--red); }
+.model-stage-status.is-running { color: var(--orange-dark); }
+.model-tab:focus-visible { outline-offset: -3px; }
+.model-navigation-scroll {
+  display: grid; flex: none; width: 2rem; height: 2.5rem; place-items: center;
+  padding: .35rem; border: 0; border-radius: var(--radius-small); background: transparent;
+  color: var(--muted); cursor: pointer;
+}
+.model-navigation-scroll:hover { color: var(--orange-dark); background: var(--soft); }
+.model-navigation-scroll:disabled { opacity: 0; pointer-events: none; }
+.model-navigation-scroll svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.model-workspace { min-width: 0; padding: 0 2rem 4rem; overflow: visible; background: var(--surface); }
+.model-workspace > .mapping-workspace { padding: 0; overflow: visible; }
+/* The active Model tab supplies the visible section title. Keep semantic headings. */
+.model-workspace .model-section-title {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%);
+  white-space: nowrap; border: 0;
+}
+.model-workspace .model-section-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  min-width: 0; min-height: 0; gap: .75rem 1.25rem; padding: .85rem 0;
+  margin: 0; border-bottom: 1px solid var(--line);
+}
+.model-section-toolbar > .workflow-command-context { flex: 1 1 auto; min-width: 0; gap: .65rem 1.15rem; }
+.model-section-toolbar > .workflow-command-actions { min-width: 0; margin-left: auto; justify-content: flex-end; }
+.model-workspace .model-section-toolbar > span { margin: 0; }
+.model-section-toolbar .workflow-command-context > span:not(.lock-context) { color: var(--muted); font-size: .75rem; }
+.model-section-toolbar .lock-context { white-space: normal; }
+.model-section-toolbar .lock-context::before { flex-shrink: 0; }
+.model-section-toolbar .mapping-layer-header { margin: 0; }
+.model-section-toolbar .workflow-tabs { min-height: 2.65rem; align-self: center; }
+.model-section-toolbar .workflow-tabs button { min-height: 2.65rem; font-size: .8rem; }
+.model-section-toolbar .model-settings-tabs { margin: 0; }
+.model-section-toolbar .model-settings-tabs a { display: inline-flex; align-items: center; font-size: .82rem; font-weight: 650; }
+.model-workspace .model-settings-page { padding: 0; }
+.button.button-small { min-height: 2.15rem; padding: .5rem .72rem; font-size: .74rem; }
+.brand { gap: .6rem; }
+.brand strong { font-size: 1.35rem; letter-spacing: -.05em; }
+.brand .brand-mark { color: var(--surface); background: var(--orange); box-shadow: none; }
 @media (max-width: 58rem) {
-  .workspace.workspace-ledger {
-    padding: 0 1.4rem 3rem;
-  }
-
-  .workspace.workspace-model {
-    padding: 0;
-  }
+  .workspace.workspace-ledger { padding: 0 1.4rem 3rem; }
+  .model-identity { padding: 1.4rem 1.25rem; gap: 1rem; }
+  .model-identity-status { max-width: 12rem; }
+  .model-navigation { padding-inline: .5rem; }
+  .model-workspace { padding: 0 1.25rem 3rem; }
 }
-
 @media (max-width: 42rem) {
-  .workspace.workspace-ledger {
-    padding: 0 0.75rem 2.5rem;
-  }
-
-  .workspace.workspace-model {
-    padding: 0;
-  }
+  .workspace.workspace-ledger { padding: 0 .75rem 2.5rem; }
+  .model-identity { padding: 1.1rem .85rem; align-items: flex-start; }
+  .model-identity-symbol { display: none; }
+  .model-identity-name { font-size: 1.15rem; }
+  .model-identity-status { max-width: 8rem; flex-shrink: 0; font-size: .65rem; }
+  .model-identity-main p { font-size: .7rem; }
+  .model-navigation { top: 4.25rem; }
+  .model-tab { padding-inline: .65rem; }
+  .model-tab::after { left: 1.85rem; right: -.75rem; }
+  .model-workspace { padding: 0 .85rem 3rem; }
+  .model-section-toolbar > .workflow-command-context,
+  .model-section-toolbar > .workflow-command-actions { width: 100%; }
+  .model-section-toolbar > .workflow-command-actions { margin-left: 0; justify-content: flex-start; }
 }
-
+@media (prefers-reduced-motion: reduce) { .model-tab, .model-tab-highlight { transition: none; } }

@@ -1,6 +1,7 @@
+# pyright: reportPrivateUsage=false
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, LiteralString
 from uuid import UUID
 
@@ -16,6 +17,13 @@ from gds_workbench_api.features.workflows.overview import (
     ModelWorkflowOverview,
     WorkflowLedgerEntry,
 )
+from gds_workbench_api.features.workflows.overview.contracts import (
+    ModelSectionState,
+    OverviewWorkflow,
+    WorkflowMetric,
+    WorkflowRunState,
+)
+from gds_workbench_api.features.workflows.overview.service import _section_state
 from gds_workbench_api.main import create_app
 
 
@@ -180,6 +188,12 @@ class OverviewTransaction:
         assert "workflow.conceptual_object" in query
         assert "workflow.logical_entity" in query
         assert "workflow.dimensional_entity" in query
+        assert "workflow.mapping_object" in query
+        assert "workflow.generated_code" in query
+        assert "workflow.validation_group" in query
+        assert "attribute.attribute_inferred_data_type" in query
+        assert "PARTITION BY run.model_workflow" in query
+        assert "modeled_entity_type =" not in query
         assert parameters == (7, 18)
         created = datetime(2026, 8, 24, 14, 0, tzinfo=UTC)
         base = {
@@ -213,6 +227,20 @@ class OverviewTransaction:
             {**base, "workflow": "conceptual", "result_count": 0},
             {**base, "workflow": "logical", "result_count": 0},
             {**base, "workflow": "dimensional", "result_count": 0},
+            {**base, "workflow": "metadata_enrichment", "result_count": 3},
+            {**base, "workflow": "mapping", "result_count": 4},
+            {
+                **base,
+                "workflow": "code_generation",
+                "result_count": 2,
+                "latest_run_state": "failed",
+            },
+            {
+                **base,
+                "workflow": "validation",
+                "result_count": 1,
+                "latest_run_state": "running",
+            },
         ]
 
 
@@ -253,5 +281,101 @@ async def test_overview_states_are_results_driven_and_prerequisites_only_warn() 
     assert overview.items[2].state == "results_available"
     assert overview.items[4].state == "not_started"
     assert overview.items[4].quality_warning_codes == ()
-    assert overview.items[5].quality_warning_codes == ("conceptual_results_unavailable",)
+    assert overview.items[5].quality_warning_codes == (
+        "conceptual_results_unavailable",
+    )
     assert overview.items[6].quality_warning_codes == ("logical_results_unavailable",)
+
+    assert [(item.section, item.state) for item in overview.section_states] == [
+        ("overview", "available"),
+        ("settings", "available"),
+        ("scope", "ready"),
+        ("metadata-enrichment", "results_available"),
+        ("profiling", "results_available"),
+        ("assertions", "results_available"),
+        ("analysis", "results_available"),
+        ("conceptual", "not_run"),
+        ("logical", "not_run"),
+        ("dimensional", "not_run"),
+        ("mapping", "results_available"),
+        ("code-generation", "failed"),
+        ("validation", "running"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "workflow",
+    [
+        "metadata_enrichment",
+        "profiling",
+        "analysis",
+        "conceptual",
+        "logical",
+        "dimensional",
+        "mapping",
+        "code_generation",
+        "validation",
+    ],
+)
+@pytest.mark.parametrize(
+    ("run_state", "count", "result_offset", "expected"),
+    [
+        (None, 0, None, "not_run"),
+        (None, 1, 0, "results_available"),
+        ("queued", 1, 0, "queued"),
+        ("running", 1, 0, "running"),
+        ("failed", 1, 0, "failed"),
+        ("completed", 1, -1, "completed"),
+        ("completed_with_repair", 1, -1, "completed"),
+        ("completed", 0, None, "completed"),
+        ("completed", 1, 1, "results_available"),
+        ("completed", 1, None, "results_available"),
+    ],
+)
+def test_section_status_preserves_run_failures_and_external_results(
+    workflow: OverviewWorkflow,
+    run_state: WorkflowRunState | None,
+    count: int,
+    result_offset: int | None,
+    expected: ModelSectionState,
+) -> None:
+    completed_at = datetime(2026, 9, 28, 12, tzinfo=UTC)
+    metric = WorkflowMetric(
+        model_id=18,
+        model_revision=4,
+        workflow=workflow,
+        result_count=count,
+        locked_count=0,
+        latest_run_state=run_state,
+        latest_run_completed_at=completed_at
+        if run_state in ("completed", "completed_with_repair")
+        else None,
+        latest_result_updated_at=completed_at + timedelta(seconds=result_offset)
+        if result_offset is not None
+        else None,
+    )
+    assert _section_state(metric) == expected
+
+
+@pytest.mark.parametrize(
+    ("workflow", "count", "expected"),
+    [
+        ("scope", 0, "empty"),
+        ("scope", 1, "ready"),
+        ("assertions", 0, "not_run"),
+        ("assertions", 1, "results_available"),
+    ],
+)
+def test_manual_sections_do_not_claim_a_workflow_completed(
+    workflow: OverviewWorkflow,
+    count: int,
+    expected: ModelSectionState,
+) -> None:
+    metric = WorkflowMetric(
+        model_id=18,
+        model_revision=4,
+        workflow=workflow,
+        result_count=count,
+        locked_count=0,
+    )
+    assert _section_state(metric) == expected

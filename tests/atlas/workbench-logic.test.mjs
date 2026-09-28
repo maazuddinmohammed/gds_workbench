@@ -235,7 +235,7 @@ test("portable Snapshot rules cover every backend record validator", () => {
     }],
     ["logical_attribute", {
       logical_attribute_is_natural_key: true, logical_attribute_is_surrogate_key: true,
-      logical_attribute_is_primary_key: false, logical_attribute_is_nullable: false,
+      logical_attribute_is_nullable: false,
       sources: [],
     }],
     ["logical_relationship", sameRelationship("logical")],

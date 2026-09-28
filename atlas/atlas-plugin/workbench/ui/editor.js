@@ -32,7 +32,8 @@
     text.textContent = label(field);
     const metadata = document.createElement("small");
     const keyField = state.loaded.definition.canonical_key?.includes(field);
-    metadata.textContent = [keyField && "Natural key", state.loaded.schema?.required?.includes(field) && "Required", details.fixed && "Fixed", details.type].filter(Boolean).join(" · ");
+    const modelSetting = state.area === "model" && state.dataset === "model_details" && field === "logical_entity_scd_type";
+    metadata.textContent = [keyField && "Natural key", state.loaded.schema?.required?.includes(field) && "Required", details.fixed && "Fixed", modelSetting && "Change in Model settings", details.type].filter(Boolean).join(" · ");
     fieldLabel.append(text, metadata);
     let control;
     const enumValues = Array.isArray(details.schema.enum) ? details.schema.enum.filter((item) => item !== null) : null;
@@ -61,14 +62,14 @@
     }
     control.id = `row-field-${index}`;
     control.dataset.rowField = field;
-    control.disabled = details.fixed || (state.editing.mode === "edit" && keyField);
+    control.disabled = details.fixed || modelSetting || (state.editing.mode === "edit" && keyField);
     wrapper.append(fieldLabel, control);
     if (details.nullable && details.type !== "boolean" && !enumValues) {
       const nullLabel = document.createElement("label");
       nullLabel.className = "null-toggle";
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox"; checkbox.dataset.nullField = field; checkbox.checked = initial === null; checkbox.disabled = control.disabled;
-      checkbox.addEventListener("change", () => { control.disabled = checkbox.checked || details.fixed || (state.editing.mode === "edit" && keyField); });
+      checkbox.addEventListener("change", () => { control.disabled = checkbox.checked || details.fixed || modelSetting || (state.editing.mode === "edit" && keyField); });
       if (checkbox.checked) control.disabled = true;
       nullLabel.append(checkbox, " Set null");
       wrapper.append(nullLabel);

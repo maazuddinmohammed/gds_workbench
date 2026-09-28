@@ -18,15 +18,19 @@ const model: ModelDetail = {
   default_agent_sdk_code: "openai_agents_sdk", default_agent_provider_code: "microsoft_foundry",
   default_agent_model_code: "foundry-primary", default_reasoning_effort_code: "medium",
   default_max_turns: 11, default_validation_retry_count: 2, is_active: true, updated_at: "2026-09-27T00:00:00Z",
+  default_mapping_source_system_id: null,
+  logical_entity_scd_type: "type_2",
 };
 const home: TenantHomeRecord = {
   tenant: { tenant_id: 7, tenant_code: "DATA", tenant_name: "Data", tenant_description: null, tenant_visibility: "private", effective_role: "architect" },
   lock: { is_locked: true, owner_display_name: "Architect", owned_by_current_principal: true, purpose: "Model settings", acquired_at: "2026-09-27T00:00:00Z", expires_at: "2026-09-27T01:00:00Z" },
-  lock_actions: { can_acquire: false, can_renew: true, can_release: true, can_override: false }, systems: [],
+  lock_actions: { can_acquire: false, can_renew: true, can_release: true, can_override: false },
+  systems: [{ system_id: 41, system_code: "ASSERTIONS", system_name: "Manual assertions", system_type_name: "Manual",
+    connection_count: 1, registered_object_count: 0, active_model_count: 1, last_metadata_update_time: null }],
 };
 const endpoint = "/api/v1/tenants/7/models/18";
 function response(value: unknown, status = 200) { return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } }); }
-function setup(options: { role?: TenantRole; ownedLock?: boolean; active?: boolean; failSave?: string; failSaveOnce?: boolean; failRefresh?: boolean; laterRevision?: number } = {}) {
+function setup(options: { role?: TenantRole; ownedLock?: boolean; active?: boolean; failSave?: string; failSaveOnce?: boolean; failRefresh?: boolean; laterRevision?: number; layer?: "dimensional" } = {}) {
   let current = { ...model, is_active: options.active ?? true };
   let didSave = false;
   let saveAttempts = 0;
@@ -51,26 +55,58 @@ function setup(options: { role?: TenantRole; ownedLock?: boolean; active?: boole
     if (url.endsWith("/prompts/models/18/assignments")) return response({ model_id: 18, items: [] });
     return response({ error: { code: "not_found" } }, 404);
   });
-  const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/settings"] }) });
+  const router = createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: [`/tenants/7/models/18/settings${options.layer ? `?layer=${options.layer}` : ""}`] }) });
   render(<WorkbenchApp router={router} />);
   return { fetcher, router, allowRefresh: () => { failRefresh = false; } };
 }
 
 describe("Model Settings", () => {
+  it.each(["type_1", "type_2", ""] as const)("saves the selected Logical SCD policy: %s", async (scdType) => {
+    const { fetcher } = setup();
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "Definition" });
+    await user.click(screen.getByText("Silver settings", { exact: true }));
+    const select = screen.getByRole("combobox", { name: "Logical entity SCD type" });
+    expect(select).toHaveValue("type_2");
+    await user.selectOptions(select, scdType);
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("saved at revision 9");
+    const write = fetcher.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({ logical_entity_scd_type: scdType || null, expected_model_revision: 8 });
+  });
+
+  it("retains Dimensional context while moving between Definition and Prompts", async () => {
+    const { router } = setup({ layer: "dimensional" });
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "Definition" });
+    await user.click(within(screen.getByRole("navigation", { name: "Model settings pages" })).getByRole("link", { name: "Prompts" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/tenants/7/models/18/settings/prompts"));
+    expect(router.state.location.search).toEqual({ layer: "dimensional" });
+    await user.click(within(await screen.findByRole("navigation", { name: "Model settings pages" })).getByRole("link", { name: "Definition" }));
+    await screen.findByRole("heading", { name: "Definition" });
+    expect(router.state.location.search).toEqual({ layer: "dimensional" });
+    expect(within(screen.getByRole("navigation", { name: "Model sections" })).getByRole("link", { name: "Mapping" })).toHaveAttribute("href", "/tenants/7/mapping/models/18?layer=dimensional");
+  });
+
   it("saves schema changes with the original revision and preserves every unopened setting", async () => {
     const { fetcher, router } = setup();
     const user = userEvent.setup();
     expect(await screen.findByRole("heading", { name: "Definition" })).toHaveFocus();
     const navigation = screen.getByRole("navigation", { name: "Model settings pages" });
     expect(within(navigation).getByRole("link", { name: "Prompts" })).toHaveAttribute("href", "/tenants/7/models/18/settings/prompts");
-    await user.click(screen.getByText("Logical schemas", { exact: true }));
     const section = within(screen.getByText("Logical schemas", { exact: true }).closest("details")!);
+    expect(section.getByRole("textbox", { name: "Schema name" })).toHaveAttribute("readonly");
+    expect(section.getByText("Saved", { exact: true })).toBeVisible();
     await user.click(section.getByRole("button", { name: "Add schema" }));
+    expect(section.getAllByRole("textbox", { name: "Schema name" })[1]).toHaveFocus();
     await user.type(section.getAllByRole("textbox", { name: "Schema name" })[1]!, " silver_sales ");
     await user.type(section.getAllByRole("textbox", { name: "Description" })[1]!, "Sales entities");
     await user.dblClick(screen.getByRole("button", { name: "Save settings" }));
     expect(await screen.findByRole("status")).toHaveTextContent("saved at revision 9");
     await screen.findByText("Editing revision 9.");
+    const savedSchemas = within(screen.getByText("Logical schemas", { exact: true }).closest("details")!);
+    expect(savedSchemas.getAllByText("Saved", { exact: true })).toHaveLength(2);
+    expect(savedSchemas.getAllByRole("textbox", { name: "Schema name" })[1]).toHaveAttribute("readonly");
     const writes = fetcher.mock.calls.filter(([, init]) => init?.method === "PUT");
     expect(writes).toHaveLength(1);
     const { model_id: _id, tenant_id: _tenant, model_revision: _revision, model_input_scope_object_count: _scope, is_active: _active, updated_at: _updated, ...definition } = model;
@@ -121,8 +157,10 @@ describe("Model Settings", () => {
     const name = await screen.findByRole("textbox", { name: /Model name/ });
     await user.clear(name);
     await user.type(name, "Updated customer model");
-    await user.click(screen.getByText("Logical schemas", { exact: true }));
     const schemas = within(screen.getByText("Logical schemas", { exact: true }).closest("details")!);
+    await user.click(schemas.getByRole("button", { name: "Edit schema" }));
+    expect(schemas.getByRole("textbox", { name: "Schema name" })).toHaveFocus();
+    expect(schemas.getByRole("textbox", { name: "Schema name" })).not.toHaveAttribute("readonly");
     await user.click(schemas.getByRole("button", { name: "Remove schema" }));
     await user.click(screen.getByRole("button", { name: "Save settings" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("An existing Entity still uses a removed or renamed schema, including inactive Entities. Restore its schema name before saving.");
@@ -151,6 +189,42 @@ describe("Model Settings", () => {
     await user.click(screen.getByRole("button", { name: "Refresh saved settings" }));
     await screen.findByText("Editing revision 10.");
     expect(screen.getByRole("button", { name: "Save settings" })).toBeEnabled();
+  });
+
+  it("saves and clears the default mapping System while preserving failed edits", async () => {
+    const { fetcher } = setup({ failSave: "invalid_request", failSaveOnce: true });
+    const user = userEvent.setup();
+    await user.click(await screen.findByText("Mapping settings", { exact: true }));
+    const system = await screen.findByRole("combobox", { name: /Default mapping System/ });
+    await user.selectOptions(system, "41");
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Some settings are no longer valid.");
+    expect(system).toHaveValue("41");
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    await screen.findByText("Editing revision 9.");
+    await user.click(screen.getByText("Mapping settings", { exact: true }));
+    expect(screen.getByRole("combobox", { name: /Default mapping System/ })).toHaveValue("41");
+    await user.selectOptions(screen.getByRole("combobox", { name: /Default mapping System/ }), "");
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(fetcher.mock.calls.filter(([, init]) => init?.method === "PUT")).toHaveLength(3));
+    const writes = fetcher.mock.calls.filter(([, init]) => init?.method === "PUT").map(([, init]) => JSON.parse(String(init?.body)));
+    expect(writes.map((command) => command.default_mapping_source_system_id)).toEqual([41, 41, null]);
+  });
+
+  it("focuses a duplicate draft schema without changing the saved schema", async () => {
+    const { fetcher } = setup();
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "Definition" });
+    const schemas = within(screen.getByText("Logical schemas", { exact: true }).closest("details")!);
+    await user.click(schemas.getByRole("button", { name: "Add schema" }));
+    const fields = schemas.getAllByRole("textbox", { name: "Schema name" });
+    await user.type(fields[1]!, "SILVER");
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("distinct, nonblank name");
+    expect(fields[1]).toHaveFocus();
+    expect(fields[0]).toHaveValue("silver");
+    expect(fields[0]).toHaveAttribute("readonly");
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
   });
 
   it("can explicitly clear agent defaults without fetching replacement model choices", async () => {

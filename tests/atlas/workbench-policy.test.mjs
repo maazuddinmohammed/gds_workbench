@@ -9,11 +9,24 @@ const phys={tenant_code:'T',system_code:'CRM',connection_code:'C',object_schema:
 function graph(layer='logical'){
  const entity={[`${layer}_entity_schema_name`]:'silver',[`${layer}_entity_name`]:'Customer',[`${layer}_entity_status`]:'active',sources:[],submodels:[]};
  const column=(name,ordinal,audit=false)=>({[`${layer}_entity_schema_name`]:'silver',[`${layer}_entity_name`]:'Customer',[`${layer}_attribute_name`]:name,[`${layer}_attribute_status`]:'active',[`${layer}_attribute_data_type`]:'BIGINT',[`${layer}_attribute_ordinal_position`]:ordinal,[`${layer}_attribute_is_nullable`]:false,[`${layer}_attribute_is_audit_column`]:audit,sources:[]});
- const surrogate={...column(layer==='logical'?'CustomerID':'CustomerKey',1),...(layer==='logical'?{logical_attribute_is_primary_key:true,logical_attribute_is_surrogate_key:true,logical_attribute_is_natural_key:false}:{dimensional_attribute_key_role:'surrogate'})};
+ const surrogate={...column(layer==='logical'?'CustomerID':'CustomerKey',1),...(layer==='logical'?{logical_attribute_is_surrogate_key:true,logical_attribute_is_natural_key:false}:{dimensional_attribute_key_role:'surrogate'})};
  const attributes=[surrogate,...AUDIT.map((name,index)=>column(name,index+2,true))];
  return new Map([loaded(`${layer}_entity`,[`${layer}_entity_schema_name`,`${layer}_entity_name`],[entity]),loaded(`${layer}_attribute`,[`${layer}_entity_schema_name`,`${layer}_entity_name`,`${layer}_attribute_name`],attributes)]);
 }
 const codes=result=>result.filter(issue=>issue.severity!=='warning').map(issue=>issue.code);
+test('Model Change Sets preserve the web-owned Logical SCD setting', () => {
+  for (const original of [null, 'type_1', 'type_2']) {
+    for (const proposed of [null, 'type_1', 'type_2']) {
+      const baseline = {model_name: 'Sales', logical_entity_scd_type: original};
+      const pending = {...baseline, model_purpose: 'Updated purpose', logical_entity_scd_type: proposed};
+      const value = new Map([loaded('model_details', [], [pending], [baseline])]);
+      assert.equal(codes(validate(value)).includes('model_policy_read_only'), original !== proposed);
+    }
+  }
+  const baseline = {model_name: 'Sales'};
+  const value = new Map([loaded('model_details', [], [{...baseline, logical_entity_scd_type: null}], [baseline])]);
+  assert.deepEqual(codes(validate(value)), []);
+});
 test('new Logical and Dimensional entities share first generated surrogate and audit policy',()=>{
  for(const layer of ['logical','dimensional']){const value=graph(layer);assert.deepEqual(codes(validate(value)),[]);value.get(`${layer}_attribute`).pending[0][`${layer}_attribute_ordinal_position`]=3;assert.ok(codes(validate(value)).includes('model.own-surrogate'));}
 });

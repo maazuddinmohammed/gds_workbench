@@ -1,4 +1,4 @@
-# GDS Workbench deployment on Azure Databricks Apps
+# Atlas deployment on Azure Databricks Apps
 
 This is the deployment runbook for the Workbench web application. The supported
 production shape is one Azure Databricks App containing:

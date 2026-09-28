@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-from psycopg.errors import InsufficientPrivilege, RaiseException
+from psycopg.errors import CheckViolation, InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
 
 from tests.mcp.database_test_support import require_row
@@ -32,7 +32,7 @@ CREATE_MODEL_SQL: LiteralString = """
           %s::VARCHAR, %s::VARCHAR, '[]'::JSONB, '[]'::JSONB, %s::TEXT, %s::JSONB,
           %s::TEXT, %s::JSONB, %s::JSONB,
           %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR,
-          %s::INTEGER, %s::INTEGER
+          %s::INTEGER, %s::INTEGER, %s::BIGINT, %s::VARCHAR
       )
 """
 
@@ -43,7 +43,7 @@ UPDATE_MODEL_SQL: LiteralString = """
           %s::VARCHAR, %s::VARCHAR, '[]'::JSONB, '[]'::JSONB, %s::TEXT, %s::JSONB,
           %s::TEXT, %s::JSONB, %s::JSONB,
           %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR,
-          %s::INTEGER, %s::INTEGER
+          %s::INTEGER, %s::INTEGER, %s::BIGINT, %s::VARCHAR
       )
 """
 
@@ -147,6 +147,8 @@ def _connect_web(
 def _create_model(
     postgres_database: DisposablePostgres,
     context: ModelMutationContext,
+    default_mapping_source_system_id: int | None = None,
+    logical_entity_scd_type: str | None = None,
 ) -> TestRow:
     with _connect_web(postgres_database) as connection:
         return require_row(
@@ -169,6 +171,8 @@ def _create_model(
                     "medium",
                     12,
                     2,
+                    default_mapping_source_system_id,
+                    logical_entity_scd_type,
                 ),
             ).fetchone()
         )
@@ -201,6 +205,8 @@ def _update_parameters(
             created["default_reasoning_effort_code"],
             created["default_max_turns"],
             created["default_validation_retry_count"],
+            created["default_mapping_source_system_id"],
+            created["logical_entity_scd_type"],
         )
     return (
         context.entra_tenant_id,
@@ -214,6 +220,8 @@ def _update_parameters(
         "Prefer dimensional business terms.",
         '[{"name":"EffectiveDate","type":"date"}]',
         '[{"name":"UpdatedTime","type":"timestamp"}]',
+        None,
+        None,
         None,
         None,
         None,
@@ -365,3 +373,146 @@ def test_web_role_has_no_direct_model_mutation(
             "INSERT INTO model.model (tenant_id, model_name) VALUES (%s, 'Direct')",
             (context.tenant_id,),
         )
+
+
+def test_default_mapping_system_must_have_an_active_owned_connection(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = _seed_context(postgres_database)
+    other = _seed_context(postgres_database)
+    suffix = uuid4().hex
+    with postgres_database.connect_owner() as connection:
+        system_type_id = require_row(
+            connection.execute(
+                "INSERT INTO reference.system_type (system_type_code, system_type_name) "
+                "VALUES (%s, %s) RETURNING system_type_id",
+                (suffix, suffix),
+            ).fetchone()
+        )["system_type_id"]
+        connection_type_id = require_row(
+            connection.execute(
+                "INSERT INTO reference.connection_type "
+                "(connection_type_code, connection_type_name) "
+                "VALUES (%s, %s) RETURNING connection_type_id",
+                (suffix, suffix),
+            ).fetchone()
+        )["connection_type_id"]
+        system_id = require_row(
+            connection.execute(
+                "INSERT INTO core.system (system_code, system_name, system_type_id) "
+                "VALUES (%s, %s, %s) RETURNING system_id",
+                (suffix, suffix, system_type_id),
+            ).fetchone()
+        )["system_id"]
+        connection_id = require_row(
+            connection.execute(
+                "INSERT INTO core.connection "
+                "(tenant_id, system_id, connection_code, connection_name, connection_type_id) "
+                "VALUES (%s, %s, %s, %s, %s) RETURNING connection_id",
+                (context.tenant_id, system_id, suffix, suffix, connection_type_id),
+            ).fetchone()
+        )["connection_id"]
+
+    created = _create_model(postgres_database, context, system_id)
+    assert created["default_mapping_source_system_id"] == system_id
+    with pytest.raises(RaiseException, match="Default Mapping System is unavailable"):
+        _create_model(postgres_database, other, system_id)
+
+    parameters = _update_parameters(
+        context,
+        created,
+        revision=created["model_revision"],
+        name=created["model_name"],
+        preserve_values=True,
+    )
+    with _connect_web(postgres_database) as connection:
+        unchanged = require_row(
+            connection.execute(UPDATE_MODEL_SQL, parameters).fetchone()
+        )
+    assert unchanged["model_revision"] == created["model_revision"]
+
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            "UPDATE core.connection SET is_active = FALSE WHERE connection_id = %s",
+            (connection_id,),
+        )
+    with (
+        _connect_web(postgres_database) as connection,
+        pytest.raises(RaiseException, match="Default Mapping System is unavailable"),
+    ):
+        connection.execute(UPDATE_MODEL_SQL, parameters)
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            "UPDATE core.connection SET is_active = TRUE WHERE connection_id = %s",
+            (connection_id,),
+        )
+        connection.execute(
+            "UPDATE core.system SET is_active = FALSE WHERE system_id = %s",
+            (system_id,),
+        )
+    with (
+        _connect_web(postgres_database) as connection,
+        pytest.raises(RaiseException, match="Default Mapping System is unavailable"),
+    ):
+        connection.execute(UPDATE_MODEL_SQL, parameters)
+
+    with _connect_web(postgres_database) as connection:
+        cleared = require_row(
+            connection.execute(
+                UPDATE_MODEL_SQL, parameters[:-2] + (None, parameters[-1])
+            ).fetchone()
+        )
+    assert cleared["default_mapping_source_system_id"] is None
+    assert cleared["model_revision"] == created["model_revision"] + 1
+
+
+def test_logical_scd_choice_persists_and_is_revision_fenced(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = _seed_context(postgres_database)
+    stored = _create_model(postgres_database, context, logical_entity_scd_type="type_2")
+    assert stored["logical_entity_scd_type"] == "type_2"
+    for choice in ("type_1", None):
+        parameters = _update_parameters(
+            context,
+            stored,
+            revision=stored["model_revision"],
+            name=stored["model_name"],
+            preserve_values=True,
+        )
+        with _connect_web(postgres_database) as connection:
+            updated = require_row(
+                connection.execute(
+                    UPDATE_MODEL_SQL, parameters[:-1] + (choice,)
+                ).fetchone()
+            )
+        assert updated["logical_entity_scd_type"] == choice
+        assert updated["model_revision"] == stored["model_revision"] + 1
+        with (
+            _connect_web(postgres_database) as connection,
+            pytest.raises(RaiseException, match="stale_model_revision"),
+        ):
+            connection.execute(UPDATE_MODEL_SQL, parameters)
+        with _connect_web(postgres_database) as connection:
+            unchanged = require_row(
+                connection.execute(
+                    UPDATE_MODEL_SQL,
+                    _update_parameters(
+                        context,
+                        updated,
+                        revision=updated["model_revision"],
+                        name=updated["model_name"],
+                        preserve_values=True,
+                    ),
+                ).fetchone()
+            )
+        assert unchanged["model_revision"] == updated["model_revision"]
+        stored = updated
+
+
+def test_database_rejects_unknown_logical_scd_choice(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = _seed_context(postgres_database)
+    with pytest.raises(CheckViolation, match="ck_model_logical_entity_scd_type"):
+        _create_model(postgres_database, context, logical_entity_scd_type="type_3")

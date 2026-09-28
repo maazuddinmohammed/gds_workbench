@@ -136,11 +136,9 @@ export function AnalysisScreen({
 
   return (
     <div className="analysis-page page-enter">
-      <header className="workflow-commandbar">
+      <header className="workflow-commandbar model-section-toolbar">
+        <h1 className="model-section-title sr-only">Analysis</h1>
         <div className="workflow-command-context">
-          <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
-            {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
-          </span>
           <nav className="workflow-tabs" aria-label="Analysis views">
             <button
               className={view === "results" ? "is-active" : ""}
@@ -159,6 +157,9 @@ export function AnalysisScreen({
               Runs
             </button>
           </nav>
+          <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
+            {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
+          </span>
         </div>
         <div className="workflow-command-actions">
           <button className="button button-secondary button-small" type="button" onClick={refresh}>

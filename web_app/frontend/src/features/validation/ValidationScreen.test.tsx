@@ -10,15 +10,12 @@ import { validateSelectedSystemCodes } from "./ValidationRunDialog";
 import type { ValidationValidationGroup } from "./api";
 
 describe("Validation journey", () => {
-  it("opens from top-level navigation as a Model-first register", async () => {
+  it("keeps the legacy Model picker bookmark usable", async () => {
     const fetcher = validationFetchStub();
-    const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/validation"] }),
     })} />);
-
-    await user.click(await screen.findByRole("link", { name: "Validation" }));
 
     const ledger = await screen.findByRole("table", { name: "Models for Validation" });
     expect(within(ledger).getByText("Customer 360")).toBeVisible();

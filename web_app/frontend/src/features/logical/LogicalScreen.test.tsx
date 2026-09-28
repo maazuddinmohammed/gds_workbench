@@ -14,7 +14,9 @@ describe("Model Logical", () => {
     render(<WorkbenchApp router={logicalRouter(fetcher)} />);
 
     const ledger = await screen.findByRole("table", { name: "Logical Entities" });
-    expect(within(ledger).getByText("silver.customer_account")).toBeVisible();
+    expect(within(ledger).getAllByRole("columnheader").slice(1, 3).map((cell) => cell.textContent)).toEqual(["Schema", "Entity name"]);
+    expect(within(ledger).getByRole("cell", { name: "silver" })).toBeVisible();
+    expect(within(ledger).getByText("customer_account")).toBeVisible();
 
     await user.click(screen.getByRole("link", { name: "Open Logical Entity 71" }));
 
@@ -61,6 +63,7 @@ describe("Model Logical", () => {
     expect(screen.getByRole("heading", { name: "Keys" })).toBeVisible();
     expect(screen.getByText("Nullable").nextElementSibling).toHaveTextContent("No");
     expect(screen.getByText("Surrogate key").nextElementSibling).toHaveTextContent("Yes");
+    expect(screen.queryByText("Primary key")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Source mappings" })).toBeVisible();
     expect(screen.getAllByText("bronze.customer_raw.customer_id").length).toBeGreaterThan(0);
 
@@ -431,7 +434,6 @@ const logicalAttributePayload = {
   logical_attribute_name: "customer_id",
   logical_attribute_data_type: "bigint",
   logical_attribute_is_nullable: false,
-  logical_attribute_is_primary_key: true,
   logical_attribute_is_natural_key: false,
   logical_attribute_is_surrogate_key: true,
   logical_attribute_ordinal_position: 1,

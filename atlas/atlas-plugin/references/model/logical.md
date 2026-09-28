@@ -26,6 +26,14 @@ Use shared key normalization; preserve existing spelling. Below, **name** means 
 
 ## Logical Entity fields
 
+Read `model_details.logical_entity_scd_type` from the current Snapshot:
+`type_1` requests overwrite semantics; `type_2` requests versioned history;
+null leaves the choice unspecified. Configure it in web Model settings; it is
+read-only in Model Change Sets. Use the choice to guide grain, keys and history
+Attributes with the recorded audit policy and available evidence. Do not invent
+history-column names or mutate locked Entities to satisfy it. A settings change
+does not rewrite existing Entities or migrate data.
+
 | Field | Accepted value / meaning |
 |---|---|
 | `logical_entity_schema_name` | Required configured Logical schema name; part of Entity identity. |
@@ -51,7 +59,6 @@ Use shared key normalization; preserve existing spelling. Below, **name** means 
 | `logical_attribute_definition` | Text defining the Attribute, including useful units/semantics. |
 | `logical_attribute_data_type` | Nonblank string ≤100 characters; approved modeled type, not a fixed schema enum. |
 | `logical_attribute_is_nullable` | Boolean; whether null is allowed. |
-| `logical_attribute_is_primary_key` | Boolean; membership in the primary key. |
 | `logical_attribute_is_natural_key` | Boolean; membership in business identity, possibly a composite tuple. |
 | `logical_attribute_is_surrogate_key` | Boolean; marks this Entity's surrogate, not every foreign-key Attribute. |
 | `logical_attribute_ordinal_position` | Integer >0; column position. |
@@ -60,7 +67,7 @@ Use shared key normalization; preserve existing spelling. Below, **name** means 
 | `logical_attribute_is_locked` | Boolean. |
 | `sources` | Array of physical Attribute or Assertion sources below; `[]` is schema-valid. |
 
-An Attribute cannot be both natural and surrogate key. Any primary/natural/surrogate flag requires `logical_attribute_is_nullable:false`. Naming, first-column surrogate policy, type compatibility and audit order are defined in their policy guides; these flags alone do not enforce them. Multiple natural-key flags describe a tuple, not independent uniqueness of every component.
+An Attribute cannot be both natural and surrogate key. Any natural/surrogate flag requires `logical_attribute_is_nullable:false`. Naming, first-column surrogate policy, type compatibility and audit order are defined in their policy guides; these flags alone do not enforce them. Multiple natural-key flags describe a tuple, not independent uniqueness of every component.
 
 ## Logical Relationship fields
 
@@ -163,7 +170,6 @@ These small examples illustrate record shape, not a complete table build. Assume
     "logical_attribute_definition": "Business customer identifier within the governed customer domain; leading zeros are retained.",
     "logical_attribute_data_type": "STRING",
     "logical_attribute_is_nullable": false,
-    "logical_attribute_is_primary_key": false,
     "logical_attribute_is_natural_key": true,
     "logical_attribute_is_surrogate_key": false,
     "logical_attribute_ordinal_position": 2,

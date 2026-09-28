@@ -128,7 +128,6 @@ CREATE TABLE workflow.logical_attribute (
     logical_attribute_definition TEXT NOT NULL,
     logical_attribute_data_type VARCHAR(100) NOT NULL,
     logical_attribute_is_nullable BOOLEAN NOT NULL DEFAULT TRUE,
-    logical_attribute_is_primary_key BOOLEAN NOT NULL DEFAULT FALSE,
     logical_attribute_is_natural_key BOOLEAN NOT NULL DEFAULT FALSE,
     logical_attribute_is_surrogate_key BOOLEAN NOT NULL DEFAULT FALSE,
     logical_attribute_ordinal_position INTEGER NOT NULL,
@@ -166,8 +165,7 @@ CREATE TABLE workflow.logical_attribute (
     ),
     CONSTRAINT ck_logical_attribute_key_nullable CHECK (
         NOT (
-            logical_attribute_is_primary_key
-            OR logical_attribute_is_natural_key
+            logical_attribute_is_natural_key
             OR logical_attribute_is_surrogate_key
         ) OR NOT logical_attribute_is_nullable
     ),

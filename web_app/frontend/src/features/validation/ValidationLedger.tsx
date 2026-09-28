@@ -83,12 +83,12 @@ export function ValidationLedger({
             <div className="table-scroll validation-check-table-scroll">
               <table aria-label={`${group.validation_group_name} Validation Checks`}>
                 <thead><tr>
-                  {selection ? <th>Select</th> : null}
-                  <th>Validation Check</th><th>Category</th><th>Severity</th><th>Assertion</th><th>Status</th><th>Details</th>
+                  {selection ? <th className="validation-selection-column">Select</th> : null}
+                  <th className="validation-name-column">Validation Check</th><th>Category</th><th>Severity</th><th>Assertion</th><th>Status</th><th>Details</th>
                 </tr></thead>
                 <tbody>{group.checks.map((item) => (
                   <tr key={item.validation_check_id}>
-                    {selection ? <td><input type="checkbox" aria-label={`Select Validation Check ${item.validation_check_id}`}
+                    {selection ? <td className="validation-selection-column"><input type="checkbox" aria-label={`Select Validation Check ${item.validation_check_id}`}
                       checked={selection.selectedIds.has(item.validation_check_id)}
                       onChange={(event) => select(item.validation_check_id, event.target.checked)} /></td> : null}
                     <td><span className="validation-check-name"><strong>{item.validation_check_name}</strong>
@@ -113,10 +113,10 @@ export function ValidationLedger({
       ) : (
         <div className="table-scroll validation-check-table-scroll">
           <table aria-label="Validation Groups">
-            <thead><tr>{selection ? <th>Select</th> : null}<th>Group</th><th>System</th><th>Checks</th><th>Status</th><th>Details</th></tr></thead>
+            <thead><tr>{selection ? <th className="validation-selection-column">Select</th> : null}<th className="validation-name-column">Group</th><th>System</th><th className="validation-count-column">Checks</th><th>Status</th><th>Details</th></tr></thead>
             <tbody>{groups.map((item) => (
               <tr key={item.validation_group_id}>
-                {selection ? <td><input type="checkbox" aria-label={`Select Validation Group ${item.validation_group_id}`}
+                {selection ? <td className="validation-selection-column"><input type="checkbox" aria-label={`Select Validation Group ${item.validation_group_id}`}
                   checked={selection.selectedIds.has(item.validation_group_id)}
                   onChange={(event) => select(item.validation_group_id, event.target.checked)} /></td> : null}
                 <td><span className="validation-check-name"><strong>{item.validation_group_name}</strong>{!item.modeled_entity_type ? <small>Shared across layers</small> : null}

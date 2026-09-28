@@ -16,7 +16,7 @@ describe("Model Assertions", () => {
     expect(within(ledger).getByText("Customer governance rules")).toBeVisible();
 
     await user.type(screen.getByLabelText("Document name prefix"), " Customer ");
-    await user.type(screen.getByLabelText("Source System code"), " CRM ");
+    await user.selectOptions(screen.getByLabelText("Source System code"), "CRM");
     await user.selectOptions(screen.getByLabelText("Document activity"), "true");
     await user.click(screen.getByRole("button", { name: "Apply Document filters" }));
     await screen.findByRole("table", { name: "Assertion Documents" });
@@ -78,7 +78,7 @@ describe("Model Assertions", () => {
     expect(screen.getByRole("button", { name: "Add Assertion" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Refresh" }));
     expect(emptyFetcher.mock.calls.filter(([input]) => String(input).includes("/assertions/documents")))
-      .toHaveLength(2);
+      .toHaveLength(4);
     unmount();
 
     const mismatchRender = render(
@@ -256,6 +256,9 @@ function assertionsFetchStub(options: {
       return jsonResponse({ model_id: 18, model_revision: 19, model_change_set_id: "saved", action_count: 2 });
     }
     if (url === "/api/v1/tenants/7/models/18") return jsonResponse(modelPayload);
+    if (url === "/api/v1/tenants/7/models/18/input-scope?page_size=200") {
+      return jsonResponse({ model_id: 18, model_revision: 18, items: [], next_cursor: null });
+    }
     if (url.startsWith("/api/v1/tenants/7/models/18/assertions/documents?")) {
       if (options.error) return jsonResponse({ error: { code: "unavailable" } }, 503);
       return jsonResponse({

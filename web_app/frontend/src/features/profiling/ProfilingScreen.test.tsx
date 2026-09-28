@@ -23,8 +23,8 @@ describe("Model Profiling", () => {
     ]);
     expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/profiling/501"))).toBe(false);
 
-    await user.type(screen.getByLabelText("Source Tenant code"), " GRDM ");
-    await user.type(screen.getByLabelText("System code"), " CRM ");
+    await user.selectOptions(screen.getByLabelText("Source Tenant code"), "GRDM");
+    await user.selectOptions(screen.getByLabelText("System code"), "CRM");
     await user.type(screen.getByLabelText("Object schema"), " Bronze_CRM ");
     await user.type(screen.getByLabelText("Object name"), " Customer_Raw ");
     await user.click(screen.getByRole("button", { name: "Apply result filters" }));
@@ -40,8 +40,8 @@ describe("Model Profiling", () => {
 
     expect(router.state.location.pathname).toBe("/tenants/7/models/18/profiling/501");
     expect(router.state.location.search).toMatchObject({
-      sourceTenantCode: " GRDM ",
-      systemCode: " CRM ",
+      sourceTenantCode: "GRDM",
+      systemCode: "CRM",
       objectSchema: " Bronze_CRM ",
       objectName: " Customer_Raw ",
       returnObjectId: 501,
@@ -82,8 +82,8 @@ describe("Model Profiling", () => {
     await user.click(screen.getByRole("link", { name: "Back to Profiling" }));
     expect(await screen.findByRole("table", { name: "Profiling results" })).toBeVisible();
     expect(router.state.location.pathname).toBe("/tenants/7/models/18/profiling");
-    expect(screen.getByLabelText("Source Tenant code")).toHaveValue(" GRDM ");
-    expect(screen.getByLabelText("System code")).toHaveValue(" CRM ");
+    expect(screen.getByLabelText("Source Tenant code")).toHaveValue("GRDM");
+    expect(screen.getByLabelText("System code")).toHaveValue("CRM");
     expect(screen.getByLabelText("Object schema")).toHaveValue(" Bronze_CRM ");
     expect(screen.getByLabelText("Object name")).toHaveValue(" Customer_Raw ");
     await waitFor(() => {
@@ -275,7 +275,8 @@ function profilingFetchStub(options: {
     const url = String(input);
     if (url === "/api/v1/tenants/7/home") return jsonResponse(tenantHomePayload);
     if (url === "/api/v1/tenants/7/models/18") return jsonResponse(modelDetailPayload);
-    if (url === "/api/v1/tenants/7/models/18/input-scope?zone=bronze&page_size=200") {
+    if (url === "/api/v1/tenants/7/models/18/input-scope?zone=bronze&page_size=200"
+      || url === "/api/v1/tenants/7/models/18/input-scope?page_size=200") {
       return jsonResponse(modelInputScopePayload);
     }
     if (url.startsWith("/api/v1/tenants/7/models/18/profiling?") && init?.method !== "POST") {

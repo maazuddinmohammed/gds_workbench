@@ -56,19 +56,35 @@ SELECT targets.*, jsonb_build_object('system_id', source_system.system_id, 'syst
        mapping.mapping_object_id,
        coalesce(mapping.object_dependency_order, entity.dependency_order) AS object_order,
        entity.is_locked OR coalesce(mapping.object_mapping_is_locked, FALSE) AS is_locked,
-       EXISTS (SELECT 1 FROM workflow.list_mapping_source_objects(entity.model_id,
-           entity.modeled_entity_id, entity.modeled_entity_type, source_system.system_id)) AS
-           has_sources,
+       input.is_default OR EXISTS (
+           SELECT 1 FROM workflow.list_mapping_source_objects(entity.model_id,
+               entity.modeled_entity_id, entity.modeled_entity_type, source_system.system_id)
+       ) AS has_sources,
        attributes.items AS attributes
   FROM targets
   JOIN model.model AS model ON model.tenant_id = %s AND model.model_id = %s AND model.is_active
   JOIN workflow.modeled_entity AS entity ON entity.model_id = model.model_id
    AND entity.modeled_entity_type = targets.entity_type AND entity.modeled_entity_id =
        targets.entity_id
- CROSS JOIN LATERAL (SELECT DISTINCT source_system_id FROM
-     workflow.list_model_input_sources(model.model_id)) AS input
-  JOIN core.system AS source_system ON source_system.system_id = input.source_system_id AND
-      source_system.is_active
+ CROSS JOIN LATERAL (
+     SELECT model.default_mapping_source_system_id IS NOT NULL
+        AND workflow.is_assertion_only_mapping_target(model.model_id,
+            entity.modeled_entity_id, entity.modeled_entity_type) AS uses_default
+ ) AS fallback
+ CROSS JOIN LATERAL (
+     SELECT DISTINCT source_system_id, FALSE AS is_default
+       FROM workflow.list_model_input_sources(model.model_id)
+      WHERE NOT fallback.uses_default
+     UNION
+     SELECT model.default_mapping_source_system_id, TRUE WHERE fallback.uses_default
+ ) AS input
+  JOIN core.system AS source_system ON source_system.system_id = input.source_system_id
+   AND source_system.is_active
+   AND (NOT input.is_default OR EXISTS (
+       SELECT 1 FROM core.connection AS owned_connection
+        WHERE owned_connection.tenant_id = model.tenant_id
+          AND owned_connection.system_id = source_system.system_id AND owned_connection.is_active
+   ))
   LEFT JOIN workflow.mapping_object AS mapping ON mapping.model_id = entity.model_id
    AND mapping.modeled_entity_type = entity.modeled_entity_type
    AND coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id) = entity.modeled_entity_id

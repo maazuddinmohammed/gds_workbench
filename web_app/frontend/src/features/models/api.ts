@@ -23,6 +23,7 @@ export interface ModelCollection {
 }
 
 export interface ModelSchemaDefinition { schema_name: string; description: string | null; }
+export type LogicalEntityScdType = "type_1" | "type_2";
 
 export interface ModelDetail {
   model_id: number;
@@ -35,6 +36,7 @@ export interface ModelDetail {
   dimensional_schemas: ModelSchemaDefinition[];
   silver_model_naming_instructions: string | null;
   silver_model_audit_columns_template: unknown;
+  logical_entity_scd_type?: LogicalEntityScdType | null;
   gold_model_naming_instructions: string | null;
   gold_model_technical_columns_template: unknown;
   gold_model_audit_columns_template: unknown;
@@ -44,6 +46,7 @@ export interface ModelDetail {
   default_reasoning_effort_code: string | null;
   default_max_turns: number | null;
   default_validation_retry_count: number | null;
+  default_mapping_source_system_id?: number | null;
   is_active: boolean;
   updated_at: string;
 }
@@ -88,6 +91,15 @@ export interface ModelWorkflowOverview {
   model_id: number;
   model_revision: number;
   items: WorkflowLedgerEntry[];
+  section_states?: ModelSectionState[];
+}
+
+export interface ModelSectionState {
+  section: "overview" | "settings" | "scope" | "metadata-enrichment" | "profiling"
+    | "assertions" | "analysis" | "conceptual" | "logical" | "dimensional" | "mapping"
+    | "code-generation" | "validation";
+  state: "available" | "ready" | "empty" | "not_run" | "queued" | "running"
+    | "completed" | "failed" | "results_available";
 }
 
 export interface CreateModelCommand {
@@ -97,6 +109,7 @@ export interface CreateModelCommand {
   dimensional_schemas: ModelSchemaDefinition[];
   silver_model_naming_instructions: string | null;
   silver_model_audit_columns_template: JsonObject | null;
+  logical_entity_scd_type: LogicalEntityScdType | null;
   gold_model_naming_instructions: string | null;
   gold_model_technical_columns_template: JsonObject | null;
   gold_model_audit_columns_template: JsonObject | null;
@@ -106,6 +119,7 @@ export interface CreateModelCommand {
   default_reasoning_effort_code: string | null;
   default_max_turns: number | null;
   default_validation_retry_count: number | null;
+  default_mapping_source_system_id?: number | null;
 }
 
 export interface ModelCommandResult {

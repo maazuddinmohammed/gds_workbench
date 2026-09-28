@@ -93,7 +93,9 @@ CREATE FUNCTION application.create_model(
     p_default_agent_model_code VARCHAR(200),
     p_default_reasoning_effort_code VARCHAR(50),
     p_default_max_turns INTEGER,
-    p_default_validation_retry_count INTEGER
+    p_default_validation_retry_count INTEGER,
+    p_default_mapping_source_system_id BIGINT DEFAULT NULL,
+    p_logical_entity_scd_type VARCHAR(10) DEFAULT NULL
 )
 RETURNS SETOF model.model
 LANGUAGE plpgsql
@@ -119,6 +121,15 @@ BEGIN
             coalesce(v_decision.denial_code, 'authorization_denied');
     END IF;
 
+    IF p_default_mapping_source_system_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM core.connection AS connection
+        JOIN core.system AS system ON system.system_id = connection.system_id AND system.is_active
+        WHERE connection.tenant_id = p_tenant_id AND connection.is_active
+          AND system.system_id = p_default_mapping_source_system_id
+    ) THEN
+        RAISE EXCEPTION 'Default Mapping System is unavailable for this Tenant';
+    END IF;
+
     INSERT INTO model.model AS target_model (
         tenant_id,
         model_name,
@@ -135,7 +146,9 @@ BEGIN
         default_agent_model_code,
         default_reasoning_effort_code,
         default_max_turns,
-        default_validation_retry_count
+        default_validation_retry_count,
+        default_mapping_source_system_id,
+        logical_entity_scd_type
     ) VALUES (
         p_tenant_id,
         p_model_name,
@@ -152,7 +165,9 @@ BEGIN
         p_default_agent_model_code,
         p_default_reasoning_effort_code,
         p_default_max_turns,
-        p_default_validation_retry_count
+        p_default_validation_retry_count,
+        p_default_mapping_source_system_id,
+        p_logical_entity_scd_type
     )
     RETURNING target_model.* INTO v_created;
 
@@ -187,7 +202,9 @@ REVOKE ALL ON FUNCTION application.create_model(
     VARCHAR,
     VARCHAR,
     INTEGER,
-    INTEGER
+    INTEGER,
+    BIGINT,
+    VARCHAR
 ) FROM PUBLIC;
 
 CREATE FUNCTION application.update_model(
@@ -210,7 +227,9 @@ CREATE FUNCTION application.update_model(
     p_default_agent_model_code VARCHAR(200),
     p_default_reasoning_effort_code VARCHAR(50),
     p_default_max_turns INTEGER,
-    p_default_validation_retry_count INTEGER
+    p_default_validation_retry_count INTEGER,
+    p_default_mapping_source_system_id BIGINT DEFAULT NULL,
+    p_logical_entity_scd_type VARCHAR(10) DEFAULT NULL
 )
 RETURNS SETOF model.model
 LANGUAGE plpgsql
@@ -251,6 +270,14 @@ BEGIN
        OR v_existing.model_revision <> p_expected_model_revision THEN
         RAISE EXCEPTION 'stale_model_revision';
     END IF;
+    IF p_default_mapping_source_system_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM core.connection AS connection
+        JOIN core.system AS system ON system.system_id = connection.system_id AND system.is_active
+        WHERE connection.tenant_id = v_existing.tenant_id AND connection.is_active
+          AND system.system_id = p_default_mapping_source_system_id
+    ) THEN
+        RAISE EXCEPTION 'Default Mapping System is unavailable for this Tenant';
+    END IF;
     IF ROW(
         v_existing.model_name,
         v_existing.model_description,
@@ -266,7 +293,9 @@ BEGIN
         v_existing.default_agent_model_code,
         v_existing.default_reasoning_effort_code,
         v_existing.default_max_turns,
-        v_existing.default_validation_retry_count
+        v_existing.default_validation_retry_count,
+        v_existing.default_mapping_source_system_id,
+        v_existing.logical_entity_scd_type
     ) IS NOT DISTINCT FROM ROW(
         p_model_name,
         p_model_description,
@@ -282,7 +311,9 @@ BEGIN
         p_default_agent_model_code,
         p_default_reasoning_effort_code,
         p_default_max_turns,
-        p_default_validation_retry_count
+        p_default_validation_retry_count,
+        p_default_mapping_source_system_id,
+        p_logical_entity_scd_type
     ) THEN
         RETURN NEXT v_existing;
         RETURN;
@@ -312,6 +343,8 @@ BEGIN
            default_max_turns = p_default_max_turns,
            default_validation_retry_count =
                p_default_validation_retry_count,
+           default_mapping_source_system_id = p_default_mapping_source_system_id,
+           logical_entity_scd_type = p_logical_entity_scd_type,
            updated_time = v_updated_time,
            updated_by = CURRENT_USER
      WHERE target_model.model_id = p_model_id
@@ -349,7 +382,9 @@ REVOKE ALL ON FUNCTION application.update_model(
     VARCHAR,
     VARCHAR,
     INTEGER,
-    INTEGER
+    INTEGER,
+    BIGINT,
+    VARCHAR
 ) FROM PUBLIC;
 
 CREATE FUNCTION application.archive_model(

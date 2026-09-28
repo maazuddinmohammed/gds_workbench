@@ -2,7 +2,6 @@ import { ModelLayerTabs, type ModelLayer } from "../../shared/ModelLayerTabs";
 import { ModelRecordHistory } from "../model_record_review/ModelRecordHistory";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 
 import { ApiError } from "../../core/http";
 import type { MappingEntityType } from "../mapping/api";
@@ -110,24 +109,16 @@ export function CodeGenerationScreen({
   };
 
   return (
-    <main className="workspace mapping-workspace code-generation-workspace page-enter">
-      <ModelLayerTabs tenantId={tenantId} modelId={model.model_id} layer={layer} workflow="code-generation" title="Code generation" />
-      <header className="workflow-commandbar code-generation-commandbar">
+    <div className="mapping-workspace code-generation-workspace page-enter">
+      <header className="workflow-commandbar code-generation-commandbar model-section-toolbar">
         <div className="workflow-command-context code-generation-command-context">
-          <Link
-            className="text-action"
-            aria-label="Back to Code Generation Models"
-            to="/tenants/$tenantId/code-generation"
-            params={{ tenantId: String(tenantId) }}
-          >
-            ← Back to Models
-          </Link>
+          <ModelLayerTabs tenantId={tenantId} modelId={model.model_id} layer={layer} workflow="code-generation" title="Code generation" />
           <span className={canGenerate ? "lock-context is-held" : "lock-context"}>
             {permissionLabel}
           </span>
+          <span>{selected.length} selected</span>
         </div>
         <div className="workflow-command-actions code-generation-command-actions">
-          <span>{selected.length} selected</span>
           <button
             className="button button-secondary button-small"
             type="button"
@@ -150,10 +141,10 @@ export function CodeGenerationScreen({
           </button>
         </div>
       </header>
-      <div className="workflow-context-line code-generation-context-line">
-        <strong>{model.model_name} · r{model.model_revision}</strong>
-
-      </div>
+      <nav className="workflow-tabs" aria-label="Code views">
+        <button type="button" className={view === "targets" ? "is-active" : ""} aria-pressed={view === "targets"} onClick={() => setView("targets")}>Generation targets</button>
+        <button type="button" className={view === "artifacts" ? "is-active" : ""} aria-pressed={view === "artifacts"} onClick={() => setView("artifacts")}>Applied Code</button>
+      </nav>
       {startedRunId ? (
         <p className="code-generation-run-notice" role="status">
           Code Generation run {startedRunId} started. Refresh runs to review the draft, then Apply the validated draft.
@@ -169,10 +160,6 @@ export function CodeGenerationScreen({
         focusRunId={startedRunId}
         onApplied={refresh}
       />
-      <nav className="workflow-tabs" aria-label="Code views">
-        <button type="button" className={view === "targets" ? "is-active" : ""} aria-pressed={view === "targets"} onClick={() => setView("targets")}>Generation targets</button>
-        <button type="button" className={view === "artifacts" ? "is-active" : ""} aria-pressed={view === "artifacts"} onClick={() => setView("artifacts")}>Applied Code</button>
-      </nav>
       {view === "artifacts" ? <ModelRecordHistory
         api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
         dataset="generated_code" label="Applied Code" hasTenantLock={canGenerate}
@@ -225,6 +212,6 @@ export function CodeGenerationScreen({
           }}
         />
       ) : null}
-    </main>
+    </div>
   );
 }

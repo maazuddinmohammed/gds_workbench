@@ -1,9 +1,10 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../../core/http";
+import type { ModelsApi } from "../models/api";
 import type {
   WorkflowDraftReview,
   WorkflowRunDetail,
@@ -173,41 +174,68 @@ describe("Workflow Run monitor", () => {
 
   it("expands when a newly started run becomes the focused run", async () => {
     const api = monitorApi();
+    const readOverview = vi.fn<ModelsApi["readModelOverview"]>().mockResolvedValue({
+      model_id: 18, model_revision: 5, items: [], section_states: [{ section: "conceptual", state: "not_run" }],
+    });
+    api.listWorkflowRuns.mockResolvedValue({ items: [workflowRun(false), { ...workflowRun(false), workflow_run_id: 1047 }], next_cursor: null });
+    api.readWorkflowRun.mockImplementation(async (_tenant, _model, id) => ({ ...workflowRun(false), workflow_run_id: id }));
     const { rerenderMonitor } = renderMonitor(
       api,
       vi.fn(async () => undefined),
       "conceptual",
       null,
+      readOverview,
     );
 
     expect(screen.getByRole("button", {
       name: "Show Conceptual run activity",
     })).toHaveAttribute("aria-expanded", "false");
+    const sectionState = screen.getByLabelText("Conceptual section state");
+    await waitFor(() => expect(sectionState).toHaveTextContent("not_run"));
+    expect(readOverview).toHaveBeenCalledExactlyOnceWith(7, 18);
+    readOverview.mockResolvedValue({
+      model_id: 18, model_revision: 5, items: [], section_states: [{ section: "conceptual", state: "queued" }],
+    });
     rerenderMonitor(1048);
 
     expect(await screen.findByRole("button", {
       name: "Hide Conceptual run activity",
     })).toHaveAttribute("aria-expanded", "true");
     expect(await screen.findByRole("article", { name: "Run 1048 details" })).toBeVisible();
+    await waitFor(() => expect(sectionState).toHaveTextContent("queued"));
+    expect(readOverview).toHaveBeenCalledTimes(2);
+    rerenderMonitor(1048);
+    await userEvent.setup().click(screen.getByRole("button", { name: /Run 1047/ }));
+    expect(await screen.findByRole("article", { name: "Run 1047 details" })).toBeVisible();
+    expect(readOverview).toHaveBeenCalledTimes(2);
   });
 
   it("shows the authoritative bounded review and applies the exact validated draft manually", async () => {
     const api = monitorApi();
     const onApplied = vi.fn(async () => undefined);
     const user = userEvent.setup();
-    renderMonitor(api, onApplied);
+    const readOverview = vi.fn<ModelsApi["readModelOverview"]>().mockResolvedValue({
+      model_id: 18, model_revision: 5, items: [], section_states: [{ section: "conceptual", state: "completed" }],
+    });
+    renderMonitor(api, onApplied, "conceptual", 1048, readOverview);
 
     const review = await screen.findByRole("table", { name: "Validated draft action counts" });
     expect(within(review).getByText("conceptual object")).toBeVisible();
     expect(within(review).getAllByText("3")).toHaveLength(2);
     expect(screen.getByTitle("Candidate digest")).toHaveTextContent("d".repeat(64));
     expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
+    const sectionState = screen.getByLabelText("Conceptual section state");
+    await waitFor(() => expect(sectionState).toHaveTextContent("completed"));
+    const overviewCalls = readOverview.mock.calls.length;
 
     await user.click(screen.getByRole("button", { name: "Apply validated draft" }));
     const confirmation = await screen.findByRole("dialog", {
       name: "Apply validated Conceptual draft?",
     });
     expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
+    readOverview.mockResolvedValue({
+      model_id: 18, model_revision: 6, items: [], section_states: [{ section: "conceptual", state: "results_available" }],
+    });
     await user.click(within(confirmation).getByRole("button", { name: "Apply exact draft" }));
 
     await waitFor(() => expect(api.applyWorkflowDraft).toHaveBeenCalledWith(
@@ -227,6 +255,8 @@ describe("Workflow Run monitor", () => {
     expect(compactSummary).toHaveTextContent("Run 1048");
     expect(compactSummary).toHaveTextContent(/completed/i);
     expect(compactSummary).toHaveTextContent("Draft applied");
+    await waitFor(() => expect(sectionState).toHaveTextContent("results_available"));
+    expect(readOverview).toHaveBeenCalledTimes(overviewCalls + 1);
   });
 
   it("reviews and applies an exact validated Validation draft", async () => {
@@ -377,6 +407,9 @@ describe("Workflow Run monitor", () => {
 
   it("does not poll an active run and refreshes only after the user asks", async () => {
     const api = monitorApi();
+    const readOverview = vi.fn<ModelsApi["readModelOverview"]>().mockResolvedValue({
+      model_id: 18, model_revision: 5, items: [], section_states: [{ section: "conceptual", state: "running" }],
+    });
     const activeRun: WorkflowRunDetail = {
       ...workflowRun(false),
       workflow_run_state: "running",
@@ -410,7 +443,7 @@ describe("Workflow Run monitor", () => {
       };
     });
     const user = userEvent.setup();
-    renderMonitor(api, vi.fn(async () => undefined));
+    renderMonitor(api, vi.fn(async () => undefined), "conceptual", 1048, readOverview);
 
     expect(await screen.findByRole("article", { name: "Run 1048 details" })).toBeVisible();
     expect(screen.getByText(started.message)).toBeVisible();
@@ -418,14 +451,21 @@ describe("Workflow Run monitor", () => {
     const listCalls = api.listWorkflowRuns.mock.calls.length;
     const detailCalls = api.readWorkflowRun.mock.calls.length;
     const eventCalls = api.listWorkflowRunEvents.mock.calls.length;
+    const sectionState = screen.getByLabelText("Conceptual section state");
+    await waitFor(() => expect(sectionState).toHaveTextContent("running"));
+    const overviewCalls = readOverview.mock.calls.length;
 
     await new Promise((resolve) => globalThis.setTimeout(resolve, 2_100));
 
     expect(api.listWorkflowRuns).toHaveBeenCalledTimes(listCalls);
     expect(api.readWorkflowRun).toHaveBeenCalledTimes(detailCalls);
     expect(api.listWorkflowRunEvents).toHaveBeenCalledTimes(eventCalls);
+    expect(readOverview).toHaveBeenCalledTimes(overviewCalls);
     expect(screen.queryByText(progressing.message)).not.toBeInTheDocument();
 
+    readOverview.mockResolvedValue({
+      model_id: 18, model_revision: 5, items: [], section_states: [{ section: "conceptual", state: "failed" }],
+    });
     await user.click(screen.getByRole("button", { name: "Refresh runs" }));
     await waitFor(() => {
       expect(api.listWorkflowRuns.mock.calls.length).toBeGreaterThan(listCalls);
@@ -436,6 +476,8 @@ describe("Workflow Run monitor", () => {
     expect(screen.getByRole("progressbar", {
       name: "Conceptual · object contribution progress: 10 of 80",
     })).toHaveAttribute("value", "10");
+    await waitFor(() => expect(sectionState).toHaveTextContent("failed"));
+    expect(readOverview).toHaveBeenCalledTimes(overviewCalls + 1);
   });
 
   it("renders ordered stage milestones with counts and findings", async () => {
@@ -626,6 +668,7 @@ function renderMonitor(
   onApplied: () => Promise<void>,
   workflow: "analysis" | "conceptual" | "validation" | "code_generation" = "conceptual",
   focusRunId: number | null = 1048,
+  readOverview?: ModelsApi["readModelOverview"],
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -635,6 +678,7 @@ function renderMonitor(
   document.body.append(appRoot);
   const monitor = (nextFocusRunId: number | null) => (
     <QueryClientProvider client={queryClient}>
+      {readOverview ? <SectionStatus readOverview={readOverview} /> : null}
       <WorkflowRunMonitor
         api={api}
         tenantId={7}
@@ -657,6 +701,14 @@ function renderMonitor(
       monitor(nextFocusRunId),
     ),
   };
+}
+
+function SectionStatus({ readOverview }: { readOverview: ModelsApi["readModelOverview"] }) {
+  const query = useQuery({ queryKey: ["model-overview", 7, 18], queryFn: () => readOverview(7, 18),
+    staleTime: 30_000, refetchOnWindowFocus: false });
+  return <output aria-label="Conceptual section state">
+    {query.data?.section_states?.find((entry) => entry.section === "conceptual")?.state ?? "Loading"}
+  </output>;
 }
 
 function monitorApi(options: {

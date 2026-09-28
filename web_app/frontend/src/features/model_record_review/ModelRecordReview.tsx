@@ -3,6 +3,18 @@ import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
 import type { ModelRecordReviewApi, ModelReviewCommand, ModelReviewDataset } from "./api";
+import "./model-review.css";
+
+const deletionSections = [
+  { label: "Conceptual", datasets: /^conceptual_/ },
+  { label: "Logical", datasets: /^logical_/ },
+  { label: "Dimensional", datasets: /^dimensional_/ },
+  { label: "Mapping", datasets: /^mapping_/ },
+  { label: "Code generation", datasets: /^generated_/ },
+  { label: "Validation", datasets: /^validation_/ },
+  { label: "Assertions", datasets: /^modeling_assertion/ },
+  { label: "Other records", datasets: /.*/ },
+] as const;
 
 export function ModelRecordReview({
   api, tenantId, modelId, modelRevision, dataset, selectedIds, hasTenantLock, disabled, onApplied, actions = ["lock", "unlock", "deactivate", "reactivate"],
@@ -114,6 +126,24 @@ export function ReviewDialog({
   const items = previewQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const stale = modelRevision !== command.expected_model_revision;
   const deleting = command.action === "delete";
+  const deletionGroups = deleting ? [...new Set([
+    ...Object.keys(preview?.changes_by_dataset ?? {}), ...items.map((item) => item.dataset),
+  ])].map((dataset) => {
+    const records = items.filter((item) => item.dataset === dataset);
+    return { dataset, records, count: preview?.changes_by_dataset?.[dataset] ?? records.length,
+      section: deletionSections.find((section) => section.datasets.test(dataset))!.label,
+      label: dataset.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase()) };
+  }) : [];
+  const deletionWorkflows = deletionSections.map(({ label }) => {
+    const groups = deletionGroups.filter((group) => group.section === label).sort((left, right) => {
+      const kinds = ["entity", "object", "attribute", "relationship", "submodel"];
+      const leftKind = kinds.findIndex((kind) => left.dataset.endsWith(`_${kind}`));
+      const rightKind = kinds.findIndex((kind) => right.dataset.endsWith(`_${kind}`));
+      return (leftKind < 0 ? kinds.length : leftKind) - (rightKind < 0 ? kinds.length : rightKind)
+        || left.dataset.localeCompare(right.dataset);
+    });
+    return { label, groups, count: groups.reduce((sum, group) => sum + group.count, 0) };
+  }).filter((section) => section.groups.length);
   const canApply = hasTenantLock && !stale && preview?.can_apply && preview.action_count > 0
     && !previewQuery.isError && !previewQuery.isFetching && !applyMutation.isPending
     && !applyMutation.isError;
@@ -138,7 +168,13 @@ export function ReviewDialog({
           if (event.key === "Escape" && !cannotClose) onClose();
           if (event.key !== "Tab") return;
           const elements = [...(dialog.current?.querySelectorAll<HTMLElement>("*") ?? [])]
-            .filter((element) => element.matches("button:not(:disabled), [tabindex='0']"));
+            .filter((element) => element.matches("button:not(:disabled), summary, [tabindex='0']"))
+            .filter((element) => {
+              for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+                if (parent.matches("details:not([open])") && parent.querySelector("summary") !== element) return false;
+              }
+              return true;
+            });
           if (event.shiftKey && (document.activeElement === elements[0] || document.activeElement === dialog.current)) {
             event.preventDefault(); elements.at(-1)?.focus();
           } else if (!event.shiftKey && document.activeElement === elements.at(-1)) {
@@ -159,22 +195,51 @@ export function ReviewDialog({
           {previewQuery.isError ? <p role="alert">{failureMessage(previewQuery.error, false)}</p> : null}
           {stale ? <p role="alert">The Model changed. Close this preview and refresh before reviewing again.</p> : null}
           {!hasTenantLock ? <p role="alert">Tenant Lock required to apply this review.</p> : null}
-          {command.layer ? <p>{command.layer === "conceptual"
-            ? `This includes every ${deleting ? "" : "active "}Conceptual object, relationship, and support link, across all pages and filters.`
-            : `This includes every ${deleting ? "" : "active "}${command.layer === "logical" ? "Logical" : "Dimensional"} entity, attribute, relationship, and submodel, including memberships and support records, across all pages and filters.`}</p> : null}
-          {deleting ? <p className="model-delete-warning">Permanently deletes the listed records and their dependent records, including inactive ones. This cannot be undone. Locked records must be unlocked first.</p> : null}
+          {command.layer ? <p>{deleting ? "Includes all records in this layer, across pages and filters." : command.layer === "conceptual"
+            ? "This includes every active Conceptual object, relationship, and support link, across all pages and filters."
+            : `This includes every active ${command.layer === "logical" ? "Logical" : "Dimensional"} entity, attribute, relationship, and submodel, including memberships and support records, across all pages and filters.`}</p> : null}
+          {deleting ? <p className="model-delete-warning">Permanently deletes these records, including inactive records. This cannot be undone. Unlock locked records first.</p> : null}
           {command.action === "deactivate" ? <p>Deactivation keeps records in the database and excludes them from active workflows. You can activate them again. Required dependent status changes are listed below.</p> : null}
           {preview ? <>
-            {preview.changes_by_dataset ? <details className="model-review-breakdown"><summary>Counts by record type</summary><dl className="detail-fact-grid">{Object.entries(preview.changes_by_dataset).map(([dataset, count]) => <div key={dataset}><dt>{dataset.replaceAll("_", " ")}</dt><dd>{count}</dd></div>)}</dl></details> : null}
-            {preview.warnings?.map((warning) => <p className="field-help" key={warning}>{warning}</p>)}
-            <p>{preview.action_count} {preview.action_count === 1 ? "change" : "changes"}: {preview.action_count - preview.additional_change_count} selected,
-              {" "}{preview.additional_change_count} required by dependencies.</p>
+            {!deleting && preview.changes_by_dataset ? <details className="model-review-breakdown"><summary>Counts by record type</summary><dl className="detail-fact-grid">{Object.entries(preview.changes_by_dataset).map(([dataset, count]) => <div key={dataset}><dt>{dataset.replaceAll("_", " ")}</dt><dd>{count}</dd></div>)}</dl></details> : null}
+            {!deleting ? <>
+              {preview.warnings?.map((warning) => <p className="field-help" key={warning}>{warning}</p>)}
+              <p>{preview.action_count} {preview.action_count === 1 ? "change" : "changes"}: {preview.action_count - preview.additional_change_count} selected,
+                {" "}{preview.additional_change_count} required by dependencies.</p>
+            </> : <p className="model-delete-count">{preview.action_count} {preview.action_count === 1 ? "record" : "records"} to delete</p>}
             {preview.issues.length ? <div role="alert">
               <p>This review is blocked. Resolve these issues, then preview again.</p>
               <ul>{preview.issues.map((issue, index) => <li key={index}>{issue.message}</li>)}</ul>
               {preview.issue_count > preview.issues.length ? <p>{preview.issue_count} issues in total.</p> : null}
             </div> : null}
-            <div className="workflow-table-scroll table-scroll" tabIndex={0} aria-label="Review changes">
+            {deleting ? <section className="model-delete-sections" aria-label="Records to delete">
+              {deletionWorkflows.map((workflow) => <details key={workflow.label} className="model-delete-section model-delete-workflow"
+                open={workflow.groups.some((group) => group.records.some((item) => item.is_locked))}>
+                <summary tabIndex={0}><span>{workflow.label}</span><span>{workflow.count} {workflow.count === 1 ? "record" : "records"}</span></summary>
+                <div className="model-delete-record-types">
+                {workflow.groups.map(({ dataset, label, records, count }) => <details key={dataset} className="model-delete-section" open={records.some((item) => item.is_locked)}>
+                <summary tabIndex={0}><span>{label}</span><span>{count} {count === 1 ? "record" : "records"}</span></summary>
+                {records.length ? <div className="workflow-table-scroll table-scroll" tabIndex={0} aria-label={`${label} affected records`}>
+                  <table aria-label={`${label} affected records`}>
+                    <thead><tr><th scope="col">Record</th><th scope="col">Status</th><th scope="col">Lock</th></tr></thead>
+                    <tbody>{records.map((item) => <tr key={item.record_id}>
+                      <td><strong>{item.label}</strong></td>
+                      <td>{item.status}</td>
+                      <td>{item.is_locked ? "Locked" : "Open"}
+                        {item.is_locked && item.can_unlock !== false ? <button className="text-action" type="button"
+                          disabled={cannotClose || stale || !hasTenantLock}
+                          onClick={() => onReview({ dataset: item.dataset as ModelReviewDataset, record_ids: [item.record_id],
+                            action: "unlock", expected_model_revision: command.expected_model_revision })}
+                        >Review unlock for {item.label}</button> : null}
+                      </td>
+                    </tr>)}</tbody>
+                  </table>
+                </div> : <p className="field-help">Details not loaded yet.</p>}
+                {records.length < count ? <p className="field-help">{records.length} of {count} records loaded. Use Load more affected records below to continue.</p> : null}
+                </details>)}
+                </div>
+              </details>)}
+            </section> : <div className="workflow-table-scroll table-scroll" tabIndex={0} aria-label="Review changes">
               <table aria-label="Review changes">
                 <thead><tr><th>Record</th><th>Change</th><th>Reason</th></tr></thead>
                 <tbody>{items.map((item) => <tr key={`${item.dataset}:${item.record_id}`}>
@@ -195,11 +260,15 @@ export function ReviewDialog({
                   </td>
                 </tr>)}</tbody>
               </table>
-            </div>
+            </div>}
             <p>Showing {items.length} of {preview.total_record_count} affected records.</p>
             {previewQuery.hasNextPage ? <button className="button button-secondary button-small" type="button"
               disabled={previewQuery.isFetching || cannotClose || stale}
               onClick={() => void previewQuery.fetchNextPage()}>Load more affected records</button> : null}
+            {deleting && Boolean(preview.warnings?.length) ? <details className="model-delete-notes">
+              <summary tabIndex={0}>Scope notes</summary>
+              <ul>{preview.warnings?.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+            </details> : null}
           </> : null}
           {applyMutation.isError ? <p role="alert">{failureMessage(applyMutation.error, retryable)}</p> : null}
           <div className="workflow-command-actions">
