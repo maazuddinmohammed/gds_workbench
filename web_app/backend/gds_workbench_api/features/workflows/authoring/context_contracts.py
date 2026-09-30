@@ -325,14 +325,12 @@ INPUT_SHAPES: dict[str, Any] = {
         },
     },
     "object_relationship_context": {
-        "description": "Existing applied relationships grouped by "
-        "each scoped physical Object. Incoming matches "
-        "the to-Object; outgoing matches the "
-        "from-Object. Include groups with empty "
-        "arrays. Each relationship retains all 17 "
-        "approved "
-        "endpoint/kind/confidence/basis/status/lock "
-        "fields and excludes validation fields.",
+        "description": "Existing applied relationships touching each scoped physical Object. "
+        "Incoming matches the to-Object; outgoing matches the from-Object. Include empty "
+        "groups. Preserve endpoint, hypothesis, lifecycle, lock and recorded validation "
+        "fields. Validation outcome and aggregate counts are saved evidence, not a fresh "
+        "measurement; all-null validation fields mean unvalidated. An endpoint outside "
+        "object_context is contextual only and does not become an eligible authoring source.",
         "schema": {
             "type": "array",
             "items": {"$ref": "#/$defs/object_relationship_context_entry"},
@@ -392,6 +390,43 @@ INPUT_SHAPES: dict[str, Any] = {
                                 "unknown",
                             ]
                         },
+                        "validation_policy_version": {
+                            "type": ["string", "null"],
+                            "minLength": 1,
+                            "maxLength": 50,
+                            "pattern": r"^[0-9]+\.[0-9]+\.[0-9]+$",
+                        },
+                        "validation_result": {
+                            "enum": ["supported", "inconclusive", "unsupported", None]
+                        },
+                        "validation_source_non_null_count": {
+                            "type": ["integer", "null"],
+                            "minimum": 0,
+                        },
+                        "validation_source_distinct_count": {
+                            "type": ["integer", "null"],
+                            "minimum": 0,
+                        },
+                        "validation_target_non_null_count": {
+                            "type": ["integer", "null"],
+                            "minimum": 0,
+                        },
+                        "validation_target_distinct_count": {
+                            "type": ["integer", "null"],
+                            "minimum": 0,
+                        },
+                        "validation_source_missing_target_count": {
+                            "type": ["integer", "null"],
+                            "minimum": 0,
+                        },
+                        "validation_unused_target_count": {
+                            "type": ["integer", "null"],
+                            "minimum": 0,
+                        },
+                        "validation_duplicate_target_key_count": {
+                            "type": ["integer", "null"],
+                            "minimum": 0,
+                        },
                         "analysis_result_status": {"enum": ["active", "inactive", "deprecated"]},
                         "analysis_result_is_locked": {"type": "boolean"},
                     },
@@ -412,6 +447,15 @@ INPUT_SHAPES: dict[str, Any] = {
                         "relationship_confidence",
                         "relationship_basis",
                         "inferred_cardinality",
+                        "validation_policy_version",
+                        "validation_result",
+                        "validation_source_non_null_count",
+                        "validation_source_distinct_count",
+                        "validation_target_non_null_count",
+                        "validation_target_distinct_count",
+                        "validation_source_missing_target_count",
+                        "validation_unused_target_count",
+                        "validation_duplicate_target_key_count",
                         "analysis_result_status",
                         "analysis_result_is_locked",
                     ],
@@ -3932,6 +3976,11 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         "logical_entity_scd_type": "logical.logical_entity_scd_type",
     },
     "dimensional": {
+        "source_context": "source_context",
+        "object_context": "object_context",
+        "object_attribute_context": "object_attribute_context",
+        "ingestion_mapping": "ingestion_mapping",
+        "object_relationship_context": "object_relationship_context",
         "gds_context": "gds_context",
         "logical_submodel_list": "logical_submodel_list",
         "logical_submodels": "logical_submodels",
@@ -5699,11 +5748,78 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
 }
 
 
+# Use one complete saved validation example in each physical modeling workflow.
+# These are aggregate measurements, never sample source rows.
+for _relationship_workflow in ("analysis", "conceptual", "logical"):
+    _relationship_groups = INPUT_EXAMPLES[_relationship_workflow]["object_relationship_context"]
+    _relationship_attribute = (
+        "customer_id" if _relationship_workflow == "logical" else "CustomerCode"
+    )
+    _relationship_example = {
+        **{
+            f"{side}_{name}": value
+            for side, group in zip(("from", "to"), _relationship_groups, strict=True)
+            for name, value in group.items()
+            if name not in {"incoming_relationships", "outgoing_relationships"}
+        },
+        "from_attribute_name": _relationship_attribute,
+        "to_attribute_name": _relationship_attribute,
+        "relationship_kind": "reference",
+        "relationship_confidence": "high",
+        "relationship_basis": "The source definition identifies the order's customer account.",
+        "inferred_cardinality": "many_to_one",
+        "analysis_result_status": "active",
+        "analysis_result_is_locked": False,
+        "validation_policy_version": "1.0.0",
+        "validation_result": "supported",
+        "validation_source_non_null_count": 20,
+        "validation_source_distinct_count": 10,
+        "validation_target_non_null_count": 10,
+        "validation_target_distinct_count": 10,
+        "validation_source_missing_target_count": 0,
+        "validation_unused_target_count": 0,
+        "validation_duplicate_target_key_count": 0,
+    }
+    _relationship_groups[0]["outgoing_relationships"] = [deepcopy(_relationship_example)]
+    _relationship_groups[1]["incoming_relationships"] = [deepcopy(_relationship_example)]
+
+# The selected Logical Order traces to Orders only. Its saved relationship to
+# Customers remains contextual without making that second Object a selected source.
+for _physical_input in (
+    "source_context",
+    "object_context",
+    "object_attribute_context",
+    "ingestion_mapping",
+    "object_relationship_context",
+):
+    INPUT_EXAMPLES["dimensional"][_physical_input] = deepcopy(
+        INPUT_EXAMPLES["logical"][_physical_input][:1]
+    )
+
+
 def workflow_input_contracts(workflow: str) -> dict[str, dict[str, Any]]:
-    return {
+    contracts = {
         name: {**deepcopy(INPUT_SHAPES[shape]), "example": deepcopy(INPUT_EXAMPLES[workflow][name])}
         for name, shape in WORKFLOW_INPUTS.get(workflow, {}).items()
     }
+    if workflow == "dimensional":
+        for name in (
+            "source_context",
+            "object_context",
+            "object_attribute_context",
+            "ingestion_mapping",
+            "object_relationship_context",
+        ):
+            contracts[name]["description"] = (
+                "Read-only physical support traced from active lineage of the selected Logical "
+                "Entities/Attributes; it does not expand Dimensional authoring sources. "
+                + contracts[name]["description"]
+            )
+        contracts["object_attribute_context"]["description"] += (
+            " selected_attribute_names lists included physical evidence, "
+            "not eligible Dimensional lineage."
+        )
+    return contracts
 
 
 # The two enrichment workflows reuse the same five exact foundational shapes.

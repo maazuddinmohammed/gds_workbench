@@ -74,7 +74,7 @@ export function useMappingAttributeDocuments({ api, tenantId, modelId, items, en
   if (repeatedTarget >= 0 && ready.every((detail) => !detail.mapping_document
     || !Object.hasOwn(detail.mapping_document, "target_attribute_name")
     || detail.mapping_document.target_attribute_name === detail.target.attribute_name)) fields.splice(repeatedTarget, 1);
-  const primary = ["transformation", "steps", "transformation_steps"];
+  const primary = ["transformation_logic", "default_record", "source_columns", "transformation", "steps", "transformation_steps"];
   fields.sort((left, right) => {
     const a = primary.indexOf(left), b = primary.indexOf(right);
     return (a < 0 ? primary.length : a) - (b < 0 ? primary.length : b);

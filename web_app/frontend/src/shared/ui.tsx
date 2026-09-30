@@ -6,8 +6,11 @@ import { initials } from "./presentation";
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <div className={compact ? "brand is-compact" : "brand"} aria-label="Atlas">
-      <span className="brand-mark">A</span>
-      <strong>Atlas</strong>
+      <svg className="brand-mark" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+        <path d="M4 34 17 5h6l13 29h-7L20 13l-9 21Z" />
+        <path className="brand-mark-accent" d="m14 25 12 0 3 6H11Z" />
+      </svg>
+      <strong>ATLAS</strong>
     </div>
   );
 }

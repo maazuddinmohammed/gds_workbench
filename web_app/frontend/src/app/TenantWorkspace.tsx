@@ -47,17 +47,21 @@ export function TenantWorkspace({
     <div className={`app-shell page-enter${globalNavigationCollapsed ? " is-global-nav-collapsed" : ""}`}>
       <header className="topbar">
         <Brand compact />
-        <div className="tenant-context">
-          <strong className="tenant-context-name">{home.tenant.tenant_name}</strong>
+        <dl className="tenant-context" aria-label="Current workspace">
+          <div className="tenant-context-item">
+            <dt>Tenant</dt>
+            <dd><strong className="tenant-context-name" title={home.tenant.tenant_name}>{home.tenant.tenant_name}</strong></dd>
+          </div>
           {model ? (
-            <>
-              <span className="context-divider" aria-hidden="true" />
-              <small>Model</small>
-              <strong className="model-context-name">{model.model_name}</strong>
-              <span className="tenant-code-badge">r{model.model_revision}</span>
-            </>
+            <div className="tenant-context-item model-context">
+              <dt>Model</dt>
+              <dd>
+                <strong className="model-context-name" title={model.model_name}>{model.model_name}</strong>
+                <span className="tenant-code-badge" aria-label={`Revision ${model.model_revision}`}>r{model.model_revision}</span>
+              </dd>
+            </div>
           ) : null}
-        </div>
+        </dl>
         <div className="topbar-actions">
           <button
             aria-controls="workspace-navigation-links"

@@ -1,3 +1,4 @@
+import { WorkflowFilters } from "../workflows/WorkflowCommandCenter";
 import { reviewSelectionColumn } from "../model_record_review/selection";
 import { useMemo, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
@@ -204,7 +205,7 @@ function LogicalEntityFilterBar({
     }),
   });
   return (
-    <form
+    <WorkflowFilters><form
       className="workflow-filterbar logical-filterbar logical-entity-filterbar"
       aria-label="Filter Logical Entities"
       onSubmit={(event) => {
@@ -305,7 +306,7 @@ function LogicalEntityFilterBar({
           Apply Entity filters
         </button>
       </div>
-    </form>
+    </form></WorkflowFilters>
   );
 }
 
@@ -516,7 +517,7 @@ function LogicalCollectionFilterBar<T extends LogicalFilters>({
     } as T),
   });
   return (
-    <form
+    <WorkflowFilters><form
       className={`workflow-filterbar logical-filterbar${includeEntity ? " has-entity-filter" : ""}`}
       aria-label={`Filter Logical ${kind}s`}
       onSubmit={(event) => {
@@ -604,7 +605,7 @@ function LogicalCollectionFilterBar<T extends LogicalFilters>({
           Apply {kind} filters
         </button>
       </div>
-    </form>
+    </form></WorkflowFilters>
   );
 }
 

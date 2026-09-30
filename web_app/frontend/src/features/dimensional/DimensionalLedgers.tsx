@@ -1,3 +1,4 @@
+import { WorkflowFilters } from "../workflows/WorkflowCommandCenter";
 import { reviewSelectionColumn } from "../model_record_review/selection";
 import { useMemo, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
@@ -198,7 +199,7 @@ function DimensionalFilterBar({
     }),
   });
   return (
-    <form
+    <WorkflowFilters><form
       className="workflow-filterbar dimensional-filterbar"
       aria-label="Filter Dimensional Objects"
       onSubmit={(event) => {
@@ -268,7 +269,7 @@ function DimensionalFilterBar({
           Apply Object filters
         </button>
       </div>
-    </form>
+    </form></WorkflowFilters>
   );
 }
 
@@ -489,7 +490,7 @@ function DimensionalCollectionFilterBar<T extends DimensionalAttributeFilters>({
     } as T),
   });
   return (
-    <form
+    <WorkflowFilters><form
       className="workflow-filterbar dimensional-filterbar has-entity-filter"
       aria-label={`Filter Dimensional ${kind}s`}
       onSubmit={(event) => {
@@ -575,7 +576,7 @@ function DimensionalCollectionFilterBar<T extends DimensionalAttributeFilters>({
           Apply {kind} filters
         </button>
       </div>
-    </form>
+    </form></WorkflowFilters>
   );
 }
 

@@ -7,6 +7,7 @@ from typing import Any, LiteralString, cast
 
 import pytest
 from gds_workbench_api.database import WebPostgresDatabase
+from gds_workbench_api.features.code_generation.context import _assemble_context
 from gds_workbench_api.features.validation.read_service import _CURRENT_CONTEXT_SQL
 from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
     downstream_input_contracts,
@@ -94,13 +95,22 @@ async def test_code_and_validation_track_entity_and_source_metadata(
         initial = await current()
         assert await current() == initial
         source_context = initial["source_context"]
-        input_plan = _plan(selected_object_ids=(scope.plan.pair.modeled_entity_id,))
+        input_plan = _plan(selected_object_ids=(scope.plan.pair.modeled_entity_id,)).model_copy(
+            update={"modeled_entity_type": scope.plan.modeled_entity_type}
+        )
+        agent_context = _assemble_context(
+            plan=input_plan,
+            rows=[
+                {
+                    **initial,
+                    "mapping_count": len(source_context["object_mappings"]),
+                    "attribute_mapping_count": len(source_context["attribute_mappings"]),
+                    "applied_artifacts": [],
+                }
+            ],
+        ).agent_context
         prefix = "workflow.code_generation.common.sql_generation.inputs."
-        input_contracts = {
-            name: contract
-            for name, contract in downstream_input_contracts("code_generation").items()
-            if name != "sql_generation_guide"
-        }
+        input_contracts = downstream_input_contracts("code_generation")
         input_stage = input_plan.stages[0].model_copy(
             update={
                 "variables": tuple(
@@ -121,12 +131,12 @@ async def test_code_and_validation_track_entity_and_source_metadata(
             values = project_prompt_input_values(
                 plan=runtime_plan,
                 stage=input_stage,
-                context={"targets": [{"target_ref": "target_1", "context": source_context}]},
+                context=agent_context,
                 resolver_values={},
             )
             projected = project_downstream_inputs(
                 "code_generation",
-                {"targets": [{"target_ref": "target_1", "context": source_context}]},
+                cast(dict[str, Any], agent_context),
             )
             assert values[prefix + "source_metadata"] == projected["source_metadata"]
             assert values[prefix + "target_metadata"] == projected["target_metadata"]
@@ -147,7 +157,9 @@ async def test_code_and_validation_track_entity_and_source_metadata(
                 assert validator.is_valid(values[prefix + name])
         source_id_field = "modeled_entity_id" if dimensional else "object_id"
         assert [item["object"][source_id_field] for item in source_context["physical_sources"]] == (
-            [scope.logical_entity_id] if dimensional else [scope.bronze_object_id, scope.source_object_id]
+            [scope.logical_entity_id]
+            if dimensional
+            else [scope.bronze_object_id, scope.source_object_id]
         )
         assert mapping_context.sources
         assert [item["object"]["zone_code"] for item in source_context["physical_sources"]] == (
@@ -201,26 +213,76 @@ async def test_code_and_validation_track_entity_and_source_metadata(
             )
         assert (
             len(
-                next(row for row in validation_before if row["modeled_entity_id"] == target["modeled_entity_id"])[
-                    "generated_code"
-                ]
+                next(
+                    row
+                    for row in validation_before
+                    if row["modeled_entity_id"] == target["modeled_entity_id"]
+                )["generated_code"]
             )
             == 1
         )
 
-        changes: list[tuple[LiteralString, int]] = [
-            ("UPDATE workflow.dimensional_entity SET dimensional_entity_definition = 'Changed target.' WHERE dimensional_entity_id = %s", scope.plan.pair.modeled_entity_id),
-            ("UPDATE workflow.dimensional_attribute SET dimensional_attribute_data_type = 'string' WHERE dimensional_entity_id = %s", scope.plan.pair.modeled_entity_id),
-            ("UPDATE workflow.logical_entity SET logical_entity_definition = 'Changed Logical source.' WHERE logical_entity_id = %s", scope.logical_entity_id),
-            ("UPDATE workflow.logical_attribute SET logical_attribute_definition = 'Changed source attribute.' WHERE logical_entity_id = %s", scope.logical_entity_id),
-        ] if dimensional else [
-            ("UPDATE workflow.logical_entity SET logical_entity_definition = 'Changed target.' WHERE logical_entity_id = %s", scope.plan.pair.modeled_entity_id),
-            ("UPDATE workflow.logical_attribute SET logical_attribute_data_type = 'string' WHERE logical_entity_id = %s", scope.plan.pair.modeled_entity_id),
-            ("UPDATE core.attribute SET attribute_data_type = 'string' WHERE object_id = %s", scope.bronze_object_id),
-            ("UPDATE core.attribute SET attribute_inferred_data_type = 'decimal(18,2)' WHERE object_id = %s", scope.bronze_object_id),
-            ("UPDATE core.attribute SET attribute_description = 'Changed source attribute.' WHERE object_id = %s", scope.bronze_object_id),
-            ("UPDATE core.object SET object_description = 'Changed source.' WHERE object_id = %s", scope.bronze_object_id),
-        ]
+        changes: list[tuple[LiteralString, int]] = (
+            [
+                (
+                    "UPDATE workflow.dimensional_entity "
+                    "SET dimensional_entity_definition = 'Changed target.' "
+                    "WHERE dimensional_entity_id = %s",
+                    scope.plan.pair.modeled_entity_id,
+                ),
+                (
+                    "UPDATE workflow.dimensional_attribute "
+                    "SET dimensional_attribute_data_type = 'string' "
+                    "WHERE dimensional_entity_id = %s",
+                    scope.plan.pair.modeled_entity_id,
+                ),
+                (
+                    "UPDATE workflow.logical_entity "
+                    "SET logical_entity_definition = 'Changed Logical source.' "
+                    "WHERE logical_entity_id = %s",
+                    scope.logical_entity_id,
+                ),
+                (
+                    "UPDATE workflow.logical_attribute "
+                    "SET logical_attribute_definition = 'Changed source attribute.' "
+                    "WHERE logical_entity_id = %s",
+                    scope.logical_entity_id,
+                ),
+            ]
+            if dimensional
+            else [
+                (
+                    "UPDATE workflow.logical_entity "
+                    "SET logical_entity_definition = 'Changed target.' "
+                    "WHERE logical_entity_id = %s",
+                    scope.plan.pair.modeled_entity_id,
+                ),
+                (
+                    "UPDATE workflow.logical_attribute SET logical_attribute_data_type = 'string' "
+                    "WHERE logical_entity_id = %s",
+                    scope.plan.pair.modeled_entity_id,
+                ),
+                (
+                    "UPDATE core.attribute SET attribute_data_type = 'string' WHERE object_id = %s",
+                    scope.bronze_object_id,
+                ),
+                (
+                    "UPDATE core.attribute SET attribute_inferred_data_type = 'decimal(18,2)' "
+                    "WHERE object_id = %s",
+                    scope.bronze_object_id,
+                ),
+                (
+                    "UPDATE core.attribute SET attribute_description = 'Changed source attribute.' "
+                    "WHERE object_id = %s",
+                    scope.bronze_object_id,
+                ),
+                (
+                    "UPDATE core.object SET object_description = 'Changed source.' "
+                    "WHERE object_id = %s",
+                    scope.bronze_object_id,
+                ),
+            ]
+        )
         prior = initial
         for query, record_id in changes:
             with web_postgres_database.connect_owner() as connection:
@@ -239,7 +301,11 @@ async def test_code_and_validation_track_entity_and_source_metadata(
             validation_after = await transaction.fetch_all(
                 _CURRENT_CONTEXT_SQL, (scope.tenant_id, scope.plan.model_id)
             )
-        stale = next(row for row in validation_after if row["modeled_entity_id"] == target["modeled_entity_id"])
+        stale = next(
+            row
+            for row in validation_after
+            if row["modeled_entity_id"] == target["modeled_entity_id"]
+        )
         assert stale["code_input_digest"] == prior["code_input_digest"]
         assert stale["generated_code"] == []
 
@@ -251,8 +317,14 @@ async def test_code_and_validation_track_entity_and_source_metadata(
                 )
             foreign = await current()
             assert foreign["code_input_digest"] != prior["code_input_digest"]
-            remaining = {item["object"]["object_id"]: item["object"] for item in foreign["source_context"]["physical_sources"]}
-            assert remaining[physical_source["object_id"]]["source_tenant_id"] == scope.placement_tenant_id
+            remaining = {
+                item["object"]["object_id"]: item["object"]
+                for item in foreign["source_context"]["physical_sources"]
+            }
+            assert (
+                remaining[physical_source["object_id"]]["source_tenant_id"]
+                == scope.placement_tenant_id
+            )
             assert await current() == foreign
     finally:
         await runtime.close()

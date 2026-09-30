@@ -5,7 +5,9 @@ from typing import Any, LiteralString, Protocol, cast
 from uuid import UUID
 
 from gds_workbench_api.features.mapping import preparation_repository as preparation
-from gds_workbench_api.features.mapping.read_service import _MAPPING_GENERATION_TARGETS_SQL
+from gds_workbench_api.features.mapping.read_service import (
+    _MAPPING_GENERATION_TARGETS_SQL,
+)
 from psycopg import Connection
 
 
@@ -49,6 +51,8 @@ def test_mapping_preparation_queries_compile_against_disposable_postgres(
             _sql("_MAPPING_SOURCE_CONTEXT_SQL"),
             (18, 501, "logical_entity", 31),
         ),
+        (_sql("_MAPPING_UPSTREAM_PHYSICAL_CONTEXT_SQL"), (501, 18, 18, 31)),
+        (_sql("_MAPPING_UPSTREAM_TEMPLATE_IDS_SQL"), (18, [401, 402], 31)),
         (_sql("_MAPPING_OUTPUT_TEMPLATE_CONTEXT_SQL"), ([801, 802],)),
     )
 

@@ -28,7 +28,10 @@ describe("Model Logical", () => {
     await user.click(within(screen.getByRole("table", { name: "Source mappings" })).getAllByText("Show details")[0]!);
     expect(screen.getByText("Customer domain")).toBeVisible();
     expect(screen.getByText("crm-prod")).toBeVisible();
-    expect(screen.getAllByText("bronze.customer_raw")).toHaveLength(1);
+    const sources = screen.getByRole("table", { name: "Source mappings" });
+    expect(within(sources).getAllByRole("columnheader").slice(0, 3).map((cell) => cell.textContent)).toEqual(["Order", "Schema", "Object / entity"]);
+    expect(within(sources).getByRole("cell", { name: "bronze" })).toBeVisible();
+    expect(within(sources).getByRole("cell", { name: "customer_raw" })).toBeVisible();
     const sourceHeading = screen.getByRole("heading", { name: "Source mappings" });
     const membershipHeading = screen.getByRole("heading", { name: "Submodel membership" });
     expect(sourceHeading.compareDocumentPosition(membershipHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -65,7 +68,9 @@ describe("Model Logical", () => {
     expect(screen.getByText("Surrogate key").nextElementSibling).toHaveTextContent("Yes");
     expect(screen.queryByText("Primary key")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Source mappings" })).toBeVisible();
-    expect(screen.getAllByText("bronze.customer_raw.customer_id").length).toBeGreaterThan(0);
+    const sourceTable = screen.getByRole("table", { name: "Source mappings" });
+    for (const name of ["bronze", "customer_raw", "customer_id"]) expect(within(sourceTable).getByRole("cell", { name })).toBeVisible();
+    expect(within(sourceTable).getByRole("columnheader", { name: "Attribute" })).toBeVisible();
 
     await user.click(screen.getByRole("link", { name: "Back to Entity" }));
     expect(await screen.findByRole("table", { name: "Entity Attributes" })).toBeVisible();
@@ -85,6 +90,7 @@ describe("Model Logical", () => {
     const filtered = render(<WorkbenchApp router={logicalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Logical Entities" });
 
+    if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
     await user.type(screen.getByLabelText("Entity name prefix"), " Customer ");
     await user.selectOptions(screen.getByLabelText("Entity Submodel"), "91");
     await user.selectOptions(screen.getByLabelText("Entity status"), "inactive");
@@ -99,7 +105,7 @@ describe("Model Logical", () => {
     expect(screen.getByLabelText("Entity name prefix")).toHaveValue("");
     expect(screen.getByLabelText("Entity Submodel")).toHaveValue("");
     expect(screen.getByLabelText("Entity lock")).toHaveValue("");
-    expect(screen.getByRole("button", { name: "Activate selected" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Activate selected" })).not.toBeInTheDocument();
     expect(fetcher).toHaveBeenCalledWith(
       "/api/v1/tenants/7/models/18/logical/entities?status=active&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
@@ -132,14 +138,14 @@ describe("Model Logical", () => {
     );
     await screen.findByRole("table", { name: "Logical Entities" });
     expect(screen.getByRole("button", { name: "Run Logical" })).toBeDisabled();
-    expect(screen.getByText("Tenant Lock required to run")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Run Logical" })).toHaveAttribute("title", "Tenant Lock required");
     unlocked.unmount();
 
     const fetcher = logicalFetchStub();
     const user = userEvent.setup();
     render(<WorkbenchApp router={logicalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Logical Entities" });
-    expect(screen.getByText("Tenant Lock held")).toBeVisible();
+    expect(screen.getByText("Tenant Lock held by you")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Run Logical" }));
     expect(await screen.findByRole("heading", { name: "Configure Logical run" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Create and run Logical" }));

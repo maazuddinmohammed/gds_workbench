@@ -12,7 +12,9 @@ from gds_etl_workbench.application.mapping_context import (
 from jsonschema import Draft202012Validator
 from tests.web_backend.mapping_fixtures import mapping_preparation
 
-from gds_workbench_api.features.mapping.execution_context import build_mapping_execution_context
+from gds_workbench_api.features.mapping.execution_context import (
+    build_mapping_execution_context,
+)
 from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
     project_downstream_inputs,
 )
@@ -47,7 +49,10 @@ def test_schema_and_payload_share_exact_metadata_filter_and_opaque_boundaries() 
     schema["properties"]["nested"] = {
         "type": "object",
         "additionalProperties": False,
-        "properties": {"attribute_id": {"type": "integer"}, "attribute_name": {"type": "string"}},
+        "properties": {
+            "attribute_id": {"type": "integer"},
+            "attribute_name": {"type": "string"},
+        },
         "required": ["attribute_id", "attribute_name"],
     }
     for name in OPAQUE_CONTEXT_DOCUMENT_FIELDS:
@@ -75,13 +80,22 @@ def test_schema_and_payload_share_exact_metadata_filter_and_opaque_boundaries() 
 
 
 @pytest.mark.parametrize("layer", ["logical_entity", "dimensional_entity"])
-def test_derived_schemas_accept_real_mapping_projection_and_reject_metadata_ids(layer: Any) -> None:
+def test_derived_schemas_accept_real_mapping_projection_and_reject_metadata_ids(
+    layer: Any,
+) -> None:
     preparation = mapping_preparation(existing=True, modeled_entity_type=layer)
-    context = build_mapping_execution_context(preparation=preparation, execution_mode="one_shot")
-    values = project_downstream_inputs("mapping", cast(dict[str, Any], context.embedded_context))
+    context = build_mapping_execution_context(
+        preparation=preparation, execution_mode="one_shot"
+    )
+    values = project_downstream_inputs(
+        "mapping", cast(dict[str, Any], context.embedded_context)
+    )
     schemas = mapping_input_schemas()
     for name, schema in schemas.items():
         Draft202012Validator.check_schema(schema)
+        if name == "mapping_templates":
+            # Shared with Code/Validation, not a standalone Mapping input.
+            continue
         cast(Any, Draft202012Validator(schema)).validate(values[name])
     assert not cast(Any, Draft202012Validator(schemas["target_metadata"])).is_valid(
         {**values["target_metadata"], "entity_id": 201}
@@ -103,7 +117,9 @@ def test_derived_schemas_accept_real_mapping_projection_and_reject_metadata_ids(
         child["modeled_attribute_name"] = original_name
 
 
-def test_modeled_source_schema_keeps_logical_and_dimensional_identities_distinct() -> None:
+def test_modeled_source_schema_keeps_logical_and_dimensional_identities_distinct() -> (
+    None
+):
     preparation = mapping_preparation(modeled_entity_type="dimensional_entity")
     source = preparation.context.sources[0].model_dump(mode="json")
     schema = mapping_input_schemas()["source_evidence"]

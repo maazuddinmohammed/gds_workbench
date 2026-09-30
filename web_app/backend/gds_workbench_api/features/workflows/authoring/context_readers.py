@@ -38,10 +38,6 @@ def workflow_reader_specs(workflow: str) -> ReaderSpecs:
         ),
     }
     if workflow == "dimensional":
-        specs.pop("get_source_context")
-        specs.pop("get_object_relationships")
-        specs.pop("get_objects")
-        specs.pop("get_object_details")
         specs["get_selected_logical_entities"] = (
             "selected_logical_entities",
             "logical_entity_keys",
@@ -153,11 +149,21 @@ def reader_definitions(
             "paged. Continue with cursor alone; copy complete natural keys from prior results. "
             "Unknown keys fail; no database queries or new measurements."
         )
-        if name == "get_objects" and workflow != "dimensional":
+        if name == "get_objects":
             description = (
                 "Return scoped Objects, optionally narrowed by the full Source Connection key "
                 "from get_source_context. Bronze follows registered ingestion links and retains "
                 "actual GDS Object keys. Omitted/null selects all. Continue with cursor alone."
+            )
+        if workflow == "dimensional" and name in {
+            "get_source_context",
+            "get_objects",
+            "get_object_details",
+            "get_object_relationships",
+        }:
+            description += (
+                " Physical lineage is supporting evidence only; "
+                "it does not expand selected Logical authoring sources."
             )
         if (
             name.startswith("list_conceptual_")

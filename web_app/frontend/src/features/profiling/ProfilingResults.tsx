@@ -1,3 +1,4 @@
+import { WorkflowFilters } from "../workflows/WorkflowCommandCenter";
 import { useMemo } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
@@ -141,7 +142,7 @@ function ProfilingFilterForm({
   });
 
   return (
-    <form
+    <WorkflowFilters><form
       className="workflow-filterbar profiling-filterbar"
       aria-label="Profiling result filters"
       onSubmit={(event) => {
@@ -206,6 +207,6 @@ function ProfilingFilterForm({
         </button>
       </div>
       <SourceFilterNotice unavailable={sourceChoices.isUnavailable} />
-    </form>
+    </form></WorkflowFilters>
   );
 }

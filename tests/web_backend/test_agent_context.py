@@ -1353,8 +1353,16 @@ async def test_projected_inputs_keep_actual_keys_profiles_and_scoped_relationshi
     assert group["attributes"][0]["profile"]["row_count"] == 10
     assert group["attributes"][0]["profile"]["avg_data_length"] == 3.0
     assert group["attributes"][0]["profile"]["profiled_at"] is None
-    # The saved endpoint outside this run's selection cannot enter the agent's result context.
-    assert values["object_relationship_context"][0]["outgoing_relationships"] == []
+    # The saved outside endpoint remains contextual; it does not expand source selection.
+    relationships = values["object_relationship_context"][0]["outgoing_relationships"]
+    assert relationships == [
+        relationship.model_dump(mode="json")
+        for relationship in result.context.analysis_relationships
+    ]
+    assert len(values["object_context"]) == len(values["object_attribute_context"]) == 1
+    assert (
+        relationships[0]["to_object_name"] != values["object_context"][0]["object_name"]
+    )
     assert "read_only_dependencies" not in values
 
 

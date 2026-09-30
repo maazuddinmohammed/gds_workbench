@@ -55,9 +55,6 @@ SELECT run.workflow_run_id,
        run.code_generation_coverage_mode,
        run.code_generation_file_layout,
        run.code_generation_system_codes,
-       run.sql_generation_guide_id,
-       run.sql_generation_guide_version_id,
-       run.sql_generation_guide_digest,
        run.selected_scope_digest,
        run.selected_scope_count,
        run.agent_sdk_code,
@@ -223,12 +220,6 @@ class AgentRunPlan(BaseModel):
         | None
     ) = None
     code_generation_file_layout: Literal["combined", "per_system"] | None = None
-    sql_generation_guide_id: int | None = Field(default=None, gt=0)
-    sql_generation_guide_version_id: int | None = Field(default=None, gt=0)
-    sql_generation_guide_digest: str | None = Field(
-        default=None,
-        pattern=r"^[0-9a-f]{64}$",
-    )
     selected_scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     selected_object_ids: tuple[int, ...]
     selected_entity_ids: tuple[int, ...] = ()
@@ -242,16 +233,15 @@ class AgentRunPlan(BaseModel):
             self.workflow_execution_mode != "one_shot"
         ):
             raise ValueError("Metadata enrichment requires one-shot execution")
-        code_generation_snapshot = (
-            self.code_generation_coverage_mode,
-            self.sql_generation_guide_id,
-            self.sql_generation_guide_version_id,
-            self.sql_generation_guide_digest,
-        )
         if self.model_workflow == "code_generation":
-            if any(value is None for value in code_generation_snapshot):
+            if self.code_generation_coverage_mode is None:
                 raise ValueError("Code Generation plan snapshot is incomplete")
-        elif any(value is not None for value in code_generation_snapshot):
+            if self.code_generation_file_layout is None:
+                object.__setattr__(self, "code_generation_file_layout", "combined")
+        elif (
+            self.code_generation_coverage_mode is not None
+            or self.code_generation_file_layout is not None
+        ):
             raise ValueError("Code Generation plan snapshot is unavailable")
         entity_workflow = self.model_workflow in {"dimensional", "mapping", "code_generation"}
         selected_ids = self.selected_entity_ids if entity_workflow else self.selected_object_ids
@@ -391,9 +381,6 @@ def _assemble_plan(
         "code_generation_coverage_mode",
         "code_generation_file_layout",
         "code_generation_system_codes",
-        "sql_generation_guide_id",
-        "sql_generation_guide_version_id",
-        "sql_generation_guide_digest",
         "selected_scope_digest",
         "selected_scope_count",
         "agent_sdk_code",
@@ -523,18 +510,6 @@ def _assemble_plan(
             Literal["selected_targets", "all_eligible_targets"] | None,
             _optional_str(first, "code_generation_coverage_mode"),
         ),
-        sql_generation_guide_id=_optional_positive_int(
-            first,
-            "sql_generation_guide_id",
-        ),
-        sql_generation_guide_version_id=_optional_positive_int(
-            first,
-            "sql_generation_guide_version_id",
-        ),
-        sql_generation_guide_digest=_optional_str(
-            first,
-            "sql_generation_guide_digest",
-        ),
         selected_scope_digest=_required_str(first, "selected_scope_digest"),
         selected_object_ids=()
         if model_workflow in {"dimensional", "mapping", "code_generation"}
@@ -573,13 +548,6 @@ def _nonnegative_int(row: dict[str, Any], key: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise AgentRunPlanUnavailableError()
     return value
-
-
-def _optional_positive_int(row: dict[str, Any], key: str) -> int | None:
-    value = row.get(key)
-    if value is None:
-        return None
-    return _required_int(row, key)
 
 
 def _required_bool(row: dict[str, Any], key: str) -> bool:

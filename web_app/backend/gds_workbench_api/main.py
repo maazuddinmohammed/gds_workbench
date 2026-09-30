@@ -113,10 +113,6 @@ from gds_workbench_api.features.profiling import (
 )
 from gds_workbench_api.features.prompts import PromptService, create_prompts_router
 from gds_workbench_api.features.session import SessionService, create_session_router
-from gds_workbench_api.features.sql_generation_guides import (
-    SqlGenerationGuideService,
-    create_sql_generation_guides_router,
-)
 from gds_workbench_api.features.tenant_locks import (
     TenantLockService,
     create_tenant_lock_router,
@@ -170,7 +166,6 @@ def create_app(
     metadata_change_set_service: MetadataChangeSetService | None = None,
     output_template_service: OutputTemplateService | None = None,
     prompt_service: PromptService | None = None,
-    sql_generation_guide_service: SqlGenerationGuideService | None = None,
     profiling_review_service: ProfilingReviewService | None = None,
     profiling_workflow_service: ProfilingWorkflowService | None = None,
     analysis_review_service: AnalysisReviewService | None = None,
@@ -331,13 +326,6 @@ def create_app(
             create_prompts_router(
                 identity_provider=identity_provider,
                 service=prompt_service,
-            )
-        )
-    if sql_generation_guide_service is not None:
-        app.include_router(
-            create_sql_generation_guides_router(
-                identity_provider=identity_provider,
-                service=sql_generation_guide_service,
             )
         )
     if profiling_review_service is not None:

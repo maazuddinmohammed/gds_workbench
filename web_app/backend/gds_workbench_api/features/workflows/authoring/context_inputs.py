@@ -89,8 +89,13 @@ def project_context_inputs(
         (*natural_key(p), normalize_model_key_value(p["attribute_name"])): p
         for p in context.get("profile_provenance", [])
     }
-    selected_keys = {natural_key(s["object"]) for s in context["selected_objects"]}
-    for selected in context["selected_objects"]:
+    physical_objects = (
+        context.get("supporting_objects", [])
+        if workflow == "dimensional"
+        else context["selected_objects"]
+    )
+    selected_keys = {natural_key(s["object"]) for s in physical_objects}
+    for selected in physical_objects:
         obj = selected["object"]
         key = {name: obj[name] for name in OBJECT_FIELDS}
         values["object_context"].append(
@@ -140,11 +145,11 @@ def project_context_inputs(
             endpoints = {
                 side: {f: rel[f"{side}_{f}"] for f in OBJECT_FIELDS} for side in ("from", "to")
             }
-            if any(natural_key(endpoint) not in selected_keys for endpoint in endpoints.values()):
+            if not any(natural_key(endpoint) in selected_keys for endpoint in endpoints.values()):
                 continue
-            evidence = {
-                name: value for name, value in rel.items() if not name.startswith("validation_")
-            }
+            # Saved relationships can contextualize an unselected endpoint without
+            # adding it to the frozen Object/Attribute authoring selection.
+            evidence = deepcopy(rel)
             for side, direction in (("from", "outgoing"), ("to", "incoming")):
                 if natural_key(endpoints[side]) == natural_key(obj):
                     group[f"{direction}_relationships"].append(evidence)
@@ -154,7 +159,7 @@ def project_context_inputs(
         source_scope=[
             *assertion_source_scope,
             *context.get("source_context", []),
-            *(item["object"] for item in context["selected_objects"]),
+            *(item["object"] for item in physical_objects),
         ],
     )
     for family in ("conceptual", "logical", "dimensional"):

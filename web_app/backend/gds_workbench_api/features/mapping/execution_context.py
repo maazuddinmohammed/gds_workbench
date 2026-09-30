@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any, cast
 
+from gds_etl_workbench.application.mapping_context import without_internal_fields
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from gds_workbench_api.features.assertions.context import project_assertions
@@ -285,6 +286,7 @@ def build_mapping_execution_context(
 def _mapping_provider_context(preparation: MappingPreparation) -> JsonValue:
     plan = preparation.plan
     context = preparation.context
+    support = _mapping_support(preparation)
     provider_context = cast(
         JsonValue,
         {
@@ -305,7 +307,8 @@ def _mapping_provider_context(preparation: MappingPreparation) -> JsonValue:
                 ),
             },
             "source_system": context.source_system.model_dump(mode="json"),
-            "mapping_support": _mapping_support(preparation),
+            "mapping_support": support,
+            "mapping_support_records": _mapping_support_records(preparation, support),
             "target_dependency_graph": (context.target_dependency_graph.model_dump(mode="json")),
             "target": context.target.model_dump(mode="json"),
             "sources": [item.model_dump(mode="json") for item in context.sources],
@@ -440,6 +443,197 @@ def _mapping_support(preparation: MappingPreparation) -> dict[str, Any]:
         ],
     )
     return result
+
+
+def _mapping_support_records(
+    preparation: MappingPreparation, support: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Page evidence records independently, keeping upstream lineage out of input eligibility."""
+    kinds = {
+        "attribute_lineage": "target_attribute_lineage",
+        "modeled_relationships": "target_relationship",
+        "source_relationships": "analysis_relationship",
+        "profiles": "profile",
+        "assertions": "assertion",
+    }
+    records = [
+        {"evidence_type": kinds[name], "record": deepcopy(row)}
+        for name, rows in support.items()
+        for row in rows
+    ]
+    snapshot = preparation.snapshot
+    if snapshot is None:
+        return records
+    logical_keys = {
+        (source.object.entity_schema_name.casefold(), source.object.entity_name.casefold())
+        for source in preparation.context.sources
+        if isinstance(source.object, MappingModeledEntity)
+        and source.object.entity_type == "logical_entity"
+    }
+    if not logical_keys:
+        return records
+    physical = {
+        natural_key(source.object.model_dump()): source.object
+        for source in (*preparation.context.sources, *preparation.context.upstream_physical_sources)
+        if not isinstance(source.object, MappingModeledEntity)
+        and source.object.is_active
+        and source.object.scope_is_active
+        and source.object.tenant_is_active
+        and source.object.system_is_active
+        and source.object.connection_is_active
+    }
+    input_keys = {
+        natural_key(row.model_dump()) for row in snapshot.model_input_scope.objects if row.is_active
+    }
+    physical = {key: obj for key, obj in physical.items() if key in input_keys}
+    attribute_keys = {
+        (*key, attribute.attribute_name.casefold())
+        for key, obj in physical.items()
+        for attribute in obj.attributes
+        if attribute.is_active
+    }
+    lineage_objects: set[tuple[Any, ...]] = set()
+    lineage_attributes: set[tuple[Any, ...]] = set()
+    selected_attributes: set[tuple[str, str, str]] = set()
+    applicable_assertions = {
+        row["modeling_assertion_record_key"].casefold() for row in support["assertions"]
+    }
+    for entity in snapshot.logical.entities:
+        key = (entity.logical_entity_schema_name.casefold(), entity.logical_entity_name.casefold())
+        if key not in logical_keys or entity.logical_entity_status != "active":
+            continue
+        row = entity.model_dump(mode="json")
+        row["sources"] = []
+        for source in entity.sources:
+            if source.status != "active":
+                continue
+            if source.support_source_type == "object":
+                physical_key = natural_key(source.source_object.model_dump())
+                if physical_key not in physical:
+                    continue
+                lineage_objects.add(physical_key)
+            elif (
+                source.assertion_record.modeling_assertion_record_key.casefold()
+                not in applicable_assertions
+            ):
+                continue
+            cast(list[dict[str, Any]], row["sources"]).append(source.model_dump(mode="json"))
+        records.append({"evidence_type": "source_logical_entity", "record": row})
+    for attribute in snapshot.logical.attributes:
+        key = (
+            attribute.logical_entity_schema_name.casefold(),
+            attribute.logical_entity_name.casefold(),
+        )
+        if key not in logical_keys or attribute.logical_attribute_status != "active":
+            continue
+        selected_attributes.add((*key, attribute.logical_attribute_name.casefold()))
+        row = attribute.model_dump(mode="json")
+        row["sources"] = []
+        for source in attribute.sources:
+            if source.status != "active":
+                continue
+            if source.support_source_type == "attribute":
+                physical_key = (
+                    *natural_key(source.source_attribute.model_dump()),
+                    source.source_attribute.attribute_name.casefold(),
+                )
+                if physical_key not in attribute_keys:
+                    continue
+                lineage_attributes.add(physical_key)
+                lineage_objects.add(physical_key[:-1])
+            elif (
+                source.assertion_record.modeling_assertion_record_key.casefold()
+                not in applicable_assertions
+            ):
+                continue
+            cast(list[dict[str, Any]], row["sources"]).append(source.model_dump(mode="json"))
+        records.append({"evidence_type": "source_logical_attribute", "record": row})
+    for relationship in snapshot.logical.relationships:
+        row = relationship.model_dump(mode="json")
+        if relationship.logical_relationship_status == "active" and all(
+            (
+                row[f"{side}_logical_entity_schema_name"].casefold(),
+                row[f"{side}_logical_entity_name"].casefold(),
+                row[f"{side}_logical_attribute_name"].casefold(),
+            )
+            in selected_attributes
+            for side in ("from", "to")
+        ):
+            records.append({"evidence_type": "source_logical_relationship", "record": row})
+    system_code = preparation.context.source_system.system_code.casefold()
+    template_codes: set[str] = set()
+    for kind, mappings in (
+        ("source_object_mapping", snapshot.mapping.objects),
+        ("source_attribute_mapping", snapshot.mapping.attributes),
+    ):
+        for mapping in mappings:
+            row = mapping.model_dump(mode="json")
+            key = (
+                mapping.modeled_entity_schema_name.casefold(),
+                mapping.modeled_entity_name.casefold(),
+            )
+            status = row[
+                "object_mapping_status"
+                if kind == "source_object_mapping"
+                else "attribute_mapping_status"
+            ]
+            if (
+                mapping.modeled_entity_type != "logical_entity"
+                or key not in logical_keys
+                or mapping.source_system_code.casefold() != system_code
+                or status != "active"
+            ):
+                continue
+            if (
+                kind == "source_attribute_mapping"
+                and (*key, row["modeled_attribute_name"].casefold()) not in selected_attributes
+            ):
+                continue
+            records.append({"evidence_type": kind, "record": row})
+            if mapping.output_template_code is not None:
+                template_codes.add(mapping.output_template_code.casefold())
+    for template in preparation.context.output_templates.definitions:
+        if template.code.casefold() in template_codes:
+            records.append(
+                {
+                    "evidence_type": "source_mapping_template",
+                    "record": without_internal_fields(template.model_dump(mode="json")),
+                }
+            )
+    # Physical records are explanatory provenance only. Gold still maps Logical inputs.
+    for key, obj in physical.items():
+        if key not in lineage_objects:
+            continue
+        row = without_internal_fields(obj.model_dump(mode="json", exclude={"attributes"}))
+        records.append({"evidence_type": "physical_object", "record": row})
+        for attribute in obj.attributes:
+            if (*key, attribute.attribute_name.casefold()) in lineage_attributes:
+                row = {
+                    **{field: getattr(obj, field) for field in OBJECT_FIELDS},
+                    **without_internal_fields(attribute.model_dump(mode="json")),
+                }
+                records.append({"evidence_type": "physical_attribute", "record": row})
+    if preparation.plan.route == "dimensional_to_gold":
+        for profile in snapshot.profiling.profiles:
+            if (
+                *natural_key(profile.model_dump()),
+                profile.attribute_name.casefold(),
+            ) in lineage_attributes:
+                records.append(
+                    {"evidence_type": "profile", "record": profile.model_dump(mode="json")}
+                )
+        for relationship in snapshot.analysis.relationships:
+            row = relationship.model_dump(mode="json")
+            if relationship.analysis_result_status == "active" and all(
+                (
+                    *natural_key({field: row[f"{side}_{field}"] for field in OBJECT_FIELDS}),
+                    row[f"{side}_attribute_name"].casefold(),
+                )
+                in lineage_attributes
+                for side in ("from", "to")
+            ):
+                records.append({"evidence_type": "analysis_relationship", "record": row})
+    return records
 
 
 def _mapping_context_datasets(

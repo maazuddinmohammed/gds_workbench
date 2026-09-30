@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, LiteralString, cast
 from uuid import UUID
@@ -59,46 +60,8 @@ CODE_GENERATION_STAGE: StageIdentity = (
 VALIDATION_STAGE: StageIdentity = ("validation", None, "validation_generation")
 
 
-def _prompt_parts(row: TestRow) -> tuple[str, ...]:
-    return tuple(
-        value
-        for value in (
-            row["system_prompt_template"],
-            row["instruction_prompt_template"],
-            row["tool_instruction_prompt_template"],
-        )
-        if value is not None
-    )
-
-
-def _assert_lean_nonduplicative_prompt(parts: tuple[str, ...]) -> None:
-    assert all(part and part == part.strip() for part in parts)
-    assert len(parts[0]) <= 1_400
-    assert len(parts[1]) <= 1_900
-    if len(parts) == 3:
-        assert len(parts[2]) <= 1_600
-
-    meaningful_units = [
-        re.sub(
-            r"\s+",
-            " ",
-            re.sub(r"^\s*(?:[-*]|\d+[.)])\s*", "", unit),
-        )
-        .strip()
-        .casefold()
-        for part in parts
-        for unit in re.split(r"(?<=[.!?])(?:\s+|$)|\n+", part)
-        if len(unit.strip()) >= 40
-    ]
-    assert len(meaningful_units) == len(set(meaningful_units))
-
-
 def _render_seed(template: str | None = None) -> str:
-    rendered = (
-        PROMPT_SEED_TEMPLATE.read_text(encoding="utf-8")
-        if template is None
-        else template
-    )
+    rendered = PROMPT_SEED_TEMPLATE.read_text(encoding="utf-8") if template is None else template
     replacements = {
         "__REPLACE_WITH_ENTRA_TENANT_ID__": str(ENTRA_TENANT_ID),
         "__REPLACE_WITH_ENTRA_OBJECT_ID__": str(ENTRA_OBJECT_ID),
@@ -332,26 +295,31 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
             f"{variable['workflow_stage_code']}.inputs.{variable['name']}"
         )
         assert variable["is_required"] is False
-    prompt_root = SEED_ROOT.parents[1] / "docs" / "workflow-prompts"
+    defaults = {
+        (item["model_workflow"], item["workflow_execution_mode"], item["workflow_stage_code"]): item
+        for item in json.loads(rendered.split("$workflow_defaults$")[1])
+    }
     for row in first:
         identity = (
             row["model_workflow"],
             row["workflow_execution_mode"],
             row["workflow_stage_code"],
         )
-        file_workflow = "code" if identity[0] == "code_generation" else identity[0]
-        file_mode = identity[1] or "tool_assisted"
-        reviewed = json.loads(
-            (prompt_root / f"{file_workflow}.{file_mode}.json").read_text()
-        )
-        assert row["system_prompt_template"] == reviewed["system_prompt"]
-        assert row["instruction_prompt_template"] == reviewed["instruction_prompt"]
+        default = defaults[identity]
+        # Hash comparisons keep prompt bodies out of assertion failure output.
+        assert sha256(row["system_prompt_template"].encode()).digest() == sha256(
+            default["system_prompt"].encode()
+        ).digest()
+        assert sha256(row["instruction_prompt_template"].encode()).digest() == sha256(
+            default["instruction_prompt"].encode()
+        ).digest()
         assert row["tool_instruction_prompt_template"] is None
-        assert row["agent_tool_names"] == (
-            sorted(reviewed["tools"]) if file_mode == "tool_assisted" else None
+        assert row["agent_tool_names"] == default["agent_tool_names"]
+        referenced = set(PLACEHOLDER.findall(default["system_prompt"])) | set(
+            PLACEHOLDER.findall(default["instruction_prompt"])
         )
-        assert set(reviewed["variables"]) <= allowed[identity]
-        assert "stage_context" not in reviewed["variables"]
+        assert referenced <= allowed[identity]
+        assert "stage_context" not in referenced
         assert row["prompt_template_code"] == (
             f"global_default.{identity[0]}.{identity[1] or 'common'}.{identity[2]}"
         )
@@ -366,16 +334,13 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
     _apply_sql(postgres_database, rendered)
     assert _snapshot(postgres_database) == first
 
-    match = re.search(
-        r"\$workflow_defaults\$\n(.*?)\n\$workflow_defaults\$", rendered, re.DOTALL
-    )
+    match = re.search(r"\$workflow_defaults\$\n(.*?)\n\$workflow_defaults\$", rendered, re.DOTALL)
     assert match is not None
     payload = json.loads(match.group(1))
     target = next(
         row
         for row in payload
-        if row["model_workflow"] == "analysis"
-        and row["workflow_execution_mode"] == "one_shot"
+        if row["model_workflow"] == "analysis" and row["workflow_execution_mode"] == "one_shot"
     )
     target["system_prompt"] += "\nApply conservative evidence thresholds."
     changed = (
@@ -449,3 +414,72 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
 
     _apply_sql(postgres_database, changed)
     assert _snapshot(postgres_database) == second
+
+    # A reviewed seed must not overwrite someone's different unpublished draft.
+    current = second_by_identity[identity]
+    draft_content = str(current["system_prompt_template"]) + "\nSynthetic draft rule."
+    with postgres_database.connect_owner() as connection:
+        draft = require_row(
+            connection.execute(
+                "SELECT * FROM application.save_prompt_template_draft("
+                "%s,%s,'user',%s,NULL,%s,%s,NULL,NULL,NULL)",
+                (
+                    ENTRA_TENANT_ID,
+                    ENTRA_OBJECT_ID,
+                    current["prompt_template_id"],
+                    draft_content,
+                    current["instruction_prompt_template"],
+                ),
+            ).fetchone()
+        )
+        versions = connection.execute(
+            "SELECT * FROM application.prompt_template_version "
+            "WHERE prompt_template_id=%s ORDER BY prompt_template_version_number",
+            (current["prompt_template_id"],),
+        ).fetchall()
+
+    _apply_sql(postgres_database, changed)
+    assert _snapshot(postgres_database) == second
+    target["system_prompt"] += "\nDifferent requested seed rule."
+    conflicting = (
+        rendered[: match.start(1)]
+        + json.dumps(payload, ensure_ascii=False, indent=2)
+        + rendered[match.end(1) :]
+    )
+    with pytest.raises(psycopg.errors.RaiseException, match="will not overwrite an existing draft"):
+        _apply_sql(postgres_database, conflicting)
+    with postgres_database.connect_owner() as connection:
+        assert (
+            connection.execute(
+                "SELECT * FROM application.prompt_template_version "
+                "WHERE prompt_template_id=%s ORDER BY prompt_template_version_number",
+                (current["prompt_template_id"],),
+            ).fetchall()
+            == versions
+        )
+    assert _snapshot(postgres_database) == second
+
+    target["system_prompt"] = draft_content
+    matching = (
+        rendered[: match.start(1)]
+        + json.dumps(payload, ensure_ascii=False, indent=2)
+        + rendered[match.end(1) :]
+    )
+    _apply_sql(postgres_database, matching)
+    third = _snapshot(postgres_database)
+    updated = next(
+        row for row in third if row["prompt_template_id"] == current["prompt_template_id"]
+    )
+    assert updated["prompt_template_version_id"] == draft["prompt_template_version_id"]
+    assert updated["prompt_template_version_number"] == 3
+    assert updated["system_prompt_template"] == draft_content
+    with postgres_database.connect_owner() as connection:
+        published_versions = connection.execute(
+            "SELECT * FROM application.prompt_template_version "
+            "WHERE prompt_template_id=%s ORDER BY prompt_template_version_number",
+            (current["prompt_template_id"],),
+        ).fetchall()
+    assert len(published_versions) == 3
+    assert published_versions[:2] == versions[:2]
+    _apply_sql(postgres_database, matching)
+    assert _snapshot(postgres_database) == third

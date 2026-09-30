@@ -72,8 +72,6 @@ DECLARE
     v_validation_group_id BIGINT;
     v_principal_id BIGINT;
     v_workflow_run_id BIGINT;
-    v_guide_id BIGINT;
-    v_guide_content TEXT := 'Generate Databricks transformation SQL from the applied Mapping. Use registered schema.table identifiers and isolate each contributing System. Declare unqualified temporary views before use; end with an explicit target-column SELECT. The runtime writes the target and supplies framework-managed fields. Do not emit persistent DDL, DML, comments, Markdown, invented columns, joins, or reconciliation.';
 BEGIN
     IF current_database() !~ '^gds_local_[0-9a-f]{12}$' THEN
         RAISE EXCEPTION 'local Workbench review seed requires a disposable gds_local database';
@@ -715,31 +713,65 @@ BEGIN
 
     FOR v_mapping_object_id IN
         INSERT INTO workflow.mapping_object (
-            model_id,modeled_entity_type,logical_entity_id,dimensional_entity_id,source_system_id,
-            object_dependency_order,mapping_transformation_document
-        ) VALUES
-            (v_model_id,'logical_entity',v_logical_customer_id,NULL,v_system_id,0,
-             '{"source_objects":[],"steps":["Standardize identifiers","Select current descriptive values"]}'),
-            (v_model_id,'logical_entity',v_logical_order_id,NULL,v_system_id,1,
-             '{"source_objects":[],"steps":["Validate order grain","Normalize monetary values"]}'),
-            (v_model_id,'dimensional_entity',NULL,v_dimensional_customer_id,v_system_id,0,
-             '{"source_logical_entities":[{"logical_entity_schema_name":"silver_demo","logical_entity_name":"Customer"}],"steps":["Apply overwrite policy"]}'),
-            (v_model_id,'dimensional_entity',NULL,v_dimensional_order_id,v_system_id,1,
-             '{"source_logical_entities":[{"logical_entity_schema_name":"silver_demo","logical_entity_name":"Order"}],"steps":["Resolve Customer key","Publish Order measure"]}')
+            model_id, modeled_entity_type, logical_entity_id, dimensional_entity_id,
+            source_system_id, output_template_id, object_dependency_order,
+            mapping_transformation_document
+        )
+        SELECT v_model_id, example.layer, example.logical_id, example.dimensional_id,
+               v_system_id, template.output_template_id, example.dependency_order,
+               example.document
+          FROM (VALUES
+            ('logical_entity', v_logical_customer_id, NULL::BIGINT, 0,
+             '{"source_tables":[{"tenant_code":"DEMO_GDS_TENANT","system_code":"DEMO_CUSTOMER_SYSTEM","connection_code":"DEMO_GDS","object_schema":"bronze_demo","object_name":"customer"}],"filter_criteria":null,"sample_query":"SELECT customer_id, customer_name FROM bronze_demo.customer"}'::JSONB),
+            ('logical_entity', v_logical_order_id, NULL::BIGINT, 1,
+             '{"source_tables":[{"tenant_code":"DEMO_GDS_TENANT","system_code":"DEMO_CUSTOMER_SYSTEM","connection_code":"DEMO_GDS","object_schema":"bronze_demo","object_name":"orders"}],"filter_criteria":null,"sample_query":"SELECT order_id, customer_id, order_date, order_amount FROM bronze_demo.orders"}'::JSONB),
+            ('dimensional_entity', NULL::BIGINT, v_dimensional_customer_id, 0,
+             '{"source_tables":[{"entity_type":"logical_entity","entity_schema_name":"silver_demo","entity_name":"Customer"}],"filter_criteria":null,"sample_query":"SELECT customer_id AS customer_key, customer_name FROM silver_demo.customer"}'::JSONB),
+            ('dimensional_entity', NULL::BIGINT, v_dimensional_order_id, 1,
+             '{"source_tables":[{"entity_type":"logical_entity","entity_schema_name":"silver_demo","entity_name":"Order"}],"filter_criteria":null,"sample_query":"SELECT order_id, customer_id AS customer_key, order_date, order_amount FROM silver_demo.orders"}'::JSONB)
+          ) AS example(layer, logical_id, dimensional_id, dependency_order, document)
+          JOIN application.output_template AS template
+            ON template.output_template_code = CASE example.layer
+                WHEN 'logical_entity' THEN 'mapping_logical_object_default'
+                ELSE 'mapping_dimensional_object_default' END
         RETURNING mapping_object_id
     LOOP
         INSERT INTO workflow.mapping_attribute (
-            mapping_object_id,model_id,modeled_entity_type,logical_entity_id,dimensional_entity_id,
-            logical_attribute_id,dimensional_attribute_id,attribute_mapping_transformation_document
-        ) SELECT mapping.mapping_object_id,mapping.model_id,mapping.modeled_entity_type,
-                 mapping.logical_entity_id,mapping.dimensional_entity_id,
+            mapping_object_id, model_id, modeled_entity_type, logical_entity_id,
+            dimensional_entity_id, logical_attribute_id, dimensional_attribute_id,
+            output_template_id, attribute_mapping_transformation_document
+        ) SELECT mapping.mapping_object_id, mapping.model_id, mapping.modeled_entity_type,
+                 mapping.logical_entity_id, mapping.dimensional_entity_id,
                  CASE mapping.modeled_entity_type WHEN 'logical_entity' THEN attribute.modeled_attribute_id END,
                  CASE mapping.modeled_entity_type WHEN 'dimensional_entity' THEN attribute.modeled_attribute_id END,
-                 jsonb_build_object('transformation','Direct governed projection','target_attribute_name',attribute.attribute_name)
+                 template.output_template_id,
+                 jsonb_build_object(
+                     'transformation_logic', 'Copy the source value into ' || attribute.attribute_name || '.',
+                     'default_record', NULL,
+                     'source_columns', jsonb_build_array(
+                         (mapping.mapping_transformation_document -> 'source_tables' -> 0)
+                         || jsonb_build_object('attribute_name', CASE mapping.modeled_entity_type
+                             WHEN 'logical_entity' THEN (
+                                 SELECT source.attribute_name
+                                   FROM workflow.logical_attribute_source_mapping AS support
+                                   JOIN core.attribute AS source ON source.attribute_id = support.source_attribute_id
+                                  WHERE support.logical_attribute_id = attribute.modeled_attribute_id
+                             ) ELSE (
+                                 SELECT source.logical_attribute_name
+                                   FROM workflow.dimensional_attribute_source_mapping AS support
+                                   JOIN workflow.logical_attribute AS source ON source.logical_attribute_id = support.source_logical_attribute_id
+                                  WHERE support.dimensional_attribute_id = attribute.modeled_attribute_id
+                             ) END)
+                     )
+                 )
             FROM workflow.mapping_object AS mapping
             JOIN workflow.modeled_attribute AS attribute ON attribute.model_id = mapping.model_id
              AND attribute.modeled_entity_type = mapping.modeled_entity_type
-             AND attribute.modeled_entity_id = coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id)
+             AND attribute.modeled_entity_id = coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id)
+            JOIN application.output_template AS template
+              ON template.output_template_code = CASE mapping.modeled_entity_type
+                  WHEN 'logical_entity' THEN 'mapping_logical_attribute_default'
+                  ELSE 'mapping_dimensional_attribute_default' END
            WHERE mapping.mapping_object_id = v_mapping_object_id;
     END LOOP;
 
@@ -796,23 +828,6 @@ BEGIN
        AND is_active
      ORDER BY principal_id
      LIMIT 1;
-
-    IF NOT EXISTS (SELECT 1 FROM application.sql_generation_guide WHERE is_default) THEN
-        INSERT INTO application.sql_generation_guide (
-            sql_generation_guide_code, sql_generation_guide_name, is_default,
-            created_by_principal_id, updated_by_principal_id
-        ) VALUES ('local.transformation', 'Local transformation SQL', true,
-            v_principal_id, v_principal_id)
-        RETURNING sql_generation_guide_id INTO v_guide_id;
-        INSERT INTO application.sql_generation_guide_version (
-            sql_generation_guide_id, sql_generation_guide_version_number,
-            sql_generation_guide_content, sql_generation_guide_digest,
-            sql_generation_guide_version_status, created_by_principal_id,
-            updated_by_principal_id, published_time, published_by_principal_id
-        ) VALUES (v_guide_id, 1, v_guide_content,
-            encode(sha256(convert_to(v_guide_content, 'UTF8')), 'hex'),
-            'published', v_principal_id, v_principal_id, CURRENT_TIMESTAMP, v_principal_id);
-    END IF;
 
     INSERT INTO application.workflow_run (
         tenant_id, model_id, model_revision, model_workflow,

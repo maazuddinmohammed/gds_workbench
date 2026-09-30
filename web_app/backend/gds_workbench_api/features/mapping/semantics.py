@@ -3,7 +3,9 @@
 from collections.abc import Mapping
 from typing import Any
 
+from gds_etl_workbench.application.mapping_context import MAPPING_REFERENCE_TEMPLATE_CODES
 from gds_etl_workbench.domain.errors import InvalidRequestError
+from pydantic import JsonValue
 
 from gds_workbench_api.features.workflows.authoring.context_inputs import OBJECT_FIELDS, natural_key
 
@@ -15,6 +17,16 @@ def validate_mapping_references(
     preparation: MappingPreparation, candidate: CompleteMappingCandidateV1
 ) -> None:
     header = preparation.context.headers[0]
+    builtin_references: dict[str, bool] = {}
+    for kind, selection in (
+        ("mapping_object", preparation.plan.output_template_selections.mapping_object),
+        ("mapping_attribute", preparation.plan.output_template_selections.mapping_attribute),
+    ):
+        builtin_references[kind] = selection is None or any(
+            template.output_template_id == selection.output_template_id
+            and template.code.strip().casefold() in MAPPING_REFERENCE_TEMPLATE_CODES[kind]
+            for template in preparation.context.output_templates.definitions
+        )
     object_document = (
         candidate.object_mapping.mapping_transformation_document
         if candidate.object_mapping
@@ -93,7 +105,9 @@ def validate_mapping_references(
         # Preserve unchanged legacy/custom documents without forcing schema conversion.
         declared = (
             object_document.get(objects_field)
-            if object_document and object_document != header.transformation_document
+            if builtin_references["mapping_object"]
+            and object_document
+            and object_document != header.transformation_document
             else None
         )
         if declared is not None:
@@ -118,7 +132,10 @@ def validate_mapping_references(
                 used.add(key)
                 aliases.add(alias)
         for attribute in candidate.attribute_mappings:
-            if attribute.attribute_mapping_transformation_document is None:
+            if (
+                not builtin_references["mapping_attribute"]
+                or attribute.attribute_mapping_transformation_document is None
+            ):
                 continue
             sources = attribute.attribute_mapping_transformation_document.get(attributes_field)
             if sources is None:
@@ -145,3 +162,58 @@ def validate_mapping_references(
                         "A declared source Attribute is unavailable "
                         "or absent from its Entity sources."
                     )
+
+    # The layer-specific defaults use one source list for physical and modeled
+    # references. Keep the legacy fields above readable without rewriting history.
+    tables_declared = (
+        builtin_references["mapping_object"]
+        and object_document is not None
+        and object_document != header.transformation_document
+        and "source_tables" in object_document
+    )
+    source_lists: list[tuple[str, JsonValue]] = []
+    if tables_declared:
+        assert object_document is not None
+        source_lists.append(("source_tables", object_document["source_tables"]))
+    source_lists.extend(
+        ("source_columns", attribute.attribute_mapping_transformation_document["source_columns"])
+        for attribute in candidate.attribute_mappings
+        if builtin_references["mapping_attribute"]
+        and attribute.attribute_mapping_transformation_document is not None
+        and "source_columns" in attribute.attribute_mapping_transformation_document
+    )
+    table_keys: set[tuple[Any, ...]] = set()
+    for field, references in source_lists:
+        if field == "source_columns" and references is None:
+            continue
+        if not isinstance(references, list):
+            raise InvalidRequestError(f"Mapping {field} must be an array.")
+        for source in references:
+            if not isinstance(source, Mapping):
+                raise InvalidRequestError("Each Mapping source must be an object.")
+            entity_type = source.get("entity_type")
+            if entity_type in ("logical_entity", "dimensional_entity"):
+                kind = str(entity_type).removesuffix("_entity")
+                key_fields = ("entity_schema_name", "entity_name")
+            elif "entity_type" not in source:
+                kind = "physical"
+                key_fields = OBJECT_FIELDS
+            else:
+                raise InvalidRequestError("Mapping source Entity type is invalid.")
+            required = (*key_fields, "attribute_name") if field == "source_columns" else key_fields
+            if any(
+                not isinstance(source.get(key), str) or not str(source[key]).strip()
+                for key in required
+            ):
+                raise InvalidRequestError("Each Mapping source needs its complete natural key.")
+            key = (kind, *natural_key(source, key_fields))
+            if key not in available:
+                raise InvalidRequestError("Mapping sources must be eligible for this layer.")
+            if field == "source_tables":
+                table_keys.add(key)
+            elif str(source["attribute_name"]).strip().casefold() not in available[key] or (
+                tables_declared and key not in table_keys
+            ):
+                raise InvalidRequestError(
+                    "A declared source Attribute is unavailable or absent from its Entity sources."
+                )

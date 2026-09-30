@@ -74,6 +74,7 @@ describe("Mapping Output Template catalog", () => {
           : "Standard Attribute Mapping",
         output_template_description: null,
         output_template_target_type: targetType,
+        output_template_modeled_entity_type: null,
         output_template_schema_digest: "a".repeat(64),
         output_template_schema_digest_is_valid: true,
         is_active: true,
@@ -82,13 +83,13 @@ describe("Mapping Output Template catalog", () => {
       next_cursor: cursor ?? null,
     }));
 
-    const catalog = await loadActiveMappingOutputTemplates({ listOutputTemplates }, 7);
+    const catalog = await loadActiveMappingOutputTemplates({ listOutputTemplates }, 7, "logical_entity");
 
     expect(catalog.mappingObjects.map((item) => item.output_template_id)).toEqual([801]);
     expect(catalog.mappingAttributes.map((item) => item.output_template_id)).toEqual([802]);
     expect(listOutputTemplates.mock.calls).toEqual([
-      [7, "mapping_object", 200, undefined],
-      [7, "mapping_attribute", 200, undefined],
+      [7, "mapping_object", 200, undefined, "logical_entity"],
+      [7, "mapping_attribute", 200, undefined, "logical_entity"],
     ]);
   });
 
@@ -106,6 +107,7 @@ describe("Mapping Output Template catalog", () => {
         output_template_name: `${targetType} ${cursor ?? "first"}`,
         output_template_description: null,
         output_template_target_type: targetType,
+        output_template_modeled_entity_type: null,
         output_template_schema_digest: "a".repeat(64),
         output_template_schema_digest_is_valid: true,
         is_active: true,
@@ -116,7 +118,7 @@ describe("Mapping Output Template catalog", () => {
         : null,
     }));
 
-    const catalog = await loadActiveMappingOutputTemplates({ listOutputTemplates }, 7);
+    const catalog = await loadActiveMappingOutputTemplates({ listOutputTemplates }, 7, "logical_entity");
 
     expect(catalog.mappingObjects.map((item) => item.output_template_id)).toEqual([801, 803]);
     expect(listOutputTemplates).toHaveBeenCalledWith(
@@ -124,6 +126,7 @@ describe("Mapping Output Template catalog", () => {
       "mapping_object",
       200,
       "object-next",
+      "logical_entity",
     );
   });
 
@@ -141,7 +144,7 @@ describe("Mapping Output Template catalog", () => {
       };
     });
 
-    await expect(loadActiveMappingOutputTemplates({ listOutputTemplates }, 7)).resolves.toEqual({
+    await expect(loadActiveMappingOutputTemplates({ listOutputTemplates }, 7, "logical_entity")).resolves.toEqual({
       mappingObjects: [], mappingAttributes: [],
     });
     expect(listOutputTemplates.mock.calls.filter(([, targetType]) => (

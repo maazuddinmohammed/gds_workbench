@@ -83,7 +83,17 @@ class OutputTemplateListTransaction:
         assert "FROM application.output_template AS template" in query
         assert "application.output_template_field" in query
         assert "output_template_field_example AS" not in query
-        target_type, repeated_target_type, active, repeated_active, limit, offset = parameters
+        (
+            target_type,
+            repeated_target_type,
+            entity_type,
+            repeated_entity_type,
+            active,
+            repeated_active,
+            limit,
+            offset,
+        ) = parameters
+        assert entity_type is repeated_entity_type is None
         assert target_type == repeated_target_type == "mapping_object"
         assert active is repeated_active is True
         assert limit == 2
@@ -110,7 +120,9 @@ class OutputTemplateListDatabase:
 
 
 @pytest.mark.asyncio
-async def test_output_template_list_is_authorized_filtered_safe_and_signed_page_bounded() -> None:
+async def test_output_template_list_is_authorized_filtered_safe_and_signed_page_bounded() -> (
+    None
+):
     database = OutputTemplateListDatabase()
     service = DatabaseOutputTemplateService(
         database=cast(OutputTemplateDatabase, database),
@@ -151,6 +163,17 @@ async def test_output_template_list_is_authorized_filtered_safe_and_signed_page_
             PRINCIPAL,
             tenant_id=7,
             target_type="mapping_attribute",
+            active=True,
+            page_size=1,
+            cursor=first.next_cursor,
+        )
+
+    with pytest.raises(InvalidRequestError):
+        await service.list_templates(
+            PRINCIPAL,
+            tenant_id=7,
+            target_type="mapping_object",
+            entity_type="dimensional_entity",
             active=True,
             page_size=1,
             cursor=first.next_cursor,
@@ -282,6 +305,7 @@ class OutputTemplateRouterService:
         active: bool | None,
         page_size: int,
         cursor: str | None,
+        entity_type: str | None = None,
     ) -> OutputTemplatePage:
         del principal, cursor
         assert tenant_id == 7
@@ -289,7 +313,11 @@ class OutputTemplateRouterService:
         self.list_filter = (target_type, active)
         return OutputTemplatePage(
             tenant_id=tenant_id,
-            items=(OutputTemplateSummary.model_validate(_template_row(101, "standard_object")),),
+            items=(
+                OutputTemplateSummary.model_validate(
+                    _template_row(101, "standard_object")
+                ),
+            ),
             next_cursor=None,
         )
 
@@ -305,7 +333,9 @@ class OutputTemplateRouterService:
         assert output_template_id == 101
         return OutputTemplateDetail(
             tenant_id=tenant_id,
-            template=OutputTemplateSummary.model_validate(_template_row(101, "standard_object")),
+            template=OutputTemplateSummary.model_validate(
+                _template_row(101, "standard_object")
+            ),
             fields=(
                 OutputTemplateField(
                     output_template_field_name="transformation_logic",

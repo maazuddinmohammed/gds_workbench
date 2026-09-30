@@ -37,11 +37,13 @@ class CodeGenerationTargetReference(BaseModel):
     modeled_entity_id: int = Field(gt=0, repr=False)
     source_system_codes: tuple[str, ...] = Field(min_length=1, max_length=200)
 
-    file_layout: Literal["combined", "per_system"] | None = None
+    file_layout: Literal["combined", "per_system"] | None = "combined"
     preserved_artifact_names: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def validate_source_systems(self) -> Self:
+        if self.file_layout is None:
+            object.__setattr__(self, "file_layout", "combined")
         normalized = tuple(value.strip().casefold() for value in self.source_system_codes)
         if any(not value for value in normalized) or len(normalized) != len(set(normalized)):
             raise ValueError("Target source System Codes must be unique and nonblank")
@@ -87,8 +89,8 @@ class _AgentSqlArtifact(BaseModel):
     )
     artifact_role: Literal["target_transformation", "support"] = Field(
         description=(
-            "target_transformation loads the target from assigned source Systems; "
-            "support is target-bound DDL or helper SQL with no System assignment."
+            "target_transformation returns target rows from assigned source Systems; "
+            "support is standalone read-only or temporary-view SQL with no System assignment."
         )
     )
     source_system_codes: list[str] = Field(
@@ -104,7 +106,7 @@ class _AgentSqlArtifact(BaseModel):
         description=(
             "Complete SQL-only artifact as plain text with no Markdown fences. Separate "
             "multiple statements with semicolons; an earlier temporary view may be used by "
-            "later statements in the same orchestration session."
+            "later statements in the same file. Never depend on another file's temporary state."
         ),
     )
 
@@ -179,24 +181,6 @@ class CodeGenerationCandidateValidator:
         if issue is not None:
             return issue
         for index, artifact in enumerate(batch.artifacts):
-            if (
-                self._by_ref[artifact.target_ref].file_layout is not None
-                and artifact.artifact_role == "target_transformation"
-                and not _is_transformation_sql(artifact.generated_sql)
-            ):
-                return AgentCandidateValidation(
-                    issues=(
-                        AgentValidationIssue(
-                            code="candidate.transformation_sql_contract",
-                            path=("artifacts", index, "generated_sql"),
-                            message=(
-                                "Use only unqualified temporary views followed by one "
-                                "explicit-column "
-                                "SELECT; no persistent DDL, DML, SELECT * or comments."
-                            ),
-                        ),
-                    )
-                )
             if not _is_valid_sql(artifact.generated_sql):
                 return AgentCandidateValidation(
                     issues=(
@@ -204,6 +188,25 @@ class CodeGenerationCandidateValidator:
                             code="candidate.sql_invalid",
                             path=("artifacts", index, "generated_sql"),
                             message="Generated SQL must be bounded SQL-only text.",
+                        ),
+                    )
+                )
+            if not _is_generation_sql(
+                artifact.generated_sql,
+                transformation=artifact.artifact_role == "target_transformation",
+            ):
+                return AgentCandidateValidation(
+                    issues=(
+                        AgentValidationIssue(
+                            code="candidate.transformation_sql_contract"
+                            if artifact.artifact_role == "target_transformation"
+                            else "candidate.support_sql_contract",
+                            path=("artifacts", index, "generated_sql"),
+                            message=(
+                                "Use only read-only queries and unqualified temporary views. "
+                                "Transformations finish with one explicit-column SELECT. "
+                                "No persistent DDL, DML, commands, SELECT * or comments."
+                            ),
                         ),
                     )
                 )
@@ -218,14 +221,11 @@ class CodeGenerationCandidateValidator:
         artifacts: list[GeneratedSqlArtifact] = []
         for candidate_artifact in batch.artifacts:
             target = self._by_ref[candidate_artifact.target_ref]
-            if (
-                target.file_layout is not None
-                and candidate_artifact.artifact_role == "target_transformation"
-                and not _is_transformation_sql(candidate_artifact.generated_sql)
+            if not _is_generation_sql(
+                candidate_artifact.generated_sql,
+                transformation=candidate_artifact.artifact_role == "target_transformation",
             ):
-                raise InvalidRequestError(
-                    "The transformation SQL does not follow the delivery contract."
-                )
+                raise InvalidRequestError("The SQL does not follow the artifact delivery contract.")
             try:
                 artifacts.append(
                     GeneratedSqlArtifact(
@@ -400,14 +400,18 @@ def _is_valid_sql(value: Any) -> bool:
     )
 
 
-def _is_transformation_sql(value: str) -> bool:
+def _is_generation_sql(value: str, *, transformation: bool) -> bool:
     try:
         statements = parse(value, read="databricks", error_level=ErrorLevel.RAISE)
     except ParseError:
         return False
-    if not statements or not isinstance(statements[-1], Query):
+    if not statements or (transformation and not isinstance(statements[-1], Query)):
         return False
-    for statement in statements[:-1]:
+    for index, statement in enumerate(statements):
+        if isinstance(statement, Query):
+            if transformation and index != len(statements) - 1:
+                return False
+            continue
         if not isinstance(statement, exp.Create) or statement.kind != "VIEW":
             return False
         properties = statement.args.get("properties")
@@ -416,7 +420,12 @@ def _is_transformation_sql(value: str) -> bool:
         ):
             return False
         target = statement.this
-        if not isinstance(target, exp.Table) or target.db or target.catalog:
+        if (
+            not isinstance(target, exp.Table)
+            or target.db
+            or target.catalog
+            or not isinstance(statement.expression, Query)
+        ):
             return False
     if any(
         node.comments
@@ -427,6 +436,8 @@ def _is_transformation_sql(value: str) -> bool:
         return False
     return not any(
         isinstance(column, exp.Star) or isinstance(column, exp.Column) and column.is_star
-        for select in statements[-1].find_all(exp.Select)
+        for statement in statements
+        if statement is not None
+        for select in statement.find_all(exp.Select)
         for column in select.expressions
     )

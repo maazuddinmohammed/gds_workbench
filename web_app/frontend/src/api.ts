@@ -93,7 +93,6 @@ export type {
   CodeGenerationTargetPage,
   CodeMappingSupport,
   GeneratedSqlArtifactDetail,
-  SqlGenerationGuideProvenance,
   SqlGeneratorProvenance,
   StoredSqlArtifactSummary,
 } from "./features/code_generation/api";

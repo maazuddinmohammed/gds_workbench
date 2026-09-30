@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useContext, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import {
   useInfiniteQuery,
@@ -28,6 +28,8 @@ import { MetadataEnrichmentResults } from "../metadata_enrichment/MetadataEnrich
 import { enrichmentResultKey, type MetadataEnrichmentTransport } from "../metadata_enrichment/api";
 import { FailedWorkflowDraft } from "./FailedWorkflowDraft";
 import { WorkflowTokenUsage } from "./WorkflowTokenUsage";
+import { WorkflowActivityPanel, WorkflowCommandContext } from "./WorkflowCommandCenter";
+import type { WorkflowRunFilterState } from "./api";
 
 type DraftWorkflow = Extract<
   ModelWorkflow,
@@ -64,23 +66,25 @@ export function WorkflowRunMonitor({
   focusRunId: number | null;
   onApplied: () => Promise<void>;
 }) {
+  const commandCenter = useContext(WorkflowCommandContext) !== null;
+  const [runState, setRunState] = useState<WorkflowRunFilterState>("");
   const queryClient = useQueryClient();
   const monitorBodyId = useId();
-  const [expanded, setExpanded] = useState(focusRunId !== null || (workflow === "analysis" || workflow === "metadata_enrichment"));
+  const [expanded, setExpanded] = useState(focusRunId !== null || (!commandCenter && (workflow === "analysis" || workflow === "metadata_enrichment")));
   const [selectedRunId, setSelectedRunId] = useState<number | null>(focusRunId);
   const [runIdInput, setRunIdInput] = useState(focusRunId === null ? "" : String(focusRunId));
   const [confirmApply, setConfirmApply] = useState(false);
   const applyIdempotencyKey = useRef<string | null>(null);
   const applyTrigger = useRef<HTMLButtonElement>(null);
   const label = workflowLabel(workflow);
-  const recentKey = workflowRunQueryKeys.recent(tenantId, modelId, workflow);
+  const recentKey = [...workflowRunQueryKeys.recent(tenantId, modelId, workflow), ...(runState ? [runState] : [])];
   const recentQuery = useInfiniteQuery({
     queryKey: recentKey,
     queryFn: ({ pageParam }) => api.listWorkflowRuns(
       tenantId,
       modelId,
       workflow,
-      "",
+      runState,
       5,
       pageParam,
     ),
@@ -93,7 +97,7 @@ export function WorkflowRunMonitor({
     applyIdempotencyKey.current = null;
     setSelectedRunId(focusRunId);
     setRunIdInput(focusRunId === null ? "" : String(focusRunId));
-    if (focusRunId !== null || (workflow === "analysis" || workflow === "metadata_enrichment")) {
+    if (focusRunId !== null || (!commandCenter && (workflow === "analysis" || workflow === "metadata_enrichment"))) {
       setExpanded(true);
     }
     if (focusRunId !== null) {
@@ -104,7 +108,7 @@ export function WorkflowRunMonitor({
         queryClient.invalidateQueries({ queryKey: ["model-overview", tenantId, modelId] }),
       ]);
     }
-  }, [focusRunId, modelId, queryClient, tenantId, workflow]);
+  }, [commandCenter, focusRunId, modelId, queryClient, tenantId, workflow]);
   useEffect(() => {
     if (selectedRunId === null && recentRuns[0]) {
       setSelectedRunId(recentRuns[0].workflow_run_id);
@@ -115,7 +119,7 @@ export function WorkflowRunMonitor({
   const runQuery = useQuery({
     queryKey: workflowRunQueryKeys.detail(tenantId, modelId, selectedRunId ?? 0),
     queryFn: () => api.readWorkflowRun(tenantId, modelId, selectedRunId ?? 0),
-    enabled: selectedRunId !== null,
+    enabled: selectedRunId !== null && (!commandCenter || expanded),
   });
   const eventsQuery = useInfiniteQuery({
     queryKey: workflowRunQueryKeys.events(tenantId, modelId, selectedRunId ?? 0),
@@ -125,7 +129,7 @@ export function WorkflowRunMonitor({
       selectedRunId ?? 0,
       pageParam,
     ),
-    enabled: selectedRunId !== null,
+    enabled: selectedRunId !== null && (!commandCenter || expanded),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => (
       lastPage.items.length === WORKFLOW_EVENT_PAGE_SIZE
@@ -135,10 +139,10 @@ export function WorkflowRunMonitor({
   });
   const events = eventsQuery.data?.pages.flatMap((page) => page.items) ?? [];
   useEffect(() => {
-    if (eventsQuery.hasNextPage && !eventsQuery.isFetchingNextPage) {
+    if ((!commandCenter || expanded) && eventsQuery.hasNextPage && !eventsQuery.isFetchingNextPage) {
       void eventsQuery.fetchNextPage();
     }
-  }, [eventsQuery.fetchNextPage, eventsQuery.hasNextPage, eventsQuery.isFetchingNextPage]);
+  }, [commandCenter, expanded, eventsQuery.fetchNextPage, eventsQuery.hasNextPage, eventsQuery.isFetchingNextPage]);
   const run = workflow === "metadata_enrichment" && runQuery.data?.model_workflow !== workflow
     ? undefined : runQuery.data;
   const validatedDraft = workflow !== "metadata_enrichment" && isValidatedDraft(run) ? run : null;
@@ -155,7 +159,7 @@ export function WorkflowRunMonitor({
       modelId,
       run?.model_change_set_id ?? "",
     ),
-    enabled: Boolean(validatedDraft) || retainedDraft,
+    enabled: (Boolean(validatedDraft) || retainedDraft) && (!commandCenter || expanded),
   });
   const [, setExpiryTick] = useState(0);
   const reviewExpired = isDraftReviewExpired(draftReviewQuery.data ?? null);
@@ -258,12 +262,12 @@ export function WorkflowRunMonitor({
     await Promise.all(refreshes);
   };
 
-  return (
+  const monitor = (
     <section
       className={`workflow-run-monitor${expanded ? "" : " is-collapsed"}`}
       aria-label={`${label} recent runs`}
     >
-      <header className="workflow-run-monitor-header">
+      {!commandCenter ? <header className="workflow-run-monitor-header">
         <div>
           <small>Workflow activity</small>
           <h2>Recent {label} runs</h2>
@@ -302,19 +306,20 @@ export function WorkflowRunMonitor({
             {expanded ? "Hide activity" : "Show activity"}
           </button>
         </div>
-      </header>
+      </header> : null}
 
-      <div id={monitorBodyId} hidden={!expanded}>
-        {recentQuery.isPending ? (
-          <div className="surface-state compact" aria-busy="true">Loading recent runs…</div>
-        ) : recentQuery.isError ? (
-          <div className="surface-state is-error compact" role="alert">
-            Recent runs could not be loaded.
-          </div>
-        ) : recentRuns.length === 0 && selectedRunId === null ? (
-          <div className="empty-state compact">No recent {label} runs.</div>
-        ) : (
-          <div className="workflow-run-monitor-layout">
+      <div id={monitorBodyId} className="workflow-run-monitor-body" hidden={!expanded}>
+        {commandCenter ? <label className="workflow-run-state-filter"><span>Run state</span>
+          <select aria-label="Run state" value={runState} onChange={(event) => {
+            setRunState(event.target.value as WorkflowRunFilterState); setSelectedRunId(null); setRunIdInput("");
+          }}>
+            <option value="">All states</option>
+            <option value="queued">Queued</option><option value="running">Running</option>
+            <option value="completed">Completed</option><option value="completed_with_repair">Completed with repair</option>
+            <option value="failed">Failed</option>
+          </select>
+        </label> : null}
+        <div className="workflow-run-monitor-layout">
           <div className="workflow-run-browser">
             <form
               className="workflow-run-id-navigation"
@@ -343,6 +348,9 @@ export function WorkflowRunMonitor({
                 Open run
               </button>
             </form>
+            {recentQuery.isPending ? <div className="surface-state compact" aria-busy="true">Loading recent runs…</div>
+              : recentQuery.isError ? <div className="surface-state is-error compact" role="alert">Recent runs could not be loaded.</div>
+                : recentRuns.length === 0 ? <div className="empty-state compact">No recent {label} runs.</div> : null}
             <ol className="workflow-recent-runs" aria-label={`${label} run list`}>
               {recentRuns.map((item) => (
                 <li key={item.workflow_run_id}>
@@ -373,7 +381,7 @@ export function WorkflowRunMonitor({
             ) : null}
           </div>
           <div className="workflow-run-monitor-detail">
-            {runQuery.isPending ? (
+            {selectedRunId === null ? <div className="empty-state compact">Select a run to view its details.</div> : runQuery.isPending ? (
               <div className="surface-state compact" aria-busy="true">Loading run details…</div>
             ) : runQuery.isError || !run ? (
               <div className="surface-state is-error compact" role="alert">
@@ -382,6 +390,8 @@ export function WorkflowRunMonitor({
             ) : (
               <>
               <WorkflowRunDetailView
+                key={run.workflow_run_id}
+                tabbed={commandCenter}
                 run={run}
                 physicalMetadata={workflow === "metadata_enrichment"}
                 enrichmentResults={workflow === "metadata_enrichment" && enrichmentApi
@@ -427,7 +437,6 @@ export function WorkflowRunMonitor({
             )}
           </div>
           </div>
-        )}
       </div>
 
       {confirmApply && validatedDraft && canApply ? (
@@ -449,9 +458,15 @@ export function WorkflowRunMonitor({
       ) : null}
     </section>
   );
+  return commandCenter ? <WorkflowActivityPanel label={label} open={expanded} onOpenChange={setExpanded}
+    actions={<button className="button button-secondary button-small" type="button" disabled={refreshing}
+      onClick={() => void refreshAll()}>{refreshing ? "Refreshing…" : "Refresh runs"}</button>}>
+    {monitor}
+  </WorkflowActivityPanel> : monitor;
 }
 
 function WorkflowRunDetailView({
+  tabbed,
   run,
   physicalMetadata,
   enrichmentResults,
@@ -473,6 +488,7 @@ function WorkflowRunDetailView({
   applyTriggerRef,
   onApply,
 }: {
+  tabbed: boolean;
   run: WorkflowRunDetail;
   physicalMetadata: boolean;
   enrichmentResults: ReactNode;
@@ -494,6 +510,7 @@ function WorkflowRunDetailView({
   applyTriggerRef: RefObject<HTMLButtonElement | null>;
   onApply: () => void;
 }) {
+  const [tab, setTab] = useState("Overview");
   const partialMapping = isPartialMappingRun(run);
   const mappingOutcome = run.model_workflow === "mapping" ? run.mapping_outcome : null;
   const incompletePairs = mappingOutcome?.partial_pair_count ?? 0;
@@ -514,6 +531,11 @@ function WorkflowRunDetailView({
         </div>
         <RunStateBadge state={run.workflow_run_state} partial={partialMapping} />
       </header>
+      {tabbed ? <nav className="workflow-activity-tabs" aria-label="Run detail sections">
+        {["Overview", "Activity", "Usage", physicalMetadata ? "Results" : "Draft"].map((name) => <button key={name} type="button"
+          aria-pressed={tab === name} onClick={() => setTab(name)}>{name}</button>)}
+      </nav> : null}
+      <div hidden={tabbed && tab !== "Overview"}>
       <dl className="workflow-run-facts">
         <div><dt>Created</dt><dd>{formatDateTime(run.created_at)}</dd></div>
         <div><dt>Actor</dt><dd>{run.actor_display_name}</dd></div>
@@ -550,7 +572,10 @@ function WorkflowRunDetailView({
         </section>
       ) : null}
 
-      {!physicalMetadata ? <>
+      {tabbed ? <button type="button" className="button button-secondary button-small"
+        onClick={() => setTab(physicalMetadata ? "Results" : "Draft")}>{physicalMetadata ? "View results" : "Review draft"}</button> : null}
+      </div>
+      {!physicalMetadata ? <div hidden={tabbed && tab !== "Draft"}>
       {mappingOutcome && (mappingOutcome.failed_pair_count > 0 || incompletePairs > 0 || emptyPairs > 0) ? (
         <section className="workflow-draft-review workflow-mapping-outcome" aria-label="Mapping pair outcomes">
           <header><strong>{isActiveRun(run) ? "Mapping generation is underway"
@@ -644,11 +669,11 @@ function WorkflowRunDetailView({
         <p className="inline-success" role="status">Validated draft applied.</p>
       ) : null}
 
-      </> : null}
+      </div> : null}
 
-      {enrichmentResults}
-      <WorkflowTokenUsage usage={run.token_usage} />
-      <section className="workflow-run-events" aria-labelledby={`run-${run.workflow_run_id}-events`}>
+      <div hidden={tabbed && tab !== "Results"}>{!tabbed || tab === "Results" ? enrichmentResults : null}</div>
+      <div hidden={tabbed && tab !== "Usage"}><WorkflowTokenUsage usage={run.token_usage} /></div>
+      <section className="workflow-run-events" hidden={tabbed && tab !== "Activity"} aria-labelledby={`run-${run.workflow_run_id}-events`}>
         <h3 id={`run-${run.workflow_run_id}-events`}>Events</h3>
         {eventsPending ? (
           <div className="surface-state compact" aria-busy="true">Loading events…</div>

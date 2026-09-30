@@ -1,5 +1,6 @@
+import { WorkflowActivityPanel, WorkflowCommandCenter, WorkflowCommandTools } from "../workflows/WorkflowCommandCenter";
 import { useEffect, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { ModelDetail } from "../models/api";
 import type { WorkflowRunFilterState } from "../workflows/api";
@@ -50,19 +51,26 @@ export function ProfilingScreen({
       model.model_id,
       resultFilters,
     ),
-    enabled: view === "results",
   });
-  const runsQuery = useQuery({
+  const runsQuery = useInfiniteQuery({
     queryKey: profilingQueryKeys.runs(tenantId, model.model_id, runState),
-    queryFn: () => api.listWorkflowRuns(
+    queryFn: ({ pageParam }) => api.listWorkflowRuns(
       tenantId,
       model.model_id,
       "profiling",
       runState,
+      50,
+      pageParam,
     ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
     enabled: view === "runs" || selectedRunId !== null,
   });
 
+  useEffect(() => {
+    const first = runsQuery.data?.pages[0]?.items[0];
+    if (view === "runs" && selectedRunId === null && first && !runsQuery.isFetching) setSelectedRunId(first.workflow_run_id);
+  }, [view, selectedRunId, runsQuery.data, runsQuery.isFetching]);
   useEffect(() => {
     if (selectedRunId !== null) return;
     if (runReturnId.current !== null) {
@@ -126,33 +134,14 @@ export function ProfilingScreen({
   };
 
   return (
-    <div className="profiling-page page-enter">
+    <WorkflowCommandCenter filterCount={Object.values(resultFilters).filter(Boolean).length} className="profiling-page page-enter">
       <header className="workflow-commandbar model-section-toolbar">
         <h1 className="model-section-title sr-only">Profiling</h1>
         <div className="workflow-command-context">
-          <nav className="workflow-tabs" aria-label="Profiling views">
-            <button
-              className={view === "results" ? "is-active" : ""}
-              type="button"
-              aria-pressed={view === "results"}
-              onClick={() => setView("results")}
-            >
-              Results
-            </button>
-            <button
-              className={view === "runs" ? "is-active" : ""}
-              type="button"
-              aria-pressed={view === "runs"}
-              onClick={() => setView("runs")}
-            >
-              Runs
-            </button>
-          </nav>
-          <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
-            {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
-          </span>
+          <strong className="workflow-view-label">Results</strong>
         </div>
         <div className="workflow-command-actions">
+          <WorkflowCommandTools />
           <button
             className="button button-secondary button-small"
             type="button"
@@ -172,7 +161,7 @@ export function ProfilingScreen({
         </div>
       </header>
 
-      {view === "results" ? (
+
         <ProfilingResults
           tenantId={tenantId}
           modelId={model.model_id}
@@ -187,33 +176,26 @@ export function ProfilingScreen({
           }
           onApplyFilters={onApplyResultFilters}
         />
-      ) : (
-        <ProfilingRuns
-          items={runsQuery.data?.items ?? []}
-          state={runState}
-          isLoading={runsQuery.isPending}
-          isError={runsQuery.isError}
-          selectedRunId={selectedRunId}
-          onStateChange={(state) => {
-            setSelectedRunId(null);
-            setRunState(state);
-          }}
-          onShowDetails={setSelectedRunId}
-        />
-      )}
-
-      {selectedRunId !== null ? (
-        <ProfilingRunDrawer
-          api={api}
-          tenantId={tenantId}
-          model={model}
-          runId={selectedRunId}
-          onClose={() => {
-            runReturnId.current = selectedRunId;
-            setSelectedRunId(null);
-          }}
-        />
-      ) : null}
+      <WorkflowActivityPanel label="Profiling" open={view === "runs"}
+        onOpenChange={(open) => setView(open ? "runs" : "results")}
+        actions={<button className="button button-secondary button-small" type="button"
+          disabled={runsQuery.isFetching} onClick={() => void refresh()}>{runsQuery.isFetching ? "Refreshing…" : "Refresh runs"}</button>}>
+        <div className="workflow-run-monitor-layout profiling-activity-layout">
+          <div className="workflow-run-browser">
+            <ProfilingRuns compact items={runsQuery.data?.pages.flatMap((page) => page.items) ?? []}
+              state={runState} isLoading={runsQuery.isPending} isError={runsQuery.isError} selectedRunId={selectedRunId}
+              onStateChange={(state) => { setSelectedRunId(null); setRunState(state); }} onShowDetails={setSelectedRunId} />
+            {runsQuery.hasNextPage ? <button className="button button-secondary button-small" type="button"
+              disabled={runsQuery.isFetchingNextPage} onClick={() => void runsQuery.fetchNextPage()}>Load more runs</button> : null}
+          </div>
+          <div className="workflow-run-monitor-detail">
+            {selectedRunId !== null ? <ProfilingRunDrawer embedded api={api} tenantId={tenantId} model={model}
+              hasTenantLock={hasTenantLock} runId={selectedRunId}
+              onClose={() => { runReturnId.current = selectedRunId; setSelectedRunId(null); }} />
+              : <p className="empty-state compact">Choose a run to see its details.</p>}
+          </div>
+        </div>
+      </WorkflowActivityPanel>
 
       {runConfigurationOpen ? (
         <ProfilingRunConfiguration
@@ -238,6 +220,6 @@ export function ProfilingScreen({
           }}
         />
       ) : null}
-    </div>
+    </WorkflowCommandCenter>
   );
 }

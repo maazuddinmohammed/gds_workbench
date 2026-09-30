@@ -145,16 +145,14 @@ def test_operator_instructions_use_folder_upload_as_the_primary_ui_path() -> Non
     instructions = INSTRUCTIONS_PATH.read_text(encoding="utf-8")
     normalized = " ".join(instructions.split())
 
-    assert "Do not import the ZIP in the Workspace UI" in normalized
-    assert "The ZIP is a transport container only" in normalized
-    assert "Upload the expanded same-named folder" in normalized
-    assert "drag the expanded `gds-workbench-app-source` folder" in normalized
-    assert "flatten its nested source folders" in normalized
-    assert "CLI upload alternative" in instructions
+    assert "Upload the expanded `gds-workbench-app-source` directory" in normalized
+    assert "Do not import the ZIP as notebooks" in normalized
+    assert "flatten Python/package paths" in normalized
+    assert "databricks workspace import-dir" in instructions
     assert "python3 deployment/databricks_ui/build_uploads.py\n" in instructions
-    assert "Databricks-only" not in instructions
-    assert "databricks-ui-foundry" not in instructions
-    assert "Do not edit or replace its generated `app.yaml`" in normalized
+    assert "shasum -a 256 -c SHA256SUMS.txt" in instructions
+    assert "Canonical `app.yaml` is included before hashing" in normalized
+    assert "never edit a generated artifact afterward" in normalized
 
 
 def test_archives_have_explicit_hierarchy_and_match_expanded_trees(

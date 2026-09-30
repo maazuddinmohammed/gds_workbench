@@ -954,6 +954,51 @@ async def test_analysis_cardinality_requires_recorded_nonempty_evidence(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source_distinct", "target_distinct", "missing", "unused", "validated", "expected"),
+    [
+        (80, 100, 4, 24, True, (5.0, 24.0)),
+        (3, 4, 1, 2, True, (33.3333, 50.0)),
+        (3, 3, 0, 0, True, (0.0, 0.0)),
+        (0, 3, 0, 3, True, (None, 100.0)),
+        (3, 0, 3, 0, True, (100.0, None)),
+        (3, 3, 0, 0, False, (None, None)),
+        (None, None, None, None, True, (None, None)),
+    ],
+)
+async def test_analysis_mismatch_percentages_use_validation_distinct_counts(
+    source_distinct: int | None,
+    target_distinct: int | None,
+    missing: int | None,
+    unused: int | None,
+    validated: bool,
+    expected: tuple[float | None, float | None],
+) -> None:
+    row = await ReviewTransaction().fetch_one(
+        "SELECT * FROM workflow.analysis_result WHERE target_model.tenant_id = %s",
+        (7, 7, 18, 701),
+    )
+    assert row is not None
+    row.update(
+        from_row_count=1000,
+        to_row_count=2000,
+        validation_source_non_null_count=900,
+        validation_target_non_null_count=1800,
+        validation_source_distinct_count=source_distinct,
+        validation_target_distinct_count=target_distinct,
+        validation_source_missing_target_count=missing,
+        validation_unused_target_count=unused,
+        validation_state="validated" if validated else "unvalidated",
+        validation_result="unsupported" if validated else None,
+    )
+    summary = _normalize_analysis_summary(row)
+    assert (summary.from_row_count, summary.to_row_count) == (1000, 2000)
+    assert summary.source_missing_target_count == (missing if validated else None)
+    assert summary.unused_target_count == (unused if validated else None)
+    assert (summary.source_missing_target_percent, summary.unused_target_percent) == expected
+
+
+@pytest.mark.asyncio
 async def test_database_review_labels_objects_from_source_tenant(
     web_postgres_database: DisposablePostgres,
 ) -> None:
@@ -1182,6 +1227,14 @@ async def test_database_review_labels_objects_from_source_tenant(
     assert finding_page.items[0].to_endpoint.source_tenant_code == "DEMO_TENANT"
     assert finding_detail.from_endpoint.source_tenant_code == "DEMO_TENANT"
     assert finding_detail.to_endpoint.source_tenant_code == "DEMO_TENANT"
+    # A missing endpoint profile must not hide its relationship or appear as zero.
+    for finding in (finding_page.items[0], finding_detail):
+        assert finding.from_row_count is None
+        assert finding.to_row_count == 10
+        assert finding.source_missing_target_count is None
+        assert finding.unused_target_count is None
+        assert finding.source_missing_target_percent is None
+        assert finding.unused_target_percent is None
 
 
 @pytest.mark.parametrize("feature", ["profiling", "analysis"])

@@ -1,8 +1,11 @@
 """Approved natural-key downstream inputs matching Entity-owned context projections."""
 
+from copy import deepcopy
 from typing import Any
 
 from .mapping_input_schemas import mapping_input_schemas
+
+_MAPPING_TEMPLATES_SCHEMA = mapping_input_schemas()["mapping_templates"]
 
 CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
     "mapping": {
@@ -202,37 +205,23 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "schema.",
             "value_schema": mapping_input_schemas()["object_output_template"],
             "example": {
-                "code": "mapping_object_default",
-                "name": "Default Object Mapping",
-                "description": "Describe physical inputs "
-                "or modeled input/lookup "
-                "sources and ordered Entity "
-                "transformation steps.",
+                "code": "mapping_logical_object_default",
+                "name": "Default Logical Object Mapping",
+                "description": "Logical Object Mapping using the agreed source, transformation and "
+                "null-handling fields.",
                 "target_type": "mapping_object",
+                "modeled_entity_type": "logical_entity",
                 "is_active": True,
                 "fields": [
                     {
-                        "name": "source_objects",
-                        "description": "Nullable list "
-                        "of source "
-                        "Objects. Each "
-                        "entry has "
-                        "tenant_code, "
-                        "system_code, "
-                        "connection_code, "
-                        "object_schema, "
-                        "object_name, "
-                        "alias, in that "
-                        "order. The "
-                        "field is "
-                        "present and "
-                        "may be JSON "
-                        "null. Use only "
-                        "for Logical "
-                        "Mapping; set "
-                        "null for "
-                        "Dimensional "
-                        "Mapping.",
+                        "name": "source_tables",
+                        "description": "Required non-null array; [] is allowed. "
+                        "Each physical source "
+                        "has tenant_code, system_code, connection_code, object_schema, "
+                        "object_name. Logical lookup sources have "
+                        "entity_type=logical_entity, entity_schema_name, entity_name. "
+                        "Use only eligible frozen sources. No alias field is required; "
+                        "explain join roles in the sample query when needed.",
                         "data_type": "array",
                         "array_item_type": "object",
                         "is_required": True,
@@ -244,98 +233,30 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 "connection_code": "lakehouse",
                                 "object_schema": "bronze_crm",
                                 "object_name": "customer",
-                                "alias": "c",
                             }
                         ],
                     },
                     {
-                        "name": "source_logical_entities",
-                        "description": "Optional "
-                        "nullable "
-                        "Logical Entity "
-                        "sources for "
-                        "Dimensional "
-                        "input or "
-                        "Logical "
-                        "foreign-key "
-                        "lookups. Each "
-                        "entry has "
-                        "logical_entity_schema_name, "
-                        "logical_entity_name, "
-                        "alias. Use "
-                        "only frozen "
-                        "eligible "
-                        "source "
-                        "evidence.",
-                        "data_type": "array",
-                        "array_item_type": "object",
-                        "is_required": False,
-                        "order": 2,
-                        "example": [
-                            {
-                                "logical_entity_schema_name": "silver",
-                                "logical_entity_name": "Customer",
-                                "alias": "c",
-                            }
-                        ],
-                    },
-                    {
-                        "name": "source_dimensional_entities",
-                        "description": "Optional "
-                        "nullable "
-                        "Dimensional "
-                        "Entity lookup "
-                        "sources on the "
-                        "Dimensional "
-                        "route only. "
-                        "Each entry has "
-                        "dimensional_entity_schema_name, "
-                        "dimensional_entity_name, "
-                        "alias. Use "
-                        "only frozen "
-                        "eligible "
-                        "same-Model "
-                        "peer lookup "
-                        "evidence.",
-                        "data_type": "array",
-                        "array_item_type": "object",
-                        "is_required": False,
-                        "order": 3,
-                        "example": [
-                            {
-                                "dimensional_entity_schema_name": "gold",
-                                "dimensional_entity_name": "CustomerDimension",
-                                "alias": "customer_dim",
-                            }
-                        ],
-                    },
-                    {
-                        "name": "steps",
-                        "description": "Nullable "
-                        "ordered list "
-                        "of Object "
-                        "transformation "
-                        "instructions: "
-                        "Objects/tables "
-                        "to join, join "
-                        "types and "
-                        "column "
-                        "predicates, "
-                        "filters and "
-                        "any additional "
-                        "processing. "
-                        "The field is "
-                        "present and "
-                        "may be JSON "
-                        "null.",
-                        "data_type": "array",
-                        "array_item_type": "string",
+                        "name": "filter_criteria",
+                        "description": "Required field, nullable text. Object-level filters; null "
+                        "when no filter applies.",
+                        "data_type": "string",
+                        "array_item_type": None,
                         "is_required": True,
-                        "order": 4,
-                        "example": [
-                            "Read customer rows from c.",
-                            "Keep rows where c.is_active = true.",
-                        ],
+                        "order": 2,
+                        "example": "Keep active customer records.",
+                    },
+                    {
+                        "name": "sample_query",
+                        "description": "Required field, nullable text. Pseudo-SQL illustrating "
+                        "supported source joins, predicates, filters and "
+                        "transformations. Null when unavailable; do not invent missing "
+                        "rules.",
+                        "data_type": "string",
+                        "array_item_type": None,
+                        "is_required": True,
+                        "order": 3,
+                        "example": "SELECT * FROM bronze_crm.customer WHERE is_active = true",
                     },
                 ],
             },
@@ -348,50 +269,50 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "means no selected template.",
             "value_schema": mapping_input_schemas()["attribute_output_template"],
             "example": {
-                "code": "mapping_attribute_default",
-                "name": "Default Attribute Mapping",
-                "description": "Describe physical "
-                "inputs or modeled "
-                "input/lookup sources "
-                "and the target "
-                "Attribute "
-                "transformation.",
+                "code": "mapping_logical_attribute_default",
+                "name": "Default Logical Attribute Mapping",
+                "description": "Logical Attribute Mapping using the agreed source, "
+                "transformation and "
+                "null-handling fields.",
                 "target_type": "mapping_attribute",
+                "modeled_entity_type": "logical_entity",
                 "is_active": True,
                 "fields": [
                     {
-                        "name": "source_attributes",
-                        "description": "Optional "
-                        "nullable "
-                        "list of "
-                        "source "
-                        "Attributes. "
-                        "Each entry "
-                        "has "
-                        "tenant_code, "
-                        "system_code, "
-                        "connection_code, "
-                        "object_schema, "
-                        "object_name, "
-                        "attribute_name, "
-                        "in that "
-                        "order. "
-                        "Omission or "
-                        "JSON null "
-                        "is "
-                        "permitted. "
-                        "Use only "
-                        "for Logical "
-                        "Mapping; "
-                        "leave null "
-                        "or absent "
-                        "for "
-                        "Dimensional "
-                        "Mapping.",
+                        "name": "transformation_logic",
+                        "description": "Required field, nullable text. Attribute-level "
+                        "natural-language or pseudocode transformation suitable for "
+                        "SQL generation; null when unsupported or not applicable.",
+                        "data_type": "string",
+                        "array_item_type": None,
+                        "is_required": True,
+                        "order": 1,
+                        "example": "Trim whitespace from the source customer name.",
+                    },
+                    {
+                        "name": "default_record",
+                        "description": "Required field, nullable text. Default value or fallback "
+                        "logic to use when the input is null. Null means do nothing; "
+                        "do not invent a replacement.",
+                        "data_type": "string",
+                        "array_item_type": None,
+                        "is_required": True,
+                        "order": 2,
+                        "example": None,
+                    },
+                    {
+                        "name": "source_columns",
+                        "description": "Required field, nullable array; [] is allowed. "
+                        "Each physical "
+                        "source has tenant_code, system_code, connection_code, "
+                        "object_schema, object_name. Logical lookup sources have "
+                        "entity_type=logical_entity, entity_schema_name, entity_name. "
+                        "Each source also has attribute_name. Use only eligible frozen "
+                        "Attributes. Null when not specified.",
                         "data_type": "array",
                         "array_item_type": "object",
-                        "is_required": False,
-                        "order": 1,
+                        "is_required": True,
+                        "order": 3,
                         "example": [
                             {
                                 "tenant_code": "NWA",
@@ -403,104 +324,22 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             }
                         ],
                     },
-                    {
-                        "name": "source_logical_attributes",
-                        "description": "Optional "
-                        "nullable "
-                        "Logical "
-                        "Attribute "
-                        "sources for "
-                        "Dimensional "
-                        "input or "
-                        "Logical "
-                        "foreign-key "
-                        "lookups. "
-                        "Each entry "
-                        "has "
-                        "logical_entity_schema_name, "
-                        "logical_entity_name, "
-                        "logical_attribute_name. "
-                        "Use only "
-                        "frozen "
-                        "eligible "
-                        "source "
-                        "evidence.",
-                        "data_type": "array",
-                        "array_item_type": "object",
-                        "is_required": False,
-                        "order": 2,
-                        "example": [
-                            {
-                                "logical_entity_schema_name": "silver",
-                                "logical_entity_name": "Customer",
-                                "logical_attribute_name": "CustomerName",
-                            }
-                        ],
-                    },
-                    {
-                        "name": "source_dimensional_attributes",
-                        "description": "Optional "
-                        "nullable "
-                        "Dimensional "
-                        "Attribute "
-                        "lookup "
-                        "sources on "
-                        "the "
-                        "Dimensional "
-                        "route only. "
-                        "Each entry "
-                        "has "
-                        "dimensional_entity_schema_name, "
-                        "dimensional_entity_name, "
-                        "dimensional_attribute_name. "
-                        "Use only "
-                        "frozen "
-                        "eligible "
-                        "same-Model "
-                        "peer lookup "
-                        "evidence.",
-                        "data_type": "array",
-                        "array_item_type": "object",
-                        "is_required": False,
-                        "order": 3,
-                        "example": [
-                            {
-                                "dimensional_entity_schema_name": "gold",
-                                "dimensional_entity_name": "CustomerDimension",
-                                "dimensional_attribute_name": "CustomerKey",
-                            }
-                        ],
-                    },
-                    {
-                        "name": "transformation",
-                        "description": "Required "
-                        "SQL "
-                        "expression "
-                        "using "
-                        "available "
-                        "Object "
-                        "aliases, or "
-                        "precise "
-                        "implementable "
-                        "generation "
-                        "rule. "
-                        "Include any "
-                        "necessary "
-                        "cast, "
-                        "null/default, "
-                        "aggregation "
-                        "or "
-                        "self-join "
-                        "source-role "
-                        "behavior.",
-                        "data_type": "string",
-                        "array_item_type": None,
-                        "is_required": True,
-                        "order": 4,
-                        "example": "TRIM(c.customer_name)",
-                    },
                 ],
             },
+        },
+        "mapping_support_records": {
+            "description": "Individually pageable saved evidence envelopes with evidence_type "
+            "and record. "
+            "Includes target lineage/relationships, Analysis, Profiles and applicable Assertions; "
+            "eligible upstream Logical definitions, Attributes/key roles, relationships, applied "
+            "Object/Attribute Mapping documents and their available template definitions. Gold "
+            "also includes active physical lineage descriptions, Profiles and Analysis restricted "
+            "to this Model and business System. Physical evidence explains Logical inputs; it "
+            "does not make raw Objects eligible Gold sources. Preserve opaque Mapping documents "
+            "and exact schema-qualified identities; a missing template definition does not "
+            "authorize guessing custom field semantics. Empty records mean no saved evidence.",
+            "value_schema": mapping_input_schemas()["mapping_support_records"],
+            "example": [],
         },
         "mapping_support": {
             "description": "Saved evidence scoped to this target and "
@@ -548,6 +387,15 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
         },
     },
     "code_generation": {
+        "mapping_templates": {
+            "description": "Deduplicated definitions of templates used by the applied Object and "
+            "Attribute transformations. Match output_template_code to code; ordered fields explain "
+            "their meaning, types, examples and requirements. Inactive saved templates still "
+            "describe their documents. An empty list in older frozen context means definitions "
+            "were not supplied, not that a different template may be assumed.",
+            "value_schema": _MAPPING_TEMPLATES_SCHEMA,
+            "example": [],
+        },
         "target_metadata": {
             "description": "Owning Entity schema, name and "
             "modeled columns with Tenant catalog "
@@ -1160,6 +1008,10 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                     "SqlObjectTransformation": {
                         "additionalProperties": False,
                         "properties": {
+                            "output_template_code": {
+                                "type": ["string", "null"],
+                                "pattern": "^[a-z][a-z0-9_.-]{0,99}$",
+                            },
                             "object_dependency_order": {
                                 "minimum": 0,
                                 "title": "Object Dependency Order",
@@ -1223,6 +1075,10 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                     "SqlAttributeTransformation": {
                         "additionalProperties": False,
                         "properties": {
+                            "output_template_code": {
+                                "type": ["string", "null"],
+                                "pattern": "^[a-z][a-z0-9_.-]{0,99}$",
+                            },
                             "target_attribute_name": {
                                 "maxLength": 400,
                                 "minLength": 1,
@@ -1288,15 +1144,34 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
             "value_schema": {"pattern": "^target_[1-9][0-9]*$", "type": "string"},
             "example": "target_1",
         },
-        "sql_generation_guide": {
-            "description": "Exact content of the selected "
-            "frozen published SQL Generation "
-            "Guide. Apply its target dialect "
-            "and generation conventions.",
-            "value_schema": {"type": "string", "minLength": 1},
-            "example": "Generate Databricks SQL using exact "
-            "applied transformations and "
-            "qualified physical names.",
+        "artifact_requirements": {
+            "description": "Frozen per-target delivery settings: effective file layout, "
+            "selected System assignments and protected filenames. SQL conventions live "
+            "in the Code prompt; these values contain no transformation instructions.",
+            "value_schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "file_layout": {"type": "string", "enum": ["combined", "per_system"]},
+                    "source_system_codes": {
+                        "type": "array",
+                        "minItems": 1,
+                        "uniqueItems": True,
+                        "items": {"type": "string", "minLength": 1},
+                    },
+                    "preserved_artifact_names": {
+                        "type": "array",
+                        "uniqueItems": True,
+                        "items": {"type": "string", "minLength": 1},
+                    },
+                },
+                "required": ["file_layout", "source_system_codes", "preserved_artifact_names"],
+            },
+            "example": {
+                "file_layout": "combined",
+                "source_system_codes": ["CRM"],
+                "preserved_artifact_names": [],
+            },
         },
     },
     "validation": {
@@ -1485,6 +1360,11 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                     },
                                     "type": "array",
                                 },
+                                "mapping_templates": {
+                                    name: value
+                                    for name, value in _MAPPING_TEMPLATES_SCHEMA.items()
+                                    if name != "$defs"
+                                },
                             },
                             "required": [
                                 "target_metadata",
@@ -1510,6 +1390,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                     "additionalProperties": False,
                 },
                 "$defs": {
+                    **_MAPPING_TEMPLATES_SCHEMA["$defs"],
                     "target_metadata_SqlPhysicalAttribute": {
                         "additionalProperties": False,
                         "properties": {
@@ -1889,6 +1770,10 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                     "object_transformations_SqlObjectTransformation": {
                         "additionalProperties": False,
                         "properties": {
+                            "output_template_code": {
+                                "type": ["string", "null"],
+                                "pattern": "^[a-z][a-z0-9_.-]{0,99}$",
+                            },
                             "object_dependency_order": {
                                 "minimum": 0,
                                 "title": "Object Dependency Order",
@@ -1917,6 +1802,10 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                     "attribute_transformations_SqlAttributeTransformation": {
                         "additionalProperties": False,
                         "properties": {
+                            "output_template_code": {
+                                "type": ["string", "null"],
+                                "pattern": "^[a-z][a-z0-9_.-]{0,99}$",
+                            },
                             "target_attribute_name": {
                                 "maxLength": 400,
                                 "minLength": 1,
@@ -2416,3 +2305,8 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
         },
     },
 }
+
+CONTRACTS["code_generation"]["mapping_templates"]["example"] = [
+    deepcopy(CONTRACTS["mapping"][name]["example"])
+    for name in ("object_output_template", "attribute_output_template")
+]

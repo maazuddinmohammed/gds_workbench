@@ -1,6 +1,7 @@
-import type { OutputTemplateSummary } from "./api";
+import type { MappingEntityType, OutputTemplateSummary } from "./api";
 
 export function MappingOutputTemplateSelection({
+  entityType,
   mappingObjects,
   mappingAttributes,
   objectValue,
@@ -9,6 +10,7 @@ export function MappingOutputTemplateSelection({
   onObjectChange,
   onAttributeChange,
 }: {
+  entityType: MappingEntityType;
   mappingObjects: OutputTemplateSummary[];
   mappingAttributes: OutputTemplateSummary[];
   objectValue: string;
@@ -17,16 +19,17 @@ export function MappingOutputTemplateSelection({
   onObjectChange: (value: string) => void;
   onAttributeChange: (value: string) => void;
 }) {
+  const layer = entityType === "logical_entity" ? "logical" : "dimensional";
   return (
     <section className="agent-run-configuration" aria-labelledby="mapping-output-template-heading">
       <header>
         <strong id="mapping-output-template-heading">Output templates</strong>
-        <span>New Logical and Dimensional mappings use global defaults. Override either template for this run.</span>
+        <span>{layer === "logical" ? "Logical" : "Dimensional"} mappings use their own global defaults. Override either template for this run.</span>
       </header>
       <div className="agent-run-grid">
         <OutputTemplateSelect
           label="Object Mapping Output Template"
-          defaultCode="mapping_object_default"
+          defaultCode={`mapping_${layer}_object_default`}
           templates={mappingObjects}
           value={objectValue}
           disabled={disabled}
@@ -34,7 +37,7 @@ export function MappingOutputTemplateSelection({
         />
         <OutputTemplateSelect
           label="Attribute Mapping Output Template"
-          defaultCode="mapping_attribute_default"
+          defaultCode={`mapping_${layer}_attribute_default`}
           templates={mappingAttributes}
           value={attributeValue}
           disabled={disabled}

@@ -555,6 +555,21 @@ async def test_dimensional_mapping_uses_logical_entities_without_registered_targ
         for item in context.sources
         if isinstance(item.object, MappingModeledEntity)
     ] == [scope.logical_entity_id]
+    assert {
+        item.object.object_id
+        for item in context.upstream_physical_sources
+        if isinstance(item.object, MappingPhysicalObject)
+    } == {scope.source_object_id, scope.bronze_object_id}
+    # The shared lake's physical System differs from its originating business System.
+    bronze = next(
+        item.object
+        for item in context.upstream_physical_sources
+        if isinstance(item.object, MappingPhysicalObject)
+        and item.object.object_id == scope.bronze_object_id
+    )
+    assert isinstance(bronze, MappingPhysicalObject)
+    assert bronze.system_id == scope.other_system_id
+    assert context.source_system.system_id == scope.source_system_id
     assert assess_mapping_readiness(plan=scope.plan, context=context).ready
 
 
@@ -569,6 +584,7 @@ async def test_logical_mapping_keeps_ordered_source_and_ingested_bronze_inputs(
         if isinstance(item.object, MappingPhysicalObject)
     } == {scope.source_object_id, scope.bronze_object_id}
     assert context.target.entity_id == scope.logical_entity_id
+    assert context.upstream_physical_sources == ()
     assert assess_mapping_readiness(plan=scope.plan, context=context).ready
 
 

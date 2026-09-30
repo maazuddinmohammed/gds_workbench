@@ -748,7 +748,6 @@
 
 .enrichment-bulk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .enrichment-bulk-actions > span { color: var(--muted); font-size: 0.8rem; }
-.metadata-enrichment-screen .workflow-table-scroll { border: 1px solid var(--line); border-radius: var(--radius-medium); }
 .metadata-enrichment-screen .enrichment-metadata-table .selection-cell { width: 2.75rem; min-width: 2.75rem; max-width: 2.75rem; padding: 0.6rem; text-align: center; }
 
 .enrichment-attribute-selection { min-width: 0; margin: 0; padding: 0; border: 0; }

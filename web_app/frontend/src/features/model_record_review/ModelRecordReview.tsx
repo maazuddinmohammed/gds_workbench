@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { WorkflowCommandContext } from "../workflows/WorkflowCommandCenter";
+import { useContext, useEffect, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
@@ -30,6 +31,7 @@ export function ModelRecordReview({
   onApplied: () => Promise<void>;
   actions?: readonly ModelReviewCommand["action"][];
 }) {
+  const commandCenter = useContext(WorkflowCommandContext);
   const [command, setCommand] = useState<ModelReviewCommand | null>(null);
   const [notice, setNotice] = useState("");
   const reason = !hasTenantLock ? "Tenant Lock required for review updates."
@@ -37,7 +39,7 @@ export function ModelRecordReview({
     : selectedIds.size > 200 ? "Select at most 200 records per review." : undefined;
   return (
     <>
-      <div className="review-selectionbar" tabIndex={-1}>
+      <div className="review-selectionbar" tabIndex={-1} hidden={Boolean(commandCenter) && selectedIds.size === 0}>
         <span>{selectedIds.size} selected</span>
         <div className="workflow-command-actions">
           {actions.map((action) => (

@@ -87,30 +87,6 @@ from .context import (
 
 _logger = logging.getLogger(__name__)
 
-_PARTIAL_AUTHORING_CONTRACT = (
-    "Authoritative partial-authoring contract for this Run: "
-    "These rules take precedence over older instructions that reject incomplete "
-    "Mapping. Generate reviewable SQL for every selected mapped System, even "
-    "when its Object or Attribute transformations are missing. Preserve grounded "
-    "transformations and use only the supplied source metadata and saved logic. "
-    "For each required output Attribute without an evidenced expression, emit "
-    "CAST(NULL AS its declared target data type) AS its target column name, "
-    "including nonnullable columns; this is an explicit review placeholder, "
-    "not a business default. Continue to omit database/framework-populated "
-    "columns required by the delivery contract. Never invent source columns, "
-    "joins, filters, deduplication, defaults or cross-System reconciliation. "
-    "If no evidenced rowset or join supports a branch, use a zero-row typed-NULL "
-    "projection with WHERE FALSE for that branch. If a combined file lacks "
-    "evidenced System-combination logic, preserve grounded stages and finish "
-    "with that zero-row projection; do not invent UNION or joins. Return "
-    "missing_requirement_evidence alongside the covered artifacts whenever "
-    "logic is missing or placeholders are used. It is a review warning, not a "
-    "reason to omit an Entity or System. Conflicting requirements still require "
-    "conflicting_requirement and no artifacts. Retain exact selected-System "
-    "coverage, requested file layout and SQL-only structural requirements. "
-    "Put warnings in issues, never comments or prose inside SQL."
-)
-
 
 class CodeGenerationContextRepository(Protocol):
     async def load(
@@ -288,30 +264,8 @@ class CodeGenerationWorkflow:
                 finding_count=0,
             )
 
-            guide_content = _guide_content(context)
             stage_plan = plan.model_copy(
-                update={
-                    "workflow_execution_mode": CODE_GENERATION_AGENT_EXECUTION_MODE,
-                    # Backend authoring policy also follows the frozen system
-                    # prompt, so an older version cannot prohibit partial SQL.
-                    # The stored prompt and original frozen plan stay unchanged.
-                    "stages": tuple(
-                        stage.model_copy(
-                            update={
-                                "templates": stage.templates.model_copy(
-                                    update={
-                                        "system": stage.templates.system
-                                        + "\n\n"
-                                        + _PARTIAL_AUTHORING_CONTRACT
-                                    }
-                                )
-                            }
-                        )
-                        if stage.stage_code == "sql_generation"
-                        else stage
-                        for stage in plan.stages
-                    ),
-                }
+                update={"workflow_execution_mode": CODE_GENERATION_AGENT_EXECUTION_MODE}
             )
             artifacts: list[GeneratedSqlArtifact] = []
             progress_points = intermediate_progress_points(target_count) | {target_count}
@@ -353,36 +307,6 @@ class CodeGenerationWorkflow:
                     for attribute in active_attributes
                 )
                 incomplete_target_count += int(incomplete_mapping)
-                run_guide = guide_content
-                if plan.code_generation_file_layout is not None:
-                    run_guide += "\n\nRun delivery contract: " + (
-                        "Write exactly one transformation SQL file for this Object combining "
-                        "its selected Systems. Build isolated System branches. Combine only "
-                        "according to applied Mapping; never invent UNION, joins "
-                        "or reconciliation. "
-                        if plan.code_generation_file_layout == "combined"
-                        else "Write one standalone transformation SQL file per selected System "
-                        "for this Object. Never use temporary state from another file. "
-                    )
-                    run_guide += (
-                        "Use successive CREATE OR REPLACE TEMPORARY VIEW statements where "
-                        "Mapping needs stages; declare each temporary dependency before use. "
-                        "Finish each file with one explicit target-column SELECT through "
-                        "SourceSystemID in registered order. Omit the target surrogate and "
-                        "framework-populated audit/history fields. No SELECT *, persistent DDL, "
-                        "DML, loading commands, comments, Markdown or prose in transformation SQL. "
-                        "The runtime writes the target. Use the published guide's resolved "
-                        "identifiers and confirmed runtime parameters. Separate files cannot "
-                        "replace Mapping that requires joint System comparison; report missing "
-                        "or incompatible evidence instead of inventing independent transformations."
-                    )
-                if target.preserved_artifact_names:
-                    run_guide += (
-                        "\nPreserve these existing file names; do not emit them: "
-                        + ", ".join(target.preserved_artifact_names)
-                    )
-                run_guide += "\n\n" + _PARTIAL_AUTHORING_CONTRACT
-                prompt_values["sql_generation_guide"] = run_guide
                 prompt_context = cast(
                     JsonValue,
                     {
@@ -458,7 +382,6 @@ class CodeGenerationWorkflow:
                         "workflow.code_generation.common.sql_generation.context": (
                             _target_context_manifest(target_context)
                         ),
-                        "workflow.code_generation.sql_generation_guide": run_guide,
                         "workflow.validation_failures": [],
                     },
                     context=prompt_context,
@@ -813,33 +736,6 @@ def _source_system_key(
     )
 
 
-def _guide_content(context: CodeGenerationExecutionContext) -> str:
-    value = context.agent_context
-    if not isinstance(value, dict):
-        raise InvalidRequestError("The Code Generation guide context is unavailable.")
-    targets = value.get("targets")
-    if not isinstance(targets, list) or not targets:
-        raise InvalidRequestError("The Code Generation guide context is unavailable.")
-
-    contents: list[str] = []
-    for target in targets:
-        if not isinstance(target, dict):
-            raise InvalidRequestError("The Code Generation guide context is unavailable.")
-        source_context = target.get("context")
-        if not isinstance(source_context, dict):
-            raise InvalidRequestError("The Code Generation guide context is unavailable.")
-        guide = source_context.get("guide")
-        if not isinstance(guide, dict):
-            raise InvalidRequestError("The Code Generation guide context is unavailable.")
-        content = guide.get("content")
-        if not isinstance(content, str) or not content.strip() or "\x00" in content:
-            raise InvalidRequestError("The Code Generation guide context is unavailable.")
-        contents.append(content)
-    if len(set(contents)) != 1:
-        raise InvalidRequestError("The Code Generation guide context is inconsistent.")
-    return contents[0]
-
-
 def _target_agent_context(
     context: CodeGenerationExecutionContext,
     *,
@@ -862,32 +758,7 @@ def _target_agent_context(
     source_context = match.get("context")
     if not isinstance(source_context, dict):
         raise InvalidRequestError("The Code Generation target context is unavailable.")
-    guide = source_context.get("guide")
-    if not isinstance(guide, dict):
-        raise InvalidRequestError("The Code Generation target context is unavailable.")
-    content = guide.get("content")
-    if not isinstance(content, str) or not content.strip() or "\x00" in content:
-        raise InvalidRequestError("The Code Generation target context is unavailable.")
-    content_bytes = content.encode("utf-8")
-    delivered_guide = {name: item for name, item in guide.items() if name != "content"}
-    delivered_guide.update(
-        {
-            "content_delivery": "sql_generation_guide_variable",
-            "content_sha256": sha256(content_bytes).hexdigest(),
-            "content_byte_count": len(content_bytes),
-        }
-    )
-    return cast(
-        JsonValue,
-        {
-            "targets": [
-                {
-                    **match,
-                    "context": {**source_context, "guide": delivered_guide},
-                }
-            ]
-        },
-    )
+    return cast(JsonValue, {"targets": [match]})
 
 
 def _target_context_manifest(target_context: JsonValue) -> JsonValue:

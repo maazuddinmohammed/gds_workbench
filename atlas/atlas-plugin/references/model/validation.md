@@ -164,4 +164,4 @@ These are complete records, not a required coverage checklist or evidence that f
 - `domain/databricks_sql.py`: statement policy/qualification; `application/model_snapshot.py`: exported saved definitions. All four paths above are under `mcp_server/gds_etl_workbench/`.
 - `database/10_workflow_code_validation.sql`: storage constraints and uniqueness, including scalar-literal shape.
 - `web_app/backend/gds_workbench_api/features/validation/{context,candidate,service}.py`: applied/current authoring inputs, complete-ledger reconciliation and definition generation; not an external comparison executor.
-- `docs/adr/004-code-generation-and-validation-model-sections.md` and `docs/workflow-code-validation-design.md`: authoring/execution boundary and scalar consumer contract.
+- `docs/workflows.md` and `docs/architecture/decisions.md`: authoring/execution boundary and scalar consumer contract.

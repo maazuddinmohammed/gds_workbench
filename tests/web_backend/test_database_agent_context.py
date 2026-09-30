@@ -125,7 +125,9 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
         model = connection.execute(
             """
             INSERT INTO model.model (tenant_id, model_name, logical_schemas, dimensional_schemas)
-            VALUES (%s, %s, '[{"schema_name":"silver","description":null}]', '[{"schema_name":"gold","description":null}]')
+            VALUES (%s, %s,
+                    '[{"schema_name":"silver","description":null}]',
+                    '[{"schema_name":"gold","description":null}]')
             RETURNING model_id, model_revision
             """,
             (tenant_id, f"Agent Context {uuid4().hex}"),
@@ -220,9 +222,22 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
         for direction in ("incoming_relationships", "outgoing_relationships"):
             assert len(groups[0][direction]) == 1
             assert groups[0][direction][0]["analysis_result_is_locked"] is True
-            assert not any(
-                name.startswith("validation_") for name in groups[0][direction][0]
-            )
+            relationship = groups[0][direction][0]
+            assert {
+                name: value
+                for name, value in relationship.items()
+                if name.startswith("validation_")
+            } == {
+                "validation_policy_version": None,
+                "validation_result": None,
+                "validation_source_non_null_count": None,
+                "validation_source_distinct_count": None,
+                "validation_target_non_null_count": None,
+                "validation_target_distinct_count": None,
+                "validation_source_missing_target_count": None,
+                "validation_unused_target_count": None,
+                "validation_duplicate_target_key_count": None,
+            }
         attribute_groups = cast(
             list[dict[str, Any]], values[prefix + "object_attribute_context"]
         )

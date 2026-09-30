@@ -309,8 +309,10 @@ async def test_selected_file_layout_is_enforced_and_preserved_names_cannot_be_re
         "SELECT 1 -- explanation",
     ],
 )
+@pytest.mark.parametrize("layout", [None, "combined", "per_system"])
 async def test_requested_transformation_layout_rejects_loading_sql_and_implicit_columns(
     sql: str,
+    layout: Literal["combined", "per_system"] | None,
 ) -> None:
     validator = CodeGenerationCandidateValidator(
         targets=(
@@ -318,7 +320,7 @@ async def test_requested_transformation_layout_rejects_loading_sql_and_implicit_
                 target_ref="target_1",
                 modeled_entity_id=501,
                 source_system_codes=("CRM",),
-                file_layout="per_system",
+                file_layout=layout,
             ),
         )
     )
@@ -400,3 +402,66 @@ async def test_conflicting_requirements_still_reject_otherwise_covered_sql() -> 
     )
     result = await _validator().validate(candidate)
     assert [issue.code for issue in result.issues] == ["code_generation.conflicting_requirement"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "CREATE TABLE silver.persisted AS SELECT 1 AS id",
+        "INSERT INTO silver.persisted SELECT 1 AS id",
+        "DELETE FROM silver.persisted",
+        "MERGE INTO silver.persisted USING bronze.source ON false WHEN NOT MATCHED THEN INSERT *",
+        "USE CATALOG private_catalog",
+    ],
+)
+async def test_support_artifacts_cannot_bypass_sql_write_restrictions(sql: str) -> None:
+    from gds_etl_workbench.domain.errors import InvalidRequestError
+
+    validator = _validator()
+    candidate = cast(
+        JsonValue,
+        {
+            "artifacts": [
+                _artifact("target_1", "SELECT 1 AS id", systems=["CRM", "ERP"]),
+                _artifact("target_2", "SELECT 2 AS id", systems=["MDM"]),
+                {
+                    **_artifact("target_1", sql, systems=[]),
+                    "artifact_name": "helper.sql",
+                    "artifact_role": "support",
+                },
+            ]
+        },
+    )
+    assert (await validator.validate(candidate)).issues[0].code == "candidate.support_sql_contract"
+    with pytest.raises(InvalidRequestError, match="artifact delivery contract"):
+        validator.parse_validated(candidate)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "CREATE OR REPLACE TEMPORARY VIEW helper AS SELECT 1 AS id",
+        "SELECT 1 AS id",
+        "CREATE OR REPLACE TEMPORARY VIEW helper AS SELECT 1 AS id; SELECT id FROM helper",
+    ],
+)
+async def test_support_artifacts_accept_standalone_safe_sql(sql: str) -> None:
+    validator = _validator()
+    candidate = cast(
+        JsonValue,
+        {
+            "artifacts": [
+                _artifact("target_1", "SELECT 1 AS id", systems=["CRM", "ERP"]),
+                _artifact("target_2", "SELECT 2 AS id", systems=["MDM"]),
+                {
+                    **_artifact("target_1", sql, systems=[]),
+                    "artifact_name": "helper.sql",
+                    "artifact_role": "support",
+                },
+            ]
+        },
+    )
+    assert not (await validator.validate(candidate)).issues
+    assert len(validator.parse_validated(candidate)) == 3

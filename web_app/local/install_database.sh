@@ -130,7 +130,6 @@ psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
 
 for global_seed_file in \
     05_global_prompt_defaults.template.sql \
-    06_global_sql_generation_guide.template.sql \
     07_global_mapping_output_templates.template.sql
 do
     sed \

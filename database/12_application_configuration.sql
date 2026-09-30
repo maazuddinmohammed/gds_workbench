@@ -843,8 +843,8 @@ BEGIN
             WHEN 'analysis' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_modeling_assertions']
             WHEN 'conceptual' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_modeling_assertions', 'list_conceptual_objects', 'get_conceptual_objects', 'list_conceptual_relationships', 'get_conceptual_relationships']
             WHEN 'logical' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_modeling_assertions', 'list_conceptual_objects', 'get_conceptual_objects', 'list_conceptual_relationships', 'get_conceptual_relationships', 'list_logical_submodels', 'get_logical_submodels', 'list_logical_entities', 'get_logical_entities', 'list_logical_attributes', 'get_logical_attributes', 'list_logical_relationships', 'get_logical_relationships']
-            WHEN 'dimensional' THEN ARRAY['get_gds_context', 'get_selected_logical_entities', 'get_modeling_assertions', 'list_logical_submodels', 'get_logical_submodels', 'list_logical_entities', 'get_logical_entities', 'list_logical_attributes', 'get_logical_attributes', 'list_logical_relationships', 'get_logical_relationships', 'list_dimensional_submodels', 'get_dimensional_submodels', 'list_dimensional_entities', 'get_dimensional_entities', 'list_dimensional_attributes', 'get_dimensional_attributes', 'list_dimensional_relationships', 'get_dimensional_relationships']
-            WHEN 'mapping' THEN ARRAY['get_mapping_target', 'get_mapping_sources', 'get_existing_mapping', 'get_mapping_support']
+            WHEN 'dimensional' THEN ARRAY['get_source_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_gds_context', 'get_selected_logical_entities', 'get_modeling_assertions', 'list_logical_submodels', 'get_logical_submodels', 'list_logical_entities', 'get_logical_entities', 'list_logical_attributes', 'get_logical_attributes', 'list_logical_relationships', 'get_logical_relationships', 'list_dimensional_submodels', 'get_dimensional_submodels', 'list_dimensional_entities', 'get_dimensional_entities', 'list_dimensional_attributes', 'get_dimensional_attributes', 'list_dimensional_relationships', 'get_dimensional_relationships']
+            WHEN 'mapping' THEN ARRAY['get_mapping_target', 'get_mapping_sources', 'get_existing_mapping', 'get_mapping_support', 'get_mapping_support_records']
             WHEN 'code_generation' THEN ARRAY['get_code_target', 'get_code_sources', 'get_code_source_systems', 'get_object_transformations', 'get_attribute_transformations']
             WHEN 'validation' THEN ARRAY['get_mapping_evidence', 'get_current_code', 'get_applied_groups', 'get_applied_checks']
             ELSE ARRAY[]::TEXT[]
@@ -1969,6 +1969,8 @@ CREATE TABLE application.output_template (
     output_template_name VARCHAR(200) NOT NULL,
     output_template_description VARCHAR(2000),
     output_template_target_type VARCHAR(30) NOT NULL,
+    -- NULL permits a shared custom template; defaults always declare their layer.
+    output_template_modeled_entity_type VARCHAR(30),
     output_template_schema_digest CHAR(64) NOT NULL,
     created_by_principal_id BIGINT NOT NULL,
     updated_by_principal_id BIGINT NOT NULL,
@@ -1996,6 +1998,10 @@ CREATE TABLE application.output_template (
     CONSTRAINT ck_output_template_target_type CHECK (
         output_template_target_type IN ('mapping_object', 'mapping_attribute')
     ),
+    CONSTRAINT ck_output_template_entity_type CHECK (
+        output_template_modeled_entity_type IS NULL
+        OR output_template_modeled_entity_type IN ('logical_entity', 'dimensional_entity')
+    ),
     CONSTRAINT ck_output_template_schema_digest CHECK (
         output_template_schema_digest ~ '^[0-9a-f]{64}$'
     ),
@@ -2022,6 +2028,7 @@ BEGIN
         NEW.output_template_id,
         NEW.output_template_code,
         NEW.output_template_target_type,
+        NEW.output_template_modeled_entity_type,
         NEW.output_template_schema_digest,
         NEW.created_by_principal_id,
         NEW.created_time,
@@ -2030,6 +2037,7 @@ BEGIN
         OLD.output_template_id,
         OLD.output_template_code,
         OLD.output_template_target_type,
+        OLD.output_template_modeled_entity_type,
         OLD.output_template_schema_digest,
         OLD.created_by_principal_id,
         OLD.created_time,
@@ -2154,6 +2162,292 @@ CREATE INDEX ix_mapping_attribute_output_template
     ON workflow.mapping_attribute (output_template_id)
     WHERE output_template_id IS NOT NULL;
 
+-- Applied Mapping consumers depend on the Output Template tables above.
+CREATE FUNCTION workflow.list_code_generation_target_context(
+    p_model_id BIGINT, p_modeled_entity_type VARCHAR(30),
+    p_required_artifact_type VARCHAR(30) DEFAULT 'sql_file'
+)
+RETURNS TABLE (
+    model_id BIGINT, modeled_entity_type VARCHAR(30), modeled_entity_id BIGINT,
+    modeled_entity_schema_name VARCHAR(400), modeled_entity_name VARCHAR(255),
+    source_system_count INTEGER, code_input_digest CHAR(64), source_context JSONB
+)
+LANGUAGE SQL STABLE SECURITY INVOKER SET search_path = pg_catalog
+AS $list_code_generation_target_context$
+    WITH target AS MATERIALIZED (
+        SELECT entity.*, model.tenant_id, model.silver_model_audit_columns_template,
+               model.gold_model_audit_columns_template, model.gold_model_technical_columns_template,
+               owner.tenant_code AS source_tenant_code, owner.tenant_name AS source_tenant_name,
+               connection.connection_id, connection.connection_code,
+               placement.tenant_id AS placement_tenant_id, placement.tenant_code,
+               placement.tenant_name, placement.tenant_catalog,
+               system.system_id, system.system_code, system.system_name
+          FROM workflow.modeled_entity AS entity
+          JOIN model.model AS model ON model.model_id = entity.model_id AND model.is_active
+          JOIN core.tenant AS owner ON owner.tenant_id = model.tenant_id AND owner.is_active
+          JOIN core.connection AS connection ON connection.connection_id = owner.gds_connection_id
+           AND connection.is_active AND connection.is_global_data_store
+          JOIN core.tenant AS placement ON placement.tenant_id = connection.tenant_id AND placement.is_active
+          JOIN core.system AS system ON system.system_id = connection.system_id AND system.is_active
+         WHERE entity.model_id = p_model_id AND entity.modeled_entity_type = p_modeled_entity_type
+           AND entity.status = 'active'
+           AND (p_required_artifact_type IS NULL OR p_required_artifact_type IN ('sql_file','python_file','python_notebook'))
+    ), active_mapping AS MATERIALIZED (
+        SELECT mapping.*, source.system_code AS source_system_code, source.system_name AS source_system_name
+          FROM workflow.mapping_object AS mapping
+          JOIN target ON target.model_id = mapping.model_id AND target.modeled_entity_type = mapping.modeled_entity_type
+           AND target.modeled_entity_id = coalesce(mapping.logical_entity_id, mapping.dimensional_entity_id)
+          JOIN core.system AS source ON source.system_id = mapping.source_system_id AND source.is_active
+         WHERE mapping.object_mapping_status = 'active'
+           -- Code can be authored from a partial saved pair. Empty ledger rows
+           -- are retained only by strict consumers so they still block readiness.
+           AND (p_required_artifact_type IS NULL
+                OR mapping.mapping_transformation_document IS NOT NULL
+                OR EXISTS (
+                    SELECT 1 FROM workflow.mapping_attribute AS mapped
+                    JOIN workflow.modeled_attribute AS attribute
+                      ON attribute.model_id = mapping.model_id
+                     AND attribute.modeled_entity_type = mapping.modeled_entity_type
+                     AND attribute.modeled_entity_id = coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id)
+                     AND attribute.modeled_attribute_id = coalesce(mapped.logical_attribute_id,mapped.dimensional_attribute_id)
+                     AND attribute.status = 'active'
+                   WHERE mapped.mapping_object_id = mapping.mapping_object_id
+                     AND mapped.attribute_mapping_status = 'active'
+                     AND mapped.attribute_mapping_transformation_document IS NOT NULL
+                ))
+    ), eligible AS MATERIALIZED (
+        SELECT target.* FROM target
+         WHERE EXISTS (SELECT 1 FROM active_mapping AS mapping WHERE mapping.model_id = target.model_id
+           AND mapping.modeled_entity_type = target.modeled_entity_type
+           AND coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id) = target.modeled_entity_id)
+           -- A NULL artifact type is the existing complete-Mapping contract
+           -- used by Validation and execution-readiness consumers.
+           AND (p_required_artifact_type IS NOT NULL OR NOT EXISTS (
+             SELECT 1 FROM active_mapping AS mapping
+              WHERE mapping.model_id = target.model_id AND mapping.modeled_entity_type = target.modeled_entity_type
+                AND coalesce(mapping.logical_entity_id,mapping.dimensional_entity_id) = target.modeled_entity_id
+                AND (mapping.mapping_transformation_document IS NULL OR EXISTS (
+                  SELECT 1 FROM workflow.modeled_attribute AS attribute
+                   WHERE attribute.model_id = target.model_id AND attribute.modeled_entity_type = target.modeled_entity_type
+                     AND attribute.modeled_entity_id = target.modeled_entity_id AND attribute.status = 'active'
+                     AND NOT EXISTS (
+                       SELECT 1 FROM workflow.mapping_attribute AS mapped
+                        WHERE mapped.mapping_object_id = mapping.mapping_object_id
+                          AND coalesce(mapped.logical_attribute_id,mapped.dimensional_attribute_id) = attribute.modeled_attribute_id
+                          AND mapped.attribute_mapping_status = 'active'
+                          AND mapped.attribute_mapping_transformation_document IS NOT NULL
+                     )
+                ))
+           ))
+    ), assembled AS (
+      SELECT target.model_id, target.modeled_entity_type, target.modeled_entity_id,
+             target.modeled_entity_schema_name, target.modeled_entity_name,
+             systems.source_system_count,
+             jsonb_build_object(
+               'consumer_context_version','entity-3',
+               'target', jsonb_build_object(
+                 'model_id',target.model_id,'modeled_entity_type',target.modeled_entity_type,
+                 'modeled_entity_id',target.modeled_entity_id,
+                 'modeled_entity_schema_name',target.modeled_entity_schema_name,
+                 'modeled_entity_name',target.modeled_entity_name,
+                 'source_tenant_id',target.tenant_id,'source_tenant_code',target.source_tenant_code,
+                 'source_tenant_name',target.source_tenant_name,'tenant_id',target.placement_tenant_id,
+                 'tenant_code',target.tenant_code,'tenant_name',target.tenant_name,'tenant_catalog',target.tenant_catalog,
+                 'system_id',target.system_id,'system_code',target.system_code,'system_name',target.system_name,
+                 'connection_id',target.connection_id,'connection_code',target.connection_code,
+                 'object_schema',target.modeled_entity_schema_name,'object_name',target.modeled_entity_name,
+                 'object_description',target.definition,'zone_code',CASE target.modeled_entity_type WHEN 'logical_entity' THEN 'silver' ELSE 'gold' END,
+                 'batch_attribute_name',NULL,'is_locked',target.is_locked,
+                 'audit_columns_template',CASE target.modeled_entity_type WHEN 'logical_entity' THEN target.silver_model_audit_columns_template ELSE target.gold_model_audit_columns_template END,
+                 'technical_columns_template',CASE target.modeled_entity_type WHEN 'dimensional_entity' THEN target.gold_model_technical_columns_template ELSE NULL END,
+                 'attributes',attributes.documents),
+               'physical_sources',sources.documents,'source_systems',systems.documents,
+               'object_mappings',mappings.documents,'attribute_mappings',attribute_mappings.documents,
+               'mapping_templates',mapping_templates.documents
+             ) AS source_context
+        FROM eligible AS target
+        CROSS JOIN LATERAL (
+          SELECT coalesce(jsonb_agg(jsonb_build_object(
+            'modeled_attribute_id',a.modeled_attribute_id,'attribute_name',a.attribute_name,
+            'attribute_ordinal_position',a.ordinal_position,'attribute_data_type',a.data_type,
+            'attribute_inferred_data_type',a.data_type,'attribute_nullability',a.is_nullable,
+            'attribute_description',a.definition,'fc_attribute_name',NULL,'attribute_custom_code',NULL,
+            'is_surrogate_key',a.is_surrogate_key,'is_natural_key',a.is_natural_key,'is_meta_data',a.is_audit_column,
+            'is_masking_required',FALSE,'is_active',a.status = 'active','is_locked',a.is_locked
+          ) ORDER BY a.ordinal_position,a.modeled_attribute_id),'[]'::JSONB) AS documents
+          FROM workflow.modeled_attribute AS a WHERE a.model_id = target.model_id
+           AND a.modeled_entity_type = target.modeled_entity_type AND a.modeled_entity_id = target.modeled_entity_id
+        ) AS attributes
+        CROSS JOIN LATERAL (
+          SELECT count(*)::INTEGER AS source_system_count,
+                 jsonb_agg(jsonb_build_object('source_system_id',m.source_system_id,
+                   'system_code',m.source_system_code,'system_name',m.source_system_name)
+                   ORDER BY lower(m.source_system_code),m.source_system_id) AS documents
+            FROM active_mapping AS m WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+             AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
+        ) AS systems
+        CROSS JOIN LATERAL (
+          SELECT jsonb_agg(jsonb_build_object('mapping_object_id',m.mapping_object_id,'source_system_id',m.source_system_id,
+                   'object_dependency_order',m.object_dependency_order,
+                   'output_template_code',template.output_template_code,
+                   'entity',jsonb_build_object('entity_type',target.modeled_entity_type,'entity_id',target.modeled_entity_id,
+                     'entity_schema_name',target.modeled_entity_schema_name,'entity_name',target.modeled_entity_name,
+                     'definition',target.definition,'classification',target.classification,'grain',target.grain,'assertions',assertions.documents),
+                   'transformation',m.mapping_transformation_document)
+                   ORDER BY lower(m.source_system_code),m.source_system_id,m.object_dependency_order,m.mapping_object_id) AS documents
+            FROM active_mapping AS m
+            LEFT JOIN application.output_template AS template ON template.output_template_id = m.output_template_id
+            CROSS JOIN LATERAL (
+              SELECT coalesce(jsonb_agg(jsonb_build_object(
+                'modeling_assertion_record_key',a.modeling_assertion_record_key,
+                'modeling_assertion_record_type',a.modeling_assertion_record_type,'modeling_assertion_text',a.modeling_assertion_text,
+                'modeling_assertion_details',a.modeling_assertion_details,'modeling_assertion_source_location',a.modeling_assertion_source_location,
+                'modeling_assertion_confidence',a.modeling_assertion_confidence,'modeling_assertion_document_name',d.modeling_assertion_document_name
+              ) ORDER BY lower(a.modeling_assertion_record_key)),'[]'::JSONB) AS documents
+              FROM model.modeling_assertion_record AS a JOIN model.modeling_assertion_document AS d
+                ON d.modeling_assertion_document_id = a.modeling_assertion_document_id AND d.model_id = a.model_id AND d.is_active
+              WHERE a.model_id = target.model_id AND a.modeling_assertion_record_status = 'active'
+                AND (d.system_id IS NULL OR d.system_id = m.source_system_id)
+                AND (d.tenant_id IS NULL OR d.tenant_id = target.tenant_id OR EXISTS (
+                  SELECT 1 FROM model.model_input_scope AS scope JOIN core.object AS source ON source.object_id = scope.object_id
+                   WHERE scope.model_id = target.model_id AND scope.is_active AND source.source_tenant_id = d.tenant_id))
+            ) AS assertions
+           WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+             AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
+        ) AS mappings
+        CROSS JOIN LATERAL (
+          SELECT coalesce(jsonb_agg(jsonb_build_object(
+                   'mapping_attribute_id',a.mapping_attribute_id,'mapping_object_id',m.mapping_object_id,
+                   'source_system_id',m.source_system_id,'modeled_attribute_id',attribute.modeled_attribute_id,
+                   'target_attribute_name',attribute.attribute_name,'modeled_attribute_name',attribute.attribute_name,
+                   'target_attribute_ordinal_position',attribute.ordinal_position,
+                   'output_template_code',template.output_template_code,
+                   'transformation',a.attribute_mapping_transformation_document
+                 ) ORDER BY lower(m.source_system_code),m.source_system_id,attribute.ordinal_position,
+                     coalesce(a.mapping_attribute_id,attribute.modeled_attribute_id)),'[]'::JSONB) AS documents
+            FROM active_mapping AS m
+            JOIN workflow.modeled_attribute AS attribute ON attribute.model_id = m.model_id
+              AND attribute.modeled_entity_type = m.modeled_entity_type
+              AND attribute.modeled_entity_id = coalesce(m.logical_entity_id,m.dimensional_entity_id)
+              AND attribute.status = 'active'
+            LEFT JOIN workflow.mapping_attribute AS a ON a.mapping_object_id = m.mapping_object_id
+              AND a.attribute_mapping_status = 'active'
+              AND attribute.modeled_attribute_id = coalesce(a.logical_attribute_id,a.dimensional_attribute_id)
+            LEFT JOIN application.output_template AS template ON template.output_template_id = a.output_template_id
+           WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+             AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
+        ) AS attribute_mappings
+        CROSS JOIN LATERAL (
+          SELECT coalesce(jsonb_agg(jsonb_build_object(
+            'code',template.output_template_code,'name',template.output_template_name,
+            'description',template.output_template_description,
+            'target_type',template.output_template_target_type,
+            'modeled_entity_type',template.output_template_modeled_entity_type,
+            'is_active',template.is_active,'fields',fields.documents
+          ) ORDER BY template.output_template_code),'[]'::JSONB) AS documents
+          FROM application.output_template AS template
+          JOIN (
+            SELECT m.output_template_id FROM active_mapping AS m
+             WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+               AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
+            UNION
+            SELECT a.output_template_id FROM active_mapping AS m
+            JOIN workflow.mapping_attribute AS a ON a.mapping_object_id = m.mapping_object_id
+              AND a.attribute_mapping_status = 'active'
+            JOIN workflow.modeled_attribute AS attribute ON attribute.model_id = m.model_id
+              AND attribute.modeled_entity_type = m.modeled_entity_type
+              AND attribute.modeled_entity_id = coalesce(m.logical_entity_id,m.dimensional_entity_id)
+              AND attribute.modeled_attribute_id = coalesce(a.logical_attribute_id,a.dimensional_attribute_id)
+              AND attribute.status = 'active'
+             WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+               AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
+          ) AS used ON used.output_template_id = template.output_template_id
+          CROSS JOIN LATERAL (
+            SELECT jsonb_agg(jsonb_build_object(
+              'name',field.output_template_field_name,'description',field.output_template_field_description,
+              'data_type',field.output_template_field_data_type,
+              'array_item_type',field.output_template_field_array_item_type,
+              'example',field.output_template_field_example,
+              'is_required',field.output_template_field_is_required,'order',field.output_template_field_order
+            ) ORDER BY field.output_template_field_order) AS documents
+            FROM application.output_template_field AS field
+             WHERE field.output_template_id = template.output_template_id
+          ) AS fields
+          -- Saved documents retain their defining schema when a template is inactive.
+        ) AS mapping_templates
+        CROSS JOIN LATERAL (
+          SELECT coalesce(jsonb_agg(jsonb_build_object(
+            'selected_source_system_id',m.source_system_id,'source_mapping_id',source.source_mapping_id,
+            'role',source.role,'rationale',source.rationale,'mapping_order',source.mapping_order,'is_locked',source.is_locked,
+            'object',CASE WHEN source.source_object_id IS NOT NULL THEN physical.document ELSE modeled.document END
+          ) ORDER BY lower(m.source_system_code),m.source_system_id,source.mapping_order NULLS LAST,source.source_object_id,source.source_logical_entity_id,source.source_dimensional_entity_id),'[]'::JSONB) AS documents
+          FROM active_mapping AS m
+          CROSS JOIN LATERAL workflow.list_mapping_source_objects(m.model_id,target.modeled_entity_id,target.modeled_entity_type,m.source_system_id) AS source
+          LEFT JOIN LATERAL (
+            SELECT jsonb_build_object(
+              'object_id',o.object_id,'source_tenant_id',o.source_tenant_id,'tenant_id',t.tenant_id,
+              'tenant_code',t.tenant_code,'tenant_catalog',t.tenant_catalog,'system_id',system.system_id,'system_code',system.system_code,
+              'connection_id',c.connection_id,'connection_code',c.connection_code,'object_schema',o.object_schema,'object_name',o.object_name,
+              'object_description',o.object_description,'fc_object_schema',o.fc_object_schema,'fc_object_name',o.fc_object_name,
+              'foreign_catalog',c.foreign_catalog,'batch_attribute_name',o.batch_attribute_name,'zone_code',lower(z.zone_code),
+              'is_active',o.is_active,'is_locked',o.is_locked,'scope_is_active',source.scope_is_active,'scope_is_locked',source.scope_is_locked,
+              'attributes',(SELECT coalesce(jsonb_agg(jsonb_build_object(
+                'attribute_id',a.attribute_id,'attribute_name',a.attribute_name,'attribute_ordinal_position',a.attribute_ordinal_position,
+                'attribute_data_type',a.attribute_data_type,'attribute_inferred_data_type',a.attribute_inferred_data_type,
+                'attribute_nullability',a.attribute_nullability,'attribute_description',a.attribute_description,
+                'fc_attribute_name',a.fc_attribute_name,'attribute_custom_code',a.attribute_custom_code,
+                'is_surrogate_key',a.is_surrogate_key,'is_natural_key',a.is_natural_key,'is_meta_data',a.is_meta_data,
+                'is_masking_required',a.is_masking_required,'is_active',a.is_active,'is_locked',a.is_locked
+              ) ORDER BY a.attribute_ordinal_position,a.attribute_id),'[]'::JSONB) FROM core.attribute AS a WHERE a.object_id = o.object_id)
+            ) AS document
+            FROM core.object AS o JOIN core.connection AS c ON c.connection_id = o.connection_id
+             JOIN core.tenant AS t ON t.tenant_id = c.tenant_id JOIN core.system AS system ON system.system_id = c.system_id
+             JOIN reference.zone AS z ON z.zone_id = o.zone_id WHERE o.object_id = source.source_object_id
+          ) AS physical ON TRUE
+          LEFT JOIN LATERAL (
+            SELECT jsonb_build_object(
+              'modeled_entity_id',e.modeled_entity_id,'modeled_entity_type',e.modeled_entity_type,
+              'modeled_entity_schema_name',e.modeled_entity_schema_name,'modeled_entity_name',e.modeled_entity_name,
+              'source_tenant_id',target.tenant_id,'tenant_id',target.placement_tenant_id,'tenant_code',target.tenant_code,
+              'tenant_catalog',target.tenant_catalog,'system_id',target.system_id,'system_code',target.system_code,
+              'connection_id',target.connection_id,'connection_code',target.connection_code,
+              'object_schema',e.modeled_entity_schema_name,'object_name',e.modeled_entity_name,'object_description',e.definition,
+              'fc_object_schema',NULL,'fc_object_name',NULL,'foreign_catalog',NULL,'batch_attribute_name',NULL,
+              'zone_code',CASE e.modeled_entity_type WHEN 'logical_entity' THEN 'silver' ELSE 'gold' END,
+              'is_active',e.status = 'active','is_locked',e.is_locked,
+              'scope_is_active',source.scope_is_active,'scope_is_locked',source.scope_is_locked,
+              'attributes',(SELECT coalesce(jsonb_agg(jsonb_build_object(
+                'modeled_attribute_id',a.modeled_attribute_id,
+                'attribute_name',a.attribute_name,'attribute_ordinal_position',a.ordinal_position,
+                'attribute_data_type',a.data_type,'attribute_inferred_data_type',a.data_type,'attribute_nullability',a.is_nullable,
+                'attribute_description',a.definition,'fc_attribute_name',NULL,'attribute_custom_code',NULL,
+                'is_surrogate_key',a.is_surrogate_key,'is_natural_key',a.is_natural_key,'is_meta_data',a.is_audit_column,
+                'is_masking_required',FALSE,'is_active',a.status = 'active','is_locked',a.is_locked
+              ) || jsonb_build_object(
+                CASE e.modeled_entity_type WHEN 'logical_entity' THEN 'logical_attribute_name' ELSE 'dimensional_attribute_name' END,
+                a.attribute_name
+              ) ORDER BY a.ordinal_position,a.modeled_attribute_id),'[]'::JSONB) FROM workflow.modeled_attribute AS a
+              WHERE a.model_id = e.model_id AND a.modeled_entity_type = e.modeled_entity_type AND a.modeled_entity_id = e.modeled_entity_id)
+            ) || CASE e.modeled_entity_type WHEN 'logical_entity' THEN jsonb_build_object(
+              'logical_entity_schema_name',e.modeled_entity_schema_name,'logical_entity_name',e.modeled_entity_name
+            ) ELSE jsonb_build_object(
+              'dimensional_entity_schema_name',e.modeled_entity_schema_name,'dimensional_entity_name',e.modeled_entity_name
+            ) END AS document FROM workflow.modeled_entity AS e
+             WHERE e.model_id = target.model_id
+               AND e.modeled_entity_type = CASE WHEN source.source_dimensional_entity_id IS NOT NULL THEN 'dimensional_entity' ELSE 'logical_entity' END
+               AND e.modeled_entity_id = coalesce(source.source_logical_entity_id,source.source_dimensional_entity_id)
+          ) AS modeled ON TRUE
+          WHERE m.model_id = target.model_id AND m.modeled_entity_type = target.modeled_entity_type
+            AND coalesce(m.logical_entity_id,m.dimensional_entity_id) = target.modeled_entity_id
+        ) AS sources
+    )
+    SELECT assembled.model_id,assembled.modeled_entity_type,assembled.modeled_entity_id,
+           assembled.modeled_entity_schema_name,assembled.modeled_entity_name,assembled.source_system_count,
+           encode(sha256(convert_to(assembled.source_context::TEXT,'UTF8')),'hex')::CHAR(64),assembled.source_context
+      FROM assembled ORDER BY assembled.modeled_entity_id;
+$list_code_generation_target_context$;
+REVOKE ALL ON FUNCTION workflow.list_code_generation_target_context(BIGINT,VARCHAR,VARCHAR) FROM PUBLIC;
+
 CREATE FUNCTION application.create_output_template(
     p_entra_tenant_id UUID,
     p_entra_object_id UUID,
@@ -2162,7 +2456,8 @@ CREATE FUNCTION application.create_output_template(
     p_output_template_name VARCHAR(200),
     p_output_template_description VARCHAR(2000),
     p_output_template_target_type VARCHAR(30),
-    p_fields JSONB
+    p_fields JSONB,
+    p_output_template_modeled_entity_type VARCHAR(30) DEFAULT NULL
 )
 RETURNS SETOF application.output_template
 LANGUAGE plpgsql
@@ -2381,6 +2676,8 @@ BEGIN
                 jsonb_build_object(
                     'output_template_target_type',
                         p_output_template_target_type,
+                    'output_template_modeled_entity_type',
+                        p_output_template_modeled_entity_type,
                     'fields', v_normalized_fields
                 )::TEXT,
                 'UTF8'
@@ -2401,6 +2698,7 @@ BEGIN
             v_existing.output_template_name,
             v_existing.output_template_description,
             v_existing.output_template_target_type,
+            v_existing.output_template_modeled_entity_type,
             v_existing.output_template_schema_digest,
             v_existing.is_active
         ) IS DISTINCT FROM ROW(
@@ -2408,6 +2706,7 @@ BEGIN
             p_output_template_name,
             p_output_template_description,
             p_output_template_target_type,
+            p_output_template_modeled_entity_type,
             v_schema_digest,
             TRUE
         ) THEN
@@ -2422,6 +2721,7 @@ BEGIN
         output_template_name,
         output_template_description,
         output_template_target_type,
+        output_template_modeled_entity_type,
         output_template_schema_digest,
         created_by_principal_id,
         updated_by_principal_id
@@ -2430,6 +2730,7 @@ BEGIN
         p_output_template_name,
         p_output_template_description,
         p_output_template_target_type,
+        p_output_template_modeled_entity_type,
         v_schema_digest,
         v_actor.principal_id,
         v_actor.principal_id
@@ -2474,7 +2775,8 @@ REVOKE ALL ON FUNCTION application.create_output_template(
     VARCHAR,
     VARCHAR,
     VARCHAR,
-    JSONB
+    JSONB,
+    VARCHAR
 ) FROM PUBLIC;
 
 CREATE FUNCTION application.update_output_template(
@@ -2564,707 +2866,4 @@ REVOKE ALL ON FUNCTION application.update_output_template(
     VARCHAR,
     BOOLEAN,
     TIMESTAMPTZ
-) FROM PUBLIC;
-
-CREATE TABLE application.sql_generation_guide (
-    sql_generation_guide_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    sql_generation_guide_code VARCHAR(100) NOT NULL,
-    sql_generation_guide_name VARCHAR(200) NOT NULL,
-    sql_generation_guide_description VARCHAR(2000),
-    is_default BOOLEAN NOT NULL DEFAULT FALSE,
-    created_by_principal_id BIGINT NOT NULL,
-    updated_by_principal_id BIGINT NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_sql_generation_guide_creator FOREIGN KEY (
-        created_by_principal_id
-    ) REFERENCES security.principal (principal_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_sql_generation_guide_updater FOREIGN KEY (
-        updated_by_principal_id
-    ) REFERENCES security.principal (principal_id) ON DELETE NO ACTION,
-    CONSTRAINT ck_sql_generation_guide_code CHECK (
-        sql_generation_guide_code ~ '^[a-z][a-z0-9_.-]{0,99}$'
-    ),
-    CONSTRAINT ck_sql_generation_guide_name CHECK (
-        reference.is_nonblank(sql_generation_guide_name)
-    ),
-    CONSTRAINT ck_sql_generation_guide_description CHECK (
-        sql_generation_guide_description IS NULL
-        OR reference.is_nonblank(sql_generation_guide_description)
-    ),
-    CONSTRAINT ck_sql_generation_guide_default_active CHECK (
-        NOT is_default OR is_active
-    )
-);
-
-CREATE UNIQUE INDEX ux_sql_generation_guide_code
-    ON application.sql_generation_guide (
-        lower(sql_generation_guide_code)
-    );
-CREATE UNIQUE INDEX ux_sql_generation_guide_default
-    ON application.sql_generation_guide ((1))
-    WHERE is_default AND is_active;
-
-CREATE FUNCTION application.guard_sql_generation_guide()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SET search_path = pg_catalog
-AS $guard_sql_generation_guide$
-BEGIN
-    IF TG_OP = 'DELETE' THEN
-        RAISE EXCEPTION 'SQL generation guides cannot be deleted';
-    END IF;
-
-    IF ROW(
-        NEW.sql_generation_guide_id,
-        NEW.sql_generation_guide_code,
-        NEW.created_by_principal_id,
-        NEW.created_time,
-        NEW.created_by
-    ) IS DISTINCT FROM ROW(
-        OLD.sql_generation_guide_id,
-        OLD.sql_generation_guide_code,
-        OLD.created_by_principal_id,
-        OLD.created_time,
-        OLD.created_by
-    ) THEN
-        RAISE EXCEPTION 'SQL generation guide identity is immutable';
-    END IF;
-
-    RETURN NEW;
-END;
-$guard_sql_generation_guide$;
-
-CREATE TRIGGER guard_sql_generation_guide
-BEFORE UPDATE OR DELETE ON application.sql_generation_guide
-FOR EACH ROW EXECUTE FUNCTION application.guard_sql_generation_guide();
-
-CREATE TABLE application.sql_generation_guide_version (
-    sql_generation_guide_version_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    sql_generation_guide_id BIGINT NOT NULL,
-    sql_generation_guide_version_number INTEGER NOT NULL,
-    sql_generation_guide_content TEXT NOT NULL,
-    sql_generation_guide_digest CHAR(64) NOT NULL,
-    sql_generation_guide_version_status VARCHAR(20) NOT NULL DEFAULT 'draft',
-    created_by_principal_id BIGINT NOT NULL,
-    updated_by_principal_id BIGINT NOT NULL,
-    published_time TIMESTAMPTZ,
-    published_by_principal_id BIGINT,
-    retired_time TIMESTAMPTZ,
-    retired_by_principal_id BIGINT,
-    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_sql_generation_guide_version_guide FOREIGN KEY (
-        sql_generation_guide_id
-    ) REFERENCES application.sql_generation_guide (sql_generation_guide_id)
-        ON DELETE NO ACTION,
-    CONSTRAINT fk_sql_generation_guide_version_creator FOREIGN KEY (
-        created_by_principal_id
-    ) REFERENCES security.principal (principal_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_sql_generation_guide_version_updater FOREIGN KEY (
-        updated_by_principal_id
-    ) REFERENCES security.principal (principal_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_sql_generation_guide_version_publisher FOREIGN KEY (
-        published_by_principal_id
-    ) REFERENCES security.principal (principal_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_sql_generation_guide_version_retirer FOREIGN KEY (
-        retired_by_principal_id
-    ) REFERENCES security.principal (principal_id) ON DELETE NO ACTION,
-    CONSTRAINT uq_sql_generation_guide_version UNIQUE (
-        sql_generation_guide_id,
-        sql_generation_guide_version_number
-    ),
-    CONSTRAINT uq_sql_generation_guide_version_witness UNIQUE (
-        sql_generation_guide_version_id,
-        sql_generation_guide_id
-    ),
-    CONSTRAINT uq_sql_generation_guide_version_digest_witness UNIQUE (
-        sql_generation_guide_version_id,
-        sql_generation_guide_id,
-        sql_generation_guide_digest
-    ),
-    CONSTRAINT ck_sql_generation_guide_version_number CHECK (
-        sql_generation_guide_version_number > 0
-    ),
-    CONSTRAINT ck_sql_generation_guide_content CHECK (
-        reference.is_nonblank(sql_generation_guide_content)
-    ),
-    CONSTRAINT ck_sql_generation_guide_digest CHECK (
-        sql_generation_guide_digest ~ '^[0-9a-f]{64}$'
-    ),
-    CONSTRAINT ck_sql_generation_guide_version_lifecycle CHECK (
-        (
-            sql_generation_guide_version_status = 'draft'
-            AND published_time IS NULL
-            AND published_by_principal_id IS NULL
-            AND retired_time IS NULL
-            AND retired_by_principal_id IS NULL
-        ) OR (
-            sql_generation_guide_version_status = 'published'
-            AND published_time IS NOT NULL
-            AND published_by_principal_id IS NOT NULL
-            AND updated_by_principal_id = published_by_principal_id
-            AND retired_time IS NULL
-            AND retired_by_principal_id IS NULL
-        ) OR (
-            sql_generation_guide_version_status = 'retired'
-            AND published_time IS NOT NULL
-            AND published_by_principal_id IS NOT NULL
-            AND retired_time IS NOT NULL
-            AND retired_by_principal_id IS NOT NULL
-            AND updated_by_principal_id = retired_by_principal_id
-            AND retired_time >= published_time
-        )
-    )
-);
-
-CREATE INDEX ix_sql_generation_guide_version_lookup
-    ON application.sql_generation_guide_version (
-        sql_generation_guide_id,
-        sql_generation_guide_version_status,
-        sql_generation_guide_version_number DESC
-    );
-CREATE UNIQUE INDEX ux_sql_generation_guide_version_one_draft
-    ON application.sql_generation_guide_version (
-        sql_generation_guide_id
-    )
-    WHERE sql_generation_guide_version_status = 'draft';
-
-CREATE FUNCTION application.guard_sql_generation_guide_version()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SET search_path = pg_catalog
-AS $guard_sql_generation_guide_version$
-DECLARE
-    v_expected_digest CHAR(64);
-BEGIN
-    IF TG_OP = 'DELETE' THEN
-        RAISE EXCEPTION 'SQL generation guide versions cannot be deleted';
-    END IF;
-
-    v_expected_digest := encode(
-        sha256(
-            convert_to(NEW.sql_generation_guide_content, 'UTF8')
-        ),
-        'hex'
-    );
-    IF TG_OP = 'INSERT'
-       AND NEW.sql_generation_guide_digest IS DISTINCT FROM v_expected_digest THEN
-        RAISE EXCEPTION
-            'SQL generation guide digest does not match content';
-    END IF;
-
-    IF TG_OP = 'INSERT' THEN
-        RETURN NEW;
-    END IF;
-
-    IF ROW(
-        NEW.sql_generation_guide_version_id,
-        NEW.sql_generation_guide_id,
-        NEW.sql_generation_guide_version_number,
-        NEW.created_by_principal_id,
-        NEW.created_time,
-        NEW.created_by
-    ) IS DISTINCT FROM ROW(
-        OLD.sql_generation_guide_version_id,
-        OLD.sql_generation_guide_id,
-        OLD.sql_generation_guide_version_number,
-        OLD.created_by_principal_id,
-        OLD.created_time,
-        OLD.created_by
-    ) THEN
-        RAISE EXCEPTION 'SQL generation guide version identity is immutable';
-    END IF;
-
-    IF OLD.sql_generation_guide_version_status = 'retired' THEN
-        RAISE EXCEPTION 'retired SQL generation guide version is immutable';
-    END IF;
-
-    IF OLD.sql_generation_guide_version_status = 'published' THEN
-        IF NEW.sql_generation_guide_version_status <> 'retired'
-           OR ROW(
-               NEW.sql_generation_guide_content,
-               NEW.sql_generation_guide_digest,
-               NEW.published_time,
-               NEW.published_by_principal_id
-           ) IS DISTINCT FROM ROW(
-               OLD.sql_generation_guide_content,
-               OLD.sql_generation_guide_digest,
-               OLD.published_time,
-               OLD.published_by_principal_id
-           ) THEN
-            RAISE EXCEPTION
-                'published SQL generation guide version is immutable';
-        END IF;
-    ELSIF NEW.sql_generation_guide_version_status NOT IN ('draft', 'published') THEN
-        RAISE EXCEPTION
-            'draft SQL generation guide version can only be published';
-    END IF;
-
-    IF NEW.sql_generation_guide_digest IS DISTINCT FROM v_expected_digest THEN
-        RAISE EXCEPTION
-            'SQL generation guide digest does not match content';
-    END IF;
-
-    RETURN NEW;
-END;
-$guard_sql_generation_guide_version$;
-
-CREATE TRIGGER guard_sql_generation_guide_version
-BEFORE INSERT OR UPDATE OR DELETE ON application.sql_generation_guide_version
-FOR EACH ROW EXECUTE FUNCTION application.guard_sql_generation_guide_version();
-
-CREATE FUNCTION application.save_sql_generation_guide(
-    p_entra_tenant_id UUID,
-    p_entra_object_id UUID,
-    p_expected_principal_type VARCHAR(30),
-    p_sql_generation_guide_id BIGINT,
-    p_sql_generation_guide_code VARCHAR(100),
-    p_sql_generation_guide_name VARCHAR(200),
-    p_sql_generation_guide_description VARCHAR(2000),
-    p_is_default BOOLEAN,
-    p_is_active BOOLEAN,
-    p_expected_updated_time TIMESTAMPTZ
-)
-RETURNS SETOF application.sql_generation_guide
-LANGUAGE plpgsql
-VOLATILE
-SECURITY DEFINER
-SET search_path = pg_catalog
-AS $save_sql_generation_guide$
-DECLARE
-    v_actor RECORD;
-    v_existing application.sql_generation_guide%ROWTYPE;
-    v_saved application.sql_generation_guide%ROWTYPE;
-    v_updated_time TIMESTAMPTZ;
-BEGIN
-    SELECT principal.principal_id, principal.is_super_admin
-      INTO v_actor
-      FROM security.entra_principal_identity AS identity
-      JOIN security.principal AS principal
-        ON principal.principal_id = identity.principal_id
-       AND principal.principal_type = identity.principal_type
-     WHERE identity.entra_tenant_id = p_entra_tenant_id
-       AND identity.entra_object_id = p_entra_object_id
-       AND identity.principal_type = p_expected_principal_type
-       AND identity.is_active
-       AND principal.is_active
-     FOR SHARE OF identity, principal;
-    IF NOT FOUND OR NOT v_actor.is_super_admin THEN
-        RAISE EXCEPTION 'SQL generation guide requires Super Admin';
-    END IF;
-    IF p_is_default AND NOT p_is_active THEN
-        RAISE EXCEPTION 'default SQL generation guide must be active';
-    END IF;
-
-    PERFORM pg_catalog.pg_advisory_xact_lock(
-        pg_catalog.hashtextextended(
-            'application.sql_generation_guide.default',
-            0
-        )
-    );
-
-    IF p_sql_generation_guide_id IS NULL THEN
-        SELECT guide.*
-          INTO v_existing
-          FROM application.sql_generation_guide AS guide
-         WHERE lower(guide.sql_generation_guide_code) =
-               lower(p_sql_generation_guide_code)
-         FOR UPDATE OF guide;
-        IF FOUND THEN
-            IF ROW(
-                v_existing.sql_generation_guide_name,
-                v_existing.sql_generation_guide_description,
-                v_existing.is_default,
-                v_existing.is_active
-            ) IS DISTINCT FROM ROW(
-                p_sql_generation_guide_name,
-                p_sql_generation_guide_description,
-                p_is_default,
-                p_is_active
-            ) THEN
-                RAISE EXCEPTION 'SQL generation guide code conflict';
-            END IF;
-            RETURN NEXT v_existing;
-            RETURN;
-        END IF;
-
-        v_updated_time := clock_timestamp();
-        IF p_is_default THEN
-            UPDATE application.sql_generation_guide AS guide
-               SET is_default = FALSE,
-                   updated_by_principal_id = v_actor.principal_id,
-                   updated_time = v_updated_time,
-                   updated_by = CURRENT_USER
-             WHERE guide.is_default
-               AND guide.is_active;
-        END IF;
-
-        INSERT INTO application.sql_generation_guide AS guide (
-            sql_generation_guide_code,
-            sql_generation_guide_name,
-            sql_generation_guide_description,
-            is_default,
-            created_by_principal_id,
-            updated_by_principal_id,
-            is_active,
-            updated_time
-        ) VALUES (
-            p_sql_generation_guide_code,
-            p_sql_generation_guide_name,
-            p_sql_generation_guide_description,
-            p_is_default,
-            v_actor.principal_id,
-            v_actor.principal_id,
-            p_is_active,
-            v_updated_time
-        )
-        RETURNING guide.* INTO v_saved;
-        RETURN NEXT v_saved;
-        RETURN;
-    END IF;
-
-    SELECT guide.*
-      INTO v_existing
-      FROM application.sql_generation_guide AS guide
-     WHERE guide.sql_generation_guide_id = p_sql_generation_guide_id
-     FOR UPDATE OF guide;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'SQL generation guide is unavailable';
-    END IF;
-    IF v_existing.sql_generation_guide_code <>
-       p_sql_generation_guide_code THEN
-        RAISE EXCEPTION 'SQL generation guide identity is immutable';
-    END IF;
-    IF ROW(
-        v_existing.sql_generation_guide_name,
-        v_existing.sql_generation_guide_description,
-        v_existing.is_default,
-        v_existing.is_active
-    ) IS NOT DISTINCT FROM ROW(
-        p_sql_generation_guide_name,
-        p_sql_generation_guide_description,
-        p_is_default,
-        p_is_active
-    ) THEN
-        RETURN NEXT v_existing;
-        RETURN;
-    END IF;
-    IF p_expected_updated_time IS NULL
-       OR v_existing.updated_time <> p_expected_updated_time THEN
-        RAISE EXCEPTION 'stale_sql_generation_guide';
-    END IF;
-
-    v_updated_time := clock_timestamp();
-    IF p_is_default THEN
-        UPDATE application.sql_generation_guide AS guide
-           SET is_default = FALSE,
-               updated_by_principal_id = v_actor.principal_id,
-               updated_time = v_updated_time,
-               updated_by = CURRENT_USER
-         WHERE guide.sql_generation_guide_id <>
-               p_sql_generation_guide_id
-           AND guide.is_default
-           AND guide.is_active;
-    END IF;
-
-    UPDATE application.sql_generation_guide AS guide
-       SET sql_generation_guide_name = p_sql_generation_guide_name,
-           sql_generation_guide_description =
-               p_sql_generation_guide_description,
-           is_default = p_is_default,
-           updated_by_principal_id = v_actor.principal_id,
-           is_active = p_is_active,
-           updated_time = v_updated_time,
-           updated_by = CURRENT_USER
-     WHERE guide.sql_generation_guide_id = p_sql_generation_guide_id
-    RETURNING guide.* INTO v_saved;
-
-    RETURN NEXT v_saved;
-END;
-$save_sql_generation_guide$;
-
-REVOKE ALL ON FUNCTION application.save_sql_generation_guide(
-    UUID,
-    UUID,
-    VARCHAR,
-    BIGINT,
-    VARCHAR,
-    VARCHAR,
-    VARCHAR,
-    BOOLEAN,
-    BOOLEAN,
-    TIMESTAMPTZ
-) FROM PUBLIC;
-
-CREATE FUNCTION application.save_sql_generation_guide_draft(
-    p_entra_tenant_id UUID,
-    p_entra_object_id UUID,
-    p_expected_principal_type VARCHAR(30),
-    p_sql_generation_guide_id BIGINT,
-    p_expected_sql_generation_guide_version_id BIGINT,
-    p_sql_generation_guide_content TEXT,
-    p_expected_updated_time TIMESTAMPTZ
-)
-RETURNS SETOF application.sql_generation_guide_version
-LANGUAGE plpgsql
-VOLATILE
-SECURITY DEFINER
-SET search_path = pg_catalog
-AS $save_sql_generation_guide_draft$
-DECLARE
-    v_actor RECORD;
-    v_guide application.sql_generation_guide%ROWTYPE;
-    v_draft application.sql_generation_guide_version%ROWTYPE;
-    v_saved application.sql_generation_guide_version%ROWTYPE;
-    v_digest CHAR(64);
-    v_version_number INTEGER;
-    v_updated_time TIMESTAMPTZ;
-BEGIN
-    IF p_sql_generation_guide_content IS NULL
-       OR btrim(p_sql_generation_guide_content) = '' THEN
-        RAISE EXCEPTION 'SQL generation guide content is invalid';
-    END IF;
-
-    SELECT principal.principal_id, principal.is_super_admin
-      INTO v_actor
-      FROM security.entra_principal_identity AS identity
-      JOIN security.principal AS principal
-        ON principal.principal_id = identity.principal_id
-       AND principal.principal_type = identity.principal_type
-     WHERE identity.entra_tenant_id = p_entra_tenant_id
-       AND identity.entra_object_id = p_entra_object_id
-       AND identity.principal_type = p_expected_principal_type
-       AND identity.is_active
-       AND principal.is_active
-     FOR SHARE OF identity, principal;
-    IF NOT FOUND OR NOT v_actor.is_super_admin THEN
-        RAISE EXCEPTION 'SQL generation guide requires Super Admin';
-    END IF;
-
-    SELECT guide.*
-      INTO v_guide
-      FROM application.sql_generation_guide AS guide
-     WHERE guide.sql_generation_guide_id = p_sql_generation_guide_id
-       AND guide.is_active
-     FOR UPDATE OF guide;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'SQL generation guide is unavailable for draft authoring';
-    END IF;
-
-    v_digest := encode(
-        sha256(convert_to(p_sql_generation_guide_content, 'UTF8')),
-        'hex'
-    );
-
-    SELECT version.*
-      INTO v_draft
-      FROM application.sql_generation_guide_version AS version
-     WHERE version.sql_generation_guide_id = p_sql_generation_guide_id
-       AND version.sql_generation_guide_version_status = 'draft'
-     FOR UPDATE OF version;
-    IF FOUND THEN
-        IF v_draft.sql_generation_guide_digest = v_digest THEN
-            RETURN NEXT v_draft;
-            RETURN;
-        END IF;
-        IF p_expected_sql_generation_guide_version_id IS NULL
-           AND p_expected_updated_time IS NULL THEN
-            RAISE EXCEPTION 'SQL generation guide draft already exists';
-        END IF;
-        IF p_expected_sql_generation_guide_version_id IS NULL
-           OR v_draft.sql_generation_guide_version_id <>
-              p_expected_sql_generation_guide_version_id
-           OR p_expected_updated_time IS NULL
-           OR v_draft.updated_time <> p_expected_updated_time THEN
-            RAISE EXCEPTION 'stale_sql_generation_guide_draft';
-        END IF;
-
-        v_updated_time := clock_timestamp();
-        UPDATE application.sql_generation_guide_version AS version
-           SET sql_generation_guide_content =
-                   p_sql_generation_guide_content,
-               sql_generation_guide_digest = v_digest,
-               updated_by_principal_id = v_actor.principal_id,
-               updated_time = v_updated_time,
-               updated_by = CURRENT_USER
-         WHERE version.sql_generation_guide_version_id =
-               v_draft.sql_generation_guide_version_id
-        RETURNING version.* INTO v_saved;
-        RETURN NEXT v_saved;
-        RETURN;
-    END IF;
-
-    IF p_expected_sql_generation_guide_version_id IS NOT NULL
-       OR p_expected_updated_time IS NOT NULL THEN
-        RAISE EXCEPTION 'SQL generation guide draft does not exist';
-    END IF;
-
-    SELECT coalesce(max(version.sql_generation_guide_version_number), 0) + 1
-      INTO v_version_number
-      FROM application.sql_generation_guide_version AS version
-     WHERE version.sql_generation_guide_id = p_sql_generation_guide_id;
-
-    INSERT INTO application.sql_generation_guide_version AS version (
-        sql_generation_guide_id,
-        sql_generation_guide_version_number,
-        sql_generation_guide_content,
-        sql_generation_guide_digest,
-        created_by_principal_id,
-        updated_by_principal_id
-    ) VALUES (
-        p_sql_generation_guide_id,
-        v_version_number,
-        p_sql_generation_guide_content,
-        v_digest,
-        v_actor.principal_id,
-        v_actor.principal_id
-    )
-    RETURNING version.* INTO v_saved;
-
-    RETURN NEXT v_saved;
-END;
-$save_sql_generation_guide_draft$;
-
-REVOKE ALL ON FUNCTION application.save_sql_generation_guide_draft(
-    UUID,
-    UUID,
-    VARCHAR,
-    BIGINT,
-    BIGINT,
-    TEXT,
-    TIMESTAMPTZ
-) FROM PUBLIC;
-
-CREATE FUNCTION application.transition_sql_generation_guide_version(
-    p_entra_tenant_id UUID,
-    p_entra_object_id UUID,
-    p_expected_principal_type VARCHAR(30),
-    p_sql_generation_guide_version_id BIGINT,
-    p_expected_status VARCHAR(20),
-    p_target_status VARCHAR(20)
-)
-RETURNS SETOF application.sql_generation_guide_version
-LANGUAGE plpgsql
-VOLATILE
-SECURITY DEFINER
-SET search_path = pg_catalog
-AS $transition_sql_generation_guide_version$
-DECLARE
-    v_actor RECORD;
-    v_guide_id BIGINT;
-    v_guide application.sql_generation_guide%ROWTYPE;
-    v_version application.sql_generation_guide_version%ROWTYPE;
-    v_saved application.sql_generation_guide_version%ROWTYPE;
-    v_transition_time TIMESTAMPTZ;
-BEGIN
-    SELECT principal.principal_id, principal.is_super_admin
-      INTO v_actor
-      FROM security.entra_principal_identity AS identity
-      JOIN security.principal AS principal
-        ON principal.principal_id = identity.principal_id
-       AND principal.principal_type = identity.principal_type
-     WHERE identity.entra_tenant_id = p_entra_tenant_id
-       AND identity.entra_object_id = p_entra_object_id
-       AND identity.principal_type = p_expected_principal_type
-       AND identity.is_active
-       AND principal.is_active
-     FOR SHARE OF identity, principal;
-    IF NOT FOUND OR NOT v_actor.is_super_admin THEN
-        RAISE EXCEPTION 'SQL generation guide requires Super Admin';
-    END IF;
-
-    SELECT version.sql_generation_guide_id
-      INTO v_guide_id
-      FROM application.sql_generation_guide_version AS version
-     WHERE version.sql_generation_guide_version_id =
-           p_sql_generation_guide_version_id;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'SQL generation guide version is unavailable';
-    END IF;
-
-    SELECT guide.*
-      INTO v_guide
-      FROM application.sql_generation_guide AS guide
-     WHERE guide.sql_generation_guide_id = v_guide_id
-       AND guide.is_active
-     FOR UPDATE OF guide;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'SQL generation guide is unavailable';
-    END IF;
-
-    SELECT version.*
-      INTO v_version
-      FROM application.sql_generation_guide_version AS version
-     WHERE version.sql_generation_guide_version_id =
-           p_sql_generation_guide_version_id
-       AND version.sql_generation_guide_id = v_guide_id
-     FOR UPDATE OF version;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'SQL generation guide version is unavailable';
-    END IF;
-
-    IF p_expected_status IS NULL
-       OR p_target_status IS NULL
-       OR NOT (
-        (
-            p_expected_status = 'draft'
-            AND p_target_status = 'published'
-        ) OR (
-            p_expected_status = 'published'
-            AND p_target_status = 'retired'
-        )
-    ) THEN
-        RAISE EXCEPTION 'SQL generation guide version transition is invalid';
-    END IF;
-    IF v_version.sql_generation_guide_version_status = p_target_status THEN
-        RETURN NEXT v_version;
-        RETURN;
-    END IF;
-    IF v_version.sql_generation_guide_version_status <>
-       p_expected_status THEN
-        RAISE EXCEPTION 'stale SQL generation guide version status';
-    END IF;
-
-    v_transition_time := clock_timestamp();
-    IF p_target_status = 'published' THEN
-        UPDATE application.sql_generation_guide_version AS version
-           SET sql_generation_guide_version_status = 'published',
-               published_time = v_transition_time,
-               published_by_principal_id = v_actor.principal_id,
-               updated_by_principal_id = v_actor.principal_id,
-               updated_time = v_transition_time,
-               updated_by = CURRENT_USER
-         WHERE version.sql_generation_guide_version_id =
-               p_sql_generation_guide_version_id
-        RETURNING version.* INTO v_saved;
-    ELSE
-        UPDATE application.sql_generation_guide_version AS version
-           SET sql_generation_guide_version_status = 'retired',
-               retired_time = v_transition_time,
-               retired_by_principal_id = v_actor.principal_id,
-               updated_by_principal_id = v_actor.principal_id,
-               updated_time = v_transition_time,
-               updated_by = CURRENT_USER
-         WHERE version.sql_generation_guide_version_id =
-               p_sql_generation_guide_version_id
-        RETURNING version.* INTO v_saved;
-    END IF;
-
-    RETURN NEXT v_saved;
-END;
-$transition_sql_generation_guide_version$;
-
-REVOKE ALL ON FUNCTION application.transition_sql_generation_guide_version(
-    UUID,
-    UUID,
-    VARCHAR,
-    BIGINT,
-    VARCHAR,
-    VARCHAR
 ) FROM PUBLIC;

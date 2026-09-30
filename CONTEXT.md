@@ -1,674 +1,109 @@
 # GDS ETL Workbench
 
-GDS ETL Workbench lets developers inspect governed metadata, prepare a complete Model change, validate it, and apply it through one controlled workflow.
-
-## Language
-
-**Tenant**:
-The ownership scope for Principals, metadata, Models, and authorization.
-_Avoid_: Customer, client, account scope
-
-**Source Tenant**:
-The single Tenant that owns a physical Object's metadata, independent of its
-Connection placement. Source and Bronze retain their originating Source Tenant.
-Silver/Gold retain the metadata/user-selected Source Tenant. For new model
-targets, the Model Tenant is the default proposal, not a physical-registration
-invariant. Source Tenant does not enumerate contributing Tenants or Systems.
-Model authoring owns Logical and Dimensional Entities independently of physical
-registration. Generated executable coordinates use the Model Tenant's GDS placement.
-_Avoid_: Connection owner, source System, GDS Connection
-
-**Physical Object Placement**:
-The Connection on an Object identifies where that Object is registered. A
-Source Object uses its source Connection. Bronze, Silver, and Gold Objects use
-the active Connection identified for the Source Tenant as
-`is_tenant_gds_connection=true`; it must also be a Global Data Store Connection.
-That Connection identifies the GDS Tenant and GDS System used in Object physical
-keys. Never substitute Source or Model Tenant into those keys. Source Tenant
-still identifies whose data the Object contains; GDS placement does not change it.
-_Avoid_: Source Tenant, modeled ownership, inferred Connection
-
-**Active Tenant**:
-The Tenant chosen as the current Workbench authorization and navigation scope.
-It determines visible metadata, Models, and Tenant Lock state without selecting a Model.
-_Avoid_: Current Model, selected GDS Connection
-
-**Tenant Code**:
-The unique human-readable natural key identifying a Tenant. It is distinct from
-the server-generated Tenant ID and the descriptive Tenant name.
-_Avoid_: Tenant ID, Tenant name
-
-**Principal**:
-One active internal identity representing either a user or an Entra service
-principal. Authentication maps an Entra Tenant/Object pair to this record.
-_Avoid_: User account when referring to both identity kinds
-
-**Tenant Visibility**:
-`global` permits every active authenticated Principal to read; `private`
-requires Tenant access. Visibility never grants mutation authority.
-_Avoid_: Public write access, open Tenant
-
-**Tenant Role**:
-One Tenant-scoped capability set: Viewer, Developer, Architect, or Tenant Admin.
-_Avoid_: Global role, database role
-
-**Super Admin**:
-An explicit Principal flag granting all application authorization across active
-Tenants without bypassing locks, revisions, audits, or operation boundaries.
-_Avoid_: Database superuser, automatic workload admin
-
-**Tenant Lock**:
-The database-time lease that permits ordinary Tenant writes only for its exact
-owning Principal. A different human or workload Principal is blocked until the
-owner releases it, it expires, or an authorized Principal explicitly overrides
-it with an audited reason. Acquisition is always an explicit Principal action.
-_Avoid_: Tenant Lease token, lock Boolean, implicit override
-
-**Tool Policy**:
-One server-owned authorization category declared beside a tool:
-Tenant Read, Tenant Metadata Write, Tenant Model Write, Tenant Lock Manage, or
-Super Admin Only. Client input never chooses the policy.
-_Avoid_: Caller role, per-tool role code
-
-**MCP Tool Call Log**:
-One append-only record for a completed MCP tool call containing bounded,
-server-derived audit metadata and no raw input, output, prompt, or secret.
-_Avoid_: Transcript, request dump, tool output log
-
-**Model**:
-The governed aggregate owned by one Tenant, containing input scope, schema
-configuration, policy, effective Sections, and one current revision. Source/Bronze inputs may
-belong to several readable Source Tenants; target ownership stays with the Model
-Tenant. Source access is rechecked on Model reads and changes, including retained
-historical scope.
-_Avoid_: Project, workspace model
-
-**Model Input Scope**:
-The server-owned active set of physical Source or Bronze input Objects that a
-Model can use. A Source Object may be used directly when it is accessible
-through a foreign catalog and Bronze is skipped. Model-produced Silver and Gold
-Entities are Model-owned outputs; they are not physical inputs. Selected Scope controls
-which eligible inputs participate. Show existing scope first, then resolve the
-Source Tenants, Source or Bronze choice, Systems, and Objects to add or refine.
-Use Object.source_tenant_id for source ownership. Neither placement nor a Bronze
-preference changes selected membership. Resolve equivalent representations
-explicitly before transformation.
-_Avoid_: Selection, source list
-
-**Selected Scope**:
-The explicit eligible Objects or modeled Entities chosen for one Section
-workflow. Physical-input workflows select Model Input Scope Objects. Dimensional
-authoring selects Logical Entities; Mapping and Code select Entities in their
-modeled layer. Selection never changes Model Input Scope membership.
-_Avoid_: Model Input Scope, source list
-
-**Attribute Profile**:
-The current saved statistical measurements for one physical Attribute within
-one Model, including known measurement time and all-row or batch scope. Later
-applied Profiling replaces those measurements and their context rather than
-creating selectable historical profile versions.
-_Avoid_: Profiling Run, Type 2 history
-
-**Profiling**:
-Measurement of all eligible active physical Attributes within selected Model
-Input Scope Objects, over all rows or an explicitly selected batch. An explicit
-Run refreshes current Attribute Profiles only when measurements for its entire
-selected scope succeed.
-_Avoid_: Metadata Enrichment, description generation, Profile history selection
-
-**Metadata Enrichment**:
-The family of separate Object Enrichment and Attribute Enrichment workflows
-using physical metadata and Profiling evidence,
-including when initiated from a Model's scope. Description authoring replaces
-selected unlocked physical metadata descriptions with supported text or blank;
-locked descriptions remain unchanged, and generation does not lock its results.
-_Avoid_: Profiling, Model authoring, Target Registration
-
-**Object Enrichment**:
-The Metadata Enrichment workflow that authors descriptions of selected physical
-Objects using their business context, metadata, Attributes, and Profiles.
-_Avoid_: Attribute Enrichment, combined enrichment workflow
-
-**Attribute Enrichment**:
-The Metadata Enrichment workflow that authors selected physical Attribute
-descriptions within their parent Object and completes missing inferred Attribute
-types from independently supported evidence.
-_Avoid_: Object Enrichment, AI-generated type inference
-
-**Ingestion Mapping**:
-The registered links from originating Source Objects and Attributes to the
-Bronze Objects and Attributes they supply. These links establish source
-provenance for Metadata Enrichment.
-_Avoid_: Logical Mapping, name-based source guess
-
-**Modeling Assertion**:
-One Model-owned structured business statement or reporting requirement derived
-from a document, email, meeting note, or direct user input. Reporting requirements
-and KPI definitions express required capability, not proof that source data exists. An applicable Assertion provides governed
-context for Analysis, Conceptual, Logical, Dimensional, or Mapping but is not executable lineage.
-_Avoid_: Modeling Evidence, fact, transient context
-
-**Section**:
-One versioned part of a Model change: Model Input Scope, Profiling, Assertion,
-Analysis, Conceptual, Logical, Dimensional, Mapping, Code
-Generation, or Validation.
-_Avoid_: Phase document, payload type
-
-**Model Change Set**:
-The draft aggregate containing complete pending Model records grouped by dataset.
-Validation evaluates them with the applied Model, and Apply commits the accepted
-changes atomically. It never creates or updates physical metadata.
-_Avoid_: Patch, transaction draft
-
-**Metadata Change Set**:
-The Tenant-owned draft aggregate for Source/Bronze/Silver/Gold Objects and
-Attributes plus Copy and Process configuration. It never creates Model records.
-_Avoid_: Model Change Set, foundational CRUD
-
-**Reference Metadata**:
-The operator-governed shared vocabulary that classifies metadata and constrains
-accepted values. Workbench users may read it but do not author it.
-_Avoid_: Tenant Metadata, user-managed lookup values
-
-**Foundational Metadata**:
-The operator-governed Projects, Tenants, Systems, and Connections that establish
-ownership and access context. Workbench users may read it but do not author it.
-_Avoid_: Tenant Metadata, user-editable platform configuration
-
-**Foundational Variables**:
-Workflow-specific Prompt variables providing relevant Tenant, System, and
-Connection identity, business descriptions, and System/Connection type codes
-with their resolved descriptions. Matching names and shapes may be explicitly
-reused by different workflows; availability is never global.
-For Metadata Enrichment and Analysis, they describe the single data-owning
-Source Tenant and all contributing source business contexts, not GDS placement.
-_Avoid_: Complete Model context, Connection values
-
-**Prompt Template**:
-A saved System Prompt and Instruction Prompt for a workflow and execution mode,
-with the chosen permitted tools. Its author chooses which available variables
-to include and how to present their evidence. The workflow's required output
-contract remains independent of that choice.
-_Avoid_: Fixed evidence bundle, workflow output schema
-
-**Default Prompt**:
-A provided Prompt Template expressing recommended instructions and evidence
-choices. A Tenant-specific Prompt Template can supply different choices within
-the same workflow's available capabilities and required output contract.
-_Avoid_: Mandatory variable inclusion, uneditable workflow instructions
-
-**Source Context**:
-The business, type, and zone context of each distinct source Connection
-contributing to the selected Objects, including its data-owning Source Tenant
-and System. It is resolved through registered ingestion lineage and kept
-separate from individual Object Contexts.
-_Avoid_: GDS placement business context, repeated per-Object business context
-
-**GDS Context**:
-The actual GDS Tenant, System, Connection, and zone associated with the selected
-physical Object, with the registered zone description.
-_Avoid_: Source business context, modeled Entity identity
-
-**Physical Metadata Natural Key**:
-The code-and-name identity of a registered physical record: Tenant, System, and
-Connection codes identify a Connection; schema and Object name extend it to an
-Object; Attribute name extends it to an Attribute. This identity connects
-workflow evidence and results without exposing database IDs.
-_Avoid_: Database ID, display label, unqualified Attribute name
-
-**Object Context**:
-The identity, saved description, and zone context of selected physical
-Objects, shared by Metadata Enrichment and Analysis. Complete natural keys link
-each Object to its Attribute evidence and registered originating Source lineage.
-_Avoid_: Complete Model context, foundational Source Context
-
-**Object Attribute Context**:
-The Attribute evidence associated with an Object Context: each Attribute's
-meaning, types, relevant metadata flags, and available Profile. The containing Object
-and Attribute name together identify the Attribute by its complete natural key.
-_Avoid_: Detached Attribute or Profile lists, name-only Attribute matching
-
-**Object Relationship Context**:
-Existing applied Analysis relationships viewed from each selected physical
-Object as incoming and outgoing findings. Direction follows the relationship's
-endpoints; status and lock remain properties of the same saved finding. Viewing
-one relationship from both Objects does not create separate findings.
-_Avoid_: New relationship candidates, measured relationship validation, separate directional records
-
-**Model Schema Configuration**:
-The Model-owned `logical_schemas` and `dimensional_schemas` lists, each containing
-schema names and optional descriptions. A layer requires configured schemas before
-authoring Entities. Schema names are part of Entity identity; changing a schema
-name is an identity change. Configuration does not register or deploy schemas.
-_Avoid_: Physical metadata, Connection selection
-
-**Modeled Entity Identity**:
-The Model, modeled layer, schema name, and Entity name together identify a Logical
-or Dimensional Entity. An Attribute adds its name under that Entity. Relationships,
-source support, Mapping, and Code retain this complete identity. Equal Entity names
-in different schemas are distinct records.
-_Avoid_: Unqualified Entity name, registered Object ID, Model Binding
-
-**Entity-owned Mapping and Code**:
-Mapping references a Logical or Dimensional Entity and its modeled Attributes
-directly. Code Artifacts belong to the same Entity. Neither depends on physical
-Object registration or a separate Binding Section. Same-Model and parent-Entity
-constraints protect every typed reference. See [ADR 012](docs/adr/012-entity-owned-mapping-and-code.md).
-_Avoid_: Physical target binding, automatic deployment
-
-**Target Registration**:
-The optional operational handoff that exports applied Logical or Dimensional
-Entity definitions into governed Silver or Gold Object and Attribute metadata.
-Metadata Change Set validation and Apply remain separate from Model authoring.
-Registration prepares physical metadata for Process and orchestration; it does
-not deploy tables or execute generated Code.
-_Avoid_: Mapping prerequisite, Model Binding, target deployment
-
-**Pending Record**:
-One complete proposed record that inserts, updates, reactivates, or explicitly
-deactivates an applied record. It is neither a field patch nor a complete future
-dataset copy. Unresolved review uncertainty is local workflow state; a generated
-record proceeding toward Apply uses an actionable record state rather than a
-persisted `needs_review` state.
-_Avoid_: Patch row, full dataset replacement
-
-**Relationship Inference**:
-A local, non-persisted hypothesis about possible physical relationships derived
-from Snapshot metadata, profiles, Assertions, and existing Analysis Results. It
-does not claim referential-integrity validation or create an Analysis Result.
-_Avoid_: Analysis Result, validated relationship
-
-**Analysis Result**:
-A Model-owned finding about a relationship between real physical Attributes,
-identified by complete natural keys and described by its kind, inferred
-cardinality, confidence, and supporting explanation. `inferred_cardinality`
-describes multiplicity from the from endpoint to the to endpoint; it may remain
-unknown. Generation supplies it explicitly and explains it in
-`relationship_basis`. Separately measured validation evidence can support or
-challenge the finding; inference alone does not prove the relationship. Observed
-cardinality is derived from measured counts without replacing the inference.
-Disagreement is a review warning, not an automatic correction or rejection.
-Locked and unlocked findings can both provide context for later inference;
-generation cannot override a locked finding.
-_Avoid_: Grain note, normalization note, proven foreign key
-
-**Conceptual Model**:
-A compact business view of the important concepts in scope and their business
-relationships. One concept may group evidence from many physical Objects,
-Systems, and Assertions. It does not define Attributes, keys, normalization, or
-an expected one-to-one correspondence with physical Objects or Logical Entities.
-A relationship may record high-level business cardinality when supported by
-business evidence; otherwise its cardinality remains unknown. Cardinality never
-infers keys or dictates Logical structure.
-_Avoid_: Table inventory, Logical Model, one concept per Object
-
-**Coverage Loop**:
-The internal accounting loop that classifies every selected input as represented
-by one or more results, context only, explicitly excluded with a reason, or
-blocked. It proves coverage without imposing output count or a one-to-one
-projection from inputs to authored records.
-_Avoid_: Output quota, one record per source
-
-**Logical Model**:
-A normalized operational representation of business meaning supported by
-in-scope physical Objects, Attributes, Profiles, Analysis Results, Assertions,
-and confirmed user knowledge. Grain, identifiers, functional dependencies,
-history, and relationships drive its structure. Neither a physical Object nor a
-Conceptual Object implies one Logical Entity. It is also the complete modeled
-contract for its planned Silver output, including audit, technical, and
-constant-valued Attributes required by the Model policy. Each Entity belongs to a
-configured Logical schema; physical registration is a later handoff.
-_Avoid_: Conceptual decomposition, physical copy
-
-**Logical Entity SCD Type**:
-The optional Model setting `logical_entity_scd_type` supplies change-history
-guidance to Logical authoring and Logical-to-Silver Mapping: `type_1` overwrites
-current values; `type_2` preserves versions; null leaves the choice unspecified.
-It does not create key or history Attributes, prove source change behavior, alter
-existing data, or override a Dimensional Entity's `change_behavior`. Change it
-through governed Model settings; Snapshots and staged Model details preserve it
-as read-only context. A saved change advances the Model revision.
-_Avoid_: Automatic history migration, inferred primary key
-
-**Dimensional Model**:
-An optional business-process and grain-oriented Model layer containing Facts,
-Dimensions, Bridges, Attributes, and Relationships. It selects applied active
-Logical Entities and references their Attributes directly, with Assertion support
-where relevant. Each Entity belongs to a configured Dimensional schema. Logical
-Mapping provides transformation context when authoring Dimensional Mapping.
-_Avoid_: Mandatory Logical projection, Mapping prerequisite
-
-**Logical Mapping**:
-The transformation rules owned by a Logical Entity that describe its planned
-Silver output from bounded Source or Bronze Objects. Attribute transformations
-reference the Logical Entity's modeled Attributes.
-_Avoid_: Logical Section, Silver deployment
-
-**Mapping generation selection**:
-One modeled layer, selected Entity–Source System pairs, and selected modeled
-Attributes. Entity selection includes unlocked Attributes by default. A Run
-freezes Entity identity and Attribute selection and authors each pair independently.
-A valid Object transformation or any valid Attribute transformation is enough to
-retain the pair; complete Attribute coverage is not required to save Mapping.
-Entity details list every active modeled Attribute, with missing transformations
-blank. Missing records are read projections from the Model, not fabricated Mapping
-records. Attribute-only output leaves the Object transformation blank.
-
-Regeneration clears omitted or null selected, unlocked transformation documents,
-including previously saved values. Locked and unselected mappings remain unchanged;
-a locked Entity Mapping protects all its Attribute Mappings. Existing Object logic
-also stays unchanged when locked or unselected Attributes depend on it. A new pair
-with no Object or Attribute output creates no Mapping records. An existing pair
-that becomes empty retains its record history and detail URLs but disappears from
-the Entity Mapping ledger.
-
-Valid partial output forms one draft, validated against the full future Model
-graph before review and Apply. Incomplete pairs and recoverable authoring failures
-produce explicit **Partial results**. True failed pairs remain unchanged and are
-listed by System and frozen Entity identity; valid sibling output is retained.
-Missing evidence leaves transformations blank, never invented or mislabeled as
-no applicable source. With no successful changes, a true failed pair fails the Run
-rather than completing a no-op. Authorization, lock, claim, revision and
-finalization failures still block the whole Run. Code and Validation retain their
-complete Mapping eligibility gates; saving partial Mapping does not relax them.
-
-Source-System order is not Mapping configuration; Process Group dependency order
-and Process execution order define the runtime schedule. Target choices cross
-active Entities with business Systems represented in Model Input Scope; Bronze
-provenance comes from ingestion lineage. Logical Mapping uses eligible scoped
-Source/Bronze inputs. Dimensional Mapping uses applied Logical Entities with an
-active Logical Mapping for that System. Saved source links provide evidence.
-No applicable source and no transformation output are distinct outcomes.
-An optional Model default Mapping System assigns one pair to Entities supported
-only by active applicable Assertions, with no physical or Logical source provenance.
-The default requires explicit rules for the transformations it authors and cannot
-substitute for unavailable source lineage. Unsupported transformations stay blank.
-See ADR 012 for the current ownership contract.
-_Avoid_: Attribute-only top-level workflow, Mapping System ordering
-
-**Mapping Transformation Document**:
-The flexible JSON transformation description for a Mapping Object or Attribute.
-PostgreSQL guarantees only valid JSON storage. An attached Output Template is
-advisory authoring guidance rather than a database or server validation schema.
-Without a Template, the agent uses the standard plugin JSON format automatically
-unless the user requests another format.
-_Avoid_: Hard-coded Mapping package schema, executable code
-
-**Dimensional Mapping**:
-The transformation rules owned by a Dimensional Entity that describe its planned
-Gold output from eligible Logical Entities and their Attributes. Source references
-use Logical schema, Entity, and Attribute keys; physical Silver registration is
-unnecessary for authoring.
-_Avoid_: Dimensional Section, Gold deployment
-
-**Stage Batch**:
-A Change-Set-owned, revision-bound transport manifest whose ordered typed chunks
-are invisible to validation and Apply until one atomic Commit replaces a
-complete dataset. Ordinary datasets use complete record chunks. Generated Code
-may instead use JSON byte fragments that Commit reassembles into one complete
-Code record; fragment boundaries never become Model state.
-_Avoid_: Append Stage, file upload, partial dataset
-
-**Local Reference**:
-A typed, Change-Set-scoped identity for a proposed record that has no database
-ID yet. Apply resolves it to a server-generated ID; it never persists.
-_Avoid_: Temporary database ID, client-generated database ID, name reference
-
-**Candidate**:
-An uncommitted workflow result that can become one or more Model Change Set Sections after validation.
-_Avoid_: Agent answer, model output
-
-**Workflow Run**:
-One durable, Tenant-owned execution request created by an authorized human or
-registered workload Principal. Runs move from queued to running to one terminal
-state. At most one Workflow Run may be running for a Tenant at a time.
-_Avoid_: Job, session
-
-**Plugin Authoring Path**:
-The primary developer-facing GDS authoring path, delivered through an
-open-standard plugin and used mainly in VS Code. It provides interactive access
-through MCP and persists accepted results through governed Change Sets.
-_Avoid_: Only GDS workflow, web replacement
-
-**Web Authoring Path**:
-The non-plugin GDS authoring path for users who need a guided web experience. It
-executes independent durable Workflow Runs through OpenAI Agents SDK using
-Microsoft Foundry deployments and persists accepted results through governed
-Change Sets.
-_Avoid_: Simplified workflow, secondary workflow logic
-
-**Authoring Parity**:
-The requirement that Plugin and Web Authoring Paths follow the same domain
-dependencies, persisted record contracts, Change Set boundaries, and Apply
-rules. They use separate agents and orchestration, and their generated content
-need not be identical.
-_Avoid_: Shared agent runtime, identical generated output
-
-**GDS Work Session**:
-One Tenant-bound, resumable body of related user-directed work. It may have no
-Model for metadata-only work or bind to exactly one Model. Once bound, its Model
-cannot change. It may span multiple GDS focus areas, Workflow Targets, and
-governed drafts within that boundary.
-_Avoid_: Workflow Run, chat, permanent workspace
-
-**GDS Interaction Mode**:
-One collaboration style: Guided, Custom, or Grill With Docs. It changes planning
-and questioning depth, not authorization or Apply boundaries.
-_Avoid_: Workflow Target, execution permission
-
-**Guided Mode**:
-An orchestrated journey through selected workflows. At entry, resolve context,
-save SQL policy, open Workbench, and install relevant Snapshots. Reuse decisions,
-existing results, and applied prerequisites. Ask what follows code generation;
-Dimensional and Validation are optional unless requested.
-_Avoid_: Mandatory pause after every record, unattended Apply
-
-**Custom Mode**:
-Clarify the user's goal, ask focused questions, build a plan, obtain approval,
-and execute using the appropriate existing tools and workflows. It combines the
-former Quick and Custom modes without relaxing governance.
-_Avoid_: Bypass mode, arbitrary execution
-
-**Grill With Docs Mode**:
-A deeper investigation using domain documentation and one focused decision at a
-time. Record accepted decisions, produce a custom plan, obtain approval, then
-execute through suitable workflows. Discussion alone does not author server state.
-_Avoid_: Workflow Target, unstructured brainstorming
-
-**GDS Workflow Target**:
-One user-selected bounded outcome with at most one authoritative Apply boundary.
-A selected journey may queue subsequent targets, but each retains its own review
-and Apply boundary. Logical Build invokes enrichment as a prerequisite with a
-separate Metadata Change Set.
-_Avoid_: Model Section, focus area, end-to-end build
-
-**Resolution Prompt**:
-A concise GDS-generated handoff describing a blocked package, its evidence, the
-required upstream Workflow Target, and the exact resume point.
-_Avoid_: Automatic repair, error dump, raw prompt
-
-**Code Artifact**:
-One Model-owned SQL file, Python file, or Python notebook generated for one
-Logical or Dimensional Entity. An Entity may have multiple Code Artifacts, distinguished
-by Artifact Name. It is proposed and applied through the Code Generation
-Section. Its content and digest are Model state; applying it never executes or
-deploys the artifact. It has no separate domain-size cap; transport batching
-does not split it into multiple Model records. Each artifact records the source
-Systems whose applied Mapping contributed to it. The server derives one Code
-Input Digest from its Mapping and input context and one Generated Code Digest
-from its exact content; neither is authored by the agent or user.
-_Avoid_: Process, deployment, executed code
-
-**Artifact Name**:
-The file name that distinguishes Code Artifacts for the same modeled Entity. The external deployment path is supplied later through Process metadata.
-_Avoid_: Artifact key, deployment path, Process executable
-
-**Code Handoff**:
-The manual boundary after Code generation and optional Process metadata
-authoring. The user places Code Artifacts at the supplied external paths and
-starts the Orchestration Layer. Runtime errors return as explicit input for a
-later Code correction.
-_Avoid_: Automatic deployment, pipeline execution, trigger management
-
-**Orchestration Layer**:
-The external runtime that owns triggers, dependency execution, and physical
-loads. GDS Workbench can author Code and Process metadata but does not operate
-this runtime.
-_Avoid_: GDS Workbench, Code Generation, MCP execution
-
-**Mapping Code Generation**:
-The Workflow Target that creates one or more Code Artifacts per selected modeled
-Entity from applied Mapping, then hands the Candidate to a
-governed Model Change Set. Apply advances the Model revision. Generation never
-executes or deploys code.
-_Avoid_: Mapping Section, local-only code, code execution
-
-**Validation Group**:
-One Model-owned Validation Authoring grouping for a Tenant and System. It contains related
-Validation Checks and uses applied Mapping plus any current relevant Code
-Artifacts as authoring context. Code may be absent.
-_Avoid_: server validation phase, Workflow Run group
-
-**Validation Check**:
-One deterministic validation definition containing Query A, optional Query B or a
-literal operand, and an explicit comparison contract. It stores authoring
-intent; storing or applying it never executes it. A governed authoring policy
-may separately preflight the SQL and report the outcome locally. Execution
-results and sampled physical rows are not Model state.
-_Avoid_: Model Change Set validation, agent judgment at runtime
-
-**Validation Authoring**:
-The Workflow Target that derives Validation Groups and Validation Checks from
-applied Mapping, any current relevant Code Artifacts when present, and explicit
-user input, then hands the Candidate to a governed Model Change Set. Apply
-advances the Model revision. Validation Authoring may occur before physical loads. A
-governed SQL preflight may check syntax and shape, but absent loaded data does
-not invalidate authored checks and cannot prove their functional result. Operational
-execution is a separate concern.
-_Avoid_: QA, Validate, server validation, Profiling
-
-**Change Set Validation**:
-The authoritative server gate that validates one exact Metadata or Model Change
-Set revision and candidate digest before Apply. It does not execute Validation
-Checks or judge loaded data.
-_Avoid_: Validation Authoring, SQL Preflight
-
-**SQL Preflight**:
-An optional bounded execution used during Code or Validation Authoring to check
-SQL syntax and result shape. Its outcome and sampled rows are local evidence,
-not Model state or proof that a functional Validation Check passes.
-_Avoid_: Validation Check execution, Change Set Validation
-
-**Local Review Handoff**:
-The notification after a locally complete Candidate is ready for human
-inspection. GDS Workbench opens once for the Work Session and remains pointed at
-that session; the user refreshes it to see the latest local contents. When work
-is ready, the agent only notifies the user to inspect it. The user may edit in
-Workbench, ask the agent for changes, or say `proceed`. There is no user-facing
-Review operation, command, or state. An unambiguous positive acknowledgement,
-including `proceed` or `OK`, accepts the current exact contents and permits
-acquiring an ordinary free Tenant Lock, reconciliation, Stage, and Change Set
-validation. Lock override and Apply require separate explicit approval.
-For Model work, reconciliation requires the current Model revision to match the
-revision in the installed Model Snapshot. A mismatch stops the workflow: a
-capable client downloads and installs a fresh Model Snapshot, then the agent
-reassesses the Candidate without an automatic merge. Metadata has no Tenant-wide
-revision; it uses a non-stale Metadata Snapshot, the Tenant Lock, and server
-validation against current state. The agent never repeats a temporary signed URL
-in chat. If
-reassessment changes Candidate contents, the agent notifies the user to refresh
-and inspect them again; otherwise the prior instruction to proceed remains
-valid. Internal validation and state tracking may support this behavior but
-must not add review ceremony.
-_Avoid_: Review phase, review record, server approval
-
-**GDS Workbench**:
-The local-only interface for inspecting immutable Snapshots, editing local
-Change Sets, and performing preliminary validation. It has no authority to
-Stage, validate a Change Set on the server, Apply, or otherwise change server
-state.
-_Avoid_: Server Change Set client, deployment interface
-
-**Workbench Schema Compatibility**:
-A governed schema change is complete only when GDS Workbench can display, edit,
-and locally validate its eligible records. Snapshot JSON Schemas remain the
-source for fields and form controls; canonical keys, cross-record domain checks,
-and Workbench tests must change with the governing schema when affected.
-_Avoid_: Separate Workbench schema, display-only compatibility
-
-**Workflow Authoring Guide**:
-Plugin instructions for one GDS Workflow Target that explain required context,
-field ownership and population, coverage loops, validation expectations,
-blockers, review handoff, and the next eligible target. Guides cover metadata,
-Profiling, Analysis, Conceptual, Logical, Dimensional, Mapping, Code Generation,
-Validation Authoring, and optional Target and Process registration without replacing authoritative server validation.
-_Avoid_: Prompt dump, duplicate database policy, optional workflow decoration
-
-**Default Model Naming**:
-The advisory naming convention used unless the user or Model policy supplies an
-override. Conceptual, Logical, and Dimensional names use PascalCase. Logical
-identifier Attributes end in `ID`, with both letters capitalized. Dimensional
-key Attributes end in `Key`. These are authoring-quality rules in Workflow
-Authoring Guides, not database integrity constraints.
-_Avoid_: Mandatory database casing rule, `Id` suffix, user override rejection
-
-**Local Validation Override**:
-An explicit human acceptance of exact local Change Set contents despite
-preliminary validation findings. It never bypasses authoritative server
-validation or permits Apply.
-_Avoid_: Server validation bypass, Apply approval
-
-**Actor Kind**:
-The server-derived `human` or `workload` classification used to project the MCP
-tool and contract-resource inventory. Client-declared metadata never selects it.
-_Avoid_: Client mode, audience hint
-
-**Model Snapshot**:
-The immutable, bounded Model context archive returned through MCP for one workflow.
-The Model payload uses schema version 2.0 with schema-qualified Entity keys and no
-Binding datasets. Metadata and transport envelopes retain their own versions.
-_Avoid_: Dump, export
-
-**Metadata Snapshot**:
-An immutable, bounded Source Tenant metadata archive containing registered
-physical metadata independently of Model authoring. It is delivered outside the
-MCP tool result so an agent can inspect it without filling its context.
-_Avoid_: Model Snapshot, metadata dump, workflow snapshot
-
-**Zone**:
-The physical classification of an Object as exactly Source, Bronze, Silver, or
-Gold.
-_Avoid_: Modeling layer, inferred Connection type
-
-**Verified Model Graph**:
-The typed and indexed in-memory form of a verified Model Snapshot.
-_Avoid_: Projection input, document map
-
-**Apply Receipt**:
-The immutable result that binds an applied Model Change Set to its revision, digest, and idempotent outcome.
-_Avoid_: Apply response
-
-**DBML Export**:
-The local Conceptual, Logical, and/or Dimensional visualization generated by
-browser Workbench from the effective Model Snapshot plus pending Change Set.
-It is an explicit display export, not validation or review evidence. MCP does
-not export or store DBML.
-_Avoid_: Database dump, server-local export, arbitrary path write
-
-
-Adding a Mapping source System may leave existing Code without that System.
-That Code remains stored and becomes stale through its input digest. Mapping and
-other upstream workflows do not author Code assignments. Whenever Code or its
-source assignments are staged, each mapped System must have exactly one active
-artifact assignment. Duplicate assignments and dangling references are always
-invalid, including on unchanged Code.
-
-Human result lifecycle updates use owned record IDs and change only lock/status
-fields. Preview lists the complete dependent changes; Apply confirms that exact
-plan under Model revision, Tenant Lock and idempotency fences. Status changes
-never implicitly unlock dependencies or invent transformations, SQL or
-System assignments. Retiring Code retires the target's applied Code bundle;
-reactivation must restore complete System coverage. Lock/unlock may preserve
-stale Code without reauthoring it. Inactive history remains readable even when
-its former Entity or Mapping is no longer eligible for a new workflow run. Frozen
-Run Entity selections retain identity independently of live Entity rows.
+Atlas provides a plugin and web application for governed metadata and data-model
+authoring. Code, numbered SQL, and runtime schemas are authoritative. This file
+fixes domain vocabulary; it does not duplicate field contracts or prompt bodies.
+
+## Ownership and identity
+
+| Term | Meaning |
+| --- | --- |
+| Tenant | Ownership and authorization scope for metadata, Models and Principals. |
+| Active Tenant | Current navigation and authorization scope; it need not select a Model. |
+| Source Tenant | `Object.source_tenant_id`: whose metadata/data an Object represents, independent of Connection placement. |
+| Principal | One internal human or workload identity resolved from authenticated Entra identity. |
+| Tenant Role | Viewer, Developer, Architect or Tenant Admin; roles are cumulative. |
+| Super Admin | Explicit Principal capability across active Tenants; never bypasses locks, revisions or audit. |
+| Tenant Lock | Database-time lease for one exact Principal. Ordinary writes require its ownership; override is explicit and audited. |
+| Model | Tenant-owned aggregate: input scope, schema/policy settings, authored sections and current revision. |
+| Model Input Scope | Saved eligible physical Source/Bronze Objects; it may span readable Source Tenants. |
+| Selected Scope | Exact Objects or modeled Entities selected for one workflow; does not change Model Input Scope. |
+| Modeled Entity | Logical or Dimensional Entity identified by Model, layer, schema and name; Attribute identity extends that key. |
+| Zone | Source: original system; Bronze: ingested physical data; Silver: Logical output; Gold: Dimensional output. |
+
+Source Objects use their source Connection. Bronze/Silver/Gold physical placement
+uses the selected Source Tenant's active GDS Connection and that Connection's
+Tenant/System keys. Never substitute source ownership for placement identity.
+Model-generated executable coordinates use the Model Tenant's configured GDS
+placement. Authoring an Entity does not register a physical Object.
+
+Natural keys retain the complete Tenant/System/Connection/schema/Object/Attribute
+path when physical identity requires it. Equal names in different schemas or
+Systems are independent. Internal numeric IDs are not business identifiers.
+
+## Evidence and modeling
+
+| Term | Meaning |
+| --- | --- |
+| Profiling | Deterministic measurements for selected physical Attributes, over all rows or an explicit batch. |
+| Attribute Profile | Current saved measurements with time/row-scope provenance; refresh replaces current measurements. |
+| Metadata Enrichment | Separate Object and Attribute description workflows using metadata and Profiles; locked descriptions stay protected. Attribute enrichment can fill independently supported missing inferred types. |
+| Ingestion Mapping | Registered Source-to-Bronze Object/Attribute lineage; source provenance cannot be guessed from names. |
+| Analysis Result | Inferred relationship between real physical Attributes, including reasoning and confidence. Inferred cardinality and measured validation remain separate. |
+| Modeling Assertion | Persisted contextual statement, requirement, KPI/reporting need or source fact with document provenance. Requirements are not proof that data exists. |
+| Conceptual Model | Business concepts and relationships supported by physical evidence or Assertions. |
+| Logical Model | Schema-qualified normalized Entities, Attributes and relationships supported by physical inputs or Assertions. |
+| Dimensional Model | Schema-qualified dimensions, facts and bridges supported by applied Logical Entities/Attributes or Assertions. |
+| Source Context | Business/physical source dictionary used to interpret evidence. Exact fields come from workflow input contracts. |
+| GDS Context | Target platform placement and model configuration; not source business evidence. |
+
+Missing information, measured zero, failed validation and contradictory evidence
+are different states. Preserve each. An Assertion can explain required behavior;
+it cannot invent physical columns or executable lineage. Saved Analysis confidence
+must not replace observed validation results. Assess relevance at the current grain.
+
+## Mapping, Code and Validation
+
+**Mapping** belongs to a modeled Entity and contributing source System. Its Object
+transformation describes sources, rowset, filters and stages; Attribute documents
+describe field expressions and sources. Output Templates define advisory document
+fields. Custom documents remain opaque, complete JSON; their field names do not
+acquire default-template semantics automatically.
+
+Partial Mapping is valid authoring progress. Regeneration clears omitted selected,
+unlocked transformations. Locked/unselected records remain intact. Protect existing
+Object logic when any child Attribute is protected. Missing transformations are
+blank, never fabricated to satisfy a coverage count.
+
+**Code Artifact** is an Entity-owned named file plus explicit source-System
+assignments. Code consumes applied Mapping and its template definitions. Partial
+Mapping may produce reviewed SQL with typed-null or zero-row placeholders and
+warnings. A current input digest does not prove runnable business logic.
+Generated surrogate keys are database-owned; separately named source identifiers
+remain Mapping-owned. The external orchestration layer owns loads and merges.
+
+**Validation Group / Check** stores deterministic query/comparison definitions.
+Validation authoring consumes complete Mapping and relevant current Code when
+available. Apply never executes these definitions or stores physical query results.
+**Change Set Validation** checks candidate/model integrity; **SQL Preflight** is a
+separate governed bounded query check. Neither proves all business results.
+
+**Target Registration** is optional export of applied Logical/Dimensional Entities
+to Silver/Gold metadata, followed by Metadata Change Set review and Apply. It is
+not a prerequisite for Mapping or Code. **Code Handoff** is manual file placement
+and external orchestration, requiring separate authorization.
+
+## Governed work
+
+| Term | Meaning |
+| --- | --- |
+| Section | An authored Model area with a shared Snapshot/Change Set contract. |
+| Candidate | Uncommitted workflow output; validation and review precede Apply. |
+| Model Change Set | Revision-fenced draft for Model scope and authored sections. |
+| Metadata Change Set | Governed draft for physical metadata registration/changes. |
+| Snapshot | Immutable authorized metadata/model export, with versioned schemas and natural keys; Model snapshots pin a revision. |
+| Local Reference | Typed draft-local identity for a new record; Apply resolves the server-generated ID. |
+| Stage Batch | Atomic bounded transport for replacing complete datasets. Code fragments reassemble into complete records before validation. |
+| Workflow Run | Durable queued/running/terminal execution. At most one runs per Tenant, independently of Tenant Lock ownership. |
+| Prompt Template | Versioned system/instruction text, selected variables and readers. Runs freeze their effective published versions. |
+| Default Prompt | Published assignment resolved through supported scope/default rules; editing seed files does not update an installed database. |
+| Apply Receipt | Durable result of explicit governed Apply, including resulting revision and idempotent replay identity. |
+| DBML Export | Local display of the effective Model graph, not executable database deployment. |
+
+Plugin and web use the same persisted contracts and governed Change Sets, with
+independent agent orchestration. The web application never calls MCP internally.
+A stale Snapshot/revision requires refresh and reassessment. Model-owned authored
+state, physical metadata, and external deployment remain separate boundaries.
+
+See [architecture](docs/architecture/overview.md), [decisions](docs/architecture/decisions.md),
+[workflows](docs/workflows.md), and [security](docs/security.md).

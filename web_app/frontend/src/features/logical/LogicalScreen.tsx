@@ -1,3 +1,4 @@
+import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
 import { ModelLayerActions } from "../model_record_review/ModelLayerActions";
 import { TargetExportButton } from "../model_targets/TargetExportDialog";
 import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
@@ -114,16 +115,16 @@ export function LogicalScreen({
   };
 
   return (
-    <div className="logical-page page-enter">
+    <WorkflowCommandCenter filterCount={Object.values(view === "entities" ? entityFilters : view === "relationships" ? relationshipFilters : submodelFilters).filter(Boolean).length} className="logical-page page-enter">
       <header className="workflow-commandbar model-section-toolbar logical-commandbar">
         <h1 className="model-section-title sr-only">Logical</h1>
         <div className="workflow-command-context">
           <nav className="workflow-tabs" aria-label="Logical views">
             {([
-              ["entities", "Entities"],
-              ["relationships", "Relationships"],
-              ["submodels", "Submodels"],
-            ] as const).map(([nextView, label]) => (
+              ["entities", "Entities", entitiesQuery],
+              ["relationships", "Relationships", relationshipsQuery],
+              ["submodels", "Submodels", submodelsQuery],
+            ] as const).map(([nextView, label, query]) => (
               <button
                 key={nextView}
                 className={view === nextView ? "is-active" : ""}
@@ -132,16 +133,20 @@ export function LogicalScreen({
                 onClick={() => { setSelectedIds(new Set()); setView(nextView); }}
               >
                 {label}
+                {query?.data ? <span className="command-count" aria-hidden="true" title="Loaded records matching the filters">
+                  {query.data.pages.reduce((total, page) => total + page.items.length, 0)}{query.hasNextPage ? "+" : ""}
+                </span> : null}
               </button>
             ))}
           </nav>
-          <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
-            {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
-          </span>
+
         </div>
         <div className="workflow-command-actions">
+          <WorkflowCommandTools />
+          <WorkflowMenu>
           <ModelLayerActions api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="logical" onApplied={() => setSelectedIds(new Set())} />
           <TargetExportButton api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} layer="logical" entityIds={view === "entities" && selectedIds.size ? [...selectedIds] : undefined} />
+          </WorkflowMenu>
           <button className="button button-secondary button-small" type="button" disabled={activeReviewQuery.isFetching} onClick={() => void refresh()}>
             {activeReviewQuery.isFetching ? "Refreshing…" : "Refresh"}
           </button>
@@ -242,7 +247,7 @@ export function LogicalScreen({
           }}
         />
       ) : null}
-    </div>
+    </WorkflowCommandCenter>
   );
 }
 

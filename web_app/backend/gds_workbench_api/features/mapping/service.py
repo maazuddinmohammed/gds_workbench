@@ -634,6 +634,7 @@ def _selected_template(
             for item in preparation.context.output_templates.definitions
             if item.output_template_id == selection.output_template_id
             and item.target_type == target_type
+            and item.modeled_entity_type in (None, preparation.plan.modeled_entity_type)
             and item.schema_digest == selection.schema_digest
             and item.schema_digest_is_valid
             and item.is_active

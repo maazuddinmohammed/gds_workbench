@@ -23,6 +23,7 @@ describe("Model Profiling", () => {
     ]);
     expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/profiling/501"))).toBe(false);
 
+    if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
     await user.selectOptions(screen.getByLabelText("Source Tenant code"), "GRDM");
     await user.selectOptions(screen.getByLabelText("System code"), "CRM");
     await user.type(screen.getByLabelText("Object schema"), " Bronze_CRM ");
@@ -113,23 +114,23 @@ describe("Model Profiling", () => {
     render(<WorkbenchApp router={router} />);
     await screen.findByRole("table", { name: "Profiling results" });
 
-    await user.click(screen.getByRole("button", { name: "Runs" }));
+    await user.click(screen.getByRole("button", { name: "Show Profiling run activity" }));
 
-    const runs = await screen.findByRole("table", { name: "Profiling runs" });
+    const runs = await screen.findByRole("list", { name: "Profiling run list" });
     expect(within(runs).getByText("PR-1048")).toBeVisible();
     await user.selectOptions(screen.getByLabelText("Run state"), "completed");
 
-    expect(await screen.findByRole("table", { name: "Profiling runs" })).toBeVisible();
+    expect(await screen.findByRole("list", { name: "Profiling run list" })).toBeVisible();
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/runs?workflow=profiling&page_size=200&state=completed",
+      "/api/v1/tenants/7/models/18/runs?workflow=profiling&page_size=50&state=completed",
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
-    const showRun = screen.getByRole("button", { name: "Show details for profiling run PR-1048" });
+    const showRun = screen.getByRole("button", { name: /PR-1048/ });
     await user.click(showRun);
 
     const drawer = await screen.findByRole("complementary", { name: "Profiling run details" });
-    expect(within(drawer).getByRole("heading", { name: "PR-1048" })).toBeVisible();
+    expect(within(drawer).getByText("PR-1048", { exact: true })).toBeVisible();
     expect(within(drawer).getByText("Prepare selected Objects")).toBeVisible();
     expect(within(drawer).getByText("8 of 8")).toBeVisible();
     expect(within(drawer).getByRole("region", { name: "Token usage" }))
@@ -138,9 +139,9 @@ describe("Model Profiling", () => {
       name: "Prepare progress: 8 of 8",
     })).toHaveValue(8);
 
-    await user.click(within(drawer).getByRole("button", { name: "Close profiling run details" }));
+    await user.click(screen.getByRole("button", { name: "Close activity" }));
     expect(screen.queryByRole("complementary", { name: "Profiling run details" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Show details for profiling run PR-1048" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Show Profiling run activity" })).toHaveFocus();
   });
 
   it("refreshes token usage through the selected Profiling Run read", async () => {
@@ -150,8 +151,8 @@ describe("Model Profiling", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={router} />);
     await screen.findByRole("table", { name: "Profiling results" });
-    await user.click(screen.getByRole("button", { name: "Runs" }));
-    await user.click(await screen.findByRole("button", { name: "Show details for profiling run PR-1048" }));
+    await user.click(screen.getByRole("button", { name: "Show Profiling run activity" }));
+    await user.click(await screen.findByRole("button", { name: /PR-1048/ }));
     const usage = await screen.findByRole("region", { name: "Token usage" });
     expect(usage).toHaveTextContent("Unavailable");
     const runReads = () => fetcher.mock.calls.filter(([url]) => String(url) === "/api/v1/tenants/7/models/18/runs/1048");

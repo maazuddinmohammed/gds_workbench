@@ -29,6 +29,7 @@ def _create_template(
     code: str,
     target_type: str,
     fields: list[dict[str, object]],
+    entity_type: str | None = None,
 ) -> int:
     return _required_id(
         connection.execute(
@@ -42,7 +43,8 @@ def _create_template(
                    %s::VARCHAR,
                    %s::VARCHAR,
                    %s::VARCHAR,
-                   %s::JSONB
+                   %s::JSONB,
+                   %s::VARCHAR
               ) AS created
             """,
             (
@@ -53,6 +55,7 @@ def _create_template(
                 "Safe structured Mapping output.",
                 target_type,
                 Jsonb(fields),
+                entity_type,
             ),
         ).fetchone(),
         "output_template_id",
@@ -179,13 +182,16 @@ async def test_output_template_catalog_round_trips_through_the_web_runtime_role(
             entra_object_id=super_object_id,
             code=object_code,
             target_type="mapping_object",
+            entity_type="logical_entity",
             fields=[
                 {
                     "output_template_field_name": "transformation_logic",
                     "output_template_field_description": "Transformation logic.",
                     "output_template_field_data_type": "string",
                     "output_template_field_array_item_type": None,
-                    "output_template_field_example": {"secret_token": "MUST_NOT_LEAVE_DATABASE"},
+                    "output_template_field_example": {
+                        "secret_token": "MUST_NOT_LEAVE_DATABASE"
+                    },
                     "output_template_field_is_required": False,
                     "output_template_field_order": 10,
                 },
@@ -198,6 +204,25 @@ async def test_output_template_catalog_round_trips_through_the_web_runtime_role(
                     "output_template_field_is_required": True,
                     "output_template_field_order": 2,
                 },
+            ],
+        )
+        opposite_code = f"catalog_dimensional_{suffix}"
+        _create_template(
+            connection,
+            entra_tenant_id=super_tenant_id,
+            entra_object_id=super_object_id,
+            code=opposite_code,
+            target_type="mapping_object",
+            entity_type="dimensional_entity",
+            fields=[
+                {
+                    "output_template_field_name": "source_tables",
+                    "output_template_field_description": "Modeled sources.",
+                    "output_template_field_data_type": "array",
+                    "output_template_field_array_item_type": "object",
+                    "output_template_field_is_required": True,
+                    "output_template_field_order": 1,
+                }
             ],
         )
         attribute_code = f"catalog_attribute_{suffix}"
@@ -252,6 +277,7 @@ async def test_output_template_catalog_round_trips_through_the_web_runtime_role(
             principal,
             tenant_id=tenant_id,
             target_type="mapping_object",
+            entity_type="logical_entity",
             active=True,
             page_size=200,
             cursor=None,
@@ -273,11 +299,20 @@ async def test_output_template_catalog_round_trips_through_the_web_runtime_role(
         await database.close()
 
     object_summary = next(
-        item for item in active_objects.items if item.output_template_code == object_code
+        item
+        for item in active_objects.items
+        if item.output_template_code == object_code
     )
     assert object_summary.output_template_schema_digest_is_valid is True
+    assert object_summary.output_template_modeled_entity_type == "logical_entity"
+    assert not any(
+        item.output_template_code == opposite_code for item in active_objects.items
+    )
     assert object_summary.field_count == 2
-    assert any(item.output_template_code == attribute_code for item in inactive_attributes.items)
+    assert any(
+        item.output_template_code == attribute_code
+        for item in inactive_attributes.items
+    )
     assert [field.output_template_field_order for field in detail.fields] == [2, 10]
     serialized = detail.model_dump_json()
     assert "MUST_NOT_LEAVE_DATABASE" not in serialized

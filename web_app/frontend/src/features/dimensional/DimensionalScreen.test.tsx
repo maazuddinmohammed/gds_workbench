@@ -26,7 +26,8 @@ describe("Model Dimensional", () => {
     await user.click(screen.getByRole("heading", { name: "Source mappings" }));
     expect(screen.getByText("Sales Analytics")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Source mappings" })).toBeVisible();
-    expect(screen.getAllByText("silver.sales_order")).toHaveLength(1);
+    expect(within(screen.getByRole("table", { name: "Source mappings" })).getByRole("cell", { name: "silver" })).toBeVisible();
+    expect(within(screen.getByRole("table", { name: "Source mappings" })).getByRole("cell", { name: "sales_order" })).toBeVisible();
     expect(screen.getByText("assertion:sales-grain")).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Provenance" })).not.toBeInTheDocument();
 
@@ -51,7 +52,8 @@ describe("Model Dimensional", () => {
     await user.click(within(screen.getByRole("table", { name: "Source mappings" })).getAllByText("Show details")[0]!);
     expect(screen.queryByText("Entity mapping id")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Source mappings" })).toBeVisible();
-    expect(screen.getAllByText("silver.sales_order.sales_amount")).toHaveLength(1);
+    const sourceTable = screen.getByRole("table", { name: "Source mappings" });
+    for (const name of ["silver", "sales_order", "sales_amount"]) expect(within(sourceTable).getByRole("cell", { name })).toBeVisible();
     expect(screen.getByText("assertion:additive-sales")).toBeVisible();
 
     await user.click(screen.getByRole("link", { name: "Back to Dimensional" }));
@@ -84,6 +86,7 @@ describe("Model Dimensional", () => {
     render(<WorkbenchApp router={dimensionalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Dimensional Objects" });
 
+    if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
     await user.type(screen.getByLabelText("Object name prefix"), " Sales ");
     await user.selectOptions(screen.getByLabelText("Object status"), "inactive");
     await user.selectOptions(screen.getByLabelText("Object lock"), "false");
@@ -154,14 +157,14 @@ describe("Model Dimensional", () => {
     );
     await screen.findByRole("table", { name: "Dimensional Objects" });
     expect(screen.getByRole("button", { name: "Run Dimensional" })).toBeDisabled();
-    expect(screen.getByText("Tenant Lock required to run")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Run Dimensional" })).toHaveAttribute("title", "Tenant Lock required");
     unlocked.unmount();
 
     const fetcher = dimensionalFetchStub();
     const user = userEvent.setup();
     render(<WorkbenchApp router={dimensionalRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Dimensional Objects" });
-    expect(screen.getByText("Tenant Lock held")).toBeVisible();
+    expect(screen.getByText("Tenant Lock held by you")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Run Dimensional" }));
     expect(await screen.findByRole("heading", { name: "Configure Dimensional run" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Create and run Dimensional" }));

@@ -1119,10 +1119,6 @@ def project_prompt_input_values(
         }
         if precomputed_values is None and isinstance(context, dict) and requested:
             precomputed_values = project_downstream_inputs(prompt_workflow, context)
-            if prompt_workflow == "code_generation":
-                guide = resolver_values.get("workflow.code_generation.common.sql_generation_guide")
-                if guide is not None:
-                    precomputed_values["sql_generation_guide"] = guide
     if any(key == prefix + name for name in new_inputs for key in requested):
         from jsonschema import Draft202012Validator
 

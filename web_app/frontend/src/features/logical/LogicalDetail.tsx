@@ -122,7 +122,7 @@ function LogicalEntityView({
   api: LogicalApi;
 }) {
   return (
-    <article className="workflow-detail-page logical-detail-page page-enter">
+    <article className="workflow-detail-page logical-detail-page modeled-detail-page page-enter">
       <LogicalDetailHeader
         tenantId={tenantId} modelId={modelId}
         eyebrow={`Logical Entity ${entity.logical_entity_id}`}
@@ -133,11 +133,11 @@ function LogicalEntityView({
 
       <section className="detail-section detail-primary" aria-labelledby="logical-entity-overview">
         <header><h2 id="logical-entity-overview">Entity definition</h2></header>
-        <p className="detail-prose is-prominent">{entity.logical_entity_definition}</p>
-        <dl className="detail-fact-grid">
+        <dl className="modeled-detail-fields">
+          <div className="is-definition"><dt>Definition</dt><dd>{entity.logical_entity_definition}</dd></div>
+          <Fact label="Grain" value={entity.logical_entity_grain} />
           <Fact label="Type" value={humanize(entity.logical_entity_type)} />
           <Fact label="Type detail" value={entity.logical_entity_type_detail ?? "Not specified"} />
-          <Fact label="Grain" value={entity.logical_entity_grain} />
           <Fact label="Dependency order" value={String(entity.logical_entity_dependency_order)} />
           <Fact label="Confidence" value={humanize(entity.logical_entity_confidence)} />
           <Fact label="Updated" value={formatDateTime(entity.updated_at)} />
@@ -155,7 +155,7 @@ function LogicalEntityView({
         {entity.submodels.length === 0 ? (
           <p className="detail-empty">No Submodel membership is recorded.</p>
         ) : (
-          <div className="table-scroll">
+          <div className="table-scroll" role="region" aria-label="Scrollable Submodel memberships" tabIndex={0}>
             <table aria-label="Submodel memberships">
               <thead><tr><th>Submodel</th><th>Status</th><th>Lock</th></tr></thead>
               <tbody>{entity.submodels.map((membership) => (
@@ -187,7 +187,7 @@ function LogicalAttributeView({
   attribute: LogicalAttributeDetail;
 }) {
   return (
-    <article className="workflow-detail-page logical-detail-page page-enter">
+    <article className="workflow-detail-page logical-detail-page modeled-detail-page page-enter">
       <LogicalDetailHeader
         tenantId={tenantId}
         modelId={modelId}
@@ -199,19 +199,19 @@ function LogicalAttributeView({
       />
       <section className="detail-section detail-primary" aria-labelledby="logical-attribute-overview">
         <header><h2 id="logical-attribute-overview">Attribute definition</h2></header>
-        <p className="detail-prose is-prominent">{attribute.logical_attribute_definition}</p>
-        <dl className="detail-fact-grid">
+        <dl className="modeled-detail-fields">
+          <div className="is-definition"><dt>Definition</dt><dd>{attribute.logical_attribute_definition}</dd></div>
           <Fact label="Entity" value={`${attribute.logical_entity_schema_name}.${attribute.logical_entity_name}`} />
         </dl>
         <h3>Type and nullability</h3>
-        <dl className="detail-fact-grid">
+        <dl className="modeled-detail-fields">
           <Fact label="Data type" value={attribute.logical_attribute_data_type} />
           <Fact label="Ordinal" value={String(attribute.logical_attribute_ordinal_position)} />
           <Fact label="Nullable" value={attribute.logical_attribute_is_nullable ? "Yes" : "No"} />
           <Fact label="Audit column" value={attribute.logical_attribute_is_audit_column ? "Yes" : "No"} />
         </dl>
         <h3>Keys</h3>
-        <dl className="detail-fact-grid">
+        <dl className="modeled-detail-fields">
           <Fact label="Natural key" value={attribute.logical_attribute_is_natural_key ? "Yes" : "No"} />
           <Fact label="Surrogate key" value={attribute.logical_attribute_is_surrogate_key ? "Yes" : "No"} />
         </dl>
@@ -231,7 +231,7 @@ function LogicalRelationshipView({
   relationship: LogicalRelationshipDetail;
 }) {
   return (
-    <article className="workflow-detail-page logical-detail-page page-enter">
+    <article className="workflow-detail-page logical-detail-page modeled-detail-page page-enter">
       <LogicalDetailHeader
         tenantId={tenantId}
         modelId={modelId}
@@ -242,23 +242,10 @@ function LogicalRelationshipView({
       />
       <section className="detail-section detail-primary" aria-labelledby="logical-relationship-overview">
         <header><h2 id="logical-relationship-overview">Relationship definition</h2></header>
-        <p className="detail-prose is-prominent">{relationship.logical_relationship_definition}</p>
-        <div className="conceptual-endpoints" aria-label="Relationship endpoints">
-          <section>
-            <small>From</small>
-            <strong>
-              {relationship.from_logical_entity_schema_name}.{relationship.from_logical_entity_name}.{relationship.from_logical_attribute_name}
-            </strong>
-          </section>
-          <span aria-hidden="true">→</span>
-          <section>
-            <small>To</small>
-            <strong>
-              {relationship.to_logical_entity_schema_name}.{relationship.to_logical_entity_name}.{relationship.to_logical_attribute_name}
-            </strong>
-          </section>
-        </div>
-        <dl className="detail-fact-grid">
+        <dl className="modeled-detail-fields">
+          <div className="is-definition"><dt>Definition</dt><dd>{relationship.logical_relationship_definition}</dd></div>
+          <Fact label="From Attribute" value={`${relationship.from_logical_entity_schema_name}.${relationship.from_logical_entity_name}.${relationship.from_logical_attribute_name}`} />
+          <Fact label="To Attribute" value={`${relationship.to_logical_entity_schema_name}.${relationship.to_logical_entity_name}.${relationship.to_logical_attribute_name}`} />
           <Fact label="Cardinality" value={humanize(relationship.logical_relationship_cardinality)} />
           <Fact label="Confidence" value={humanize(relationship.logical_relationship_confidence)} />
           <Fact label="Updated" value={formatDateTime(relationship.updated_at)} />
@@ -266,7 +253,7 @@ function LogicalRelationshipView({
       </section>
       <section className="detail-section" aria-labelledby="logical-relationship-reasoning">
         <header><h2 id="logical-relationship-reasoning">Reasoning</h2></header>
-        <dl className="conceptual-reasoning">
+        <dl className="modeled-detail-fields">
           <Fact label="Relationship basis" value={relationship.logical_relationship_basis} />
           <Fact label="Cardinality basis" value={relationship.logical_relationship_cardinality_basis} />
         </dl>
@@ -285,7 +272,7 @@ function LogicalSubmodelView({
   submodel: LogicalSubmodelDetail;
 }) {
   return (
-    <article className="workflow-detail-page logical-detail-page page-enter">
+    <article className="workflow-detail-page logical-detail-page modeled-detail-page page-enter">
       <LogicalDetailHeader
         tenantId={tenantId}
         modelId={modelId}
@@ -296,8 +283,8 @@ function LogicalSubmodelView({
       />
       <section className="detail-section detail-primary" aria-labelledby="logical-submodel-overview">
         <header><h2 id="logical-submodel-overview">Submodel definition</h2></header>
-        <p className="detail-prose is-prominent">{submodel.logical_submodel_definition}</p>
-        <dl className="detail-fact-grid">
+        <dl className="modeled-detail-fields">
+          <div className="is-definition"><dt>Definition</dt><dd>{submodel.logical_submodel_definition}</dd></div>
           <Fact label="Entities" value={String(submodel.entity_count)} />
           <Fact label="Updated" value={formatDateTime(submodel.updated_at)} />
         </dl>
@@ -310,18 +297,22 @@ function LogicalSubmodelView({
         {submodel.entities.length === 0 ? (
           <p className="detail-empty">No member entities are recorded.</p>
         ) : (
-          <div className="normalized-membership-ledger">
-            {submodel.entities.map((membership) => (
-              <article key={membership.logical_entity_submodel_id}>
-                <strong>{membership.logical_entity_schema_name}.{membership.logical_entity_name}</strong>
-                <dl className="support-facts">
-                  <Fact label="Entity ID" value={String(membership.logical_entity_id)} />
-                  <Fact label="Type" value={humanize(membership.logical_entity_type)} />
-                  <Fact label="Entity status" value={humanize(membership.logical_entity_status)} />
-                  <Fact label="Membership status" value={humanize(membership.membership_status)} />
-                </dl>
-              </article>
-            ))}
+          <div className="table-scroll" role="region" aria-label="Scrollable Member entities" tabIndex={0}>
+            <table aria-label="Member entities">
+              <thead><tr><th>Entity</th><th>Type</th><th>Entity status</th><th>Membership status</th><th>Entity ID</th></tr></thead>
+              <tbody>{submodel.entities.map((membership) => (
+                <tr key={membership.logical_entity_submodel_id}>
+                  <td><Link className="text-action" to="/tenants/$tenantId/models/$modelId/logical/entities/$entityId"
+                    params={{ tenantId: String(tenantId), modelId: String(modelId), entityId: String(membership.logical_entity_id) }}>
+                    {membership.logical_entity_schema_name}.{membership.logical_entity_name}
+                  </Link></td>
+                  <td>{humanize(membership.logical_entity_type)}</td>
+                  <td>{humanize(membership.logical_entity_status)}</td>
+                  <td>{humanize(membership.membership_status)}</td>
+                  <td>{membership.logical_entity_id}</td>
+                </tr>
+              ))}</tbody>
+            </table>
           </div>
         )}
       </section>

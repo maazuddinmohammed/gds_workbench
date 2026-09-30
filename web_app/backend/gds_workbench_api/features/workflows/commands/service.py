@@ -53,14 +53,11 @@ SELECT created.created,
        created.selected_scope_digest,
        created.selected_scope_count,
        created.code_generation_coverage_mode,
-       created.sql_generation_guide_id,
-       created.sql_generation_guide_version_id,
-       created.sql_generation_guide_digest,
        created.created_time AS created_at
   FROM application.create_workflow_run(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS created
 """
 
@@ -164,7 +161,6 @@ class DatabaseWorkflowCommandService:
                         command.mapping_object_output_template_id,
                         command.mapping_attribute_output_template_id,
                         command.code_generation_coverage_mode,
-                        command.sql_generation_guide_version_id,
                         Jsonb(
                             [
                                 target.model_dump(mode="json")
@@ -240,12 +236,6 @@ def _raise_safe_workflow_error(error: Exception) -> Never:
             code="code_system_unavailable",
             message="Choose only Systems contributing to the selected Entities. "
             "Refresh the selection before generating SQL.",
-        ) from error
-    if message == "Active published SQL generation guide is required":
-        raise WorkbenchError(
-            code="sql_generation_guide_unavailable",
-            message="Code Generation requires an active, published SQL generation guide. "
-            "Ask an administrator to configure the default guide.",
         ) from error
     if (
         message == "No usable prompt is assigned to Workflow Stage"

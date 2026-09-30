@@ -7,6 +7,7 @@ from typing import Any, Literal, LiteralString, cast
 
 import pytest
 from gds_etl_workbench.application.change_sets.model_apply import ModelMaterializer
+from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     GeneratedCodeRecord,
     GeneratedCodeSourceSystemRecord,
@@ -142,10 +143,13 @@ async def test_physical_keys_use_placement_tenant_and_fence_source_to_model() ->
 @pytest.mark.asyncio
 async def test_entity_resolution_distinguishes_schemas() -> None:
     from gds_etl_workbench.application.modeling.modeled_layer import LOGICAL
-    transaction = ScriptedTransaction([
-        ExpectedCall("one", "SELECT logical_entity_id", {"logical_entity_id": 101}),
-        ExpectedCall("one", "SELECT logical_entity_id", {"logical_entity_id": 102}),
-    ])
+
+    transaction = ScriptedTransaction(
+        [
+            ExpectedCall("one", "SELECT logical_entity_id", {"logical_entity_id": 101}),
+            ExpectedCall("one", "SELECT logical_entity_id", {"logical_entity_id": 102}),
+        ]
+    )
     materializer = _materializer(transaction)
     assert await materializer.resolve_entity(LOGICAL, "sales", "Customer") == 101
     assert await materializer.resolve_entity(LOGICAL, "support", "Customer") == 102
@@ -174,8 +178,10 @@ async def test_mapping_materializes_direct_typed_entity_and_attribute_ownership(
     materializer._logical_entity_ids[("silver", "customer")] = 101
     materializer._logical_attribute_ids[("silver", "customer", "customerid")] = 102
     materializer._system_ids["crm"] = 55
-    materializer._output_template_ids[("mapping_object", "mapping-object")] = 501
-    materializer._output_template_ids[("mapping_attribute", "mapping-attribute")] = 502
+    materializer._output_template_ids[("mapping_object", "logical_entity", "mapping-object")] = 501
+    materializer._output_template_ids[
+        ("mapping_attribute", "logical_entity", "mapping-attribute")
+    ] = 502
     action_count = await materializer.apply(
         {
             "mapping_object": (_mapping_object(),),
@@ -190,7 +196,16 @@ async def test_mapping_materializes_direct_typed_entity_and_attribute_ownership(
     assert object_insert[2][:7] == (7, "logical_entity", 101, None, 55, 501, 2)
     attribute_insert = transaction.calls[3]
     assert "logical_attribute_id" in attribute_insert[1]
-    assert attribute_insert[2][:8] == (301, 7, "logical_entity", 101, None, 102, None, 502)
+    assert attribute_insert[2][:8] == (
+        301,
+        7,
+        "logical_entity",
+        101,
+        None,
+        102,
+        None,
+        502,
+    )
     transaction.assert_complete()
 
 
@@ -273,7 +288,14 @@ async def test_generated_code_uses_server_digest_and_separate_source_assignment(
     assert "code_input_digest" in code_insert[1]
     assert "generated_code_digest" not in code_insert[1]
     assert code_insert[2][:8] == (
-        7, "logical_entity", 101, None, "Customer.sql", "sql_file", "SELECT 1", "a" * 64
+        7,
+        "logical_entity",
+        101,
+        None,
+        "Customer.sql",
+        "sql_file",
+        "SELECT 1",
+        "a" * 64,
     )
     source_insert = transaction.calls[4]
     assert source_insert[2][:2] == (401, 55)
@@ -372,4 +394,37 @@ async def test_validation_digests_are_derived_after_mapping_and_code() -> None:
     assert action_count == 1
     group_insert = transaction.calls[3]
     assert group_insert[2][6:8] == (expected_mapping_digest, expected_code_digest)
+    transaction.assert_complete()
+
+
+@pytest.mark.asyncio
+async def test_template_resolution_and_cache_are_scoped_to_mapping_layer() -> None:
+    transaction = ScriptedTransaction(
+        expected=[
+            ExpectedCall("one", "FROM application.output_template", {"output_template_id": 501}),
+            ExpectedCall("one", "FROM application.output_template", None),
+        ]
+    )
+    materializer = _materializer(transaction)
+    assert (
+        await materializer.resolve_output_template(
+            "logical_template", "mapping_object", "logical_entity"
+        )
+        == 501
+    )
+    with pytest.raises(InvalidRequestError, match="Output Template was not found"):
+        await materializer.resolve_output_template(
+            "logical_template", "mapping_object", "dimensional_entity"
+        )
+    assert transaction.calls[0][2] == (
+        "logical_template",
+        "mapping_object",
+        "logical_entity",
+    )
+    assert transaction.calls[1][2] == (
+        "logical_template",
+        "mapping_object",
+        "dimensional_entity",
+    )
+    assert "output_template_modeled_entity_type = %s" in transaction.calls[0][1]
     transaction.assert_complete()

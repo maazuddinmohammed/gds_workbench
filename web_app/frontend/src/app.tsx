@@ -11,6 +11,7 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  redirect,
   useNavigate,
   useParams,
   useSearch,
@@ -21,7 +22,6 @@ import type { WorkbenchApi } from "./api";
 import { validateProfilingRouteSearch } from "./features/profiling/api";
 import { ProfilingObjectDetailPage } from "./features/profiling/ProfilingDetail";
 import { ProfilingScreen } from "./features/profiling/ProfilingScreen";
-import { AnalysisDetail } from "./features/analysis/AnalysisDetail";
 import { AnalysisScreen } from "./features/analysis/AnalysisScreen";
 import {
   AssertionDocumentDetailPage,
@@ -265,7 +265,14 @@ const tenantModelAnalysisDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/analysis/$findingId",
   validateSearch: modelLayerSearch,
-  component: ModelAnalysisDetail,
+  beforeLoad: ({ params, search }) => {
+    throw redirect({
+      to: "/tenants/$tenantId/models/$modelId/analysis",
+      params: { tenantId: params.tenantId, modelId: params.modelId },
+      search,
+      replace: true,
+    });
+  },
 });
 
 const tenantModelAssertionsRoute = createRoute({
@@ -554,6 +561,7 @@ function TenantMappingModel() {
   const { layer = "logical" } = tenantMappingModelRoute.useSearch();
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
@@ -615,6 +623,7 @@ function TenantMappingDetail({
   if (!Number.isSafeInteger(detailId) || detailId <= 0) return <ErrorPage />;
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={tenantId}
       modelId={modelId}
@@ -665,6 +674,7 @@ function TenantCodeGenerationModel() {
   const numericModelId = Number(modelId);
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
@@ -697,6 +707,7 @@ function TenantGeneratedSqlArtifact() {
   }
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
@@ -747,6 +758,7 @@ function TenantValidationModel() {
   const numericModelId = Number(modelId);
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
@@ -827,7 +839,7 @@ function TenantPromptTemplate() {
 function TenantModelSettings() {
   const { api } = rootRoute.useRouteContext();
   const { tenantId, modelId } = tenantModelSettingsRoute.useParams();
-  return <ModelRouteFrame api={api} tenantId={Number(tenantId)} modelId={Number(modelId)}
+  return <ModelRouteFrame tenantLockApi={api} api={api} tenantId={Number(tenantId)} modelId={Number(modelId)}
     activeStage="settings" loadingLabel="Loading Model Settings">
     {({ home, model }) => <ModelSettingsScreen key={`${tenantId}:${modelId}`} api={api} home={home} model={model} />}
   </ModelRouteFrame>;
@@ -840,6 +852,7 @@ function TenantModelPromptSettings() {
   const numericModelId = Number(modelId);
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
@@ -880,6 +893,7 @@ function ModelProfiling() {
   const numericModelId = Number(modelId);
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
@@ -914,6 +928,7 @@ function ModelProfilingDetail() {
   if (!Number.isSafeInteger(numericObjectId) || numericObjectId <= 0) return <ErrorPage />;
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
@@ -940,6 +955,7 @@ function ModelAnalysis() {
   const numericModelId = Number(modelId);
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
@@ -958,33 +974,6 @@ function ModelAnalysis() {
   );
 }
 
-function ModelAnalysisDetail() {
-  const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId, findingId } = tenantModelAnalysisDetailRoute.useParams();
-  const numericTenantId = Number(tenantId);
-  const numericModelId = Number(modelId);
-  const numericFindingId = Number(findingId);
-  if (!Number.isSafeInteger(numericFindingId) || numericFindingId <= 0) return <ErrorPage />;
-  return (
-    <ModelRouteFrame
-      api={api}
-      tenantId={numericTenantId}
-      modelId={numericModelId}
-      activeStage="analysis"
-      loadingLabel="Loading finding"
-    >
-      {() => (
-        <AnalysisDetail
-          api={api}
-          tenantId={numericTenantId}
-          modelId={numericModelId}
-          findingId={numericFindingId}
-        />
-      )}
-    </ModelRouteFrame>
-  );
-}
-
 function ModelAssertions() {
   const { api } = rootRoute.useRouteContext();
   const { tenantId, modelId } = tenantModelAssertionsRoute.useParams();
@@ -992,6 +981,7 @@ function ModelAssertions() {
   const numericModelId = Number(modelId);
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
@@ -1049,6 +1039,7 @@ function AssertionDetailRoute({
   if (!Number.isSafeInteger(detailId) || detailId <= 0) return <ErrorPage />;
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={tenantId}
       modelId={modelId}
@@ -1085,7 +1076,7 @@ function ModelMetadataEnrichment() {
   const { api } = rootRoute.useRouteContext();
   const { tenantId, modelId } = tenantModelMetadataEnrichmentRoute.useParams();
   return (
-    <ModelRouteFrame api={api} tenantId={Number(tenantId)} modelId={Number(modelId)}
+    <ModelRouteFrame tenantLockApi={api} api={api} tenantId={Number(tenantId)} modelId={Number(modelId)}
       activeStage="metadata-enrichment" loadingLabel="Loading Metadata enrichment">
       {({ home, model }) => (
         <MetadataEnrichmentScreen api={api} tenantId={Number(tenantId)} model={model}
@@ -1102,6 +1093,7 @@ function ModelConceptual() {
   const numericModelId = Number(modelId);
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
@@ -1165,6 +1157,7 @@ function ConceptualDetailRoute({
   if (!Number.isSafeInteger(detailId) || detailId <= 0) return <ErrorPage />;
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={tenantId}
       modelId={modelId}
@@ -1203,6 +1196,7 @@ function ModelLogical() {
   const numericModelId = Number(modelId);
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
@@ -1231,6 +1225,7 @@ function ModelLogicalEntity() {
   if (!Number.isSafeInteger(numericEntityId) || numericEntityId <= 0) return <ErrorPage />;
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
@@ -1311,6 +1306,7 @@ function LogicalDetailRoute({
   if (!Number.isSafeInteger(detailId) || detailId <= 0) return <ErrorPage />;
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={tenantId}
       modelId={modelId}
@@ -1355,6 +1351,7 @@ function ModelDimensional() {
   const numericModelId = Number(modelId);
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
@@ -1383,6 +1380,7 @@ function ModelDimensionalObject() {
   if (!Number.isSafeInteger(numericEntityId) || numericEntityId <= 0) return <ErrorPage />;
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
@@ -1445,6 +1443,7 @@ function DimensionalDetailRoute({
   if (!Number.isSafeInteger(detailId) || detailId <= 0) return <ErrorPage />;
   return (
     <ModelRouteFrame
+      tenantLockApi={api}
       api={api}
       tenantId={tenantId}
       modelId={modelId}

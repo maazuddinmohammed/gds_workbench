@@ -27,12 +27,9 @@ DECLARE
         'application.save_prompt_template_draft(uuid,uuid,character varying,bigint,bigint,text,text,text,timestamp with time zone,text[])',
         'application.transition_prompt_template_version(uuid,uuid,character varying,bigint,character varying,character varying)',
         'application.set_prompt_assignment(uuid,uuid,character varying,bigint,character varying,bigint,bigint,bigint)',
-        'application.create_output_template(uuid,uuid,character varying,character varying,character varying,character varying,character varying,jsonb)',
+        'application.create_output_template(uuid,uuid,character varying,character varying,character varying,character varying,character varying,jsonb,character varying)',
         'application.update_output_template(uuid,uuid,character varying,bigint,character varying,character varying,boolean,timestamp with time zone)',
-        'application.save_sql_generation_guide(uuid,uuid,character varying,bigint,character varying,character varying,character varying,boolean,boolean,timestamp with time zone)',
-        'application.save_sql_generation_guide_draft(uuid,uuid,character varying,bigint,bigint,text,timestamp with time zone)',
-        'application.transition_sql_generation_guide_version(uuid,uuid,character varying,bigint,character varying,character varying)',
-        'application.create_workflow_run(uuid,uuid,character varying,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,character varying,character varying,bigint,bigint,bigint,character varying,bigint,jsonb,jsonb,character varying,bigint[])',
+        'application.create_workflow_run(uuid,uuid,character varying,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,character varying,character varying,bigint,bigint,bigint,character varying,jsonb,jsonb,character varying,bigint[])',
         'application.start_workflow_run(uuid,uuid,character varying,bigint,bigint)',
         'application.claim_next_workflow_run(integer)',
         'application.renew_workflow_run_claim(bigint,uuid,integer)',
@@ -243,8 +240,6 @@ BEGIN
                'prompt_assignment',
                'output_template',
                'output_template_field',
-               'sql_generation_guide',
-               'sql_generation_guide_version',
                'workflow_run',
                'workflow_run_object_selection',
                    'workflow_run_entity_selection',
@@ -256,7 +251,7 @@ BEGIN
                'metadata_review_event'
            );
 
-    IF v_application_table_count <> 19 OR EXISTS (
+    IF v_application_table_count <> 17 OR EXISTS (
         SELECT 1
           FROM information_schema.tables AS table_record
          WHERE table_record.table_schema = 'application'
@@ -270,8 +265,6 @@ BEGIN
                    'prompt_assignment',
                    'output_template',
                    'output_template_field',
-                   'sql_generation_guide',
-                   'sql_generation_guide_version',
                    'workflow_run',
                    'workflow_run_object_selection',
                    'workflow_run_entity_selection',
@@ -300,13 +293,10 @@ BEGIN
          WHERE column_record.table_schema = 'application'
            AND column_record.table_name = 'workflow_run'
            AND column_record.column_name IN (
-                   'code_generation_coverage_mode',
-                   'sql_generation_guide_id',
-                   'sql_generation_guide_version_id',
-                   'sql_generation_guide_digest'
+                   'code_generation_coverage_mode'
                )
            AND column_record.is_nullable = 'YES'
-    ) <> 4 OR NOT EXISTS (
+    ) <> 1 OR NOT EXISTS (
         SELECT 1
           FROM pg_catalog.pg_constraint AS constraint_record
          WHERE constraint_record.contype = 'c'
@@ -314,29 +304,6 @@ BEGIN
                'ck_workflow_run_code_generation_request'
            AND constraint_record.conrelid =
                'application.workflow_run'::regclass
-    ) OR NOT EXISTS (
-        SELECT 1
-          FROM pg_catalog.pg_constraint AS constraint_record
-         WHERE constraint_record.contype = 'f'
-           AND constraint_record.conname =
-               'fk_workflow_run_sql_generation_guide_version'
-           AND constraint_record.conrelid =
-               'application.workflow_run'::regclass
-           AND constraint_record.confrelid =
-               'application.sql_generation_guide_version'::regclass
-           AND (
-               SELECT array_agg(attribute.attname ORDER BY key.position)
-                 FROM unnest(constraint_record.conkey) WITH ORDINALITY
-                      AS key(attnum, position)
-                 JOIN pg_catalog.pg_attribute AS attribute
-                   ON attribute.attrelid = constraint_record.conrelid
-                  AND attribute.attnum = key.attnum
-           ) = ARRAY[
-                   'sql_generation_guide_version_id',
-                   'sql_generation_guide_id',
-                   'sql_generation_guide_digest'
-               ]::name[]
-           AND constraint_record.confdeltype = 'a'
     ) OR NOT EXISTS (
         SELECT 1
           FROM pg_catalog.pg_proc AS function_record
@@ -1294,7 +1261,7 @@ BEGIN
                              )
                   )
                   OR (
-                      application_table.relname = 'output_template'
+                      application_table.relname IN ('output_template', 'output_template_field')
                       AND (
                           NOT has_table_privilege(
                               'gds_app_write', application_table.oid, 'SELECT'
@@ -1314,7 +1281,7 @@ BEGIN
                       )
                   )
                   OR (
-                      application_table.relname <> 'output_template'
+                      application_table.relname NOT IN ('output_template', 'output_template_field')
                       AND EXISTS (
                           SELECT 1
                             FROM unnest(ARRAY[

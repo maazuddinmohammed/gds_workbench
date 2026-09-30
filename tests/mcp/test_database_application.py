@@ -28,8 +28,6 @@ APPLICATION_TABLES = {
     "prompt_assignment",
     "prompt_template",
     "prompt_template_version",
-    "sql_generation_guide",
-    "sql_generation_guide_version",
     "workflow_run",
     "workflow_run_mapping_target_selection",
     "workflow_run_entity_selection",
@@ -437,7 +435,11 @@ def test_web_workflow_provenance_is_fenced_to_run_or_same_model(
         (
             table_schema,
             table_name,
-            ((column_name,) if table_name in parent_derived_model else (column_name, "model_id")),
+            (
+                (column_name,)
+                if table_name in parent_derived_model
+                else (column_name, "model_id")
+            ),
         )
         for table_schema, table_name, column_name in WEB_PROVENANCE_COLUMNS
     }
@@ -1773,7 +1775,9 @@ def test_model_agent_defaults_are_optional_and_naming_is_not_coupled_to_audit(
     assert row == {
         "silver_model_naming_instructions": "Use clear business names.",
         "silver_model_audit_columns_template": None,
-        "gold_model_audit_columns_template": [{"name": "created_time", "type": "timestamp"}],
+        "gold_model_audit_columns_template": [
+            {"name": "created_time", "type": "timestamp"}
+        ],
         "default_max_turns": 50,
         "default_validation_retry_count": 5,
     }

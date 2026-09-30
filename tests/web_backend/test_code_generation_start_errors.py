@@ -26,7 +26,6 @@ from tests.web_backend.test_workflow_commands import (
             "Selected Code Generation target has no active applied SQL Mapping",
             "code_mapping_incomplete",
         ),
-        ("Active published SQL generation guide is required", "sql_generation_guide_unavailable"),
         ("Selected Code Generation System is unavailable", "code_system_unavailable"),
         (
             "Selected Code Generation target lacks complete applied SQL Mapping",

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, LiteralString, cast
 
 from psycopg import sql
+import psycopg
+import pytest
 
 from tests.mcp.database_test_support import require_row
+from tests.mcp.conftest import disposable_postgres
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres
@@ -50,8 +54,6 @@ NON_REFERENCE_APPLICATION_TABLES = (
     "prompt_assignment",
     "prompt_template",
     "prompt_template_version",
-    "sql_generation_guide",
-    "sql_generation_guide_version",
     "workflow_run",
     "workflow_run_entity_selection",
     "workflow_run_mapping_target_selection",
@@ -112,6 +114,7 @@ EXPECTED_NAMES = {
     | {"naming_instructions", "audit_columns", "schemas", "logical_entity_scd_type"},
     "dimensional": LOGICAL_NAMES
     | DIMENSIONAL_NAMES
+    | (FOUNDATIONAL_NAMES - {"gds_context", "modeling_assertions"})
     | {
         "gds_context",
         "modeling_assertions",
@@ -123,6 +126,7 @@ EXPECTED_NAMES = {
     },
     "mapping": {
         "mapping_support",
+        "mapping_support_records",
         "mapping_route",
         "operation",
         "target_metadata",
@@ -135,13 +139,14 @@ EXPECTED_NAMES = {
         "attribute_output_template",
     },
     "code_generation": {
+        "mapping_templates",
         "target_metadata",
         "source_metadata",
         "source_systems",
         "object_transformations",
         "attribute_transformations",
         "target_ref",
-        "sql_generation_guide",
+        "artifact_requirements",
     },
     "validation": {
         "system_ref",
@@ -348,3 +353,100 @@ def test_application_reference_seed_writes_no_mutable_or_prompt_content(
                 populated_tables.append(table_name)
 
     assert populated_tables == []
+
+
+def test_reference_merge_refreshes_documentation_preserving_identity_and_settings(
+    reference_merge_database: DisposablePostgres,
+) -> None:
+    database = reference_merge_database
+    _apply_seed(database)
+    with database.connect_owner() as connection:
+        before = require_row(connection.execute(
+            """SELECT * FROM application.workflow_stage_variable
+                 WHERE workflow_stage_variable_name = 'mapping_templates'"""
+        ).fetchone())
+        connection.execute(
+            """UPDATE application.workflow_stage_variable
+                  SET workflow_stage_variable_description = 'Old description',
+                      workflow_stage_variable_example = NULL,
+                      workflow_stage_variable_is_required = TRUE,
+                      is_active = FALSE
+                WHERE workflow_stage_variable_id = %s""",
+            (before["workflow_stage_variable_id"],),
+        )
+    _apply_seed(database)
+    with database.connect_owner() as connection:
+        after = require_row(connection.execute(
+            """SELECT * FROM application.workflow_stage_variable
+                 WHERE workflow_stage_variable_id = %s""",
+            (before["workflow_stage_variable_id"],),
+        ).fetchone())
+    for field in (
+        "workflow_stage_variable_id", "workflow_stage_id", "created_time",
+        "workflow_stage_variable_order", "workflow_stage_variable_resolver_key",
+        "workflow_stage_variable_description", "workflow_stage_variable_example",
+    ):
+        assert after[field] == before[field]
+    assert after["workflow_stage_variable_is_required"] is True
+    assert after["is_active"] is False
+
+
+def test_reference_merge_appends_new_variable_after_custom_order(
+    reference_merge_database: DisposablePostgres,
+) -> None:
+    database = reference_merge_database
+    # Model an earlier reference seed without deleting any saved configuration.
+    earlier_seed = "\n".join(
+        line for line in SEED_FILE.read_text().splitlines()
+        if "'mapping_templates', 'workflow.code_generation." not in line
+    )
+    with database.connect_owner() as connection:
+        connection.execute(cast(LiteralString, earlier_seed))
+        stage = require_row(connection.execute(
+            """SELECT workflow_stage_id FROM application.workflow_stage
+                WHERE model_workflow = 'code_generation'
+                  AND workflow_stage_code = 'sql_generation'"""
+        ).fetchone())["workflow_stage_id"]
+        custom = require_row(connection.execute(
+            """INSERT INTO application.workflow_stage_variable (
+                   workflow_stage_id, workflow_stage_variable_name,
+                   workflow_stage_variable_resolver_key, workflow_stage_variable_data_type,
+                   workflow_stage_variable_description, workflow_stage_variable_order
+               ) VALUES (%s, 'custom_context', 'custom.context', 'json', 'Custom context', 500)
+               RETURNING *""", (stage,),
+        ).fetchone())
+    _apply_seed(database)
+    _apply_seed(database)
+    with database.connect_owner() as connection:
+        saved_custom = require_row(connection.execute(
+            """SELECT * FROM application.workflow_stage_variable
+                WHERE workflow_stage_variable_id = %s""",
+            (custom["workflow_stage_variable_id"],),
+        ).fetchone())
+        new_rows = connection.execute(
+            """SELECT workflow_stage_variable_order FROM application.workflow_stage_variable
+                WHERE workflow_stage_id = %s
+                  AND workflow_stage_variable_name = 'mapping_templates'""", (stage,),
+        ).fetchall()
+    assert saved_custom == custom
+    assert new_rows == [{"workflow_stage_variable_order": 510}]
+
+
+def test_reference_merge_rejects_conflicting_resolver(
+    reference_merge_database: DisposablePostgres,
+) -> None:
+    database = reference_merge_database
+    _apply_seed(database)
+    with database.connect_owner() as connection:
+        connection.execute(
+            """UPDATE application.workflow_stage_variable
+                  SET workflow_stage_variable_resolver_key = 'custom.conflicting_resolver'
+                WHERE workflow_stage_variable_name = 'mapping_templates'"""
+        )
+    with pytest.raises(psycopg.errors.RaiseException, match="Reference variable identity conflicts"):
+        _apply_seed(database)
+
+
+@pytest.fixture
+def reference_merge_database() -> Iterator[DisposablePostgres]:
+    yield from disposable_postgres()

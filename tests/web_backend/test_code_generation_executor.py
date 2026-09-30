@@ -90,7 +90,6 @@ _CLAIM_TOKEN = UUID("44444444-4444-4444-4444-444444444444")
 
 def _source_context(
     *,
-    guide_content: str = "Use deterministic MERGE SQL.",
     transformation_kind: str = "direct",
     mapping_expression: str | None = None,
     target_name: str = "Customer",
@@ -99,7 +98,6 @@ def _source_context(
         (Path(__file__).parent / "fixtures" / "downstream_prompt_contexts.json").read_text()
     )
     context = deepcopy(fixture["code_generation"]["targets"][0]["context"])
-    context["guide"]["content"] = guide_content
     context["target"]["object_name"] = target_name
     document = {"kind": transformation_kind}
     if mapping_expression is not None:
@@ -127,11 +125,9 @@ def _plan(*, retry_count: int = 1) -> AgentRunPlan:
         workflow_execution_mode=None,
         modeled_entity_type="logical_entity",
         code_generation_coverage_mode="selected_targets",
-        sql_generation_guide_id=90,
-        sql_generation_guide_version_id=91,
-        sql_generation_guide_digest="9" * 64,
         selected_scope_digest="a" * 64,
-        selected_object_ids=(), selected_entity_ids=(501, 502),
+        selected_object_ids=(),
+        selected_entity_ids=(501, 502),
         selection=AgentRunSelection(
             sdk_code="openai_agents_sdk",
             provider_code="microsoft_foundry",
@@ -149,7 +145,7 @@ def _plan(*, retry_count: int = 1) -> AgentRunPlan:
                 prompt_template_digest="b" * 64,
                 templates=PromptComponentTemplates(
                     system="Generate SQL only.",
-                    instruction=("Use {{stage_context}} and guide {{sql_generation_guide}}."),
+                    instruction=("Use {{stage_context}} with {{artifact_requirements}}."),
                 ),
                 variables=(
                     PromptVariableDefinition(
@@ -159,9 +155,9 @@ def _plan(*, retry_count: int = 1) -> AgentRunPlan:
                         is_required=True,
                     ),
                     PromptVariableDefinition(
-                        name="sql_generation_guide",
-                        resolver_key="workflow.code_generation.sql_generation_guide",
-                        data_type="text",
+                        name="artifact_requirements",
+                        resolver_key="workflow.code_generation.common.sql_generation.inputs.artifact_requirements",
+                        data_type="json",
                         is_required=True,
                     ),
                 ),
@@ -177,18 +173,18 @@ def _execution_context() -> CodeGenerationExecutionContext:
                 target_ref="target_1",
                 modeled_entity_id=501,
                 code_input_digest="c" * 64,
-                sql_generation_guide_version_id=91,
                 modeled_entity_type="logical_entity",
-                modeled_entity_schema_name="silver", modeled_entity_name="TargetOne",
+                modeled_entity_schema_name="silver",
+                modeled_entity_name="TargetOne",
                 source_system_codes=("CRM",),
             ),
             CodeGenerationArtifactContext(
                 target_ref="target_2",
                 modeled_entity_id=502,
                 code_input_digest="e" * 64,
-                sql_generation_guide_version_id=91,
                 modeled_entity_type="logical_entity",
-                modeled_entity_schema_name="silver", modeled_entity_name="TargetTwo",
+                modeled_entity_schema_name="silver",
+                modeled_entity_name="TargetTwo",
                 source_system_codes=("CRM",),
             ),
         ),
@@ -222,7 +218,8 @@ def _applied_execution_context() -> CodeGenerationExecutionContext:
                         GeneratedCodeRecord(
                             generated_code_is_locked=False,
                             modeled_entity_type="logical_entity",
-                            modeled_entity_schema_name="silver", modeled_entity_name=target.modeled_entity_name,
+                            modeled_entity_schema_name="silver",
+                            modeled_entity_name=target.modeled_entity_name,
                             artifact_name=f"target_{position}.sql",
                             artifact_type="sql_file",
                             generated_code_content=content,
@@ -233,7 +230,8 @@ def _applied_execution_context() -> CodeGenerationExecutionContext:
                         GeneratedCodeSourceSystemRecord(
                             generated_code_source_system_is_locked=False,
                             modeled_entity_type="logical_entity",
-                            modeled_entity_schema_name="silver", modeled_entity_name=target.modeled_entity_name,
+                            modeled_entity_schema_name="silver",
+                            modeled_entity_name=target.modeled_entity_name,
                             artifact_name=f"target_{position}.sql",
                             source_system_code="CRM",
                             generated_code_source_system_status="active",
@@ -254,9 +252,9 @@ def _execution_context_for_target_count(
             target_ref=f"target_{position}",
             modeled_entity_id=500 + position,
             code_input_digest="c" * 64,
-            sql_generation_guide_version_id=91,
             modeled_entity_type="logical_entity",
-            modeled_entity_schema_name="silver", modeled_entity_name=f"Target{position}",
+            modeled_entity_schema_name="silver",
+            modeled_entity_name=f"Target{position}",
             source_system_codes=("CRM",),
         )
         for position in range(1, target_count + 1)
@@ -280,7 +278,6 @@ def _execution_context_for_target_count(
 
 def _multibyte_execution_context(
     *,
-    guide_content: str,
     mapping_expression: str,
 ) -> CodeGenerationExecutionContext:
     targets = tuple(
@@ -288,9 +285,9 @@ def _multibyte_execution_context(
             target_ref=f"target_{position}",
             modeled_entity_id=500 + position,
             code_input_digest=f"{position}" * 64,
-            sql_generation_guide_version_id=91,
             modeled_entity_type="logical_entity",
-            modeled_entity_schema_name="silver", modeled_entity_name=f"Target{position}",
+            modeled_entity_schema_name="silver",
+            modeled_entity_name=f"Target{position}",
             source_system_codes=("CRM",),
         )
         for position in (1, 2)
@@ -304,7 +301,6 @@ def _multibyte_execution_context(
                     {
                         "target_ref": target.target_ref,
                         "context": _source_context(
-                            guide_content=guide_content,
                             transformation_kind="expression",
                             mapping_expression=mapping_expression,
                             target_name="é" * 399 + str(position),
@@ -675,7 +671,7 @@ async def test_start_binds_code_generation_workflow_without_executing(
 
 
 @pytest.mark.asyncio
-async def test_executor_renders_selected_guide_into_each_agent_instruction() -> None:
+async def test_executor_renders_artifact_requirements_and_keeps_frozen_system_prompt() -> None:
     plan = _plan()
     stage = plan.stages[0]
     seeded_stage = stage.model_copy(
@@ -683,7 +679,7 @@ async def test_executor_renders_selected_guide_into_each_agent_instruction() -> 
             "templates": stage.templates.model_copy(
                 update={
                     "instruction": (
-                        "Follow the selected SQL generation guide.\n{{ sql_generation_guide }}"
+                        "Follow the selected artifact requirements.\n{{ artifact_requirements }}"
                     )
                 }
             )
@@ -719,19 +715,10 @@ async def test_executor_renders_selected_guide_into_each_agent_instruction() -> 
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
-    agent_context = cast(dict[str, Any], _execution_context().agent_context)
-    targets = cast(list[dict[str, Any]], agent_context["targets"])
-    target_context = cast(dict[str, Any], targets[0]["context"])
-    guide = cast(dict[str, Any], target_context["guide"])["content"]
-    rendering_checks = tuple(
-        (
-            request.instruction_prompt.count(guide),
-            "{{ sql_generation_guide }}" in request.instruction_prompt,
-        )
-        for request in agent.requests
-    )
-
-    assert rendering_checks == ((1, False), (1, False))
+    for request in agent.requests:
+        assert '"file_layout":"combined"' in request.instruction_prompt.replace(" ", "")
+        assert "{{ artifact_requirements }}" not in request.instruction_prompt
+        assert request.system_prompt == stage.templates.system
 
 
 @pytest.mark.asyncio
@@ -747,6 +734,11 @@ async def test_executor_keeps_partial_mapping_systems_and_marks_sql_for_review(
     from tests.mcp.model_test_fixtures import snapshot_from_graph
 
     source = _source_context(mapping_expression="42")
+    source["artifact_requirements"] = {
+        "file_layout": "per_system",
+        "source_system_codes": ["CRM", "ERP"],
+        "preserved_artifact_names": [],
+    }
     source["source_systems"].append(
         {"source_system_id": 32, "system_code": "ERP", "system_name": "ERP"}
     )
@@ -809,7 +801,14 @@ async def test_executor_keeps_partial_mapping_systems_and_marks_sql_for_review(
     plan = _plan().model_copy(
         update={"selected_entity_ids": (501,), "code_generation_file_layout": "per_system"}
     )
-    original_system = "Return no artifacts when Mapping is incomplete."
+    defaults = json.loads(
+        (Path(__file__).parents[2] / "database/seed/05_global_prompt_defaults.template.sql")
+        .read_text()
+        .split("$workflow_defaults$")[1]
+    )
+    original_system = next(
+        row["system_prompt"] for row in defaults if row["model_workflow"] == "code_generation"
+    )
     plan = plan.model_copy(
         update={
             "stages": (
@@ -828,29 +827,25 @@ async def test_executor_keeps_partial_mapping_systems_and_marks_sql_for_review(
     )
 
     result = await service.execute_started(
-        _principal(), tenant_id=7, model_id=18, workflow_run_id=1048,
-        expected_model_revision=7, workflow_run_claim_token=_CLAIM_TOKEN,
+        _principal(),
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_model_revision=7,
+        workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
     assert isinstance(result, WorkflowChangeSetHandoffResult)
     assert lifecycle.failed is None and len(agent.requests) == 1
     staged = {change.dataset: change.records for change in handoff.calls[0]}
     assert {row["source_system_code"] for row in staged["generated_code_source_system"]} == {
-        "CRM", "ERP"
+        "CRM",
+        "ERP",
     }
     assert {row["generated_code_content"] for row in staged["generated_code"]} == {
         cast(str, artifact["generated_sql"]) for artifact in artifacts
     }
-    instruction = agent.requests[0].instruction_prompt
-    assert instruction.index("Authoritative partial-authoring contract") > instruction.index(
-        "Use deterministic MERGE SQL."
-    )
-    assert "CAST(NULL AS its declared target data type)" in instruction
-    assert "Never invent source columns, joins, filters" in instruction
-    system_prompt = agent.requests[0].system_prompt
-    assert system_prompt.startswith(original_system)
-    assert "Authoritative partial-authoring contract" in system_prompt
-    assert "CAST(NULL AS its declared target data type)" in system_prompt
+    assert agent.requests[0].system_prompt == original_system.strip()
     assert plan.stages[0].templates.system == original_system
     assert handoff.final_events[0].status == "warning"
     assert "needs review" in handoff.final_events[0].message
@@ -954,15 +949,13 @@ async def test_executor_uses_frozen_plan_and_hands_off_one_atomic_draft() -> Non
         "get_object_transformations",
         "get_attribute_transformations",
     }
-    assert "Use deterministic MERGE SQL." in request.instruction_prompt
+    assert "combined" in request.instruction_prompt
     execution_context = _execution_context().agent_context
     assert isinstance(execution_context, dict)
     execution_targets = execution_context.get("targets")
     assert isinstance(execution_targets, list)
     expected_target = cast(dict[str, Any], execution_targets[0])
     target_context = cast(dict[str, Any], expected_target["context"])
-    guide = cast(dict[str, Any], target_context["guide"])["content"]
-    assert isinstance(guide, str)
     attempt_context = cast(dict[str, Any], request.context)
     original_context = cast(dict[str, Any], attempt_context["original_context"])
     delivered = cast(dict[str, Any], original_context["values"])
@@ -973,9 +966,8 @@ async def test_executor_uses_frozen_plan_and_hands_off_one_atomic_draft() -> Non
         == target_context["object_mappings"][0]["transformation"]
     )
     assert "mapping_object_id" not in delivered["object_transformations"][0]
-    assert delivered["sql_generation_guide"].startswith(guide)
-    assert "Authoritative partial-authoring contract" in delivered["sql_generation_guide"]
-    assert request.instruction_prompt.count(guide) == 1
+    assert delivered["artifact_requirements"] == target_context["artifact_requirements"]
+    assert request.system_prompt == _plan().stages[0].templates.system
     assert "request_context_original_context" not in request.instruction_prompt
     assert len(handoff.calls) == 1
     assert no_op.requests == []
@@ -1219,11 +1211,9 @@ async def test_executor_bounds_progress_events_for_large_target_sets() -> None:
 
 
 @pytest.mark.asyncio
-async def test_executor_keeps_maximal_multibyte_guide_and_mapping_in_bounded_requests() -> None:
-    guide = "é" * 131_072
+async def test_executor_keeps_multibyte_mapping_in_bounded_requests() -> None:
     mapping_expression = "é" * 40_000
     context = _multibyte_execution_context(
-        guide_content=guide,
         mapping_expression=mapping_expression,
     )
     policy = AgentContextPolicy(
@@ -1272,13 +1262,11 @@ async def test_executor_keeps_maximal_multibyte_guide_and_mapping_in_bounded_req
     assert lifecycle.failed is None
     assert len(handoff.calls) == 1
     assert no_op.requests == []
-    assert len(guide.encode("utf-8")) == 262_144
     assert policy.stage_max_context_bytes is not None
     assert all(
         agent_request_envelope_bytes(request) <= policy.stage_max_context_bytes
         for request in agent.requests
     )
-    assert max(agent_request_envelope_bytes(request) for request in agent.requests) > 262_144
     assert all(request.execution_mode == "tool_assisted" for request in agent.requests)
     assert any(
         cast(dict[str, JsonValue], request.context)["repair"] is not None
@@ -1295,16 +1283,13 @@ async def test_executor_keeps_maximal_multibyte_guide_and_mapping_in_bounded_req
             sort_keys=True,
         ).encode("utf-8")
         assert mapping_expression in encoded.decode("utf-8")
-        assert guide in encoded.decode("utf-8")
-        assert request.instruction_prompt.count(guide) == 1
         assert "request_context_original_context" not in request.instruction_prompt
 
 
 @pytest.mark.asyncio
 async def test_executor_rejects_unrepresentable_target_before_provider_without_truncation() -> None:
     context = _multibyte_execution_context(
-        guide_content="é" * 131_072,
-        mapping_expression="é" * 90_000,
+        mapping_expression="é" * 150_000,
     )
     agent = _AgentExecutor(responses=[])
     handoff = _Handoff()

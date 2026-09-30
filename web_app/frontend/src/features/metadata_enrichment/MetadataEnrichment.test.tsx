@@ -205,9 +205,9 @@ describe("Metadata enrichment Model screen", () => {
       expect(screen.getByRole("alert")).toHaveTextContent("remains queued");
       await user.click(retry);
     }
-    await screen.findByRole("table", { name: "Enrichment runs" });
+    await screen.findByRole("list", { name: "Metadata enrichment run list" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(trigger).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Close activity" })).toHaveFocus();
     const createCalls = fetcher.mock.calls.filter(([input, init]) => String(input).endsWith("/runs") && init?.method === "POST");
     const startCalls = fetcher.mock.calls.filter(([input]) => String(input).endsWith("/execute"));
     expect(createCalls).toHaveLength(1);
@@ -329,7 +329,7 @@ describe("current metadata enrichment workspace", () => {
   it("locks selected Objects together with only Edit in row actions", async () => {
     const api = metadataFixture({ secondObject: true }); const user = userEvent.setup();
     const table = await screen.findByRole("table", { name: "Object metadata" });
-    expect(screen.getByRole("button", { name: "Lock" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Lock" })).not.toBeInTheDocument();
     expect(within(table).queryByRole("button", { name: "Regenerate" })).not.toBeInTheDocument();
     expect(within(table).queryByRole("button", { name: "Lock" })).not.toBeInTheDocument();
     await user.click(within(table).getByRole("checkbox", { name: "Select all visible records" }));
@@ -343,6 +343,7 @@ describe("current metadata enrichment workspace", () => {
     const api = metadataFixture({ failOnce: true }); const user = userEvent.setup();
     let table = await screen.findByRole("table", { name: "Object metadata" });
     expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["", "Source Tenant", "Schema", "Object", "Object description", "Zone", "Attributes", "Actions", "Details"]);
+    if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
     await user.selectOptions(screen.getByLabelText("Source Tenant code"), "NWA");
     await user.selectOptions(screen.getByLabelText("System code"), "CRM");
     await user.selectOptions(screen.getByLabelText("Zone"), "source");
@@ -353,7 +354,7 @@ describe("current metadata enrichment workspace", () => {
     }, 200, undefined));
     table = screen.getByRole("table", { name: "Object metadata" });
     expect(screen.queryByText(/Complete missing/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Show activity" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Show Metadata enrichment run activity" })).toHaveAttribute("aria-expanded", "false");
     await user.click(within(table).getByRole("button", { name: "Edit" }));
     const input = screen.getByRole("textbox", { name: "customers" }); expect(input).toHaveFocus();
     await user.clear(input); await user.type(input, "Active customer accounts.");
@@ -374,11 +375,11 @@ describe("current metadata enrichment workspace", () => {
     const table = await screen.findByRole("table", { name: "Object metadata" });
     await user.click(within(table).getByRole("checkbox", { name: "Select Object 501" }));
     await user.click(screen.getByRole("button", { name: "Lock" }));
-    const unlock = screen.getByRole("button", { name: "Unlock" });
     await waitFor(() => expect(api.reviewMetadataRecords).toHaveBeenCalledOnce());
     await user.click(within(table).getByRole("checkbox", { name: "Select Object 501" }));
     expect(within(table).getByRole("button", { name: "Edit" })).toBeDisabled();
     expect(within(table).queryByRole("button", { name: "Regenerate" })).not.toBeInTheDocument();
+    const unlock = screen.getByRole("button", { name: "Unlock" });
     await waitFor(() => expect(unlock).toBeEnabled()); await user.click(unlock);
     await waitFor(() => expect(within(table).getByRole("button", { name: "Edit" })).toBeEnabled());
     await user.click(within(table).getByRole("button", { name: "Show details for customers" }));
@@ -435,14 +436,14 @@ describe("current metadata enrichment workspace", () => {
     const table = await screen.findByRole("table", { name: "Object metadata" });
     expect(within(table).getByRole("button", { name: "Edit" })).toBeDisabled();
     expect(within(table).getByRole("checkbox", { name: "Select Object 501" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Lock" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Show activity" }));
+    expect(screen.queryByRole("button", { name: "Lock" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show Metadata enrichment run activity" }));
     expect(screen.queryByRole("region", { name: "Token usage" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Show run 1048 details" }));
+    await user.click(await screen.findByRole("button", { name: "Usage" }));
     expect(await screen.findByRole("region", { name: "Token usage" })).toBeVisible();
     expect(api.readMetadataEnrichmentResults).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Hide activity" }));
-    expect(screen.getByRole("button", { name: "Show activity" })).toHaveAttribute("aria-expanded", "false");
+    await user.click(screen.getByRole("button", { name: "Close activity" }));
+    expect(screen.getByRole("button", { name: "Show Metadata enrichment run activity" })).toHaveAttribute("aria-expanded", "false");
   });
 });
 

@@ -97,12 +97,24 @@ SELECT result.analysis_result_id,
        result.validation_source_distinct_count,
        result.validation_target_non_null_count,
        result.validation_target_distinct_count,
+       result.validation_source_missing_target_count,
+       result.validation_unused_target_count,
+       from_profile.row_count AS from_row_count,
+       to_profile.row_count AS to_row_count,
        result.analysis_result_status AS status,
        result.analysis_result_is_locked AS is_locked,
        result.updated_time AS updated_at
   FROM target_model
   JOIN workflow.analysis_result AS result
     ON result.model_id = target_model.model_id
+  LEFT JOIN workflow.attribute_profile AS from_profile
+    ON from_profile.model_id = result.model_id
+   AND from_profile.object_id = result.from_object_id
+   AND from_profile.attribute_id = result.from_attribute_id
+  LEFT JOIN workflow.attribute_profile AS to_profile
+    ON to_profile.model_id = result.model_id
+   AND to_profile.object_id = result.to_object_id
+   AND to_profile.attribute_id = result.to_attribute_id
   JOIN model.model_input_scope AS from_scope
     ON from_scope.model_id = target_model.model_id
    AND from_scope.object_id = result.from_object_id
@@ -247,6 +259,8 @@ SELECT result.analysis_result_id,
        result.validation_source_missing_target_count,
        result.validation_unused_target_count,
        result.validation_duplicate_target_key_count,
+       from_profile.row_count AS from_row_count,
+       to_profile.row_count AS to_row_count,
        result.agent_run_id,
        result.inference_workflow_run_id,
        result.validation_workflow_run_id,
@@ -257,6 +271,14 @@ SELECT result.analysis_result_id,
   FROM target_model
   JOIN workflow.analysis_result AS result
     ON result.model_id = target_model.model_id
+  LEFT JOIN workflow.attribute_profile AS from_profile
+    ON from_profile.model_id = result.model_id
+   AND from_profile.object_id = result.from_object_id
+   AND from_profile.attribute_id = result.from_attribute_id
+  LEFT JOIN workflow.attribute_profile AS to_profile
+    ON to_profile.model_id = result.model_id
+   AND to_profile.object_id = result.to_object_id
+   AND to_profile.attribute_id = result.to_attribute_id
   JOIN model.model_input_scope AS from_scope
     ON from_scope.model_id = target_model.model_id
    AND from_scope.object_id = result.from_object_id
@@ -492,6 +514,9 @@ def _normalize_analysis_summary(row: dict[str, object]) -> AnalysisFindingSummar
     source_distinct = row.get("validation_source_distinct_count")
     target_count = row.get("validation_target_non_null_count")
     target_distinct = row.get("validation_target_distinct_count")
+    validated = row["validation_result"] is not None
+    source_missing = row.get("validation_source_missing_target_count") if validated else None
+    target_unused = row.get("validation_unused_target_count") if validated else None
     if (
         row["validation_result"] is not None
         and isinstance(source_count, int)
@@ -513,6 +538,24 @@ def _normalize_analysis_summary(row: dict[str, object]) -> AnalysisFindingSummar
             "relationship_confidence": row["relationship_confidence"],
             "validation_state": row["validation_state"],
             "validation_result": row["validation_result"],
+            "from_row_count": row.get("from_row_count"),
+            "to_row_count": row.get("to_row_count"),
+            "source_missing_target_count": source_missing,
+            "unused_target_count": target_unused,
+            "source_missing_target_percent": (
+                round(100 * source_missing / source_distinct, 4)
+                if isinstance(source_missing, int)
+                and isinstance(source_distinct, int)
+                and source_distinct > 0
+                else None
+            ),
+            "unused_target_percent": (
+                round(100 * target_unused / target_distinct, 4)
+                if isinstance(target_unused, int)
+                and isinstance(target_distinct, int)
+                and target_distinct > 0
+                else None
+            ),
             "inferred_cardinality": row["inferred_cardinality"],
             "observed_cardinality": cardinality,
             "cardinality_mismatch": (

@@ -1,3 +1,4 @@
+import { WorkflowCommandCenter, WorkflowCommandTools } from "../workflows/WorkflowCommandCenter";
 import { ModelLayerTabs, type ModelLayer } from "../../shared/ModelLayerTabs";
 import { ModelRecordHistory } from "../model_record_review/ModelRecordHistory";
 import { useState } from "react";
@@ -109,16 +110,18 @@ export function CodeGenerationScreen({
   };
 
   return (
-    <div className="mapping-workspace code-generation-workspace page-enter">
+    <WorkflowCommandCenter filterCount={Number(objectIds.length > 0) + Number(Boolean(artifactStatus))} className="mapping-workspace code-generation-workspace page-enter">
       <header className="workflow-commandbar code-generation-commandbar model-section-toolbar">
         <div className="workflow-command-context code-generation-command-context">
           <ModelLayerTabs tenantId={tenantId} modelId={model.model_id} layer={layer} workflow="code-generation" title="Code generation" />
-          <span className={canGenerate ? "lock-context is-held" : "lock-context"}>
-            {permissionLabel}
-          </span>
-          <span>{selected.length} selected</span>
+
+      <nav className="workflow-tabs" aria-label="Code views">
+        <button type="button" className={view === "targets" ? "is-active" : ""} aria-pressed={view === "targets"} onClick={() => setView("targets")}>Generation targets</button>
+        <button type="button" className={view === "artifacts" ? "is-active" : ""} aria-pressed={view === "artifacts"} onClick={() => setView("artifacts")}>Applied Code</button>
+      </nav>
         </div>
         <div className="workflow-command-actions code-generation-command-actions">
+          <WorkflowCommandTools filters={view === "targets"} />
           <button
             className="button button-secondary button-small"
             type="button"
@@ -141,10 +144,7 @@ export function CodeGenerationScreen({
           </button>
         </div>
       </header>
-      <nav className="workflow-tabs" aria-label="Code views">
-        <button type="button" className={view === "targets" ? "is-active" : ""} aria-pressed={view === "targets"} onClick={() => setView("targets")}>Generation targets</button>
-        <button type="button" className={view === "artifacts" ? "is-active" : ""} aria-pressed={view === "artifacts"} onClick={() => setView("artifacts")}>Applied Code</button>
-      </nav>
+
       {startedRunId ? (
         <p className="code-generation-run-notice" role="status">
           Code Generation run {startedRunId} started. Refresh runs to review the draft, then Apply the validated draft.
@@ -212,6 +212,6 @@ export function CodeGenerationScreen({
           }}
         />
       ) : null}
-    </div>
+    </WorkflowCommandCenter>
   );
 }

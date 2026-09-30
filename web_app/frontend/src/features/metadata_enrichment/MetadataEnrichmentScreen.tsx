@@ -1,3 +1,5 @@
+import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowFilters, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
+import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -131,7 +133,7 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
     : review.error instanceof ApiError && review.error.code === "tenant_workflow_conflict" ? "A workflow is active. Wait for it to finish, then refresh."
     : "Could not save. Check the record lock and your Tenant Lock, then refresh.";
 
-  return <div className="metadata-enrichment-screen page-enter">
+  return <WorkflowCommandCenter enabled={objectId === null} filterCount={Object.values(filters).filter(Boolean).length} className="metadata-enrichment-screen page-enter">
     <header className="workflow-commandbar model-section-toolbar">
       <h1 className="model-section-title sr-only">Enrichment</h1>
       <div className="workflow-command-context">
@@ -140,20 +142,29 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
         </span>
       </div>
       <div className="workflow-command-actions">
+        <WorkflowCommandTools />
         <button className="button button-secondary button-small" type="button" disabled={busy || objects.isFetching || detail.isFetching} onClick={() => void refresh()}>Refresh</button>
+        {objectId === null ? <WorkflowMenu label="Run" primary>
         <button className={`button button-${objectId === null ? "secondary" : "primary"} button-small`} type="button" disabled={!hasTenantLock || busy || refreshRequired || changed || (objectId !== null && (!current || current.is_locked || current.source_tenant_id !== tenantId))} title={hasTenantLock ? undefined : "Owned Tenant Lock required"} onClick={() => setRunDialog("attribute")}>Run attribute enrichment</button>
         {objectId === null ? <button className="button button-primary button-small" type="button" disabled={!hasTenantLock || busy || refreshRequired || changed} title={hasTenantLock ? undefined : "Owned Tenant Lock required"} onClick={() => setRunDialog("object")}>Run object enrichment</button> : null}
+        </WorkflowMenu> : <button className={`button button-${objectId === null ? "secondary" : "primary"} button-small`} type="button" disabled={!hasTenantLock || busy || refreshRequired || changed || (objectId !== null && (!current || current.is_locked || current.source_tenant_id !== tenantId))} title={hasTenantLock ? undefined : "Owned Tenant Lock required"} onClick={() => setRunDialog("attribute")}>Run attribute enrichment</button>}
+
       </div>
     </header>
-    <EnrichmentHistory api={api} tenantId={tenantId} modelId={model.model_id} focusRunId={recentRunId} onRefresh={refresh} controls={lockControls} disabled={busy} />
+    {objectId === null ? <>
+      <WorkflowRunMonitor api={api} enrichmentApi={api} tenantId={tenantId} modelId={model.model_id}
+        modelRevision={model.model_revision} workflow="metadata_enrichment" hasTenantLock={hasTenantLock}
+        focusRunId={recentRunId} onApplied={refreshMetadata} />
+      {selected.length > 0 ? lockControls : null}
+    </> : <EnrichmentHistory api={api} tenantId={tenantId} modelId={model.model_id} focusRunId={recentRunId} onRefresh={refresh} controls={lockControls} disabled={busy} />}
     {!editor && review.isError ? <div role="alert"><p>{error}</p>{uncertain ? <button type="button" className="button button-secondary button-small" onClick={() => { if (pendingReview.current) review.mutate(pendingReview.current); }}>Retry same save</button> : null}</div> : null}
     {notice ? <p role="status">{notice}</p> : null}
     {objectId === null ? <section className="workflow-surface" aria-label="Current metadata">
-      <ScopeFilterForm sourceChoices={sourceChoices} ariaLabel="Filter Enrichment Objects" onApply={(nextFilters) => {
+      <WorkflowFilters>      <ScopeFilterForm sourceChoices={sourceChoices} ariaLabel="Filter Enrichment Objects" onApply={(nextFilters) => {
         if (busy) return;
         setSelectedIds(new Set());
         setFilters(nextFilters);
-      }} />
+      }} /></WorkflowFilters>
       {objects.isPending ? <p className="surface-state" aria-busy="true">Loading metadata…</p> : objects.isError || changed ? <p className="surface-state" role="alert">Metadata is unavailable or the Model changed. Refresh to retry.</p> : <>
         <div className="workflow-table-scroll table-scroll"><table className="enrichment-metadata-table" aria-label="Object metadata"><thead><tr><th className="selection-cell">{checkbox()}</th><th>Source Tenant</th><th>Schema</th><th>Object</th><th>Object description</th><th>Zone</th><th>Attributes</th><th>Actions</th><th>Details</th></tr></thead>
           <tbody>{rows.map((object) => <tr key={object.object_id}><td className="selection-cell">{checkbox(object.object_id)}</td><td><strong>{object.source_tenant_code}</strong></td><td>{object.object_schema}</td><td><strong>{object.object_name}</strong>{object.is_locked ? <span className="metadata-lock-label">Locked</span> : null}</td><td className="enrichment-description">{object.object_description || <span className="field-help">No description</span>}</td><td>{zoneLabel(object.zone_code)}</td><td>{object.attribute_count}</td><td>{recordActions(object)}</td><td><button type="button" className="text-action" id={`enrichment-object-${object.object_id}`} disabled={busy} aria-label={`Show details for ${object.object_name}`} onClick={() => { returnObject.current = object.object_id; setObjectId(object.object_id); }}>Show details</button></td></tr>)}</tbody>
@@ -180,7 +191,7 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
     {runDialog ? <WorkflowRunDialog api={api} tenantId={tenantId} model={model} kind="inference" workflow="metadata_enrichment" enrichmentTarget={runDialog} readEnrichmentObject={api.readModelInputScopeObject} {...(current && runDialog === "attribute" ? { enrichmentObject: current } : {})} initialSelectedIds={[...selectedIds]}
       executeCreated={async (runId, _mode, expectedModelRevision) => { await api.executeMetadataEnrichmentRun(tenantId, model.model_id, runId, expectedModelRevision); }}
       onClose={() => setRunDialog(null)} onCreated={async (runId) => { setRecentRunId(runId); await client.invalidateQueries({ queryKey: workflowRunQueryKeys.recent(tenantId, model.model_id, "metadata_enrichment") }); }} /> : null}
-  </div>;
+  </WorkflowCommandCenter>;
 }
 
 function DescriptionEditor({ record, busy, uncertain, canSave, error, onClose, onSave, onRetry }: {

@@ -158,6 +158,29 @@
   gap: 0.65rem;
 }
 
+/* Keep native keyboard/select behavior with the same control shape in dialogs. */
+.run-configuration-dialog select,
+.run-configuration-dialog label > select,
+.workflow-filterbar select,
+.workflow-run-state-filter select {
+  appearance: none;
+  min-height: 2.55rem;
+  width: 100%;
+  min-width: 0;
+  padding: .52rem 2.2rem .52rem .65rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-small);
+  color: var(--ink);
+  background-color: var(--surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right .65rem center;
+  font: inherit;
+  font-size: .75rem;
+}
+
+.run-configuration-dialog select:disabled { opacity: .6; cursor: not-allowed; }
+
 .run-filterbar {
   grid-template-columns: minmax(11rem, 17rem) 1fr;
 }
@@ -170,10 +193,16 @@
 }
 
 .workflow-table-scroll {
+  min-width: 0;
+  max-width: 100%;
   max-height: calc(100vh - 14.5rem);
   overflow: auto;
-  border-top: 1px solid var(--line-strong);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-medium);
+  background: var(--surface);
 }
+
+.workflow-surface > .workflow-table-scroll { margin-top: 1rem; }
 
 .workflow-table-scroll table {
   min-width: 58rem;

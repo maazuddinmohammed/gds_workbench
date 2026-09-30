@@ -195,7 +195,6 @@ export function ValidationRunDialog({
             });
           }}
         >
-          <p className="field-help">Create technical integrity and functional business checks from this layer’s Mapping. Locked Groups and their Checks stay unchanged; individually locked Checks are also preserved.</p>
           <section className="agent-run-configuration validation-agent-profile" aria-labelledby="validation-agent-profile-heading">
             <header>
               <strong id="validation-agent-profile-heading">Model and reasoning</strong>

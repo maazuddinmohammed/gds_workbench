@@ -62,38 +62,94 @@
 }
 
 .tenant-context {
-  gap: 0.6rem;
-  padding-left: 0.65rem;
+  gap: 1.5rem;
+  margin: 0;
+  padding: 0 1.5rem 0 0.65rem;
+}
+
+.tenant-context-item {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+}
+
+.tenant-context-item + .tenant-context-item {
+  padding-left: 1.5rem;
+  border-left: 1px solid var(--line);
+}
+
+.tenant-context dt {
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.tenant-context dd {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
 }
 
 .tenant-context strong {
   overflow: hidden;
+  color: var(--ink-2);
+  font-size: 0.875rem;
+  font-weight: 550;
+  letter-spacing: -0.015em;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .tenant-code-badge {
-  padding: 0.34rem 0.48rem;
-  color: var(--blue-dark);
-  background: var(--blue-soft);
+  flex: 0 0 auto;
+  padding: 0.12rem 0.38rem;
+  color: var(--muted);
+  background: var(--soft);
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
 }
 
 .topbar-actions {
   justify-content: flex-end;
-  gap: 0.65rem;
+  gap: 1rem;
+  white-space: nowrap;
+}
+
+.topbar-actions .avatar {
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: var(--soft);
+  font-size: 0.65rem;
+  font-weight: 600;
+  box-shadow: none;
 }
 
 .role-badge {
-  min-height: 2.25rem;
-  padding: 0 0.7rem;
   color: var(--muted);
-  border: 1px solid var(--line);
-  background: rgb(246 247 249 / 78%);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .switch-tenant {
-  color: var(--workspace-accent-strong);
-  border-color: #d8b9a6;
+  min-height: 2.2rem;
+  padding: 0.55rem 0.75rem;
+  color: var(--ink-2);
+  border-color: var(--line);
+  font-size: 0.75rem;
+  font-weight: 550;
+  box-shadow: none;
 }
 
 .sidebar {
@@ -893,9 +949,19 @@ tbody tr:hover {
   }
 
   .tenant-context {
+    display: grid;
     order: -1;
+    flex: 1;
+    gap: 0.35rem;
     padding: 0;
   }
+
+  .tenant-context-item { grid-template-columns: 2.6rem minmax(0, 1fr); align-items: center; gap: 0.35rem; }
+  .tenant-context-item + .tenant-context-item { padding-left: 0; border-left: 0; }
+  .tenant-context strong { font-size: 0.75rem; }
+  .tenant-context dt { font-size: 0.55rem; }
+  .topbar { gap: 0.75rem; }
+  .topbar-actions { gap: 0.5rem; }
 
   .topbar .brand,
   .role-badge,

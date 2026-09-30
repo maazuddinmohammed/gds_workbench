@@ -1,3 +1,4 @@
+import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
 import { ModelLayerActions } from "../model_record_review/ModelLayerActions";
 import { TargetExportButton } from "../model_targets/TargetExportDialog";
 import { ModelRecordHistory } from "../model_record_review/ModelRecordHistory";
@@ -116,17 +117,17 @@ export function DimensionalScreen({
   };
 
   return (
-    <div className="dimensional-page page-enter">
+    <WorkflowCommandCenter filterCount={Object.values(view === "objects" ? objectFilters : view === "attributes" ? attributeFilters : relationshipFilters).filter(Boolean).length} className="dimensional-page page-enter">
       <header className="workflow-commandbar model-section-toolbar dimensional-commandbar">
         <h1 className="model-section-title sr-only">Dimensional</h1>
         <div className="workflow-command-context">
           <nav className="workflow-tabs" aria-label="Dimensional views">
             {([
-              ["objects", "Objects"],
-              ["attributes", "Attributes"],
-              ["relationships", "Relationships"],
-              ["submodels", "Submodels"],
-            ] as const).map(([nextView, label]) => (
+              ["objects", "Objects", objectsQuery],
+              ["attributes", "Attributes", attributesQuery],
+              ["relationships", "Relationships", relationshipsQuery],
+              ["submodels", "Submodels", null],
+            ] as const).map(([nextView, label, query]) => (
               <button
                 key={nextView}
                 className={view === nextView ? "is-active" : ""}
@@ -135,16 +136,20 @@ export function DimensionalScreen({
                 onClick={() => { setSelectedIds(new Set()); setView(nextView); }}
               >
                 {label}
+                {query?.data ? <span className="command-count" aria-hidden="true" title="Loaded records matching the filters">
+                  {query.data.pages.reduce((total, page) => total + page.items.length, 0)}{query.hasNextPage ? "+" : ""}
+                </span> : null}
               </button>
             ))}
           </nav>
-          <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
-            {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
-          </span>
+
         </div>
         <div className="workflow-command-actions">
+          <WorkflowCommandTools filters={view !== "submodels"} />
+          <WorkflowMenu>
           <ModelLayerActions api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="dimensional" onApplied={() => setSelectedIds(new Set())} />
           <TargetExportButton api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} layer="dimensional" entityIds={view === "objects" && selectedIds.size ? [...selectedIds] : undefined} />
+          </WorkflowMenu>
           <button className="button button-secondary button-small" type="button" disabled={refreshing} onClick={() => void refresh()}>
             {refreshing ? "Refreshing…" : "Refresh"}
           </button>
@@ -236,7 +241,7 @@ export function DimensionalScreen({
           }}
         />
       ) : null}
-    </div>
+    </WorkflowCommandCenter>
   );
 }
 

@@ -14,10 +14,12 @@ from gds_workbench_api.features.workflows.authoring.plan import (
 
 from .preparation_contracts import (
     ExistingMappingHeader,
+    MappingModeledEntity,
     MappingRunContext,
     MappingRunContextUnavailableError,
     MappingRunPlan,
     MappingRunPlanUnavailableError,
+    MappingSource,
 )
 
 _MAPPING_RUN_PLAN_SQL: LiteralString = """
@@ -328,6 +330,34 @@ _MAPPING_SOURCE_CONTEXT_SQL: LiteralString = (
     "(source ->> 'source_mapping_id')::BIGINT"
 )
 
+_MAPPING_UPSTREAM_PHYSICAL_CONTEXT_SQL: LiteralString = (
+    "WITH selected_sources AS MATERIALIZED ("
+    "SELECT NULL::BIGINT AS source_mapping_id, %s::BIGINT AS modeled_entity_id, "
+    "'evidence'::TEXT AS role, 'Upstream physical provenance, not a Gold input.'::TEXT "
+    "AS rationale, NULL::INTEGER AS mapping_order, FALSE AS is_locked, "
+    "input.object_id AS source_object_id, scope.model_input_scope_is_locked AS scope_is_locked, "
+    "scope.is_active AS scope_is_active "
+    "FROM workflow.list_model_input_sources(%s) AS input "
+    "JOIN model.model_input_scope AS scope ON scope.model_id = %s "
+    "AND scope.object_id = input.object_id AND scope.is_active "
+    "WHERE input.source_system_id = %s) " + _MAPPING_PHYSICAL_SOURCE_CONTEXT_SQL
+)
+
+_MAPPING_UPSTREAM_TEMPLATE_IDS_SQL: LiteralString = """
+SELECT DISTINCT template_id AS output_template_id
+  FROM workflow.mapping_object AS mapping
+  LEFT JOIN workflow.mapping_attribute AS attribute
+    ON attribute.mapping_object_id = mapping.mapping_object_id
+   AND attribute.attribute_mapping_status = 'active'
+ CROSS JOIN LATERAL unnest(ARRAY[mapping.output_template_id, attribute.output_template_id])
+    AS template(template_id)
+ WHERE mapping.model_id = %s AND mapping.modeled_entity_type = 'logical_entity'
+   AND mapping.logical_entity_id = ANY(%s::BIGINT[])
+   AND mapping.source_system_id = %s AND mapping.object_mapping_status = 'active'
+   AND template_id IS NOT NULL
+ ORDER BY template_id
+"""
+
 _MAPPING_OUTPUT_TEMPLATE_CONTEXT_SQL: LiteralString = """
 SELECT jsonb_build_object(
            'output_template_id', template.output_template_id,
@@ -335,6 +365,7 @@ SELECT jsonb_build_object(
            'name', template.output_template_name,
            'description', template.output_template_description,
            'target_type', template.output_template_target_type,
+           'modeled_entity_type', template.output_template_modeled_entity_type,
            'schema_digest', template.output_template_schema_digest,
            'schema_digest_is_valid',
                template.output_template_schema_digest =
@@ -344,6 +375,8 @@ SELECT jsonb_build_object(
                            jsonb_build_object(
                                'output_template_target_type',
                                    template.output_template_target_type,
+                               'output_template_modeled_entity_type',
+                                   template.output_template_modeled_entity_type,
                                'fields', fields.digest_items
                            )::TEXT,
                            'UTF8'
@@ -530,6 +563,28 @@ class PostgresMappingRunContextRepository:
                 header.get("header"),
                 strict=False,
             )
+            sources = tuple(
+                MappingSource.model_validate(row.get("source"), strict=False) for row in source_rows
+            )
+            logical_ids = [
+                source.object.entity_id
+                for source in sources
+                if isinstance(source.object, MappingModeledEntity)
+                and source.object.entity_type == "logical_entity"
+            ]
+            upstream_physical_rows = (
+                await transaction.fetch_all(
+                    _MAPPING_UPSTREAM_PHYSICAL_CONTEXT_SQL,
+                    (
+                        plan.pair.modeled_entity_id,
+                        plan.model_id,
+                        plan.model_id,
+                        plan.pair.source_system_id,
+                    ),
+                )
+                if logical_ids and plan.route == "dimensional_to_gold"
+                else []
+            )
             referenced_template_ids = {
                 selection.output_template_id
                 for selection in (
@@ -545,6 +600,14 @@ class PostgresMappingRunContextRepository:
                 for item in parsed_header.attribute_mappings
                 if item.output_template_id is not None
             )
+            if logical_ids:
+                upstream_template_rows = await transaction.fetch_all(
+                    _MAPPING_UPSTREAM_TEMPLATE_IDS_SQL,
+                    (plan.model_id, logical_ids, plan.pair.source_system_id),
+                )
+                referenced_template_ids.update(
+                    row["output_template_id"] for row in upstream_template_rows
+                )
             template_rows = (
                 await transaction.fetch_all(
                     _MAPPING_OUTPUT_TEMPLATE_CONTEXT_SQL,
@@ -575,7 +638,10 @@ class PostgresMappingRunContextRepository:
                         "definitions": [row.get("output_template") for row in template_rows],
                     },
                     "target": parsed_header.modeled_entity,
-                    "sources": [row.get("source") for row in source_rows],
+                    "sources": sources,
+                    "upstream_physical_sources": [
+                        row.get("source") for row in upstream_physical_rows
+                    ],
                     "headers": [parsed_header],
                     "authoring": anchor.get("authoring"),
                 },

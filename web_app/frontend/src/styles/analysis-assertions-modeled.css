@@ -698,9 +698,31 @@ fieldset.agent-run-grid {
   }
 }
 
-/* Analysis keeps inferred rationale separate from recorded measurements. */
-.analysis-count-comparison table { min-width: 28rem; }
-.analysis-count-comparison td { font-variant-numeric: tabular-nums; }
+/* Keep the complete relationship ledger readable through horizontal scrolling. */
+.analysis-results-scroll { min-width: 0; }
+.workflow-table-scroll.analysis-results-scroll table { min-width: 112rem; }
+.workflow-table-scroll.analysis-results-scroll :is(th, td) {
+  min-width: 6.5rem;
+  padding: 0.75rem 0.65rem;
+  border-right: 1px solid var(--line);
+  text-align: center;
+  vertical-align: middle;
+}
+.workflow-table-scroll.analysis-results-scroll th {
+  font-size: 0.7rem;
+  font-weight: 650;
+  line-height: 1.5;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: nowrap;
+}
+.workflow-table-scroll.analysis-results-scroll :is(th, td):first-child { min-width: 2.75rem; width: 2.75rem; }
+.workflow-table-scroll.analysis-results-scroll :is(th, td):last-child { border-right: 0; }
+.analysis-results-scroll .analysis-number {
+  text-align: center;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 
 .support-record-details { margin-top: 0.85rem; padding-top: 0.65rem; border-top: 1px solid var(--line); }
 .support-record-details summary { width: fit-content; color: var(--muted); font-size: 0.72rem; cursor: pointer; }
@@ -739,6 +761,7 @@ fieldset.agent-run-grid {
 .modeled-source-mappings table { min-width: 40rem; }
 .modeled-source-mappings td { vertical-align: top; }
 .modeled-source-mappings td:first-child { min-width: 11rem; max-width: 20rem; overflow-wrap: anywhere; }
+.modeled-source-mappings :is(th, td).modeled-source-order { width: 4rem; min-width: 4rem; text-align: center; font-variant-numeric: tabular-nums; }
 .modeled-source-mappings .modeled-source-rationale { min-width: 16rem; max-width: 34rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .modeled-source-role { display: block; color: var(--muted); margin-top: 0.3rem; font-size: 0.72rem; }
 .modeled-source-detail { min-width: 6rem; }
@@ -789,6 +812,50 @@ fieldset.agent-run-grid {
 .conceptual-support .conceptual-support-detail > td { text-align: left; background: var(--soft); }
 .conceptual-support-detail .detail-fact-grid { margin: 0; }
 .conceptual-support-detail .detail-fact-grid dd { font-weight: 400; white-space: pre-wrap; }
+
+/* Model details follow the same bordered reading order as Mapping. */
+.workflow-detail-page.modeled-detail-page { width: 100%; margin: 0; }
+.modeled-detail-page > .detail-section { padding: 1.25rem 0; border-bottom: 0; }
+.modeled-detail-page .detail-section > header { align-items: center; margin-bottom: 0.85rem; }
+.modeled-detail-page .modeled-detail-fields {
+  margin: 0; border: 1px solid var(--line-strong); border-radius: var(--radius-small); overflow: hidden;
+  background: var(--surface);
+}
+.modeled-detail-fields > div {
+  display: grid; grid-template-columns: 11rem minmax(0, 1fr); min-width: 0; border-bottom: 1px solid var(--line);
+}
+.modeled-detail-fields > div:last-child { border-bottom: 0; }
+.modeled-detail-fields :is(dt, dd) { min-width: 0; margin: 0; padding: 0.7rem 1rem; line-height: 1.6; }
+.modeled-detail-fields dt {
+  border-right: 1px solid var(--line); background: var(--soft); color: var(--ink-2);
+  font-size: 0.75rem; font-weight: 650; letter-spacing: normal; text-transform: none;
+}
+.modeled-detail-fields dd { color: var(--ink); font-size: 0.8rem; font-weight: 400; white-space: pre-wrap; overflow-wrap: anywhere; }
+.modeled-detail-fields .is-definition dd { font-size: 0.85rem; font-weight: 500; }
+.modeled-detail-page .detail-section > h3 { margin: 1.25rem 0 0.65rem; }
+.modeled-detail-page .table-scroll {
+  min-width: 0; max-width: 100%; border: 1px solid var(--line-strong); border-radius: var(--radius-small);
+  background: var(--surface); overflow: auto;
+}
+.modeled-detail-page .table-scroll:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.modeled-detail-page .table-scroll > table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.modeled-detail-page .table-scroll > table > :is(thead, tbody) > tr > :is(th, td) {
+  padding: 0.7rem 0.85rem; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  font-size: 0.75rem;
+}
+.modeled-detail-page .table-scroll > table > thead > tr > th {
+  background: var(--soft); font-weight: 650; text-transform: none; letter-spacing: normal; white-space: nowrap;
+}
+.modeled-detail-page .table-scroll > table > :is(thead, tbody) > tr > :is(th, td):last-child { border-right: 0; }
+.modeled-detail-page .table-scroll > table > tbody > tr:last-child > td { border-bottom: 0; }
+.modeled-detail-page .table-scroll > table > tbody > tr:hover > td { background: var(--soft); }
+.modeled-detail-page .entity-detail-attributes .selection-column { width: 2.75rem; padding-inline: 0.6rem; text-align: center; }
+.modeled-detail-page .entity-detail-attributes :is(th, td):last-child { text-align: right; }
+@media (max-width: 42rem) {
+  .modeled-detail-fields > div { grid-template-columns: minmax(0, 1fr); }
+  .modeled-detail-fields dt { border-right: 0; border-bottom: 1px solid var(--line); }
+  .modeled-detail-page .detail-section > header { align-items: start; flex-wrap: wrap; }
+}
 
 .run-configuration-dialog.mapping-run-dialog { width: min(70rem, 100%); background: var(--surface); }
 .mapping-run-dialog .drawer-header p { color: var(--muted); margin: 0.35rem 0 0; }

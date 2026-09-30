@@ -14,48 +14,37 @@ RELEASE_SCHEMAS = (
     "application",
     "mcp",
 )
-INVENTORY = Path(__file__).parents[2] / "docs" / "database-inventory.md"
+DATABASE_ROOT = Path(__file__).parents[2] / "database"
 
 
-def _inventory_section(document: str, start: str, end: str) -> str:
-    return document.split(start, maxsplit=1)[1].split(end, maxsplit=1)[0]
-
-
-def test_installed_catalog_matches_the_exhaustive_inventory(
+def test_installed_catalog_matches_the_canonical_install_sql(
     postgres_database: DisposablePostgres,
 ) -> None:
-    inventory = INVENTORY.read_text(encoding="utf-8")
+    release_sql = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(DATABASE_ROOT.glob("[0-9][0-9]_*.sql"))
+        if 1 <= int(path.name[:2]) <= 19
+    )
+    qualified_name = r"((?:" + "|".join(RELEASE_SCHEMAS) + r")\.[a-z][a-z0-9_]*)"
     expected_tables = sorted(
-        re.findall(
-            r"^- `((?:reference|core|security|model|workflow|application|mcp)"
-            r"\.[a-z][a-z0-9_]*)` —",
-            _inventory_section(inventory, "## 1. Tables", "## 2. Functions"),
-            re.MULTILINE,
-        )
+        re.findall(r"^CREATE TABLE " + qualified_name + r"\s*\(", release_sql, re.MULTILINE)
     )
     expected_functions = sorted(
         re.findall(
-            r"^- `((?:reference|core|security|model|workflow|application|mcp)"
-            r"\.[a-z][a-z0-9_]*)` —",
-            _inventory_section(
-                inventory, "## 2. Functions", "## 3. Installed triggers"
-            ),
+            r"^CREATE (?:OR REPLACE )?FUNCTION " + qualified_name + r"\s*\(",
+            release_sql,
             re.MULTILINE,
         )
     )
     trigger_pairs = sorted(
         re.findall(
-            r"^- `([a-z][a-z0-9_]*)` on "
-            r"`((?:reference|core|security|model|workflow|application|mcp)"
-            r"\.[a-z][a-z0-9_]*)` —",
-            _inventory_section(
-                inventory,
-                "## 3. Installed triggers",
-                "## 4. Explicit exclusions",
-            ),
+            r"^CREATE (?:CONSTRAINT )?TRIGGER ([a-z][a-z0-9_]*)\s+[^;]*?\bON "
+            + qualified_name,
+            release_sql,
             re.MULTILINE,
         )
     )
+    assert expected_tables and expected_functions and trigger_pairs
 
     with postgres_database.connect_owner() as connection:
         tables = connection.execute(
@@ -101,37 +90,6 @@ def test_installed_catalog_matches_the_exhaustive_inventory(
             """,
             (list(RELEASE_SCHEMAS),),
         ).fetchall()
-        row = connection.execute(
-            """
-            SELECT (
-                       SELECT count(*)
-                         FROM pg_catalog.pg_class AS relation
-                         JOIN pg_catalog.pg_namespace AS namespace_record
-                           ON namespace_record.oid = relation.relnamespace
-                        WHERE namespace_record.nspname = ANY (%s)
-                          AND relation.relkind IN ('r', 'p')
-                   ) AS table_count,
-                   (
-                       SELECT count(*)
-                         FROM pg_catalog.pg_proc AS function_record
-                         JOIN pg_catalog.pg_namespace AS namespace_record
-                           ON namespace_record.oid = function_record.pronamespace
-                        WHERE namespace_record.nspname = ANY (%s)
-                          AND function_record.prokind = 'f'
-                   ) AS function_count,
-                   (
-                       SELECT count(*)
-                         FROM pg_catalog.pg_trigger AS trigger_record
-                         JOIN pg_catalog.pg_class AS relation
-                           ON relation.oid = trigger_record.tgrelid
-                         JOIN pg_catalog.pg_namespace AS namespace_record
-                           ON namespace_record.oid = relation.relnamespace
-                        WHERE namespace_record.nspname = ANY (%s)
-                          AND NOT trigger_record.tgisinternal
-                   ) AS trigger_count
-            """,
-            (list(RELEASE_SCHEMAS),) * 3,
-        ).fetchone()
 
     assert [table["name"] for table in tables] == expected_tables
     assert [function["name"] for function in functions] == expected_functions
@@ -141,7 +99,6 @@ def test_installed_catalog_matches_the_exhaustive_inventory(
     assert all(
         trigger["function_name"] == trigger["trigger_name"] for trigger in triggers
     )
-    assert row == {"table_count": 100, "function_count": 94, "trigger_count": 23}
 
 
 def test_every_release_table_has_a_valid_primary_key_and_valid_constraints(

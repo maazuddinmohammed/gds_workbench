@@ -55,12 +55,12 @@ describe("Mapping Attribute documents", () => {
     render(<MappingTransformationValue label="Source attributes for CustomerName" value={sources} />);
     const table = screen.getByRole("table", { name: "Source attributes for CustomerName" });
     expect(within(table).getAllByRole("columnheader").map((column) => column.textContent)).toEqual([
-      "Tenant code", "System code", "Connection code", "Object schema", "Object name", "Attribute name", "Custom flag", "Custom count",
+      "Object schema", "Object name", "Attribute name", "Custom flag", "Custom count",
     ]);
     expect(within(table).getAllByRole("row").slice(1).map((row) =>
       within(row).getAllByRole("cell").map((cell) => cell.textContent))).toEqual([
-      ["EXAMPLE", "CRM", "lakehouse", "bronze_crm", "customer", "first_name", "false", "Not provided"],
-      ["EXAMPLE", "CRM", "lakehouse", "bronze_crm", "customer", "last_name", "Not provided", "0"],
+      ["bronze_crm", "customer", "first_name", "false", "Not provided"],
+      ["bronze_crm", "customer", "last_name", "Not provided", "0"],
     ]);
     expect(JSON.stringify(sources)).toBe(original);
     expect(table.parentElement).toHaveAttribute("tabindex", "0");

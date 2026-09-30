@@ -4,6 +4,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+type OutputTemplateModeledEntityType = Literal["logical_entity", "dimensional_entity"]
 type OutputTemplateTargetType = Literal["mapping_object", "mapping_attribute"]
 type OutputTemplateFieldDataType = Literal[
     "string", "integer", "number", "boolean", "object", "array"
@@ -25,6 +26,7 @@ class OutputTemplateSummary(OutputTemplateContract):
     output_template_name: str = Field(min_length=1, max_length=200)
     output_template_description: str | None = Field(default=None, max_length=2000)
     output_template_target_type: OutputTemplateTargetType
+    output_template_modeled_entity_type: OutputTemplateModeledEntityType | None = None
     output_template_schema_digest: str = Field(
         min_length=64,
         max_length=64,

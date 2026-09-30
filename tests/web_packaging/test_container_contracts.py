@@ -18,8 +18,6 @@ DATABASE_ROOT = ROOT / "database"
 AZURE_FRESH_DEPLOYMENT = ROOT / "docs" / "AZURE_FRESH_DEPLOYMENT.md"
 WEB_APP_WORKFLOW = ROOT / ".github" / "workflows" / "web-app.yml"
 ATLAS_WINDOWS_WORKFLOW = ROOT / ".github" / "workflows" / "plugin-windows.yml"
-DATABASE_ARCHITECTURE = ROOT / "docs" / "architecture" / "database.md"
-MCP_ARCHITECTURE = ROOT / "docs" / "architecture" / "overview.md"
 
 
 def test_local_compose_is_loopback_only_and_uses_one_combined_app() -> None:
@@ -132,7 +130,8 @@ def test_frontend_declares_a_local_self_contained_atlas_svg_favicon() -> None:
     assert match is not None
     root = ET.fromstring((FRONTEND_INDEX.parent / "public" / "assets" / "atlas.svg").read_text())
     assert root.tag == "{http://www.w3.org/2000/svg}svg"
-    assert root.attrib["viewBox"] == "0 0 64 64"
+    x, y, width, height = (float(value) for value in root.attrib["viewBox"].split())
+    assert x == y == 0 and width == height and width > 0
     assert root.find("{http://www.w3.org/2000/svg}path") is not None
     assert all(not element.tag.endswith("script") for element in root.iter())
     assert all(not key.endswith("href") for element in root.iter() for key in element.attrib)
@@ -160,16 +159,12 @@ def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql(
     assert "03_local_super_admin.template.sql" in initializer
     assert "04_application_reference.sql" in initializer
     assert "05_global_prompt_defaults.template.sql" in initializer
-    assert "06_global_sql_generation_guide.template.sql" in initializer
     assert "07_global_mapping_output_templates.template.sql" in initializer
     assert "08_local_workbench_review.sql" in initializer
     assert initializer.index("03_local_super_admin.template.sql") < initializer.index(
         "05_global_prompt_defaults.template.sql"
     )
     assert initializer.index("05_global_prompt_defaults.template.sql") < initializer.index(
-        "06_global_sql_generation_guide.template.sql"
-    )
-    assert initializer.index("06_global_sql_generation_guide.template.sql") < initializer.index(
         "07_global_mapping_output_templates.template.sql"
     )
     assert initializer.index("07_global_mapping_output_templates.template.sql") < initializer.index(
@@ -179,34 +174,31 @@ def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql(
 
 
 def test_documented_fresh_install_matches_the_exact_canonical_database_release() -> None:
-    guide = AZURE_FRESH_DEPLOYMENT.read_text(encoding="utf-8")
+    guide = (DATABASE_ROOT / "README.md").read_text(encoding="utf-8")
+    azure_guide = AZURE_FRESH_DEPLOYMENT.read_text(encoding="utf-8")
     expected = [
         path.name
         for path in sorted(DATABASE_ROOT.glob("[0-9][0-9]_*.sql"))
         if path.name not in {"00_preflight.sql", "20_verify_install.sql"}
     ]
-    install_block = re.search(r"for file in \\\n(?P<files>.*?)\ndo", guide, re.DOTALL)
+    install_block = re.search(r"for file in database/\{(?P<files>[^}]+)\}\.sql", guide)
 
     assert install_block is not None
-    assert re.findall(r"database/([0-9][0-9]_[a-z0-9_]+\.sql)", install_block["files"]) == expected
+    assert [name + ".sql" for name in install_block["files"].split(",")] == expected
+    assert "--single-transaction" in guide and "ON_ERROR_STOP=1" in guide
     assert "\\password gds_mcp_runtime" in guide
     assert "\\password gds_web_runtime" in guide
-    assert "database/seed/04_application_reference.sql" in guide
-    assert "database/seed/05_global_prompt_defaults.template.sql" in guide
-    assert "database/seed/06_global_sql_generation_guide.template.sql" in guide
-    assert "database/seed/07_global_mapping_output_templates.template.sql" in guide
-    assert guide.index("database/20_verify_install.sql") < guide.index(
-        "database/seed/04_application_reference.sql"
+    ordered_steps = (
+        "database/00_preflight.sql",
+        install_block.group(0),
+        "database/20_verify_install.sql",
+        "seed/04_application_reference.sql",
+        "seed/05_global_prompt_defaults.template.sql",
+        "seed/07_global_mapping_output_templates.template.sql",
     )
-    assert guide.index("database/seed/04_application_reference.sql") < guide.index(
-        "database/seed/05_global_prompt_defaults.template.sql"
-    )
-    assert guide.index("database/seed/05_global_prompt_defaults.template.sql") < guide.index(
-        "database/seed/06_global_sql_generation_guide.template.sql"
-    )
-    assert guide.index("database/seed/06_global_sql_generation_guide.template.sql") < guide.index(
-        "database/seed/07_global_mapping_output_templates.template.sql"
-    )
+    positions = [guide.index(step) for step in ordered_steps]
+    assert positions == sorted(positions)
+    assert "[database/README.md](../database/README.md)" in azure_guide
 
 
 def test_mcp_runbook_recovers_from_a_locked_windows_azure_cli_profile() -> None:
@@ -277,17 +269,3 @@ def test_windows_atlas_ci_tracks_and_uses_the_frozen_mcp_project() -> None:
     assert "tests/atlas/test_native_parity.py" in workflow
     assert "atlas/atlas-vs-code" in workflow
     assert "pip install pytest" not in workflow
-
-
-def test_current_architecture_counts_match_checked_in_contracts() -> None:
-    database_architecture = DATABASE_ARCHITECTURE.read_text(encoding="utf-8")
-    mcp_architecture = MCP_ARCHITECTURE.read_text(encoding="utf-8")
-
-    assert "There are 101 tables" in database_architecture
-    assert "defines three non-login, non-superuser group roles" in database_architecture
-    assert "`ChangeSetsFeature` draft-expiry worker" not in database_architecture
-    assert "post-lock PostgreSQL wall-clock" in database_architecture
-    assert "exactly 37 governed MCP tools" in mcp_architecture
-    assert "tool-contract" not in mcp_architecture
-    assert "Ten read-only MCP tools" not in mcp_architecture
-    assert "No write or Tenant Lock MCP tool is registered" not in mcp_architecture

@@ -1,14 +1,8 @@
-# Issue tracker: Local Markdown
+# Active local issues
 
-Issues and PRDs for this repo live as Markdown files in `.scratch/`.
-
-## Conventions
-
-- One feature per directory: `.scratch/<feature-slug>/`
-- PRD: `.scratch/<feature-slug>/PRD.md`
-- Issues: `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, starting at `01`
-- Triage state: a `Status:` line near the top of each issue
-- Comments: append under a `## Comments` heading
-
-When a skill publishes an issue or PRD, create the corresponding file under
-`.scratch/<feature-slug>/`. When fetching a ticket, read the referenced file.
+Only unresolved actionable issues live in `.scratch/<feature>/issues/<NN>-<slug>.md`.
+Use one feature directory, a `Status:` line and concise problem/evidence/acceptance
+criteria. Remove resolved scratch issues after verification. Do not keep dated
+verification reports, raw outputs, prompt copies or generated contract exports as
+repository documentation. Temporary investigation/build output belongs outside the
+repository; use canonical code, SQL and tests for durable truth.

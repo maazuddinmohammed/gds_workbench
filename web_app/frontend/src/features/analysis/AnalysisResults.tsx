@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { WorkflowCommandContext, WorkflowFilters } from "../workflows/WorkflowCommandCenter";
+import { useContext, useMemo } from "react";
 import { useForm } from "@tanstack/react-form";
-import { Link } from "@tanstack/react-router";
 import {
   flexRender,
   getCoreRowModel,
@@ -16,8 +16,6 @@ import type {
 import type { ModelInputScopeObject } from "../model_input_scope/api";
 
 export function AnalysisResults({
-  tenantId,
-  modelId,
   items,
   endpointOptions,
   filters,
@@ -38,8 +36,6 @@ export function AnalysisResults({
   onSelectionChange,
   onLoadMore,
 }: {
-  tenantId: number;
-  modelId: number;
   items: AnalysisFinding[];
   endpointOptions: ModelInputScopeObject[];
   filters: AnalysisFilters;
@@ -60,6 +56,7 @@ export function AnalysisResults({
   onSelectionChange: (ids: Set<number>) => void;
   onLoadMore: () => void;
 }) {
+  const commandCenter = useContext(WorkflowCommandContext);
   const reviewBusy = reviewPending || reviewRetryable;
   const form = useForm({
     defaultValues: {
@@ -106,13 +103,15 @@ export function AnalysisResults({
         />
       ),
     },
+    { id: "from_schema", header: "From Object schema (A)", cell: ({ row }) => row.original.from_endpoint.object_schema },
     {
-      id: "from_object", header: "From Object",
+      id: "from_object", header: "From Object (A)",
       cell: ({ row }) => row.original.from_endpoint.object_name,
     },
-    { id: "from_attribute", header: "From Attribute", cell: ({ row }) => row.original.from_endpoint.attribute_name },
-    { id: "to_object", header: "To Object", cell: ({ row }) => row.original.to_endpoint.object_name },
-    { id: "to_attribute", header: "To Attribute", cell: ({ row }) => row.original.to_endpoint.attribute_name },
+    { id: "from_attribute", header: "From Attribute (A)", cell: ({ row }) => row.original.from_endpoint.attribute_name },
+    { id: "to_schema", header: "To Object schema (B)", cell: ({ row }) => row.original.to_endpoint.object_schema },
+    { id: "to_object", header: "To Object (B)", cell: ({ row }) => row.original.to_endpoint.object_name },
+    { id: "to_attribute", header: "To Attribute (B)", cell: ({ row }) => row.original.to_endpoint.attribute_name },
     { id: "relationship", header: "Relationship", cell: ({ row }) => relationshipLabel(row.original.relationship_kind) },
     { id: "inferred_cardinality", header: "Inferred cardinality", cell: ({ row }) => relationshipLabel(row.original.inferred_cardinality) },
     { id: "observed_cardinality", header: () => <span title="Observed endpoint uniqueness from recorded validation counts">Observed cardinality</span>, cell: ({ row }) => <>
@@ -129,15 +128,38 @@ export function AnalysisResults({
       ),
     },
     {
-      id: "validation",
-      header: "Validation",
-      cell: ({ row }) => (
-        <span className={`status-badge ${validationTone(row.original)}`}>
-          {row.original.validation_result
-            ? relationshipLabel(row.original.validation_result)
-            : "Pending"}
-        </span>
-      ),
+      accessorKey: "from_row_count", header: "A count",
+      cell: ({ row }) => row.original.from_row_count?.toLocaleString() ?? "Not profiled",
+    },
+    {
+      accessorKey: "to_row_count", header: "B count",
+      cell: ({ row }) => row.original.to_row_count?.toLocaleString() ?? "Not profiled",
+    },
+    {
+      accessorKey: "source_missing_target_count", header: () => <span title="Distinct A values missing from B">A → B mismatches</span>,
+      cell: ({ row }) => row.original.source_missing_target_count?.toLocaleString()
+        ?? (row.original.validation_state === "unvalidated" ? "Not validated" : "Unavailable"),
+    },
+    {
+      accessorKey: "unused_target_count", header: () => <span title="Distinct B values missing from A">B → A mismatches</span>,
+      cell: ({ row }) => row.original.unused_target_count?.toLocaleString()
+        ?? (row.original.validation_state === "unvalidated" ? "Not validated" : "Unavailable"),
+    },
+    {
+      accessorKey: "source_missing_target_percent", header: "A → B mismatch %",
+      cell: ({ row }) => row.original.source_missing_target_percent != null
+        ? `${row.original.source_missing_target_percent.toFixed(2)}%`
+        : row.original.validation_state === "unvalidated" ? "Not validated"
+          : row.original.source_missing_target_count == null ? "Unavailable"
+            : <span title="No distinct non-null values on the From side">N/A</span>,
+    },
+    {
+      accessorKey: "unused_target_percent", header: "B → A mismatch %",
+      cell: ({ row }) => row.original.unused_target_percent != null
+        ? `${row.original.unused_target_percent.toFixed(2)}%`
+        : row.original.validation_state === "unvalidated" ? "Not validated"
+          : row.original.unused_target_count == null ? "Unavailable"
+            : <span title="No distinct non-null values on the To side">N/A</span>,
     },
     {
       accessorKey: "status",
@@ -149,10 +171,7 @@ export function AnalysisResults({
       header: "Lock",
       cell: ({ row }) => row.original.is_locked ? "Locked" : "Open",
     },
-    { id: "actions", header: "Actions", cell: ({ row }) => <Link className="text-action" aria-label={`Open finding ${row.original.analysis_result_id}`}
-        to="/tenants/$tenantId/models/$modelId/analysis/$findingId"
-        params={{ tenantId: String(tenantId), modelId: String(modelId), findingId: String(row.original.analysis_result_id) }}>Show details</Link> },
-  ], [allSelected, items, modelId, onSelectionChange, reviewBusy, selectedIds, tenantId]);
+  ], [allSelected, items, onSelectionChange, reviewBusy, selectedIds]);
   const table = useReactTable({ data: items, columns, getCoreRowModel: getCoreRowModel() });
   const mutationReason = !hasTenantLock
     ? "Tenant Lock required for review updates."
@@ -170,7 +189,7 @@ export function AnalysisResults({
 
   return (
     <section className="workflow-surface" aria-label="Analysis results">
-      <form
+      <WorkflowFilters><form
         className="workflow-filterbar analysis-filterbar"
         aria-label="Filter Analysis findings"
         onSubmit={(event) => {
@@ -248,9 +267,9 @@ export function AnalysisResults({
             Apply finding filters
           </button>
         </div>
-      </form>
+      </form></WorkflowFilters>
 
-      <div className="review-selectionbar" aria-busy={reviewPending}>
+      <div className="review-selectionbar" hidden={Boolean(commandCenter) && selectedIds.size === 0} aria-busy={reviewPending}>
         <span>{selectedIds.size ? `${selectedIds.size} selected` : ""}</span>
         <div>
           {([
@@ -303,13 +322,13 @@ export function AnalysisResults({
       ) : items.length === 0 ? (
         <div className="empty-state compact">No Analysis findings match these filters.</div>
       ) : (
-        <div className="workflow-table-scroll table-scroll">
+        <div className="workflow-table-scroll table-scroll analysis-results-scroll" tabIndex={0} role="region" aria-label="Scrollable Analysis findings">
           <table aria-label="Analysis findings">
             <thead>
               {table.getHeaderGroups().map((group) => (
                 <tr key={group.id}>
                   {group.headers.map((header) => (
-                    <th key={header.id}>
+                    <th key={header.id} scope="col" className={/_(count|percent)$/.test(header.column.id) ? "analysis-number" : undefined}>
                       {header.isPlaceholder
                         ? null
                         : flexRender(header.column.columnDef.header, header.getContext())}
@@ -322,7 +341,7 @@ export function AnalysisResults({
               {table.getRowModel().rows.map((row) => (
                 <tr key={row.id} className={selectedIds.has(row.original.analysis_result_id) ? "is-active" : ""}>
                   {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
+                    <td key={cell.id} className={/_(count|percent)$/.test(cell.column.id) ? "analysis-number" : undefined}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
                   ))}
                 </tr>
               ))}
@@ -348,10 +367,4 @@ export function AnalysisResults({
 
 function relationshipLabel(value: string): string {
   return value.replaceAll("_", " ").replace(/^./, (character) => character.toLocaleUpperCase());
-}
-
-function validationTone(item: AnalysisFinding): string {
-  if (item.validation_result === "supported") return "is-success";
-  if (item.validation_result === "unsupported") return "is-danger";
-  return "is-warning";
 }

@@ -15,12 +15,12 @@ describe("Mapping logic documents", () => {
     render(<MappingLogicDocument path="Entity logic" document={document} />);
     const table = screen.getByRole("table", { name: 'Entity logic["source_objects"]' });
     expect(within(table).getAllByRole("columnheader").map((column) => column.textContent)).toEqual([
-      "Tenant code", "System code", "Connection code", "Object schema", "Object name", "Alias", "Custom note", "Nullable",
+      "Object schema", "Object name", "Alias", "Custom note", "Nullable",
     ]);
     expect(within(table).getAllByRole("row").slice(1).map((row) =>
       within(row).getAllByRole("cell").map((cell) => cell.textContent))).toEqual([
-      ["EXAMPLE", "CRM", "lakehouse", "bronze_crm", "customer", "c", "Keep this note", "Not provided"],
-      ["EXAMPLE", "ERP", "warehouse", "bronze_erp", "account", "a", "Not provided", "Not set"],
+      ["bronze_crm", "customer", "c", "Keep this note", "Not provided"],
+      ["bronze_erp", "account", "a", "Not provided", "Not set"],
     ]);
     expect(JSON.stringify(document)).toBe(original);
   });
@@ -37,13 +37,13 @@ describe("Mapping logic documents", () => {
       source_objects: null,
       "": "Unnamed custom value",
     }} />);
-    const sources = screen.getByRole("region", { name: "Sources" });
+    const sources = screen.getByRole("region", { name: "Source attributes" });
     expect(within(sources).getByText("crm_customer.customer_name")).toBeVisible();
-    expect(within(sources).getByText("Not set")).toBeVisible();
+    expect(within(screen.getByRole("region", { name: "Source objects" })).getByText("Not set")).toBeVisible();
     expect(within(sources).queryByText("Keep this custom field with the logic")).not.toBeInTheDocument();
     expect(container.querySelector(".mapping-logic-expression")?.textContent).toBe(expression);
     expect(container.querySelector("script")).toBeNull();
-    expect(Array.from(container.querySelectorAll(".mapping-logic-main > section > h3"), (node) => node.textContent))
+    expect(Array.from(container.querySelectorAll(".mapping-logic-grid > section:not(.is-source) > h3"), (node) => node.textContent))
       .toEqual(["Transformation", "Steps", "Transformation steps", "Custom field", "Source note", "Unnamed field"]);
     expect(within(screen.getByRole("list", { name: 'Entity logic["steps"]' })).getAllByRole("listitem")
       .map((node) => node.textContent)).toEqual(["Read the source", "Apply the filter"]);
@@ -65,12 +65,12 @@ describe("Mapping logic documents", () => {
     const table = screen.getByRole("table", { name: 'Mapping["source_objects"]' });
     expect(screen.getByText("Source objects")).toBeVisible();
     const headers = Array.from(table.querySelectorAll(":scope > thead > tr > th"));
-    expect(headers.map((node) => node.textContent)).toEqual(["System code", "Object name", "Alias", "Enabled", "Lookups", "Count", "Note"]);
+    expect(headers.map((node) => node.textContent)).toEqual(["Object name", "Alias", "Enabled", "Lookups", "Count", "Note"]);
     const rows = table.querySelectorAll(":scope > tbody > tr");
     const first = rows[0]!.querySelectorAll(":scope > td");
     const second = rows[1]!.querySelectorAll(":scope > td");
-    expect(Array.from(first, (node) => node.textContent).slice(0, 4)).toEqual(["CRM", "customer", "Not set", "false"]);
-    expect(Array.from(second, (node) => node.textContent)).toEqual(["ERP", "account", "Not provided", "Not provided", "Not provided", "0", '\"\"']);
+    expect(Array.from(first, (node) => node.textContent).slice(0, 3)).toEqual(["customer", "Not set", "false"]);
+    expect(Array.from(second, (node) => node.textContent)).toEqual(["account", "Not provided", "Not provided", "Not provided", "0", '\"\"']);
     const nested = screen.getByRole("table", { name: 'Mapping["source_objects"][0]["lookups"]' });
     expect(within(nested).getAllByRole("row").slice(1).map((node) => node.textContent)).toEqual(["firstNot provided", "second0"]);
     expect(screen.getByRole("region", { name: 'Mapping["source_objects"]' })).toHaveAttribute("tabindex", "0");

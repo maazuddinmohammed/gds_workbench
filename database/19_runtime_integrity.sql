@@ -417,6 +417,7 @@ BEGIN
                    'workflow.validation_group',
                    'workflow.validation_check',
                    'application.output_template',
+                   'application.output_template_field',
                    'mcp.model_change_set',
                    'mcp.model_change_set_event',
                    'mcp.model_stage_batch',
@@ -761,6 +762,8 @@ BEGIN
                    'workflow.generated_code_source_system',
                    'workflow.validation_group',
                    'workflow.validation_check',
+                   'application.output_template',
+                   'application.output_template_field',
                    'mcp.model_change_set',
                    'mcp.model_change_set_event',
                    'mcp.model_stage_batch',
@@ -1231,7 +1234,7 @@ REVOKE UPDATE (
 ) ON model.model FROM gds_web_write;
 REVOKE ALL ON ALL TABLES IN SCHEMA application
 FROM gds_app_write, gds_web_write;
-GRANT SELECT ON application.output_template TO gds_app_write;
+GRANT SELECT ON application.output_template, application.output_template_field TO gds_app_write;
 GRANT SELECT ON ALL TABLES IN SCHEMA application TO gds_web_write;
 REVOKE SELECT ON application.metadata_enrichment_result FROM gds_web_write;
 REVOKE SELECT ON application.metadata_review_event FROM gds_web_write;
@@ -1362,7 +1365,8 @@ GRANT EXECUTE ON FUNCTION application.create_output_template(
     VARCHAR,
     VARCHAR,
     VARCHAR,
-    JSONB
+    JSONB,
+    VARCHAR
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.update_output_template(
     UUID,
@@ -1373,35 +1377,6 @@ GRANT EXECUTE ON FUNCTION application.update_output_template(
     VARCHAR,
     BOOLEAN,
     TIMESTAMPTZ
-) TO gds_web_write;
-GRANT EXECUTE ON FUNCTION application.save_sql_generation_guide(
-    UUID,
-    UUID,
-    VARCHAR,
-    BIGINT,
-    VARCHAR,
-    VARCHAR,
-    VARCHAR,
-    BOOLEAN,
-    BOOLEAN,
-    TIMESTAMPTZ
-) TO gds_web_write;
-GRANT EXECUTE ON FUNCTION application.save_sql_generation_guide_draft(
-    UUID,
-    UUID,
-    VARCHAR,
-    BIGINT,
-    BIGINT,
-    TEXT,
-    TIMESTAMPTZ
-) TO gds_web_write;
-GRANT EXECUTE ON FUNCTION application.transition_sql_generation_guide_version(
-    UUID,
-    UUID,
-    VARCHAR,
-    BIGINT,
-    VARCHAR,
-    VARCHAR
 ) TO gds_web_write;
 REVOKE EXECUTE ON FUNCTION application.snapshot_workflow_run_prompts(
     BIGINT,
@@ -1433,7 +1408,6 @@ GRANT EXECUTE ON FUNCTION application.create_workflow_run(
     BIGINT,
     BIGINT,
     VARCHAR,
-    BIGINT,
     JSONB,
     JSONB,
     VARCHAR,

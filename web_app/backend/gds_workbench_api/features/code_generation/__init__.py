@@ -19,7 +19,6 @@ from .contracts import (
     GeneratedSqlArtifactNotFoundError,
     SqlArtifactBundleLimitExceededError,
     SqlArtifactDownload,
-    SqlGenerationGuideProvenance,
     SqlGeneratorProvenance,
     StoredSqlArtifactSummary,
 )
@@ -58,7 +57,6 @@ __all__ = [
     "PostgresCodeGenerationContextRepository",
     "SqlArtifactBundleLimitExceededError",
     "SqlArtifactDownload",
-    "SqlGenerationGuideProvenance",
     "SqlGeneratorProvenance",
     "StoredSqlArtifactSummary",
     "create_code_generation_router",

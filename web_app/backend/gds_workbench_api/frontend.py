@@ -31,7 +31,7 @@ class RequestBodyLimitMiddleware:
             and path[:3] == ["api", "v1", "tenants"]
             and path[3].isdecimal()
             and (
-                path[4] in {"prompts", "sql-generation-guides"}
+                path[4] == "prompts"
                 or (
                     len(path) >= 7
                     and path[4] == "models"

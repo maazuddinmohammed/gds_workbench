@@ -275,23 +275,6 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
        ) AS artifact_is_current,
        artifact.generated_code_status,
        artifact.generated_code_is_locked,
-       CASE
-           WHEN guide_version.sql_generation_guide_version_id IS NULL THEN NULL
-           ELSE jsonb_build_object(
-               'sql_generation_guide_id', guide.sql_generation_guide_id,
-               'sql_generation_guide_code', guide.sql_generation_guide_code,
-               'sql_generation_guide_name', guide.sql_generation_guide_name,
-               'guide_is_active', guide.is_active,
-               'sql_generation_guide_version_id',
-                   guide_version.sql_generation_guide_version_id,
-               'sql_generation_guide_version_number',
-                   guide_version.sql_generation_guide_version_number,
-               'sql_generation_guide_version_status',
-                   guide_version.sql_generation_guide_version_status,
-               'sql_generation_guide_digest',
-                   guide_version.sql_generation_guide_digest
-           )
-       END AS guide,
        artifact.workflow_run_id,
        CASE
            WHEN generator.principal_id IS NULL THEN NULL
@@ -322,14 +305,6 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
     ON generating_run.workflow_run_id = artifact.workflow_run_id
    AND generating_run.model_id = artifact.model_id
    AND generating_run.model_workflow = 'code_generation'
-  LEFT JOIN application.sql_generation_guide AS guide
-    ON guide.sql_generation_guide_id = generating_run.sql_generation_guide_id
-  LEFT JOIN application.sql_generation_guide_version AS guide_version
-    ON guide_version.sql_generation_guide_version_id =
-       generating_run.sql_generation_guide_version_id
-   AND guide_version.sql_generation_guide_id = generating_run.sql_generation_guide_id
-   AND guide_version.sql_generation_guide_digest =
-       generating_run.sql_generation_guide_digest
   LEFT JOIN security.principal AS generator
     ON generator.principal_id = generating_run.actor_principal_id
   CROSS JOIN LATERAL (

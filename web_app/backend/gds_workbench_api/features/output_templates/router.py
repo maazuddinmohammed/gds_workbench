@@ -9,6 +9,7 @@ from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.output_templates.contracts import (
     OutputTemplateDetail,
+    OutputTemplateModeledEntityType,
     OutputTemplatePage,
     OutputTemplateTargetType,
 )
@@ -31,6 +32,7 @@ def create_output_templates_router(
     async def list_templates(
         tenant_id: Annotated[int, tenant_path],
         target_type: Annotated[OutputTemplateTargetType | None, Query()] = None,
+        entity_type: Annotated[OutputTemplateModeledEntityType | None, Query()] = None,
         active: Annotated[bool | None, Query()] = True,
         page_size: Annotated[int, Query(ge=1, le=200)] = 50,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
@@ -41,6 +43,7 @@ def create_output_templates_router(
             principal,
             tenant_id=tenant_id,
             target_type=target_type,
+            entity_type=entity_type,
             active=active,
             page_size=page_size,
             cursor=cursor,

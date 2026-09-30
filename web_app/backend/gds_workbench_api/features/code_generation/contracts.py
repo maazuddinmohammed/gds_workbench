@@ -133,17 +133,6 @@ class CodeGenerationTargetPage(ContractModel):
     next_cursor: str | None = Field(default=None, max_length=2048)
 
 
-class SqlGenerationGuideProvenance(ContractModel):
-    sql_generation_guide_id: int = Field(gt=0)
-    sql_generation_guide_code: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,99}$")
-    sql_generation_guide_name: str = Field(min_length=1, max_length=200)
-    guide_is_active: bool
-    sql_generation_guide_version_id: int = Field(gt=0)
-    sql_generation_guide_version_number: int = Field(gt=0)
-    sql_generation_guide_version_status: Literal["draft", "published", "retired"]
-    sql_generation_guide_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-
 class SqlGeneratorProvenance(ContractModel):
     generator_code: str | None = Field(
         pattern=r"^[a-z][a-z0-9_.-]{0,99}$",
@@ -168,7 +157,6 @@ class GeneratedSqlArtifactDetail(ContractModel):
     artifact_is_current: bool
     generated_code_status: Literal["active", "inactive", "deprecated"]
     generated_code_is_locked: bool
-    guide: SqlGenerationGuideProvenance | None
     workflow_run_id: int | None = Field(default=None, gt=0)
     generator: SqlGeneratorProvenance | None
     generated_at: datetime

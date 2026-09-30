@@ -47,7 +47,6 @@ from gds_workbench_api.features.output_templates import DatabaseOutputTemplateSe
 from gds_workbench_api.features.profiling import DatabaseProfilingReviewService
 from gds_workbench_api.features.prompts import DatabasePromptService
 from gds_workbench_api.features.session import DatabaseSessionService
-from gds_workbench_api.features.sql_generation_guides import DatabaseSqlGenerationGuideService
 from gds_workbench_api.features.tenant_locks import DatabaseTenantLockService
 from gds_workbench_api.features.tenants import DatabaseTenantService
 from gds_workbench_api.features.validation import DatabaseValidationReadService
@@ -197,11 +196,6 @@ def create_runtime_app(
             cursor_signing_key=runtime_settings.cursor_signing_key,
         ),
         prompt_service=DatabasePromptService(
-            database=runtime_database,
-            authorizer=authorizer,
-            cursor_signing_key=runtime_settings.cursor_signing_key,
-        ),
-        sql_generation_guide_service=DatabaseSqlGenerationGuideService(
             database=runtime_database,
             authorizer=authorizer,
             cursor_signing_key=runtime_settings.cursor_signing_key,

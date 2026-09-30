@@ -78,7 +78,7 @@ export function CodeGenerationRunDialog({ api, tenantId, model, entityType, cove
     mutation.mutate({ expected_model_revision: model.model_revision, model_workflow: "code_generation", workflow_execution_mode: null,
       selected_object_ids: [], selected_entity_ids: requestedEntities.map((item) => item.target.entity_id), selected_system_codes: selectedCodes,
       modeled_entity_type: entityType, requested_batch_id: null, agent, prompt_overrides: {},
-      code_generation_coverage_mode: "selected_targets", code_generation_file_layout: fileLayout, sql_generation_guide_version_id: null });
+      code_generation_coverage_mode: "selected_targets", code_generation_file_layout: fileLayout });
   };
   return <div className="dialog-scrim" role="presentation">
     <section className="run-configuration-dialog mapping-run-dialog" role="dialog" aria-modal="true" aria-labelledby="code-generation-run-heading" onKeyDown={(event) => {
@@ -148,7 +148,6 @@ function generationError(error: Error, created: boolean): string {
       code_mapping_incomplete: "The selected Entities need at least one saved Object or Attribute transformation. Review their applied Mapping, then refresh before generating SQL.",
       code_no_eligible_targets: "No selected Entities have a saved Mapping transformation. Apply at least one Object or Attribute transformation, then refresh.",
       code_system_unavailable: "A selected System no longer contributes to the selected Entities. Refresh and select the contributing Systems again.",
-      sql_generation_guide_unavailable: "An active, published SQL generation guide is required. Ask an administrator to configure it, then retry.",
       workflow_prompt_unavailable: "A published Code generation prompt is unavailable. Review the Model’s prompt settings, then retry.",
       tenant_lock_required: "Acquire the Tenant Lock on Home before generating SQL.",
       tenant_locked: "Another user holds the Tenant Lock. Acquire it on Home before generating SQL.",

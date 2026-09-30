@@ -15,6 +15,7 @@ from gds_etl_workbench.infrastructure.postgres import (
 from gds_workbench_api.features.output_templates.contracts import (
     OutputTemplateDetail,
     OutputTemplateField,
+    OutputTemplateModeledEntityType,
     OutputTemplatePage,
     OutputTemplateSummary,
     OutputTemplateTargetType,
@@ -27,6 +28,7 @@ SELECT template.output_template_id,
        left(template.output_template_description, 2000)
            AS output_template_description,
        template.output_template_target_type,
+       template.output_template_modeled_entity_type,
        template.output_template_schema_digest,
        template.output_template_schema_digest = encode(
            sha256(
@@ -34,6 +36,8 @@ SELECT template.output_template_id,
                    jsonb_build_object(
                        'output_template_target_type',
                            template.output_template_target_type,
+                       'output_template_modeled_entity_type',
+                           template.output_template_modeled_entity_type,
                        'fields', field_document.digest_items
                    )::TEXT,
                    'UTF8'
@@ -81,6 +85,8 @@ SELECT template.output_template_id,
          ) AS item
   ) AS field_document
  WHERE (%s::VARCHAR IS NULL OR template.output_template_target_type = %s)
+   AND (%s::VARCHAR IS NULL OR template.output_template_modeled_entity_type IS NULL
+        OR template.output_template_modeled_entity_type = %s)
    AND (%s::BOOLEAN IS NULL OR template.is_active = %s)
    AND field_document.item_count BETWEEN 1 AND 500
  ORDER BY lower(template.output_template_name),
@@ -95,6 +101,7 @@ SELECT template.output_template_id,
        left(template.output_template_description, 2000)
            AS output_template_description,
        template.output_template_target_type,
+       template.output_template_modeled_entity_type,
        template.output_template_schema_digest,
        template.output_template_schema_digest = encode(
            sha256(
@@ -102,6 +109,8 @@ SELECT template.output_template_id,
                    jsonb_build_object(
                        'output_template_target_type',
                            template.output_template_target_type,
+                       'output_template_modeled_entity_type',
+                           template.output_template_modeled_entity_type,
                        'fields', field_document.digest_items
                    )::TEXT,
                    'UTF8'
@@ -193,6 +202,7 @@ class OutputTemplateService(Protocol):
         active: bool | None,
         page_size: int,
         cursor: str | None,
+        entity_type: OutputTemplateModeledEntityType | None = None,
     ) -> OutputTemplatePage: ...
 
     async def read_template(
@@ -225,6 +235,7 @@ class DatabaseOutputTemplateService:
         active: bool | None,
         page_size: int,
         cursor: str | None,
+        entity_type: OutputTemplateModeledEntityType | None = None,
     ) -> OutputTemplatePage:
         target_token = target_type or "all"
         active_token = "all" if active is None else str(active).lower()
@@ -233,6 +244,7 @@ class DatabaseOutputTemplateService:
                 "web_output_templates",
                 str(tenant_id),
                 target_token,
+                entity_type or "all",
                 active_token,
                 str(page_size),
             )
@@ -252,6 +264,8 @@ class DatabaseOutputTemplateService:
                 (
                     target_type,
                     target_type,
+                    entity_type,
+                    entity_type,
                     active,
                     active,
                     page_size + 1,

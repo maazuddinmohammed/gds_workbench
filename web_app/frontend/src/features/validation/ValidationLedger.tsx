@@ -1,6 +1,6 @@
 import type { ModelLayer } from "../../shared/ModelLayerTabs";
 import type { ModelReviewSelection } from "../model_record_review/selection";
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { Link } from "@tanstack/react-router";
 
 import { ApiError } from "../../core/http";
@@ -8,9 +8,10 @@ import type { ValidationValidationCheck, ValidationValidationGroup } from "./api
 
 export function ValidationLedger({
   tenantId, modelId, groupId, checkId, selection, groups, layer, isFiltered = false,
-  modelRevision, loadedModelRevision, isLoading, error,
+  modelRevision, loadedModelRevision, isLoading, error, onShowDetails,
 }: {
   layer?: ModelLayer;
+  onShowDetails?: ((groupId: number, checkId?: number) => void) | undefined;
   isFiltered?: boolean;
   tenantId: number;
   modelId: number;
@@ -23,6 +24,7 @@ export function ValidationLedger({
   isLoading: boolean;
   error: Error | null;
 }) {
+  const headingId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
   const group = groups.find((item) => item.validation_group_id === groupId);
   const check = group?.checks.find((item) => item.validation_check_id === checkId);
@@ -42,11 +44,11 @@ export function ValidationLedger({
   };
 
   return (
-    <section className="workflow-surface validation-surface" aria-labelledby="validation-ledger-heading">
+    <section className="workflow-surface validation-surface" aria-labelledby={headingId}>
       <header className="validation-ledger-heading">
         <div>
           <p className="eyebrow">{checkId !== undefined ? "Applied check definition" : "Applied check definitions"}</p>
-          <h2 id="validation-ledger-heading" ref={heading} tabIndex={-1}>{title}</h2>
+          <h2 id={headingId} ref={heading} tabIndex={-1}>{title}</h2>
         </div>
         {ready ? <span>{group ? `${group.system_code} · ${group.checks.length} Checks`
           : `${groups.length} Groups · ${groups.reduce((total, item) => total + item.checks.length, 0)} Checks`}</span> : null}
@@ -84,7 +86,7 @@ export function ValidationLedger({
               <table aria-label={`${group.validation_group_name} Validation Checks`}>
                 <thead><tr>
                   {selection ? <th className="validation-selection-column">Select</th> : null}
-                  <th className="validation-name-column">Validation Check</th><th>Category</th><th>Severity</th><th>Assertion</th><th>Status</th><th>Details</th>
+                  <th className="validation-name-column">Validation Check</th><th>Category</th><th>Severity</th><th>Assertion</th><th>Details</th>
                 </tr></thead>
                 <tbody>{group.checks.map((item) => (
                   <tr key={item.validation_check_id}>
@@ -96,12 +98,12 @@ export function ValidationLedger({
                     <td><code>{item.validation_category_code}</code></td>
                     <td><SeverityBadge severity={item.validation_severity} /></td>
                     <td>{assertionLabel(item)}</td>
-                    <td><StateBadge value={group.is_locked ? "Group locked" : item.is_locked ? "Locked" : "Open"} tone="neutral" />
-                      <StateBadge value={item.is_active ? "Active" : "Inactive"} tone={item.is_active ? "success" : "neutral"} /></td>
-                    <td><Link search={{ layer: layer ?? "logical" }} className="text-action"
+                    <td>{onShowDetails ? <button className="text-action" type="button"
+                      aria-label={`Show details for ${item.validation_check_name}`}
+                      onClick={() => onShowDetails(group.validation_group_id, item.validation_check_id)}>Show details</button> : <Link search={{ layer: layer ?? "logical" }} className="text-action"
                       to="/tenants/$tenantId/validation/models/$modelId/groups/$groupId/checks/$checkId"
                       params={{ ...params, groupId: String(group.validation_group_id), checkId: String(item.validation_check_id) }}
-                      aria-label={`Show details for ${item.validation_check_name}`}>Show details</Link></td>
+                      aria-label={`Show details for ${item.validation_check_name}`}>Show details</Link>}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -113,7 +115,7 @@ export function ValidationLedger({
       ) : (
         <div className="table-scroll validation-check-table-scroll">
           <table aria-label="Validation Groups">
-            <thead><tr>{selection ? <th className="validation-selection-column">Select</th> : null}<th className="validation-name-column">Group</th><th>System</th><th className="validation-count-column">Checks</th><th>Status</th><th>Details</th></tr></thead>
+            <thead><tr>{selection ? <th className="validation-selection-column">Select</th> : null}<th className="validation-name-column">Group</th><th>System</th><th className="validation-count-column">Checks</th><th>Details</th></tr></thead>
             <tbody>{groups.map((item) => (
               <tr key={item.validation_group_id}>
                 {selection ? <td className="validation-selection-column"><input type="checkbox" aria-label={`Select Validation Group ${item.validation_group_id}`}
@@ -122,7 +124,6 @@ export function ValidationLedger({
                 <td><span className="validation-check-name"><strong>{item.validation_group_name}</strong>{!item.modeled_entity_type ? <small>Shared across layers</small> : null}
                   <span>{item.validation_group_description ?? "No description provided."}</span></span></td>
                 <td>{item.system_code}</td><td>{item.checks.length}</td>
-                <td><GroupStatus group={item} /></td>
                 <td><Link search={{ layer: layer ?? "logical" }} className="text-action"
                   to="/tenants/$tenantId/validation/models/$modelId/groups/$groupId"
                   params={{ ...params, groupId: String(item.validation_group_id) }}
@@ -137,15 +138,16 @@ export function ValidationLedger({
 }
 
 function GroupStatus({ group }: { group: ValidationValidationGroup }) {
-  return <div className="validation-group-statuses" aria-label={`${group.validation_group_name} status`}>
-    <StateBadge value={group.is_locked ? "Locked" : "Open"} tone="neutral" />
-    <StateBadge value={group.is_active ? "Active" : "Inactive"} tone={group.is_active ? "success" : "neutral"} />
-    <StateBadge value={group.validation_group_is_current ? "Definition current" : "Definition stale"}
-      tone={group.validation_group_is_current ? "success" : "stale"} />
-    <StateBadge value={group.mapping_context_is_current ? "Mapping current" : "Mapping stale"}
-      tone={group.mapping_context_is_current ? "success" : "stale"} />
-    <StateBadge {...codeContextBadge(group)} />
-  </div>;
+  return <details className="validation-context-details">
+    <summary>Definition context</summary>
+    <dl className="validation-context-facts" aria-label={`${group.validation_group_name} status`}>
+      <div><dt>Definition</dt><dd>{group.validation_group_is_current ? "Current" : "Stale"}</dd></div>
+      <div><dt>Mapping</dt><dd>{group.mapping_context_is_current ? "Current" : "Stale"}</dd></div>
+      <div><dt>Code</dt><dd>{group.code_context_is_current ? "Current" : "Stale"}</dd></div>
+      <div><dt>Availability</dt><dd>{group.is_active ? "Active" : "Inactive"}</dd></div>
+      <div><dt>Lock</dt><dd>{group.is_locked ? "Locked" : "Open"}</dd></div>
+    </dl>
+  </details>;
 }
 
 function StateBadge({ value, tone }: { value: string; tone: "success" | "neutral" | "stale" }) {
@@ -155,15 +157,6 @@ function StateBadge({ value, tone }: { value: string; tone: "success" | "neutral
 function SeverityBadge({ severity }: { severity: ValidationValidationCheck["validation_severity"] }) {
   const tone = severity === "blocking" ? "danger" : severity === "warning" ? "warning" : "neutral";
   return <span className={`status-badge is-${tone}`}>{humanize(severity)}</span>;
-}
-
-function codeContextBadge(group: ValidationValidationGroup): {
-  value: string;
-  tone: "success" | "neutral" | "stale";
-} {
-  return group.code_context_is_current
-    ? { value: "Code current", tone: "success" }
-    : { value: "Code stale", tone: "stale" };
 }
 
 function CheckDetail({ check }: { check: ValidationValidationCheck }) {

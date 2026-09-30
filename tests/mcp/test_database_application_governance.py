@@ -22,8 +22,6 @@ APPLICATION_TABLES = (
     "prompt_assignment",
     "prompt_template",
     "prompt_template_version",
-    "sql_generation_guide",
-    "sql_generation_guide_version",
     "workflow_run",
     "workflow_run_entity_selection",
     "workflow_run_mapping_target_selection",
@@ -95,7 +93,7 @@ APPLICATION_WEB_FUNCTIONS = (
     (
         "create_output_template",
         "uuid, uuid, character varying, character varying, character varying, "
-        "character varying, character varying, jsonb",
+        "character varying, character varying, jsonb, character varying",
     ),
     (
         "create_workflow_run",
@@ -103,7 +101,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "character varying, character varying, character varying, character varying, "
         "character varying, integer, integer, bigint[], character varying[], character varying, "
         "character varying, uuid, jsonb, character varying, character varying, "
-        "bigint, bigint, bigint, character varying, bigint, jsonb, jsonb, "
+        "bigint, bigint, bigint, character varying, jsonb, jsonb, "
         "character varying, bigint[]",
     ),
     (
@@ -179,15 +177,6 @@ APPLICATION_WEB_FUNCTIONS = (
         "timestamp with time zone, text[]",
     ),
     (
-        "save_sql_generation_guide",
-        "uuid, uuid, character varying, bigint, character varying, character varying, "
-        "character varying, boolean, boolean, timestamp with time zone",
-    ),
-    (
-        "save_sql_generation_guide_draft",
-        "uuid, uuid, character varying, bigint, bigint, text, timestamp with time zone",
-    ),
-    (
         "set_principal_last_tenant",
         "uuid, uuid, character varying, bigint",
     ),
@@ -201,10 +190,6 @@ APPLICATION_WEB_FUNCTIONS = (
     ),
     (
         "transition_prompt_template_version",
-        "uuid, uuid, character varying, bigint, character varying, character varying",
-    ),
-    (
-        "transition_sql_generation_guide_version",
         "uuid, uuid, character varying, bigint, character varying, character varying",
     ),
     (
@@ -254,7 +239,7 @@ def test_application_web_function_allowlist_is_exact_and_verified(
             """
         ).fetchall()
 
-    assert len(APPLICATION_WEB_FUNCTIONS) == 43
+    assert len(APPLICATION_WEB_FUNCTIONS) == 40
     assert [(row["function_name"], row["argument_types"]) for row in rows] == list(
         APPLICATION_WEB_FUNCTIONS
     )
@@ -617,7 +602,8 @@ def test_application_tables_are_read_only_and_sequences_are_unavailable_to_runti
     }
     assert not any(row["web_can_mutate"] for row in table_rows)
     assert [row["table_name"] for row in table_rows if row["mcp_can_access"]] == [
-        "output_template"
+        "output_template",
+        "output_template_field",
     ]
     assert sequence_rows
     assert not any(row["web_can_use"] or row["mcp_can_use"] for row in sequence_rows)

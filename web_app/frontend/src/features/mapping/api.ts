@@ -24,6 +24,7 @@ export interface OutputTemplateSummary {
   output_template_name: string;
   output_template_description: string | null;
   output_template_target_type: OutputTemplateTargetType;
+  output_template_modeled_entity_type: MappingEntityType | null;
   output_template_schema_digest: string;
   output_template_schema_digest_is_valid: boolean;
   is_active: boolean;
@@ -94,6 +95,7 @@ export interface MappingOutputTemplateProvenance {
   output_template_code: string;
   output_template_name: string;
   output_template_target_type: OutputTemplateTargetType;
+  output_template_modeled_entity_type: MappingEntityType | null;
   output_template_schema_digest: string;
   is_active: boolean;
 }
@@ -170,6 +172,7 @@ export interface MappingTransport {
     targetType: OutputTemplateTargetType,
     pageSize?: number,
     cursor?: string,
+    entityType?: MappingEntityType,
   ) => Promise<OutputTemplatePage>;
 }
 
@@ -215,12 +218,13 @@ export function createMappingApi(request: HttpRequest): MappingTransport {
       request<MappingAttributeDetail>(
         `/api/v1/tenants/${tenantId}/models/${modelId}/mapping/attributes/${mappingAttributeId}`,
       ),
-    listOutputTemplates: (tenantId, targetType, pageSize = 200, cursor) => {
+    listOutputTemplates: (tenantId, targetType, pageSize = 200, cursor, entityType) => {
       const query = new URLSearchParams({
         target_type: targetType,
         active: "true",
         page_size: String(pageSize),
       });
+      if (entityType) query.set("entity_type", entityType);
       if (cursor) query.set("cursor", cursor);
       return request<OutputTemplatePage>(
         `/api/v1/tenants/${tenantId}/output-templates?${query}`,
@@ -245,8 +249,8 @@ export const mappingQueryKeys = {
   runTargets: (tenantId: number, modelId: number, entityType: MappingEntityType) => (
     ["mapping-run-targets", tenantId, modelId, entityType] as const
   ),
-  outputTemplates: (tenantId: number, modelId: number) => (
-    ["mapping-output-templates", tenantId, modelId] as const
+  outputTemplates: (tenantId: number, modelId: number, entityType: MappingEntityType) => (
+    ["mapping-output-templates", tenantId, modelId, entityType] as const
   ),
 };
 
@@ -258,10 +262,11 @@ export interface ActiveMappingOutputTemplates {
 export async function loadActiveMappingOutputTemplates(
   api: Pick<MappingTransport, "listOutputTemplates">,
   tenantId: number,
+  entityType: MappingEntityType,
 ): Promise<ActiveMappingOutputTemplates> {
   const [mappingObjects, mappingAttributes] = await Promise.all([
-    loadOutputTemplatesForTargetType(api, tenantId, "mapping_object"),
-    loadOutputTemplatesForTargetType(api, tenantId, "mapping_attribute"),
+    loadOutputTemplatesForTargetType(api, tenantId, "mapping_object", entityType),
+    loadOutputTemplatesForTargetType(api, tenantId, "mapping_attribute", entityType),
   ]);
   return { mappingObjects, mappingAttributes };
 }
@@ -270,13 +275,14 @@ async function loadOutputTemplatesForTargetType(
   api: Pick<MappingTransport, "listOutputTemplates">,
   tenantId: number,
   targetType: OutputTemplateTargetType,
+  entityType: MappingEntityType,
 ): Promise<OutputTemplateSummary[]> {
   const items: OutputTemplateSummary[] = [];
   const seenCursors = new Set<string>();
   let cursor: string | undefined;
 
   for (;;) {
-    const response = await api.listOutputTemplates(tenantId, targetType, 200, cursor);
+    const response = await api.listOutputTemplates(tenantId, targetType, 200, cursor, entityType);
     items.push(...response.items);
     if (!response.next_cursor) return items;
     if (seenCursors.has(response.next_cursor)) {

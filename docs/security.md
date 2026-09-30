@@ -1,242 +1,77 @@
-# Authentication, authorization, and Tenant Locks
+# Security boundaries
 
-This is the current security contract for the MCP scaffold. PostgreSQL and the
-numbered greenfield SQL are authoritative when prose and older planning material
-disagree.
+Implementation sources: MCP `adapters/auth/`, `tools/`, `domain/databricks_sql.py`, backend
+`dependencies.py` and identity adapters, plus `database/03_security.sql`, runtime
+privileges and governed write functions. Code and SQL own exact schemas and limits.
 
-## Public surface
+## Identity and authorization
 
-- `/health/live` is anonymous and process-only.
-- `/health/ready` is anonymous and returns bounded database posture only.
-- `/.well-known/oauth-protected-resource` and its `/mcp` path variant are
-  anonymous, cacheable, non-secret OAuth discovery documents.
-- `/mcp` uses stateless Streamable HTTP.
-- `create_metadata_snapshot` authorizes Tenant Read before returning a 15-minute,
-  read-only SAS for the exact private Blob.
-- Metadata discovery and Snapshot tools are read-only.
-- `execute_databricks_sql` is the sole SQL exception. It derives an authorized
-  source Tenant's GDS Connection for one requested Environment. It accepts reads,
-  requires fully qualified physical relations, permits unqualified temporary
-  views/tables, and rejects all DML and persistent DDL.
-- Five governed Tenant Lock tools are registered: check, acquire, renew, release,
-  and explicit override.
+MCP production trusts the Azure Easy Auth `X-MS-CLIENT-PRINCIPAL` envelope.
+Human tokens require `idtyp=user` and `workbench.access`; workloads require
+`idtyp=app`, `workbench.workflow` and an active registered Super Admin Principal.
+Exactly one Entra Tenant/Object identity maps to an active internal Principal.
 
-## Authentication
+The web App uses Databricks OAuth and App `CAN_USE`. It resolves the forwarded
+user token through Databricks `current_user.me()` and an active SCIM user with
+an Entra object UUID. Browser-supplied actor, role or ownership fields confer no
+authority. Authentication is separate from PostgreSQL authorization.
 
-Azure App Service Easy Auth validates token signature, issuer, audience, and
-lifetime. Application code accepts only its bounded `X-MS-CLIENT-PRINCIPAL`
-envelope.
+| Policy | Minimum capability | Owned Tenant Lock |
+| --- | --- | --- |
+| Tenant Read | Viewer or global-Tenant visibility | No |
+| Tenant Metadata Write | Developer | Yes |
+| Tenant Model Write | Architect | Yes |
+| Tenant Lock Manage | Developer | No existing lock required |
+| Super Admin Only | Explicit Super Admin | Still required by ordinary write operations |
 
-Human tokens require:
+Global visibility grants reads only. Private/inaccessible tenants have indistinguishable
+not-found behavior. Authorization, lock ownership and revision checks belong in the
+same transaction as writes. Runtime roles cannot perform arbitrary DDL or bypass
+function-owned state transitions. Preserve fixed search paths and least privilege.
 
-- exactly one `tid` and `oid`;
-- `idtyp=user`; and
-- delegated scope `workbench.access`.
+## Locks, claims and retries
 
-Workload tokens require:
+Tenant Lock ownership is the exact Principal, not its role or human/workload kind.
+Acquire requires a free lock; owners renew or release their own lock. Explicit,
+reasoned override releases another owner's lock without acquiring a replacement.
+Database time determines expiration. Super Admin does not bypass another owner.
+Public conflict details expose only bounded display/timing context.
 
-- exactly one `tid` and `oid`;
-- `idtyp=app`; and
-- application permission `workbench.workflow` in the `roles` claim.
+Workflow Run exclusivity and worker claims are separate from Tenant Locks. Final
+writes recheck the live claim and frozen revision. Tokens remain internal; only
+safe digests and bounded state enter storage/read models. Idempotent retries reuse
+the original operation identity rather than creating duplicate work.
 
-Middleware resolves this envelope once and attaches the resulting request
-Principal to trusted request state. Tools do not trust caller-supplied Principal,
-Tenant Role, actor kind, ownership, or policy values.
+## Local mode and external boundaries
 
-The Entra Tenant/Object pair must map to one active
-`security.entra_principal_identity` and active `security.principal`. A workload
-Principal must also have `is_super_admin=true`; merely obtaining a valid token is
-not enough.
+Local authentication is allowed only under explicit local settings and loopback
+access. It does not weaken locks, revisions, validation or audit. Tests and the local
+runner use fixture-created disposable PostgreSQL only. Production uses TLS and
+separate runtime logins; see the deployment runbooks.
 
-### VS Code Stage Runner
+Stage Runner is a separate MCP client using VS Code's Microsoft authentication
+provider. Restricted Mode disables it. Credentials remain in process/request headers,
+never manifests, child processes, agent context or receipts. The local profile accepts
+only loopback MCP. Any nonproduction profile must be explicitly selected.
 
-The Marketplace-signed GDS Stage Runner extension is a separate MCP client. It does not reuse or receive VS Code's private MCP connection token. In production it reads the exact protected-resource metadata, requires the pinned MCP resource/scope and tenant-specific Entra authority, then requests that challenge through VS Code's built-in `microsoft` authentication provider. The user's GitHub account is unrelated; the selected Microsoft account must map to an active internal GDS Principal.
+`execute_databricks_sql` is the sole arbitrary-SQL exception: authorized reads and
+unqualified temporary views/tables only, with qualified physical references and bounded
+results. It rejects DML, persistent DDL and secret-returning operations before connecting.
+Connection configuration is resolved server-side and never returned. The SQL validator
+and tool handler define exact statement/row limits.
 
-VS Code Restricted Mode disables the Stage Runner. It reads manifests and payloads only from a
-trusted active GDS workspace.
+Snapshots are immutable private archives with short-lived read-only download URLs.
+Authorize before upload/download handoff; never log the signed URL or export raw
+physical rows. Stage fragments reassemble before validation and Apply.
 
-The short-lived access token remains only in the extension process and request header. It is never sent to an agent or child process and never written to files, settings, environment variables, command arguments, logs, receipts, or audit metadata. A legitimate 401 permits one VS Code-managed reauthentication attempt. No extension setting accepts a token, secret, tenant ID, client ID, arbitrary production URL, or arbitrary tool name.
+## Audit and safe errors
 
-The production profile requires authentication. The local profile permits only loopback HTTP `/mcp`. The explicitly selected `azureLocalTest` profile exists only for the temporary unauthenticated Azure test deployment; production Easy Auth rejects that profile. Profile selection is explicit and never inferred from server behavior.
+Never log credentials, secret references, identity tokens, connection strings, raw
+prompts, physical rows, staged records, tool/model output or connector exception text.
+Audit stores only bounded server-derived identifiers, counts, policy and safe outcomes.
+MCP audit is append-only and unavailable audit persistence fails the call safely.
 
-## Local development mode
-
-`GDS_ENVIRONMENT=local` derives development authentication. It creates the
-synthetic request actor `Local Developer`, skips Entra and Tenant role/visibility
-checks, and permits all active Tenants to be listed. It does not change database
-Tenant Lock, revision, audit, or business invariants. Production derives Easy
-Auth and HTTPS, derives the host allowlist from `GDS_MCP_PUBLIC_URL`, and requires
-PostgreSQL TLS. Use `sslmode=verify-full` for certificate and hostname verification.
-An explicit `sslmode=require` is supported while database CA trust is configured;
-it requires encryption but skips hostname verification and may skip certificate
-verification. This option does not change Easy Auth, HTTPS, Principal authorization,
-or Tenant Lock checks. Missing TLS mode and modes that permit plaintext are rejected.
-
-## Tool policies
-
-Every tool declares one policy beside its handler. Shared authorization and the
-database function interpret it.
-
-| Tool policy | Minimum authority | Active owned Tenant Lock |
-|---|---|---|
-| `tenant_read` | Viewer, or implicit Viewer on a global Tenant | No |
-| `tenant_metadata_write` | Developer | Yes |
-| `tenant_model_write` | Architect | Yes |
-| `tenant_lock_manage` | Developer | No |
-| `super_admin_only` | Super Admin | No unless the operation separately writes Tenant state |
-
-Tenant Roles are cumulative: Viewer < Developer < Architect < Tenant Admin.
-Tenant Admin may perform every Tenant-scoped operation. Super Admin is a global
-Principal flag, not a Tenant Role. It bypasses Tenant visibility/membership and
-role requirements, but never Tenant Lock ownership, revisions, audit, history,
-idempotency, or business invariants.
-
-Global visibility grants read access only. Private reads require an active,
-unexpired Viewer-or-higher access row. Missing and inaccessible private Tenants
-must produce the same `tenant_not_found` response. `list_tenants` simply omits
-inaccessible private Tenants.
-
-## Tenant Lock behavior
-
-One active lock may exist per Tenant. Ownership is the exact internal Principal;
-human versus workload type does not affect ownership.
-
-- Ordinary metadata and Model writes require an unexpired lock owned by the
-  current Principal.
-- A different owner's lock blocks humans, workloads, Tenant Admins, and Super
-  Admins alike.
-- Lock management requires Developer, Architect, Tenant Admin, or Super Admin.
-- Acquire succeeds only when the Tenant is unlocked. An existing lock, including
-  the caller's own lock, fails; the owner must use renew instead.
-- Only the owner may renew or release.
-- Override is explicit, requires a nonblank reason, and force-releases only a
-  different owner's active lock. It records `force_unlocked`, does not acquire a
-  replacement, and does not remove the prior owner's Tenant access.
-- Default duration is 60 minutes; callers may request 1 through 240 minutes.
-- PostgreSQL `CURRENT_TIMESTAMP` owns acquired and expiry time.
-- Stale locks do not authorize or block writes. Interaction paths record
-  `expired`, and the App Service invokes bounded `expire_tenant_locks` batches at
-  startup and every 60 seconds.
-
-The lock event stream records `acquired`, `renewed`, `released`,
-`force_unlocked`, and `expired`. Expiry has no acting Principal. Override records
-both the displaced owner and acting Principal.
-
-Lock conflict responses may disclose only the owner's normalized display name
-and bounded lock timing/purpose. They never disclose email, Entra IDs, bearer
-tokens, internal lock identifiers, or internal Principal IDs.
-
-## Transaction and database boundary
-
-`security.authorize_tenant_operation` is a fixed-search-path,
-`SECURITY DEFINER` function. It resolves the exact active Entra identity,
-Principal, Tenant, effective role, policy, and active Tenant Lock. Future write
-tools must call it in the same database transaction as their state change.
-
-Governed lock functions are:
-
-- `security.check_tenant_lock`
-- `security.acquire_tenant_lock`
-- `security.renew_tenant_lock`
-- `security.release_tenant_lock`
-- `security.override_tenant_lock`
-- `security.expire_tenant_locks`
-
-Every runtime transaction locally activates the `NOINHERIT` role
-`gds_app_write`. It cannot run
-DDL, delete product state, modify Principal/Tenant-access rows, or directly
-mutate Tenant Lock or Model Input Scope tables. Web-only Model agent defaults and the
-entire `application` schema are outside its write surface. It receives only
-explicit function execution and allowlisted table/column privileges. `PUBLIC`
-receives no release-schema rights.
-
-The web runtime also has no direct Model, Model Input Scope, or
-revision-transaction DML. Model creation, header changes, and archival use
-fixed-search-path `application` functions. Model Input Scope and all authored
-Model sections change only through the governed Model Change Set path. Those
-operations derive Model ownership, require the active actor's Tenant Lock, and
-enforce revision fencing.
-
-Web Profiling execution uses two additional fixed-search-path,
-`SECURITY DEFINER` functions. Both reauthorize the immutable identity triple,
-bound running Profiling Run, owning Tenant, active Model revision, and
-caller-owned Tenant Lock. Execution metadata resolves Object ownership and
-catalog only through the Object's required `source_tenant_id`.
-Credential reads require the exact active selected GDS Connection and active
-Environment. Any incomplete credential set returns one fixed safe failure with
-all values null. The browser, MCP role, audit logs, and direct web table grants
-never receive `core.connection_value` access.
-
-Workflow Grant tables, procedures, privileges, and grant-bound run summaries do
-not exist. Registered workloads authenticate and authorize directly as active
-service Principals.
-
-`mcp.get_databricks_sql_connection_values(bigint,text)` is a fixed-search-path,
-`SECURITY DEFINER` function and the only runtime path to the three Databricks
-connection values. It derives the active source Tenant's active GDS Connection
-and returns its complete host, HTTP path, and token for only the requested active
-Environment.
-The runtime role still has no table-wide `SELECT` on `core.connection_value`.
-
-## MCP tool-call log
-
-`mcp.tool_call_log` stores one row after each completed MCP tool call by
-an active server-resolved Principal.
-It records the server-generated call ID, server-resolved Principal snapshot,
-Actor Kind, Tool Policy, optional Tenant, safe input metadata, safe outcome,
-safe failure code, and one PostgreSQL timestamp.
-
-The table is append-only. The runtime role may insert but cannot select, update,
-delete, or truncate it. A database trigger also rejects update, delete, and
-truncate attempts by more privileged callers. Input metadata must be a JSON
-object. PostgreSQL applies no application-specific byte ceiling; normal network
-tool calls remain subject to the MCP server's 2 MiB request-body limit. That
-leaves JSON-RPC and base64 envelope headroom for a decoded 1 MiB Model Stage
-fragment. Input metadata never contains signed cursors, lock purpose/reason
-text, staged physical records, Model payload-fragment bodies, prompts, tool
-output, bearer tokens, Databricks connection values, or exception text. Callers
-must never place credentials in submitted SQL.
-
-Central MCP middleware performs the append after the tool returns. Each tool
-registers its server-owned Tool Policy, exact safe argument names to retain, and
-a summarizer for prohibited payloads beside its handler. Unregistered and
-secret-bearing fields are dropped. `list_tenants` retains schema version and page
-size and records only whether a cursor was supplied; it never records the cursor.
-`create_metadata_snapshot` retains schema version and requested Tenant ID. The
-middleware checks only MCP's `isError` flag and never reads or stores tool output.
-Tenant Lock tools record only Tenant ID, schema version, bounded duration, and
-whether optional purpose or required override reason was supplied. Purpose and
-override reason text are not copied into the MCP tool-call log.
-Metadata Change Set tools retain their safe identifiers, dataset selection, and
-expected revision. Stage records only dataset/record counts; complete staged
-physical records are not copied into the tool-call log. Stage Batch tools retain
-only safe Batch/dataset identifiers, payload mode, chunk index, and counts;
-record chunks, decoded or base64 payload-fragment bodies, and hashes are not
-logged.
-Change Set fingerprint tools return only complete dataset names, counts,
-SHA-256 values, revision, and one aggregate fingerprint; they never return
-pending records. Validation responses retain the full error count but expose at
-most 25 bounded examples and bounded grouped/action summaries. Older stored
-validation outcomes are bounded again when read.
-`execute_databricks_sql` records schema version, source Connection ID, Environment
-code, submitted-SQL character count, and a SHA-256 digest. Submitted SQL is never
-copied into the audit record or application logs. Returned rows, host, HTTP path,
-token, and connector exception text are never logged.
-
-Authentication rejected before MCP execution and identities that do not map to
-an active internal Principal cannot produce a Principal-owned tool-call row.
-Calls by active Principals fail safely if the required audit insert is
-unavailable.
-
-## Safe failures
-
-Stable public codes include `authentication_required`, `authorization_denied`,
-`tenant_not_found`, `tenant_lock_required`, `tenant_locked`, `invalid_request`,
-`payload_too_large`, and `dependency_unavailable`. Unexpected exceptions become a bounded
-`internal_error`; raw SQL, connection values, claims, and exception text are not
-returned.
-
-Databricks failures use stable codes for a missing global Connection,
-missing/ambiguous/invalid connection configuration, Warehouse connection
-failure, rejected statement index, or oversized bounded result. No underlying
-connector message is returned.
+Anonymous liveness/readiness and OAuth discovery reveal no configuration or identity.
+Protected routes return stable bounded error codes; inaccessible state must not be
+revealed through diagnostics. Keep model payload tracing disabled. Apply authorizes
+storage changes, never automatic deployment or production execution.

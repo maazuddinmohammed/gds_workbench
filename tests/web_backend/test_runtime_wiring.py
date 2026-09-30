@@ -72,7 +72,6 @@ def test_runtime_factory_owns_the_database_lifecycle() -> None:
     assert "/api/v1/tenants/{tenant_id}/metadata/datasets" in app.openapi()["paths"]
     assert "/api/v1/tenants/{tenant_id}/metadata-change-sets" in app.openapi()["paths"]
     assert "/api/v1/tenants/{tenant_id}/prompts/stages" in app.openapi()["paths"]
-    assert "/api/v1/tenants/{tenant_id}/sql-generation-guides" in app.openapi()["paths"]
     assert "/api/v1/tenants/{tenant_id}/output-templates" in app.openapi()["paths"]
     assert "/api/v1/tenants/{tenant_id}/models/{model_id}/profiling" in app.openapi()["paths"]
     assert (

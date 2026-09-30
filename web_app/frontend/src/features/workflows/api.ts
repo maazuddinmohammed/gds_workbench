@@ -94,7 +94,6 @@ export interface CreateWorkflowRunCommand {
   mapping_attribute_output_template_id?: number | null;
   code_generation_file_layout?: "combined" | "per_system" | null;
   code_generation_coverage_mode?: "selected_targets" | "all_eligible_targets" | null;
-  sql_generation_guide_version_id?: number | null;
 }
 
 export type WorkflowRunFilterState = WorkflowRunState | "";

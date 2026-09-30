@@ -72,7 +72,7 @@ function ConceptualObjectView({
   object: ConceptualObjectDetail;
 }) {
   return (
-    <article className="workflow-detail-page conceptual-detail-page page-enter">
+    <article className="workflow-detail-page conceptual-detail-page modeled-detail-page page-enter">
       <DetailHeader
         tenantId={tenantId}
         modelId={modelId}
@@ -83,21 +83,21 @@ function ConceptualObjectView({
       />
       <section className="detail-section detail-primary" aria-labelledby="conceptual-object-overview">
         <header><h2 id="conceptual-object-overview">Object definition</h2></header>
-        <p className="detail-prose is-prominent">{object.conceptual_object_definition}</p>
-        <dl className="detail-fact-grid">
-          <Fact label="Type" value={humanize(object.conceptual_object_type)} />
+        <dl className="modeled-detail-fields">
+          <div className="is-definition"><dt>Definition</dt><dd>{object.conceptual_object_definition}</dd></div>
           <Fact label="Grain" value={object.conceptual_object_grain} />
+          <Fact label="Type" value={humanize(object.conceptual_object_type)} />
+          {object.conceptual_object_aliases.length ? (
+            <div aria-label="Object aliases">
+              <dt>Aliases</dt>
+              <dd><div className="chip-list">
+                {object.conceptual_object_aliases.map((alias) => <span key={alias}>{alias}</span>)}
+              </div></dd>
+            </div>
+          ) : null}
           <Fact label="Confidence" value={humanize(object.conceptual_object_confidence)} />
           <Fact label="Updated" value={formatDateTime(object.updated_at)} />
         </dl>
-        {object.conceptual_object_aliases.length ? (
-          <div className="detail-tag-group" aria-label="Object aliases">
-            <small>Aliases</small>
-            <div className="chip-list">
-              {object.conceptual_object_aliases.map((alias) => <span key={alias}>{alias}</span>)}
-            </div>
-          </div>
-        ) : null}
       </section>
       <SupportEvidence supports={object.supports} />
     </article>
@@ -114,7 +114,7 @@ function ConceptualRelationshipView({
   relationship: ConceptualRelationshipDetail;
 }) {
   return (
-    <article className="workflow-detail-page conceptual-detail-page page-enter">
+    <article className="workflow-detail-page conceptual-detail-page modeled-detail-page page-enter">
       <DetailHeader
         tenantId={tenantId}
         modelId={modelId}
@@ -125,21 +125,10 @@ function ConceptualRelationshipView({
       />
       <section className="detail-section detail-primary" aria-labelledby="conceptual-relationship-overview">
         <header><h2 id="conceptual-relationship-overview">Relationship definition</h2></header>
-        <p className="detail-prose is-prominent">
-          {relationship.conceptual_relationship_definition}
-        </p>
-        <div className="conceptual-endpoints" aria-label="Relationship endpoints">
-          <section>
-            <small>From</small>
-            <strong>{relationship.from_conceptual_object_name}</strong>
-          </section>
-          <span aria-hidden="true">→</span>
-          <section>
-            <small>To</small>
-            <strong>{relationship.to_conceptual_object_name}</strong>
-          </section>
-        </div>
-        <dl className="detail-fact-grid">
+        <dl className="modeled-detail-fields">
+          <div className="is-definition"><dt>Definition</dt><dd>{relationship.conceptual_relationship_definition}</dd></div>
+          <Fact label="From Object" value={relationship.from_conceptual_object_name} />
+          <Fact label="To Object" value={relationship.to_conceptual_object_name} />
           <Fact label="Type" value={humanize(relationship.conceptual_relationship_type)} />
           <Fact label="Cardinality" value={humanize(relationship.conceptual_relationship_cardinality)} />
           <Fact label="Confidence" value={humanize(relationship.conceptual_relationship_confidence)} />
@@ -148,7 +137,7 @@ function ConceptualRelationshipView({
       </section>
       <section className="detail-section" aria-labelledby="relationship-reasoning-heading">
         <header><h2 id="relationship-reasoning-heading">Reasoning</h2></header>
-        <dl className="conceptual-reasoning">
+        <dl className="modeled-detail-fields">
           <Fact label="Relationship basis" value={relationship.conceptual_relationship_basis} />
           <Fact
             label="Cardinality basis"
@@ -215,10 +204,10 @@ function SupportEvidence({ supports }: { supports: ConceptualSupport[] }) {
       {supports.length === 0 ? (
         <p className="detail-empty">No support evidence is recorded.</p>
       ) : (
-        <div className="workflow-table-scroll table-scroll">
+        <div className="workflow-table-scroll table-scroll" role="region" aria-label="Scrollable Support evidence" tabIndex={0}>
           <table aria-label="Support evidence">
             <thead>
-              <tr><th>Source</th><th>Rationale</th><th>Confidence</th><th>Status</th><th>Details</th></tr>
+              <tr><th>Schema</th><th>Object / assertion</th><th>Rationale</th><th>Role</th><th>Confidence</th><th>Status</th><th>Details</th></tr>
             </thead>
             <tbody>
               {supports.map((support) => {
@@ -230,13 +219,15 @@ function SupportEvidence({ supports }: { supports: ConceptualSupport[] }) {
                 return (
                   <Fragment key={support.conceptual_support_id}>
                     <tr aria-label={`Support ${support.conceptual_support_id}`}>
+                      <td>{support.support_source_type === "object" ? support.source_object.object_schema : "—"}</td>
                       <td>
-                        <strong>{name}</strong>
+                        <strong>{support.support_source_type === "object" ? support.source_object.object_name : name}</strong>
                         <small className="modeled-source-role">
                           {support.support_source_type === "object" ? "Physical Object" : "Modeling Assertion"}
                         </small>
                       </td>
                       <td className="modeled-source-rationale">{support.support_reason}</td>
+                      <td>{support.support_role ? humanize(support.support_role) : "Not assigned"}</td>
                       <td>
                         <span className={`status-badge confidence-${support.support_confidence}`}>
                           {humanize(support.support_confidence)}
@@ -260,9 +251,8 @@ function SupportEvidence({ supports }: { supports: ConceptualSupport[] }) {
                       </td>
                     </tr>
                     <tr id={detailId} aria-label={`Details for ${name}`} hidden={!expanded} className="conceptual-support-detail">
-                      <td colSpan={5}>
-                        <dl className="detail-fact-grid">
-                          <Fact label="Role" value={support.support_role ?? "Not assigned"} />
+                      <td colSpan={7}>
+                        <dl className="modeled-detail-fields">
                           {support.support_reason_detail ? <Fact label="Reason detail" value={support.support_reason_detail} /> : null}
                           {support.support_source_type === "object" ? (
                             <>

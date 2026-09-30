@@ -32,7 +32,7 @@ The field is implemented in fresh-install SQL, backend records/Apply, Snapshot s
 
 The field belongs to Process Group. Systems select groups; they do not carry this ordering. Groups at the same level and Zone phase pool their Processes by process_execution_order; see [execution behavior](process.md#execution-behavior). Metadata records this schedule; execution remains the orchestration framework's responsibility.
 
-Existing installations require the separately reviewed backend/database upgrade and operator review of historical group orders. Readiness rejects the old schema; refreshing a Snapshot cannot upgrade it. See the repository's `docs/atlas-backend-compatibility.md` for operator steps.
+Existing installations require the separately reviewed backend/database upgrade and operator review of historical group orders. Readiness rejects the old schema; refreshing a Snapshot cannot upgrade it. Fresh-install scripts are not an upgrade path; review any existing database transition separately.
 
 ## References and dependencies
 

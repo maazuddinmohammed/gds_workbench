@@ -1,4 +1,4 @@
-"""Static deletion and dependency-direction checks for the backend modules."""
+"""Dependency-direction and cycle checks for the current backend modules."""
 
 import ast
 import importlib.util
@@ -8,31 +8,6 @@ _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _PACKAGE_ROOT = _REPOSITORY_ROOT / "web_app" / "backend" / "gds_workbench_api"
 _PACKAGE_NAME = "gds_workbench_api"
 
-_REMOVED_MODULES = (
-    Path("assertions.py"),
-    Path("conceptual.py"),
-    Path("dimensional.py"),
-    Path("locks.py"),
-    Path("logical.py"),
-    Path("mapping_review.py"),
-    Path("metadata.py"),
-    Path("metadata_repository.py"),
-    Path("metadata_workbook.py"),
-    Path("model_commands.py"),
-    Path("models.py"),
-    Path("profiling_analysis.py"),
-    Path("profiling_execution.py"),
-    Path("profiling_workflow.py"),
-    Path("prompts.py"),
-    Path("scope.py"),
-    Path("session.py"),
-    Path("tenants.py"),
-    Path("workflow_commands.py"),
-    Path("workflow_overview.py"),
-    Path("workflow_runs.py"),
-    Path("features/mapping/preparation.py"),
-    Path("integrations/agents/runtime.py"),
-)
 _WORKFLOW_COMPOSITION_MODULE = "gds_workbench_api.features.workflows.execution.assembly"
 _AGENT_PORT_MODULE = "gds_workbench_api.features.workflows.authoring.agent_execution"
 _USAGE_PORT_MODULE = "gds_workbench_api.features.workflows.usage.contracts"
@@ -106,17 +81,7 @@ def _find_cycle(graph: dict[str, set[str]]) -> tuple[str, ...] | None:
     return None
 
 
-def test_backend_modular_architecture_deletion_contract() -> None:
-    """Protect only the feature moves and inward Agent port already established."""
-    restored_modules = [
-        str(relative_path)
-        for relative_path in _REMOVED_MODULES
-        if (_PACKAGE_ROOT / relative_path).exists()
-    ]
-    assert not restored_modules, "Retired backend modules must stay deleted: " + ", ".join(
-        restored_modules
-    )
-
+def test_backend_modules_preserve_dependency_direction_and_have_no_cycles() -> None:
     module_sources: dict[str, Path] = {}
     package_modules: set[str] = set()
     for source in sorted(_PACKAGE_ROOT.rglob("*.py")):

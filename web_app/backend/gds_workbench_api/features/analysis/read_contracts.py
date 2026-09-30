@@ -62,6 +62,13 @@ class AnalysisFindingSummary(ReviewContract):
     inferred_cardinality: InferredCardinality = "unknown"
     observed_cardinality: Cardinality | None = None
     cardinality_mismatch: bool = False
+    from_row_count: int | None = Field(default=None, ge=0)
+    to_row_count: int | None = Field(default=None, ge=0)
+    # Validation counts unmatched distinct non-null values, not physical rows.
+    source_missing_target_count: int | None = Field(default=None, ge=0)
+    unused_target_count: int | None = Field(default=None, ge=0)
+    source_missing_target_percent: float | None = Field(default=None, ge=0, le=100)
+    unused_target_percent: float | None = Field(default=None, ge=0, le=100)
     status: AnalysisStatus
     is_locked: bool
     updated_at: datetime

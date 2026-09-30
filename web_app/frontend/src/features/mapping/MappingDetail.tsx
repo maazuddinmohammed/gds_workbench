@@ -79,14 +79,14 @@ function MappingObjectDetailView({
         tenantId={tenantId}
         modelId={modelId}
         layer={detail.target.entity_type === "logical_entity" ? "logical" : "dimensional"}
-        eyebrow="Entity mapping"
+        eyebrow={detail.target.entity_type === "logical_entity" ? "Logical entity" : "Dimensional entity"}
         title={detail.target.entity_name}
         status={detail.status}
         locked={detail.is_locked}
         headingRef={heading}
         context={<dl className="mapping-identity-strip">
-          <Fact label="System" value={detail.source_system.system_code} />
           <Fact label="Schema" value={detail.target.entity_schema_name} />
+          <Fact label="System" value={detail.source_system.system_code} />
         </dl>}
       />
       <section className="mapping-transformation-panel" aria-label="Entity transformation">
@@ -198,8 +198,7 @@ function DetailHeader({
   context?: ReactNode;
 }) {
   return (
-    <header className="workflow-detail-header">
-      <div>
+    <header className="workflow-detail-header mapping-detail-heading">
         <Link
           className="text-action"
           aria-label={parentObjectId ? "Back to Object Mapping" : "Back to Object mappings"}
@@ -212,13 +211,16 @@ function DetailHeader({
         >
           ← {parentObjectId ? "Back to Object Mapping" : "Back to Object mappings"}
         </Link>
-        <p className="eyebrow">{eyebrow}</p>
-        <h1 ref={headingRef} tabIndex={-1}>{title}</h1>
+      <div className="mapping-detail-identity">
+        <div className="mapping-detail-name">
+          <p className="eyebrow">{eyebrow}</p>
+          <h1 ref={headingRef} tabIndex={-1}>{title}</h1>
+        </div>
         {context}
-      </div>
-      <div className="detail-badge-stack">
+        <div className="detail-badge-stack">
         <span className={`status-badge ${statusTone(status)}`}>{humanize(status)}</span>
-        <span className="status-badge is-neutral">{locked ? "Locked" : "Open"}</span>
+          <span className="status-badge is-neutral">{locked ? "Locked" : "Open"}</span>
+        </div>
       </div>
     </header>
   );

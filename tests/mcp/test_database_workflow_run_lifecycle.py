@@ -79,7 +79,6 @@ CREATE_CODE_GENERATION_WORKFLOW_RUN_SQL = """
           NULL::BIGINT,
           NULL::BIGINT,
           %s::VARCHAR,
-          %s::BIGINT,
           p_selected_entity_ids => %s::BIGINT[]
       )
 """
@@ -111,8 +110,7 @@ CREATE_SYSTEM_SELECTION_WORKFLOW_RUN_SQL = """
           NULL::BIGINT,
           NULL::BIGINT,
           NULL::BIGINT,
-          NULL::VARCHAR,
-          NULL::BIGINT
+          NULL::VARCHAR
       )
 """
 
@@ -1090,15 +1088,11 @@ def _system_selection_parameters(
     )
 
 
-def _seed_published_sql_generation_guide(
+def _seed_code_generation_prompt(
     postgres_database: DisposablePostgres,
     context: WorkflowContext,
-    *,
-    is_default: bool = True,
-) -> tuple[int, int, str]:
+) -> None:
     suffix = uuid4().hex
-    content = f"Generate Databricks SQL only. {suffix}"
-    digest = sha256(content.encode()).hexdigest()
     with postgres_database.connect_owner() as connection:
         stage_rows = connection.execute(
             """
@@ -1229,107 +1223,6 @@ def _seed_published_sql_generation_guide(
                     context.principal_id,
                 ),
             )
-        existing_default = None
-        if is_default:
-            existing_default = connection.execute(
-                """
-                SELECT guide.sql_generation_guide_id,
-                       version.sql_generation_guide_version_id,
-                       version.sql_generation_guide_digest
-                  FROM application.sql_generation_guide AS guide
-                  LEFT JOIN LATERAL (
-                      SELECT candidate.sql_generation_guide_version_id,
-                             candidate.sql_generation_guide_digest
-                        FROM application.sql_generation_guide_version AS candidate
-                       WHERE candidate.sql_generation_guide_id =
-                             guide.sql_generation_guide_id
-                         AND candidate.sql_generation_guide_version_status =
-                             'published'
-                       ORDER BY candidate.sql_generation_guide_version_number DESC
-                       LIMIT 1
-                  ) AS version ON TRUE
-                 WHERE guide.is_active
-                   AND guide.is_default
-                """
-            ).fetchone()
-            if (
-                existing_default is not None
-                and existing_default["sql_generation_guide_version_id"] is not None
-            ):
-                return (
-                    existing_default["sql_generation_guide_id"],
-                    existing_default["sql_generation_guide_version_id"],
-                    existing_default["sql_generation_guide_digest"],
-                )
-
-        if existing_default is None:
-            guide_id = require_row(
-                connection.execute(
-                    """
-                INSERT INTO application.sql_generation_guide (
-                    sql_generation_guide_code,
-                    sql_generation_guide_name,
-                    is_default,
-                    created_by_principal_id,
-                    updated_by_principal_id
-                ) VALUES (%s, %s, %s, %s, %s)
-                RETURNING sql_generation_guide_id
-                """,
-                    (
-                        f"code_generation_{suffix}",
-                        f"Code Generation {suffix}",
-                        is_default,
-                        context.principal_id,
-                        context.principal_id,
-                    ),
-                ).fetchone()
-            )["sql_generation_guide_id"]
-        else:
-            guide_id = existing_default["sql_generation_guide_id"]
-        version_number = require_row(
-            connection.execute(
-                """
-                SELECT coalesce(
-                           max(sql_generation_guide_version_number),
-                           0
-                       ) + 1 AS version_number
-                  FROM application.sql_generation_guide_version
-                 WHERE sql_generation_guide_id = %s
-                """,
-                (guide_id,),
-            ).fetchone()
-        )["version_number"]
-        version_id = require_row(
-            connection.execute(
-                """
-            INSERT INTO application.sql_generation_guide_version (
-                sql_generation_guide_id,
-                sql_generation_guide_version_number,
-                sql_generation_guide_content,
-                sql_generation_guide_digest,
-                sql_generation_guide_version_status,
-                created_by_principal_id,
-                updated_by_principal_id,
-                published_time,
-                published_by_principal_id
-            ) VALUES (
-                %s, %s, %s, %s, 'published', %s, %s,
-                CURRENT_TIMESTAMP, %s
-            )
-            RETURNING sql_generation_guide_version_id
-            """,
-                (
-                    guide_id,
-                    version_number,
-                    content,
-                    digest,
-                    context.principal_id,
-                    context.principal_id,
-                    context.principal_id,
-                ),
-            ).fetchone()
-        )["sql_generation_guide_version_id"]
-    return guide_id, version_id, digest
 
 
 def _code_generation_parameters(
@@ -1338,7 +1231,6 @@ def _code_generation_parameters(
     object_ids: list[int],
     correlation_id: UUID,
     coverage_mode: str | None,
-    guide_version_id: int | None,
 ) -> tuple[object, ...]:
     return (
         context.entra_tenant_id,
@@ -1347,7 +1239,6 @@ def _code_generation_parameters(
         context.model_revision,
         correlation_id,
         coverage_mode,
-        guide_version_id,
         object_ids,
     )
 
@@ -1626,15 +1517,14 @@ def test_workflow_run_rejects_invalid_system_selection_shape(
         )
 
 
-def test_create_code_generation_run_freezes_selected_targets_revision_and_guide(
+def test_create_code_generation_run_freezes_selected_targets_revision_and_prompts(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
     target_id = _seed_code_generation_target(postgres_database, context)
-    guide_id, guide_version_id, guide_digest = _seed_published_sql_generation_guide(
+    _seed_code_generation_prompt(
         postgres_database,
         context,
-        is_default=False,
     )
 
     with postgres_database.connect_owner() as connection:
@@ -1646,7 +1536,6 @@ def test_create_code_generation_run_freezes_selected_targets_revision_and_guide(
                     object_ids=[target_id],
                     correlation_id=uuid4(),
                     coverage_mode="selected_targets",
-                    guide_version_id=guide_version_id,
                 ),
             ).fetchone()
         )
@@ -1662,9 +1551,7 @@ def test_create_code_generation_run_freezes_selected_targets_revision_and_guide(
     assert created["model_revision"] == context.model_revision
     assert created["selected_scope_count"] == 1
     assert created["code_generation_coverage_mode"] == "selected_targets"
-    assert created["sql_generation_guide_id"] == guide_id
-    assert created["sql_generation_guide_version_id"] == guide_version_id
-    assert created["sql_generation_guide_digest"] == guide_digest
+    assert created["prompt_snapshot_count"] == 1
     assert selection == [{"modeled_entity_id": target_id, "selection_order": 1}]
 
 
@@ -1673,10 +1560,9 @@ def test_create_code_generation_run_rejects_a_null_coverage_mode(
 ) -> None:
     context = seed_workflow_context(postgres_database)
     target_id = _seed_code_generation_target(postgres_database, context)
-    _guide_id, guide_version_id, _guide_digest = _seed_published_sql_generation_guide(
+    _seed_code_generation_prompt(
         postgres_database,
         context,
-        is_default=False,
     )
 
     with (
@@ -1690,7 +1576,6 @@ def test_create_code_generation_run_rejects_a_null_coverage_mode(
                 object_ids=[target_id],
                 correlation_id=uuid4(),
                 coverage_mode=None,
-                guide_version_id=guide_version_id,
             ),
         )
 
@@ -1705,10 +1590,9 @@ def test_create_code_generation_run_derives_all_eligible_targets_only_from_empty
             _seed_code_generation_target(postgres_database, context),
         ]
     )
-    _guide_id, guide_version_id, _guide_digest = _seed_published_sql_generation_guide(
+    _seed_code_generation_prompt(
         postgres_database,
         context,
-        is_default=False,
     )
 
     with postgres_database.connect_owner() as connection:
@@ -1720,7 +1604,6 @@ def test_create_code_generation_run_derives_all_eligible_targets_only_from_empty
                     object_ids=[],
                     correlation_id=uuid4(),
                     coverage_mode="all_eligible_targets",
-                    guide_version_id=guide_version_id,
                 ),
             ).fetchone()
         )
@@ -1751,28 +1634,22 @@ def test_create_code_generation_run_derives_all_eligible_targets_only_from_empty
                 object_ids=[target_ids[0]],
                 correlation_id=uuid4(),
                 coverage_mode="all_eligible_targets",
-                guide_version_id=guide_version_id,
             ),
         )
 
 
-def test_code_generation_run_replay_keeps_frozen_default_guide_after_retirement(
+def test_code_generation_run_replay_keeps_frozen_prompt_after_retirement(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
     target_id = _seed_code_generation_target(postgres_database, context)
-    guide_id, guide_version_id, guide_digest = _seed_published_sql_generation_guide(
-        postgres_database, context
-    )
-    correlation_id = uuid4()
+    _seed_code_generation_prompt(postgres_database, context)
     parameters = _code_generation_parameters(
         context,
         object_ids=[target_id],
-        correlation_id=correlation_id,
+        correlation_id=uuid4(),
         coverage_mode="selected_targets",
-        guide_version_id=None,
     )
-
     with postgres_database.connect_owner() as connection:
         created = require_row(
             connection.execute(
@@ -1780,33 +1657,53 @@ def test_code_generation_run_replay_keeps_frozen_default_guide_after_retirement(
                 parameters,
             ).fetchone()
         )
+        frozen = connection.execute(
+            "SELECT * FROM application.workflow_run_prompt_snapshot "
+            "WHERE workflow_run_id = %s ORDER BY workflow_stage_id",
+            (created["workflow_run_id"],),
+        ).fetchall()
         connection.execute(
-            """
-            UPDATE application.sql_generation_guide_version
-               SET sql_generation_guide_version_status = 'retired',
-                   retired_time = CURRENT_TIMESTAMP,
-                   retired_by_principal_id = %s,
-                   updated_by_principal_id = %s,
-                   updated_time = CURRENT_TIMESTAMP
-             WHERE sql_generation_guide_version_id = %s
-            """,
-            (context.principal_id, context.principal_id, guide_version_id),
+            """UPDATE application.prompt_template_version
+                  SET prompt_template_version_status = 'retired',
+                      retired_time = CURRENT_TIMESTAMP,
+                      retired_by_principal_id = %s,
+                      updated_by_principal_id = %s,
+                      updated_time = CURRENT_TIMESTAMP
+                WHERE prompt_template_version_id = ANY(%s::BIGINT[])""",
+            (
+                context.principal_id,
+                context.principal_id,
+                [snapshot["prompt_template_version_id"] for snapshot in frozen],
+            ),
         )
-
     with postgres_database.connect_owner() as connection:
         replay = require_row(
             connection.execute(
-                CREATE_CODE_GENERATION_WORKFLOW_RUN_SQL,
+                CREATE_CODE_GENERATION_WORKFLOW_RUN_SQL.replace(
+                    "p_selected_entity_ids => %s::BIGINT[]",
+                    "p_selected_entity_ids => %s::BIGINT[], "
+                    "p_code_generation_file_layout => 'combined'::VARCHAR",
+                ),
                 parameters,
             ).fetchone()
         )
-
+        after = connection.execute(
+            "SELECT * FROM application.workflow_run_prompt_snapshot "
+            "WHERE workflow_run_id = %s ORDER BY workflow_stage_id",
+            (created["workflow_run_id"],),
+        ).fetchall()
+        layout = require_row(
+            connection.execute(
+                "SELECT code_generation_file_layout FROM application.workflow_run "
+                "WHERE workflow_run_id = %s",
+                (created["workflow_run_id"],),
+            ).fetchone()
+        )
     assert created["created"] is True
     assert replay["created"] is False
     assert replay["workflow_run_id"] == created["workflow_run_id"]
-    assert replay["sql_generation_guide_id"] == guide_id
-    assert replay["sql_generation_guide_version_id"] == guide_version_id
-    assert replay["sql_generation_guide_digest"] == guide_digest
+    assert len(frozen) == 1 and after == frozen
+    assert layout["code_generation_file_layout"] == "combined"
 
 
 def test_code_generation_run_rejects_zone_only_target_without_applied_mapping(
@@ -1818,10 +1715,9 @@ def test_code_generation_run_rejects_zone_only_target_without_applied_mapping(
         context,
         zone_code="silver",
     )
-    _guide_id, guide_version_id, _guide_digest = _seed_published_sql_generation_guide(
+    _seed_code_generation_prompt(
         postgres_database,
         context,
-        is_default=False,
     )
 
     with (
@@ -1835,7 +1731,6 @@ def test_code_generation_run_rejects_zone_only_target_without_applied_mapping(
                 object_ids=[target_id],
                 correlation_id=uuid4(),
                 coverage_mode="selected_targets",
-                guide_version_id=guide_version_id,
             ),
         )
 
@@ -2073,14 +1968,19 @@ def test_workflow_run_constraint_requires_mapping_entity_type(
         )
 
 
-def test_workflow_run_constraint_requires_code_generation_coverage_mode(
+@pytest.mark.parametrize(
+    ("coverage_mode", "file_layout"),
+    [(None, "combined"), ("selected_targets", None)],
+)
+def test_workflow_run_constraint_requires_code_generation_options(
     postgres_database: DisposablePostgres,
+    coverage_mode: str | None,
+    file_layout: str | None,
 ) -> None:
     context = seed_workflow_context(postgres_database)
-    guide_id, guide_version_id, guide_digest = _seed_published_sql_generation_guide(
+    _seed_code_generation_prompt(
         postgres_database,
         context,
-        is_default=False,
     )
 
     with (
@@ -2103,9 +2003,7 @@ def test_workflow_run_constraint_requires_code_generation_coverage_mode(
                 validation_retry_count,
                 modeled_entity_type,
                 code_generation_coverage_mode,
-                sql_generation_guide_id,
-                sql_generation_guide_version_id,
-                sql_generation_guide_digest,
+                code_generation_file_layout,
                 selected_scope_digest,
                 selected_scope_count,
                 correlation_id
@@ -2122,8 +2020,6 @@ def test_workflow_run_constraint_requires_code_generation_coverage_mode(
                 12,
                 2,
                 'logical_entity',
-                NULL,
-                %s,
                 %s,
                 %s,
                 repeat('0', 64),
@@ -2136,9 +2032,8 @@ def test_workflow_run_constraint_requires_code_generation_coverage_mode(
                 context.model_id,
                 context.model_revision,
                 context.principal_id,
-                guide_id,
-                guide_version_id,
-                guide_digest,
+                coverage_mode,
+                file_layout,
                 uuid4(),
             ),
         )
@@ -3554,9 +3449,7 @@ def test_code_generation_delivery_options_are_frozen_and_replay_fenced(
 ) -> None:
     context = seed_workflow_context(postgres_database)
     target_id = _seed_code_generation_target(postgres_database, context)
-    _, guide_id, _ = _seed_published_sql_generation_guide(
-        postgres_database, context, is_default=False
-    )
+    _seed_code_generation_prompt(postgres_database, context)
     sql = CREATE_CODE_GENERATION_WORKFLOW_RUN_SQL.replace(
         "ARRAY[]::VARCHAR[],", "%s::VARCHAR[],"
     ).replace(
@@ -3580,7 +3473,6 @@ def test_code_generation_delivery_options_are_frozen_and_replay_fenced(
                 object_ids=[target_id],
                 correlation_id=uuid4(),
                 coverage_mode="selected_targets",
-                guide_version_id=guide_id,
             )
         )
         values.insert(4, [code])

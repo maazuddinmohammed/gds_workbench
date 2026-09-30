@@ -1,3 +1,4 @@
+import { WorkflowFilters } from "../workflows/WorkflowCommandCenter";
 import { useMemo, useState } from "react";
 import { MultiSelectField } from "../../shared/MultiSelectField";
 import { Link } from "@tanstack/react-router";
@@ -220,11 +221,11 @@ export function CodeGenerationLedger({
 
   return (
     <section className="workflow-surface code-generation-surface" aria-labelledby="code-generation-targets-heading">
-      <CodeGenerationFilters
+      <WorkflowFilters>      <CodeGenerationFilters
         items={items} objectIds={objectIds} onObjectIdsChange={onObjectIdsChange}
         artifactStatus={artifactStatus}
         onArtifactStatusChange={onArtifactStatusChange}
-      />
+      /></WorkflowFilters>
       <header className="code-generation-ledger-heading">
         <div>
           <p className="eyebrow">Eligible delivery targets</p>

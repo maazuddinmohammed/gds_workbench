@@ -402,15 +402,10 @@ async def test_installed_sql_defaults_with_repository_projection(
 
     def checked_render(**kwargs: Any) -> Any:
         nonlocal renders
-        from gds_workbench_api.features.code_generation.service import (
-            _PARTIAL_AUTHORING_CONTRACT,
-        )
-
-        # Published content is preserved; the runtime appends its current delivery rules.
+        # SQL policy is frozen in the published Prompt; no second policy is appended.
         actual_templates = kwargs["templates"]
-        expected_system = stages[0].templates.system + "\n\n" + _PARTIAL_AUTHORING_CONTRACT
         assert sha256(actual_templates.system.encode()).digest() == sha256(
-            expected_system.encode()
+            stages[0].templates.system.encode()
         ).digest()
         assert sha256(actual_templates.instruction.encode()).digest() == sha256(
             stages[0].templates.instruction.encode()
@@ -472,10 +467,15 @@ async def test_installed_sql_defaults_with_repository_projection(
     )
     assert renders == 1 and len(agent.requests) == (2 if repair else 1)
     assert len(handoff.calls) == 1 and not no_op.requests
-    assert all(
-        request.instruction_prompt.count("Use MERGE when appropriate.") == 1
-        for request in agent.requests
-    )
+    for request in agent.requests:
+        assert request.system_prompt == stages[0].templates.system.strip()
+        assert '"file_layout":"combined"' in request.instruction_prompt.replace(" ", "")
+        attempt = cast(dict[str, Any], request.context)
+        assert attempt["original_context"]["values"]["artifact_requirements"] == {
+            "file_layout": "combined",
+            "source_system_codes": list(context.targets[0].source_system_codes),
+            "preserved_artifact_names": [],
+        }
 
 
 @pytest.mark.asyncio

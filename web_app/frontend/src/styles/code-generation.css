@@ -69,7 +69,6 @@
 
 .code-generation-table-scroll {
   max-height: calc(100vh - 21rem);
-  border-top: 0;
 }
 
 .code-generation-table-scroll table {

@@ -1,4 +1,4 @@
-# Fresh Azure deployment: database, MCP server, and GDS Agent Plugin
+# Fresh Azure MCP deployment
 
 This guide deploys the current repository as a new application. It assumes no
 existing GDS database. It uses the simplest supported Azure setup first, then
@@ -34,8 +34,8 @@ You need:
 6. The current deployment ZIPs:
 
    ```text
-   mcp_server/dist/gds-mcp-appservice-0.2.0.zip
-   atlas/dist/atlas-agent-plugin-0.1.2.zip
+   mcp_server/dist/<current-MCP-release>.zip
+   atlas/dist/<current-Atlas-release>.zip
    ```
 
 If the MCP ZIP is missing, build it from the repository root:
@@ -63,7 +63,7 @@ MCP URL:               https://<WEB_APP>.azurewebsites.net/mcp
 Names in angle brackets are placeholders. Never paste passwords, tokens, or
 connection strings into this file, source control, terminal history, or chat.
 
-## 3. Path A: create and configure resources in Azure Portal
+## 3. Create and configure resources in Azure Portal
 
 ### Step 1: create the resource group
 
@@ -97,135 +97,19 @@ connection strings into this file, source control, terminal history, or chat.
 3. Select **Add**.
 4. Create `gds_workbench`.
 
-### Step 4: install the database schema
+### Step 4: install the database and defaults
 
-From the repository root, set only non-secret connection values:
+Follow [database/README.md](../database/README.md) for the single maintained
+installation sequence: read-only preflight, numbered files 01–19 once, distinct
+runtime passwords, verification, then required reference/prompt/template seeds.
+Follow [seed instructions](../database/seed/README.md) for approved identity
+placeholders and replay behavior. Stop on any failure; do not rerun schema DDL.
 
-```bash
-export PGHOST="<POSTGRES_SERVER>.postgres.database.azure.com"
-export PGPORT="5432"
-export PGDATABASE="gds_workbench"
-export PGUSER="<POSTGRES_ADMIN>"
-export PGSSLMODE="verify-full"
-```
+Production needs approved Tenant/metadata/Entra Principal access. Demo/local seeds
+belong only in disposable development databases. Authentication alone does not grant
+application access. This repository supplies no populated-database upgrade helper.
 
-Run the read-only preflight. Enter the administrator password only at the
-`psql` prompt:
-
-```bash
-psql -X -v ON_ERROR_STOP=1 -f database/00_preflight.sql
-```
-
-Stop if preflight fails. For a new empty database, install files `01` through
-`12` exactly once and in this exact order:
-
-`00_preflight.sql` also contains a disabled whole-server cleanup reference.
-Never uncomment it during installation, retry, or migration. It is only for a
-separate, backup-approved DBA retirement of the complete GDS server environment.
-
-```bash
-for file in \
-  database/01_reference.sql \
-  database/02_core.sql \
-  database/03_security.sql \
-  database/04_model.sql \
-  database/05_workflow_analysis.sql \
-  database/06_workflow_conceptual.sql \
-  database/07_workflow_logical.sql \
-  database/08_workflow_dimensional.sql \
-  database/09_workflow_mapping.sql \
-  database/10_workflow_code_validation.sql \
-  database/11_workflow_eligibility.sql \
-  database/12_application_configuration.sql \
-  database/13_application_workflow_runs.sql \
-  database/14_application_workflow_execution.sql \
-  database/15_mcp_change_sets.sql \
-  database/16_mcp_metadata_apply.sql \
-  database/17_mcp_tool_call_log.sql \
-  database/18_runtime_account.sql \
-  database/19_runtime_integrity.sql
-do
-  psql -X -v ON_ERROR_STOP=1 --single-transaction -f "$file" || break
-done
-```
-
-If a file fails, save the error and stop. Do not rerun earlier files and do not
-drop, truncate, or reset the database.
-
-Set distinct runtime login passwords interactively:
-
-```bash
-psql -X
-```
-
-Then run these commands inside `psql`:
-
-```text
-\password gds_mcp_runtime
-\password gds_web_runtime
-\quit
-```
-
-Store both generated passwords in your approved password manager. Finally,
-verify the installation:
-
-```bash
-psql -X -v ON_ERROR_STOP=1 -f database/20_verify_install.sql
-```
-
-The last row must say:
-
-```text
-schema_version = 1.0.0
-verification_status = passed
-```
-
-### Step 5: add initial data and user access
-
-Install the required web application reference data first:
-
-```bash
-psql -X -v ON_ERROR_STOP=1 --single-transaction \
-  -f database/seed/04_application_reference.sql
-```
-
-This installs exactly 26 workflow stages and 173 backend-resolved prompt
-variables. It contains no credentials, prompt bodies, connection values, or
-business data and is safe to replay unchanged.
-
-Choose one route:
-
-- Development only: run `database/seed/01_metadata_snapshot_demo.sql`, then
-  copy and complete `database/seed/02_human_principal_access.template.sql`.
-- Real environment: use an independently reviewed operator process to load the
-  approved Tenant, metadata, and Entra Principal/access records. This repository
-  no longer ships an Excel loader.
-
-Do not run demo seed data in production. A successfully authenticated Entra
-user must also have an active matching database Principal and Tenant access.
-
-After the active Super Admin identity exists, install the 14 agentic global
-defaults from `database/seed/05_global_prompt_defaults.template.sql` by
-following `database/seed/README.md`. Replace its identity placeholders with
-that exact Super Admin identity. The script is replay-safe and does not create
-Prompts for deterministic stages such as Profiling.
-
-Before starting Code Generation, install
-`database/seed/06_global_sql_generation_guide.template.sql` using the same active
-Super Admin identity placeholders. This publishes the default Databricks SQL
-Generation Guide required by Code Generation. Follow `database/seed/README.md`;
-Models may already exist. The seed adds missing Guide configuration without
-changing Models, Mapping or existing Runs; it never replaces custom/default guide
-history.
-
-Next, install `database/seed/07_global_mapping_output_templates.template.sql`
-using the same active Super Admin identity placeholders and the instructions in
-`database/seed/README.md`. Both active global Mapping templates are required for
-new Logical-to-Silver and Dimensional-to-Gold Mapping runs that omit a custom
-template. Each run freezes its selected template IDs and schema digests;
-explicit custom selections and previously frozen runs remain unchanged.
-
-### Step 6: create private snapshot storage
+### Step 5: create private snapshot storage
 
 1. Create a **Storage account** in the same region/resource group.
 2. Use StorageV2, Standard LRS for development, TLS 1.2 or later.
@@ -238,7 +122,7 @@ Keep the account network-accessible to the web app. Snapshot download URLs are
 short-lived, read-only user-delegation SAS URLs; the container itself stays
 private.
 
-### Step 7: create Key Vault
+### Step 6: create Key Vault
 
 1. Create a **Key vault** in the resource group.
 2. Use the Azure RBAC permission model.
@@ -260,7 +144,7 @@ Remove the `PGSSLROOTCERT=system` App Service setting and any `sslrootcert=syste
 DSN parameter before using this mode; PostgreSQL rejects that combination.
 Return to `verify-full` once certificate trust is configured.
 
-### Step 8: create the Linux web app
+### Step 7: create the Linux web app
 
 1. Create **Web App**.
 2. Choose **Code**, **Linux**, and **Python 3.14**.
@@ -272,7 +156,7 @@ Return to `verify-full` once certificate trust is configured.
 7. Turn on **HTTPS Only** and **Always On**.
 8. Open **Identity** and enable the system-assigned managed identity.
 
-### Step 9: grant the web app access
+### Step 8: grant the web app access
 
 Grant the web app's system-assigned identity:
 
@@ -284,7 +168,7 @@ The first role lets App Service resolve Key Vault references. The storage roles
 let the app create/read private snapshot blobs and mint read-only user-delegation
 SAS URLs.
 
-### Step 10: configure App Service settings
+### Step 9: configure App Service settings
 
 Open **Web App > Settings > Environment variables** and add:
 
@@ -296,7 +180,7 @@ Open **Web App > Settings > Environment variables** and add:
 | `GDS_CURSOR_SIGNING_KEY` | Key Vault reference to the cursor key |
 | `GDS_MCP_PUBLIC_URL` | `https://<WEB_APP>.azurewebsites.net/mcp` |
 | `GDS_ENTRA_TENANT_ID` | Your Entra Directory/Tenant ID |
-| `GDS_ENTRA_API_CLIENT_ID` | Add after Step 11 creates the app registration |
+| `GDS_ENTRA_API_CLIENT_ID` | Add after Step 10 creates the app registration |
 | `GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL` | `https://<STORAGE_ACCOUNT>.blob.core.windows.net` |
 | `GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER` | `snapshots` |
 
@@ -304,7 +188,7 @@ Do not add `GDS_METADATA_SNAPSHOT_MANAGED_IDENTITY_CLIENT_ID` when using the
 system-assigned identity. Save the settings and confirm both Key Vault
 references show a resolved/healthy status.
 
-### Step 11: configure Microsoft Entra and Easy Auth
+### Step 10: configure Microsoft Entra and Easy Auth
 
 1. Open **Web App > Settings > Authentication**.
 2. Select **Add identity provider > Microsoft**.
@@ -366,7 +250,7 @@ az webapp auth update \
     /.well-known/oauth-protected-resource/mcp
 ```
 
-### Step 12: deploy the MCP ZIP
+### Step 11: deploy the MCP ZIP
 
 Azure's Kudu drag-and-drop ZIP page does not support Linux App Service. Use
 Azure Cloud Shell in the portal or a local authenticated Azure CLI instead.
@@ -376,7 +260,7 @@ Upload/select the ZIP in Cloud Shell, then run:
 az webapp deploy \
   --resource-group "<RESOURCE_GROUP>" \
   --name "<WEB_APP>" \
-  --src-path "gds-mcp-appservice-0.2.0.zip" \
+  --src-path "<current-MCP-release>.zip" \
   --type zip \
   --restart true \
   --track-status true
@@ -385,7 +269,7 @@ az webapp deploy \
 If running locally from the repository root, use:
 
 ```text
-mcp_server/dist/gds-mcp-appservice-0.2.0.zip
+mcp_server/dist/<current-MCP-release>.zip
 ```
 
 If Windows Azure CLI fails before upload with
@@ -405,7 +289,7 @@ Keep that PowerShell window open and rerun the `az webapp deploy` command above.
 The isolated profile avoids the locked or inaccessible cache without modifying
 the original credentials directory.
 
-### Step 13: verify the deployment
+### Step 12: verify the deployment
 
 Open or call these URLs:
 
@@ -427,295 +311,7 @@ If liveness is 200 but readiness is 503, check App Service Log Stream, Key
 Vault reference status, PostgreSQL firewall access, DSN TLS mode, schema
 verification, and runtime-role posture.
 
-## 4. Path B: create the infrastructure with Azure CLI
-
-Use this path instead of Portal Steps 1-10. Run it from the repository root.
-The Microsoft Entra registration is intentionally completed with Portal Step 11
-because that one-time screen is clearer and safer than editing nested Microsoft
-Graph application objects in a beginner runbook.
-
-### Step 1: sign in and set names
-
-```bash
-az login
-az account set --subscription "<SUBSCRIPTION_ID>"
-
-GDS_RG="<RESOURCE_GROUP>"
-GDS_LOCATION="<REGION>"
-GDS_PG_SERVER="<POSTGRES_SERVER>"
-GDS_DATABASE="gds_workbench"
-GDS_PG_ADMIN="<POSTGRES_ADMIN>"
-GDS_PLAN="<APP_SERVICE_PLAN>"
-GDS_WEB_APP="<WEB_APP>"
-GDS_STORAGE="<STORAGE_ACCOUNT>"
-GDS_CONTAINER="snapshots"
-GDS_VAULT="<KEY_VAULT>"
-GDS_MCP_URL="https://${GDS_WEB_APP}.azurewebsites.net/mcp"
-GDS_TENANT_ID="$(az account show --query tenantId -o tsv)"
-```
-
-### Step 2: create the resource group and PostgreSQL
-
-Read the administrator password without putting it in shell history:
-
-```bash
-read -r -s -p "PostgreSQL administrator password: " GDS_PG_ADMIN_PASSWORD
-echo
-```
-
-Create the resources:
-
-```bash
-az group create \
-  --name "$GDS_RG" \
-  --location "$GDS_LOCATION" \
-  --output none
-
-az postgres flexible-server create \
-  --resource-group "$GDS_RG" \
-  --name "$GDS_PG_SERVER" \
-  --location "$GDS_LOCATION" \
-  --admin-user "$GDS_PG_ADMIN" \
-  --admin-password "$GDS_PG_ADMIN_PASSWORD" \
-  --version 18 \
-  --tier Burstable \
-  --sku-name Standard_B1ms \
-  --storage-size 32 \
-  --public-access 0.0.0.0 \
-  --yes \
-  --output none
-
-unset GDS_PG_ADMIN_PASSWORD
-
-az postgres flexible-server db create \
-  --resource-group "$GDS_RG" \
-  --server-name "$GDS_PG_SERVER" \
-  --database-name "$GDS_DATABASE" \
-  --output none
-```
-
-`0.0.0.0` allows connections from Azure services. Add a temporary firewall rule
-for your own public IP before running local `psql`:
-
-```bash
-az postgres flexible-server firewall-rule create \
-  --resource-group "$GDS_RG" \
-  --name "$GDS_PG_SERVER" \
-  --rule-name allow-bootstrap-client \
-  --start-ip-address "<YOUR_PUBLIC_IP>" \
-  --end-ip-address "<YOUR_PUBLIC_IP>" \
-  --output none
-```
-
-Now perform Portal Path Steps 4 and 5 to install/verify the schema and load the
-initial data.
-
-### Step 3: create storage
-
-```bash
-az storage account create \
-  --resource-group "$GDS_RG" \
-  --name "$GDS_STORAGE" \
-  --location "$GDS_LOCATION" \
-  --kind StorageV2 \
-  --sku Standard_LRS \
-  --min-tls-version TLS1_2 \
-  --allow-blob-public-access false \
-  --output none
-
-GDS_OPERATOR_ID="$(az ad signed-in-user show --query id -o tsv)"
-GDS_STORAGE_ID="$(az storage account show \
-  --resource-group "$GDS_RG" \
-  --name "$GDS_STORAGE" \
-  --query id -o tsv)"
-
-az role assignment create \
-  --assignee-object-id "$GDS_OPERATOR_ID" \
-  --assignee-principal-type User \
-  --role "Storage Blob Data Contributor" \
-  --scope "$GDS_STORAGE_ID" \
-  --output none
-
-az storage container create \
-  --account-name "$GDS_STORAGE" \
-  --name "$GDS_CONTAINER" \
-  --auth-mode login \
-  --public-access off \
-  --output none
-
-GDS_LIFECYCLE_POLICY='{"rules":[{"enabled":true,"name":"delete-expired-snapshots","type":"Lifecycle","definition":{"actions":{"baseBlob":{"delete":{"daysAfterModificationGreaterThan":1}}},"filters":{"blobTypes":["blockBlob"],"prefixMatch":["snapshots/metadata/","snapshots/model/"]}}}]}'
-
-az storage account management-policy create \
-  --resource-group "$GDS_RG" \
-  --account-name "$GDS_STORAGE" \
-  --policy "$GDS_LIFECYCLE_POLICY" \
-  --output none
-
-unset GDS_LIFECYCLE_POLICY
-```
-
-RBAC can take several minutes to propagate. If container creation returns 403,
-wait and retry the same non-destructive command.
-
-### Step 4: create Key Vault and the web app
-
-```bash
-az keyvault create \
-  --resource-group "$GDS_RG" \
-  --name "$GDS_VAULT" \
-  --location "$GDS_LOCATION" \
-  --enable-rbac-authorization true \
-  --output none
-
-GDS_VAULT_ID="$(az keyvault show \
-  --resource-group "$GDS_RG" \
-  --name "$GDS_VAULT" \
-  --query id -o tsv)"
-
-az role assignment create \
-  --assignee-object-id "$GDS_OPERATOR_ID" \
-  --assignee-principal-type User \
-  --role "Key Vault Secrets Officer" \
-  --scope "$GDS_VAULT_ID" \
-  --output none
-
-az appservice plan create \
-  --resource-group "$GDS_RG" \
-  --name "$GDS_PLAN" \
-  --location "$GDS_LOCATION" \
-  --is-linux \
-  --sku B1 \
-  --output none
-
-az webapp create \
-  --resource-group "$GDS_RG" \
-  --plan "$GDS_PLAN" \
-  --name "$GDS_WEB_APP" \
-  --runtime "PYTHON:3.14" \
-  --startup-file "startup.sh" \
-  --assign-identity "[system]" \
-  --https-only true \
-  --output none
-```
-
-### Step 5: grant the web app identity access
-
-```bash
-GDS_WEB_IDENTITY="$(az webapp identity show \
-  --resource-group "$GDS_RG" \
-  --name "$GDS_WEB_APP" \
-  --query principalId -o tsv)"
-
-GDS_CONTAINER_ID="${GDS_STORAGE_ID}/blobServices/default/containers/${GDS_CONTAINER}"
-
-az role assignment create \
-  --assignee-object-id "$GDS_WEB_IDENTITY" \
-  --assignee-principal-type ServicePrincipal \
-  --role "Key Vault Secrets User" \
-  --scope "$GDS_VAULT_ID" \
-  --output none
-
-az role assignment create \
-  --assignee-object-id "$GDS_WEB_IDENTITY" \
-  --assignee-principal-type ServicePrincipal \
-  --role "Storage Blob Data Contributor" \
-  --scope "$GDS_CONTAINER_ID" \
-  --output none
-
-az role assignment create \
-  --assignee-object-id "$GDS_WEB_IDENTITY" \
-  --assignee-principal-type ServicePrincipal \
-  --role "Storage Blob Delegator" \
-  --scope "$GDS_STORAGE_ID" \
-  --output none
-```
-
-### Step 6: store runtime secrets
-
-Enter the runtime database password created with `\password`:
-
-```bash
-read -r -s -p "gds_mcp_runtime password: " GDS_RUNTIME_PASSWORD
-echo
-GDS_DATABASE_DSN="host=${GDS_PG_SERVER}.postgres.database.azure.com port=5432 dbname=${GDS_DATABASE} user=gds_mcp_runtime password=${GDS_RUNTIME_PASSWORD} sslmode=verify-full"
-GDS_CURSOR_KEY="$(openssl rand -base64 48)"
-```
-
-Store both values without printing them:
-
-```bash
-az keyvault secret set \
-  --vault-name "$GDS_VAULT" \
-  --name "<DATABASE_DSN_SECRET_NAME>" \
-  --value "$GDS_DATABASE_DSN" \
-  --output none
-
-az keyvault secret set \
-  --vault-name "$GDS_VAULT" \
-  --name "<CURSOR_KEY_SECRET_NAME>" \
-  --value "$GDS_CURSOR_KEY" \
-  --output none
-
-unset GDS_RUNTIME_PASSWORD GDS_DATABASE_DSN GDS_CURSOR_KEY
-```
-
-### Step 7: configure non-secret app settings
-
-The two Key Vault references below are placeholders for the names chosen in the
-previous step:
-
-```bash
-az webapp config appsettings set \
-  --resource-group "$GDS_RG" \
-  --name "$GDS_WEB_APP" \
-  --settings \
-    SCM_DO_BUILD_DURING_DEPLOYMENT=1 \
-    GDS_ENVIRONMENT=production \
-    GDS_DATABASE_DSN="@Microsoft.KeyVault(VaultName=${GDS_VAULT};SecretName=<DATABASE_DSN_SECRET_NAME>)" \
-    GDS_CURSOR_SIGNING_KEY="@Microsoft.KeyVault(VaultName=${GDS_VAULT};SecretName=<CURSOR_KEY_SECRET_NAME>)" \
-    GDS_MCP_PUBLIC_URL="$GDS_MCP_URL" \
-    GDS_ENTRA_TENANT_ID="$GDS_TENANT_ID" \
-    GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL="https://${GDS_STORAGE}.blob.core.windows.net" \
-    GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER="$GDS_CONTAINER" \
-  --output none
-
-az webapp config set \
-  --resource-group "$GDS_RG" \
-  --name "$GDS_WEB_APP" \
-  --linux-fx-version "PYTHON|3.14" \
-  --startup-file "startup.sh" \
-  --always-on true \
-  --output none
-```
-
-### Step 8: configure Entra, deploy, and verify
-
-1. Complete Portal Step 11.
-2. Add the resulting API client ID:
-
-   ```bash
-   az webapp config appsettings set \
-     --resource-group "$GDS_RG" \
-     --name "$GDS_WEB_APP" \
-     --settings GDS_ENTRA_API_CLIENT_ID="<ENTRA_API_CLIENT_ID>" \
-     --output none
-   ```
-
-3. Deploy the MCP ZIP:
-
-   ```bash
-   az webapp deploy \
-     --resource-group "$GDS_RG" \
-     --name "$GDS_WEB_APP" \
-     --src-path "mcp_server/dist/gds-mcp-appservice-0.2.0.zip" \
-     --type zip \
-     --restart true \
-     --track-status true
-   ```
-
-4. Perform Portal Step 13.
-
-## 5. Package and install Atlas in VS Code
+## 4. Package and install Atlas in VS Code
 
 The Atlas MCP endpoint is declared in `atlas/atlas-plugin/mcp.json`. Set it to
 the reviewed deployed `/mcp` URL before building a release archive. Build a
@@ -737,7 +333,7 @@ Install the matching Atlas Stage Runner VSIX from `atlas/dist/`. Confirm the
 read-only `list_tenants` call to verify client-managed Microsoft Entra sign-in
 and Tenant authorization.
 
-## 6. Production hardening after the first successful deployment
+## 5. Production readiness
 
 1. Replace PostgreSQL's broad Azure-service firewall rule with App Service VNet
    integration and private PostgreSQL access.
@@ -755,7 +351,7 @@ and Tenant authorization.
    and its access token has the intended least privilege.
 8. Do not deploy older application code against a newer/incompatible database.
 
-## 7. Official references
+## 6. References
 
 - [Create Azure Database for PostgreSQL Flexible Server](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/quickstart-create-server)
 - [PostgreSQL firewall rules](https://learn.microsoft.com/en-us/azure/postgresql/security/security-firewall-rules)

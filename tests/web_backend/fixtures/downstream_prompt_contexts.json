@@ -292,8 +292,12 @@
               }
             }
           ],
-          "guide": {
-            "content": "Generate Databricks SQL using exact applied transformations and qualified physical names."
+          "artifact_requirements": {
+            "file_layout": "combined",
+            "source_system_codes": [
+              "CRM"
+            ],
+            "preserved_artifact_names": []
           }
         }
       }

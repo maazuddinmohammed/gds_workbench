@@ -1,4 +1,4 @@
-"""Bounded Mapping and guide context for SQL-only Code Generation."""
+"""Bounded Mapping and artifact context for SQL-only Code Generation."""
 
 from __future__ import annotations
 
@@ -28,10 +28,7 @@ _CONTEXT_SQL: LiteralString = """
 WITH requested_run AS MATERIALIZED (
     SELECT run.workflow_run_id,
            run.model_id,
-           run.modeled_entity_type,
-           run.sql_generation_guide_id,
-           run.sql_generation_guide_version_id,
-           run.sql_generation_guide_digest
+           run.modeled_entity_type
       FROM application.workflow_run AS run
       JOIN model.model AS target_model
         ON target_model.model_id = run.model_id
@@ -56,19 +53,12 @@ SELECT target.modeled_entity_id,
        target.modeled_entity_schema_name,
        target.source_system_count,
        target.code_input_digest,
-       run.sql_generation_guide_version_id,
        jsonb_array_length(target.source_context -> 'object_mappings')
            AS mapping_count,
        jsonb_array_length(target.source_context -> 'attribute_mappings')
            AS attribute_mapping_count,
        target.source_context,
-       applied.applied_artifacts,
-       jsonb_build_object(
-           'guide_code', guide.sql_generation_guide_code,
-           'guide_name', guide.sql_generation_guide_name,
-           'version_number', version.sql_generation_guide_version_number,
-           'content', version.sql_generation_guide_content
-       ) AS guide_document
+       applied.applied_artifacts
   FROM requested_run AS run
   JOIN selected
     ON TRUE
@@ -77,13 +67,6 @@ SELECT target.modeled_entity_id,
            run.modeled_entity_type
        ) AS target
     ON target.modeled_entity_id = selected.modeled_entity_id
-  JOIN application.sql_generation_guide_version AS version
-    ON version.sql_generation_guide_version_id =
-       run.sql_generation_guide_version_id
-   AND version.sql_generation_guide_id = run.sql_generation_guide_id
-   AND version.sql_generation_guide_digest = run.sql_generation_guide_digest
-  JOIN application.sql_generation_guide AS guide
-    ON guide.sql_generation_guide_id = run.sql_generation_guide_id
   LEFT JOIN LATERAL (
       SELECT coalesce(
                  jsonb_agg(
@@ -216,11 +199,7 @@ def _assemble_context(
         attribute_count = _nonnegative_int(row, "attribute_mapping_count")
         source_system_count = _positive_int(row, "source_system_count")
         source_context = _JSON_VALUE.validate_python(row.get("source_context"), strict=True)
-        guide_document = _JSON_VALUE.validate_python(
-            row.get("guide_document"),
-            strict=True,
-        )
-        if not isinstance(source_context, dict) or not isinstance(guide_document, dict):
+        if not isinstance(source_context, dict):
             raise InvalidRequestError("The Code Generation context is unavailable.")
         source_systems = source_context.get("source_systems")
         object_mappings = source_context.get("object_mappings")
@@ -241,11 +220,6 @@ def _assemble_context(
         )
         reject_forbidden_provider_json(
             source_context,
-            allow_identity_keys=True,
-            reject_sensitive_values=True,
-        )
-        reject_forbidden_provider_json(
-            guide_document,
             allow_identity_keys=True,
             reject_sensitive_values=True,
         )
@@ -328,6 +302,19 @@ def _assemble_context(
                     if item.get("selected_source_system_id") in system_ids
                 ],
             }
+            used_templates = {
+                code
+                for component in ("object_mappings", "attribute_mappings")
+                for item in cast(list[dict[str, JsonValue]], source_context[component])
+                if isinstance(code := item.get("output_template_code"), str)
+            }
+            source_context["mapping_templates"] = [
+                item
+                for item in cast(
+                    list[dict[str, JsonValue]], source_context.get("mapping_templates", [])
+                )
+                if isinstance(code := item.get("code"), str) and code in used_templates
+            ]
         applied_code = tuple(
             item
             for item in applied_code
@@ -342,27 +329,17 @@ def _assemble_context(
             JsonValue,
             {
                 **source_context,
-                "artifact_authoring": {
+                "artifact_requirements": {
                     "source_system_codes": list(source_system_codes),
-                    "file_layout": plan.code_generation_file_layout,
+                    "file_layout": plan.code_generation_file_layout or "combined",
                     "preserved_artifact_names": sorted(preserved_names),
-                    "assignment_rule": (
-                        "Assign each selected source System exactly once across "
-                        "transformation artifacts. Support artifacts assign none. "
-                        "Never reuse preserved artifact names."
-                    ),
                 },
-                "guide": guide_document,
             },
         )
         context = CodeGenerationArtifactContext(
             target_ref=target_ref,
             modeled_entity_id=_positive_int(row, "modeled_entity_id"),
             code_input_digest=_required_digest(row, "code_input_digest"),
-            sql_generation_guide_version_id=_positive_int(
-                row,
-                "sql_generation_guide_version_id",
-            ),
             modeled_entity_type=modeled_entity_type,
             modeled_entity_schema_name=schema_name,
             modeled_entity_name=modeled_entity_name,

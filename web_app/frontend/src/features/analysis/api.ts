@@ -55,6 +55,12 @@ export interface AnalysisFinding {
   validation_result: AnalysisValidationResult | null;
   inferred_cardinality: "one_to_one" | "one_to_many" | "many_to_one" | "many_to_many" | "unknown";
   cardinality_mismatch: boolean;
+  from_row_count: number | null;
+  to_row_count: number | null;
+  source_missing_target_count: number | null;
+  unused_target_count: number | null;
+  source_missing_target_percent: number | null;
+  unused_target_percent: number | null;
   observed_cardinality: "one_to_one" | "one_to_many" | "many_to_one" | "many_to_many" | null;
   status: ReviewStatus;
   is_locked: boolean;
@@ -163,9 +169,6 @@ export function createAnalysisApi(request: HttpRequest): AnalysisTransport {
 export const analysisQueryKeys = {
   findings: (tenantId: number, modelId: number, filters: unknown) => (
     ["analysis-findings", tenantId, modelId, filters] as const
-  ),
-  finding: (tenantId: number, modelId: number, findingId: number) => (
-    ["analysis-finding", tenantId, modelId, findingId] as const
   ),
   runs: (tenantId: number, modelId: number, state: string) => (
     ["analysis-runs", tenantId, modelId, state] as const

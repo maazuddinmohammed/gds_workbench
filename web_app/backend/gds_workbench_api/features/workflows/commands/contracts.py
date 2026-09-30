@@ -60,7 +60,6 @@ class CreateWorkflowRunRequest(BaseModel):
         | None
     ) = None
     code_generation_file_layout: Literal["combined", "per_system"] | None = None
-    sql_generation_guide_version_id: int | None = Field(default=None, gt=0)
     agent: AgentRunSelection | None = None
     description_targets: list[EnrichmentDescriptionTarget] | None = Field(
         default=None, min_length=1
@@ -131,12 +130,11 @@ class CreateWorkflowRunRequest(BaseModel):
         if self.model_workflow == "validation":
             if self.selected_object_ids or not self.selected_system_codes:
                 raise ValueError("Validation requires only an explicit System selection")
-            if (
-                self.code_generation_coverage_mode is not None
-                or self.sql_generation_guide_version_id is not None
-            ):
+            if self.code_generation_coverage_mode is not None:
                 raise ValueError("Code Generation inputs are unavailable for this workflow")
         elif self.model_workflow == "code_generation":
+            if self.code_generation_file_layout is None:
+                object.__setattr__(self, "code_generation_file_layout", "combined")
             if (
                 (self.code_generation_coverage_mode == "selected_targets" and not selected_ids)
                 or (self.code_generation_coverage_mode == "all_eligible_targets" and selected_ids)
@@ -150,10 +148,7 @@ class CreateWorkflowRunRequest(BaseModel):
                 )
             if not selected_ids:
                 raise ValueError("Selected Object IDs are required")
-            if (
-                self.code_generation_coverage_mode is not None
-                or self.sql_generation_guide_version_id is not None
-            ):
+            if self.code_generation_coverage_mode is not None:
                 raise ValueError("Code Generation inputs are unavailable for this workflow")
 
         if (
@@ -248,24 +243,4 @@ class WorkflowRunCommandResult(BaseModel):
         ]
         | None
     )
-    sql_generation_guide_id: int | None = Field(default=None, gt=0)
-    sql_generation_guide_version_id: int | None = Field(default=None, gt=0)
-    sql_generation_guide_digest: str | None = Field(
-        default=None,
-        pattern=r"^[0-9a-f]{64}$",
-    )
     created_at: datetime
-
-    @model_validator(mode="after")
-    def validate_code_generation_snapshot(self) -> Self:
-        guide_values = (
-            self.sql_generation_guide_id,
-            self.sql_generation_guide_version_id,
-            self.sql_generation_guide_digest,
-        )
-        if self.code_generation_coverage_mode is None:
-            if any(value is not None for value in guide_values):
-                raise ValueError("Code Generation guide snapshot is invalid")
-        elif any(value is None for value in guide_values):
-            raise ValueError("Code Generation guide snapshot is invalid")
-        return self

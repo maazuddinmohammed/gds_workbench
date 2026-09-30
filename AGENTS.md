@@ -53,7 +53,8 @@ Default five-label vocabulary. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-Single-context: root `CONTEXT.md`, with ADRs under `docs/adr/`. See
+Single-context: root `CONTEXT.md`, with current decisions in
+`docs/architecture/decisions.md`. See
 `docs/agents/domain.md`.
 
 ### Frontend design system
@@ -89,14 +90,13 @@ accessibility, and visual rules.
 - Packaging: `deployment/databricks_ui/build_uploads.py`,
   `atlas/build_plugin.py`, and `mcp_server/build_zip.py`.
   Shared source is copied into independent artifacts;
-  see `docs/adr/007-web-owned-workflows-and-notebook-retirement.md`.
+  see `docs/architecture/decisions.md`.
 - Before deleting code, check imports, registrations, dynamic references, tests,
   and packaged consumers. Similar names do not prove identical behavior.
 - Reuse existing helpers when semantics match. Keep authorization, byte limits,
   Unicode normalization, revision checks, and Windows fallback behavior intact.
 - Explain major architecture changes before starting them. Make and verify one
-  cohesive simplification at a time. See `docs/architecture/simplification-audit.md`.
-  The current pass is recorded in `docs/architecture/production-simplification-2026-09-23.md`.
+  cohesive simplification at a time. See `docs/architecture/overview.md`.
 
 ## Local verification
 

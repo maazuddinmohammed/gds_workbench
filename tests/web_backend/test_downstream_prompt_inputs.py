@@ -106,9 +106,6 @@ def test_existing_code_and_validation_resolvers_use_canonical_prompt_evidence(
         workflow_execution_mode=None,
         modeled_entity_type="logical_entity" if is_code else None,
         code_generation_coverage_mode="selected_targets" if is_code else None,
-        sql_generation_guide_id=1 if is_code else None,
-        sql_generation_guide_version_id=1 if is_code else None,
-        sql_generation_guide_digest="b" * 64 if is_code else None,
         selected_scope_digest="c" * 64,
         selected_object_ids=(),
         selected_entity_ids=(1,) if is_code else (),
@@ -224,13 +221,11 @@ def test_code_partial_mapping_null_survives_projection_contract_and_reader(
     page = catalog.invoke(reader, {})
     assert page["items"][0]["transformation"] is None
     assert page["items"] == values[variable]
-    exported = Path(__file__).resolve().parents[2] / "docs/workflow-prompts"
-    context_export = json.loads((exported / "code.context.json").read_text())
-    assert context_export["variables"][variable]["schema"] == schema
-    tools_export = json.loads((exported / "code.tools.json").read_text())
     tool_schema = next(
-        tool["result_schema"] for tool in tools_export["tools"] if tool["name"] == reader
+        definition.result_schema for definition in catalog.definitions
+        if definition.name == reader
     )
+    assert tool_schema is not None
     assert cast(Any, Draft202012Validator(tool_schema)).is_valid(page)
 
 

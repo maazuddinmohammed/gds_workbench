@@ -58,6 +58,7 @@ def _selected_template(
             for item in preparation.context.output_templates.definitions
             if item.output_template_id == selection.output_template_id
             and item.target_type == target_type
+            and item.modeled_entity_type in (None, preparation.plan.modeled_entity_type)
         ),
         None,
     )

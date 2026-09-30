@@ -1,3 +1,4 @@
+import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowFilters } from "../workflows/WorkflowCommandCenter";
 import { MultiSelectField } from "../../shared/MultiSelectField";
 import { ModelLayerTabs, type ModelLayer } from "../../shared/ModelLayerTabs";
 import type { MappingEntityType } from "../mapping/api";
@@ -12,6 +13,7 @@ import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 import { validationQueryKeys, type ValidationApi } from "./api";
 import { ValidationLedger } from "./ValidationLedger";
 import { ValidationRunDialog } from "./ValidationRunDialog";
+import { ValidationInspector } from "./ValidationInspector";
 
 export function ValidationScreen({
   api,
@@ -36,6 +38,7 @@ export function ValidationScreen({
   const entityType: MappingEntityType = layer === "logical" ? "logical_entity" : "dimensional_entity";
   const reviewDataset = groupId === undefined ? "validation_group" : "validation_check";
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [inspected, setInspected] = useState<{ groupId: number; checkId: number; returnFocus: HTMLElement | null } | null>(null);
   const [systemFilter, setSystemFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [lockFilter, setLockFilter] = useState("");
@@ -84,7 +87,7 @@ export function ValidationScreen({
   };
 
   return (
-    <div className="mapping-workspace validation-workspace page-enter">
+    <WorkflowCommandCenter enabled={groupId === undefined} filterCount={Number(systemFilter.length > 0) + Number(Boolean(statusFilter)) + Number(Boolean(lockFilter))} className="mapping-workspace validation-workspace page-enter">
       <header className="workflow-commandbar validation-commandbar model-section-toolbar">
         <div className="workflow-command-context validation-command-context">
           <ModelLayerTabs tenantId={tenantId} modelId={model.model_id} layer={layer} workflow="validation" title="Validation" />
@@ -106,6 +109,7 @@ export function ValidationScreen({
           </span>
         </div>
         <div className="workflow-command-actions">
+          <WorkflowCommandTools />
           <button
             className="button button-secondary button-small"
             type="button"
@@ -163,7 +167,7 @@ export function ValidationScreen({
         disabled={ledgerQuery.isPending || ledgerQuery.isError || ledgerQuery.data?.model_revision !== model.model_revision}
         onApplied={async () => { setSelectedIds(new Set()); await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === tenantId }); }}
       /> : null}
-      {groupId === undefined ? <div className="workflow-filterbar validation-filterbar">
+      {groupId === undefined ? <WorkflowFilters><div className="workflow-filterbar validation-filterbar">
         <MultiSelectField label="Systems" emptyLabel="All Systems" value={systemFilter} onChange={(value) => { setSystemFilter(value); setSelectedIds(new Set()); }}
           options={[...new Set((ledgerQuery.data?.groups ?? []).map((group) => group.system_code))].map((code) => [code, code])} />
         <label><span>Status</span><select aria-label="Status" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setSelectedIds(new Set()); }}>
@@ -173,7 +177,7 @@ export function ValidationScreen({
           <option value="">All lock states</option><option value="unlocked">Unlocked</option><option value="locked">Locked</option>
         </select></label>
         <button className="button button-secondary button-small" type="button" onClick={() => { setSystemFilter([]); setStatusFilter(""); setLockFilter(""); setSelectedIds(new Set()); }}>Clear</button>
-      </div> : null}
+      </div></WorkflowFilters> : null}
       <ValidationLedger
         tenantId={tenantId}
         modelId={model.model_id}
@@ -181,6 +185,11 @@ export function ValidationScreen({
         isFiltered={Boolean(systemFilter.length || statusFilter || lockFilter)}
         groupId={groupId}
         checkId={checkId}
+        onShowDetails={groupId === undefined ? undefined : (nextGroupId, nextCheckId) => {
+          if (nextCheckId === undefined) return;
+          setInspected({ groupId: nextGroupId, checkId: nextCheckId,
+            returnFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null });
+        }}
         selection={{ dataset: reviewDataset, selectedIds, onSelectionChange: setSelectedIds }}
         groups={(ledgerQuery.data?.groups ?? []).filter((group) => groupId !== undefined || (
           (!systemFilter.length || systemFilter.includes(group.system_code))
@@ -192,6 +201,12 @@ export function ValidationScreen({
         isLoading={ledgerQuery.isPending}
         error={ledgerQuery.error}
       />
+      {inspected ? <ValidationInspector returnFocus={inspected.returnFocus} onClose={() => setInspected(null)}>
+        <ValidationLedger tenantId={tenantId} modelId={model.model_id} layer={layer}
+          groupId={inspected.groupId} checkId={inspected.checkId}
+          groups={ledgerQuery.data?.groups ?? []} modelRevision={model.model_revision}
+          loadedModelRevision={ledgerQuery.data?.model_revision} isLoading={ledgerQuery.isPending} error={ledgerQuery.error} />
+      </ValidationInspector> : null}
       {runDialogOpen && systemsQuery.data ? (
         <ValidationRunDialog
           api={api}
@@ -207,6 +222,6 @@ export function ValidationScreen({
           }}
         />
       ) : null}
-    </div>
+    </WorkflowCommandCenter>
   );
 }

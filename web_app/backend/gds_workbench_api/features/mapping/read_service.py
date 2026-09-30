@@ -155,7 +155,8 @@ MAPPING_OBJECTS_SQL: LiteralString = (
 
    AND (%s::VARCHAR IS NULL OR mapping.object_mapping_status = %s)
    AND (%s::BOOLEAN IS NULL OR mapping.object_mapping_is_locked = %s)
- ORDER BY mapping.object_dependency_order, entity.modeled_entity_type, mapping.mapping_object_id
+ ORDER BY source_system.system_code, mapping.object_dependency_order,
+     entity.modeled_entity_schema_name, entity.modeled_entity_name, mapping.mapping_object_id
  LIMIT %s OFFSET %s
 """
 )
@@ -169,6 +170,7 @@ MAPPING_OBJECT_DETAIL_SQL: LiteralString = (
      output_template.output_template_code,
  'output_template_name', output_template.output_template_name, 'output_template_target_type',
      output_template.output_template_target_type,
+ 'output_template_modeled_entity_type', output_template.output_template_modeled_entity_type,
  'output_template_schema_digest', output_template.output_template_schema_digest, 'is_active',
      output_template.is_active) END AS output_template, mapping.created_time AS created_at
 """
@@ -248,6 +250,7 @@ MAPPING_ATTRIBUTE_DETAIL_SQL: LiteralString = (
      output_template.output_template_code,
  'output_template_name', output_template.output_template_name, 'output_template_target_type',
      output_template.output_template_target_type,
+ 'output_template_modeled_entity_type', output_template.output_template_modeled_entity_type,
  'output_template_schema_digest', output_template.output_template_schema_digest, 'is_active',
      output_template.is_active) END AS output_template, attribute_mapping.created_time AS created_at
 """

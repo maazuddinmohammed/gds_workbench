@@ -6,6 +6,8 @@ import { ErrorPage, LoadingPage } from "../../shared/ui";
 import type { TenantHomeRecord, TenantsApi } from "../tenants/api";
 import { ModelWorkspaceShell, type ModelStage } from "./ModelWorkspaceShell";
 import type { ModelDetail, ModelsApi } from "./api";
+import type { TenantLockApi } from "../tenant_locks/api";
+import { TenantLockControl } from "../tenant_locks/TenantLockControl";
 
 export type ModelRouteApi = Pick<TenantsApi, "readTenantHome"> & Pick<ModelsApi, "readModel" | "readModelOverview">;
 
@@ -16,6 +18,7 @@ export interface ModelRouteContext {
 
 export function ModelRouteFrame({
   api,
+  tenantLockApi,
   tenantId,
   modelId,
   activeStage,
@@ -23,6 +26,7 @@ export function ModelRouteFrame({
   children,
 }: {
   api: ModelRouteApi;
+  tenantLockApi?: TenantLockApi;
   tenantId: number;
   modelId: number;
   activeStage: ModelStage;
@@ -50,7 +54,8 @@ export function ModelRouteFrame({
   const context = { home: homeQuery.data, model: modelQuery.data };
   return (
     <TenantWorkspace home={context.home} activeNav="models" model={context.model}>
-      <ModelWorkspaceShell api={api} tenantLock={context.home.lock} model={context.model} activeStage={activeStage}>
+      <ModelWorkspaceShell api={api} tenantLock={context.home.lock} model={context.model} activeStage={activeStage}
+        lockControl={tenantLockApi ? <TenantLockControl api={tenantLockApi} home={context.home} /> : undefined}>
         {children(context)}
       </ModelWorkspaceShell>
     </TenantWorkspace>

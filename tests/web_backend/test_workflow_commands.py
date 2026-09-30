@@ -86,9 +86,6 @@ class StaticWorkflowCommandService:
             selected_scope_digest="a" * 64,
             selected_scope_count=2,
             code_generation_coverage_mode=None,
-            sql_generation_guide_id=None,
-            sql_generation_guide_version_id=None,
-            sql_generation_guide_digest=None,
             created_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
         )
 
@@ -138,9 +135,6 @@ def test_agentic_run_is_explicit_and_queues_one_atomic_run() -> None:
         "selected_scope_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "selected_scope_count": 2,
         "code_generation_coverage_mode": None,
-        "sql_generation_guide_id": None,
-        "sql_generation_guide_version_id": None,
-        "sql_generation_guide_digest": None,
         "created_at": "2026-08-24T14:00:00Z",
     }
 
@@ -185,14 +179,13 @@ def test_code_generation_coverage_is_explicit(
             "selected_entity_ids": selected_object_ids,
             "modeled_entity_type": "logical_entity",
             "code_generation_coverage_mode": coverage_mode,
-            "sql_generation_guide_version_id": 91,
             "prompt_overrides": {},
         },
         strict=True,
     )
 
     assert command.code_generation_coverage_mode == coverage_mode
-    assert command.sql_generation_guide_version_id == 91
+    assert command.code_generation_file_layout == "combined"
 
 
 @pytest.mark.parametrize(
@@ -442,13 +435,13 @@ class WorkflowCommandTransaction:
                 "default_validation_retry_count": 2,
             }
         assert "application.create_workflow_run" in query
-        assert len(parameters) == 30
+        assert len(parameters) == 29
         assert parameters[3:7] == (18, 4, "profiling", None)
         assert parameters[13] == [101, 102]
         assert parameters[14] == []
         assert parameters[16] == "10428"
-        assert parameters[19:29] == (None,) * 10
-        assert parameters[29] == []
+        assert parameters[19:28] == (None,) * 9
+        assert parameters[28] == []
         return {
             "created": True,
             "workflow_run_id": 1048,
@@ -459,9 +452,6 @@ class WorkflowCommandTransaction:
             "selected_scope_digest": "a" * 64,
             "selected_scope_count": 2,
             "code_generation_coverage_mode": None,
-            "sql_generation_guide_id": None,
-            "sql_generation_guide_version_id": None,
-            "sql_generation_guide_digest": None,
             "created_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
         }
 
@@ -731,9 +721,6 @@ class _SuccessfulImplicitDefaultWorkflowCommandTransaction(WorkflowCommandTransa
             "selected_scope_digest": "c" * 64,
             "selected_scope_count": 1,
             "code_generation_coverage_mode": None,
-            "sql_generation_guide_id": None,
-            "sql_generation_guide_version_id": None,
-            "sql_generation_guide_digest": None,
             "created_at": datetime(2026, 8, 24, 14, 2, tzinfo=UTC),
         }
 
@@ -921,12 +908,12 @@ class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
     ) -> dict[str, Any] | None:
         if "application.create_workflow_run" not in query:
             return await super().fetch_one(query, parameters)
-        assert len(parameters) == 30
+        assert len(parameters) == 29
         self.create_parameters = parameters
         assert parameters[3:6] == (18, 4, "mapping")
         assert parameters[6] in {"one_shot", "tool_assisted"}
         assert parameters[13] == []
-        assert parameters[29] == [101]
+        assert parameters[28] == [101]
         assert parameters[15] == "logical_entity"
         assert parameters[14] == []
         assert parameters[19:22] == (
@@ -934,7 +921,7 @@ class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
             "selected_targets",
             77,
         )
-        assert parameters[24:29] == (None,) * 5
+        assert parameters[24:28] == (None,) * 4
         return {
             "created": True,
             "workflow_run_id": 1049,
@@ -945,9 +932,6 @@ class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
             "selected_scope_digest": "b" * 64,
             "selected_scope_count": 1,
             "code_generation_coverage_mode": None,
-            "sql_generation_guide_id": None,
-            "sql_generation_guide_version_id": None,
-            "sql_generation_guide_digest": None,
             "created_at": datetime(2026, 8, 24, 14, 1, tzinfo=UTC),
         }
 

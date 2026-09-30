@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any, LiteralString, cast
 from uuid import UUID
 
@@ -45,11 +46,9 @@ def _plan(*, selected_object_ids: tuple[int, ...] = (501, 502)) -> AgentRunPlan:
         workflow_execution_mode=None,
         modeled_entity_type="logical_entity",
         code_generation_coverage_mode="selected_targets",
-        sql_generation_guide_id=90,
-        sql_generation_guide_version_id=91,
-        sql_generation_guide_digest="9" * 64,
         selected_scope_digest="a" * 64,
-        selected_object_ids=(), selected_entity_ids=selected_object_ids,
+        selected_object_ids=(),
+        selected_entity_ids=selected_object_ids,
         selection=AgentRunSelection(
             sdk_code="openai_agents_sdk",
             provider_code="microsoft_foundry",
@@ -81,7 +80,6 @@ def _row(modeled_entity_id: int) -> dict[str, Any]:
         "modeled_entity_schema_name": "silver",
         "source_system_count": 2,
         "code_input_digest": "c" * 64,
-        "sql_generation_guide_version_id": 91,
         "mapping_count": 1,
         "attribute_mapping_count": 1,
         "source_context": {
@@ -101,12 +99,12 @@ def _row(modeled_entity_id: int) -> dict[str, Any]:
             ],
             "object_mappings": [
                 {
-
                     "source_system_id": 11,
                     "entity": {
                         "entity_type": "logical_entity",
                         "entity_id": modeled_entity_id + 2000,
-                        "entity_schema_name": "silver", "entity_name": f"Target{modeled_entity_id}",
+                        "entity_schema_name": "silver",
+                        "entity_name": f"Target{modeled_entity_id}",
                     },
                     "transformation": {"kind": "direct"},
                 }
@@ -117,12 +115,6 @@ def _row(modeled_entity_id: int) -> dict[str, Any]:
                     "target": "customer_id",
                 }
             ],
-        },
-        "guide_document": {
-            "guide_code": "default_sql",
-            "guide_name": "Default SQL",
-            "version_number": 1,
-            "content": "Use MERGE when appropriate.",
         },
         "applied_artifacts": [],
     }
@@ -139,7 +131,6 @@ class ContextTransaction:
     ) -> list[dict[str, Any]]:
         assert "list_code_generation_target_context" in query
         assert "workflow_run_entity_selection" in query
-        assert "run.sql_generation_guide_version_id" in query
         assert parameters == (7, 18, 1048, 7, "logical_entity")
         return self.rows
 
@@ -166,9 +157,13 @@ async def test_context_uses_opaque_refs_and_exact_selected_target_coverage() -> 
     source_systems = target_context.get("source_systems")
     assert isinstance(source_systems, list)
     assert len(source_systems) == 2
-    artifact_authoring = target_context.get("artifact_authoring")
-    assert isinstance(artifact_authoring, dict)
-    assert artifact_authoring.get("source_system_codes") == ["CRM", "ERP"]
+    artifact_requirements = target_context.get("artifact_requirements")
+    assert isinstance(artifact_requirements, dict)
+    assert artifact_requirements == {
+        "file_layout": "combined",
+        "source_system_codes": ["CRM", "ERP"],
+        "preserved_artifact_names": [],
+    }
     target = target_context.get("target")
     assert isinstance(target, dict)
     assert target["tenant_code"] == "NWA"
@@ -201,9 +196,7 @@ async def test_context_rejects_inconsistent_mapping_counts() -> None:
 
 
 @pytest.mark.asyncio
-async def test_context_allows_complete_object_mapping_without_attribute_mappings() -> (
-    None
-):
+async def test_context_allows_complete_object_mapping_without_attribute_mappings() -> None:
     first = _row(501)
     second = _row(502)
     first["attribute_mapping_count"] = 0
@@ -231,10 +224,21 @@ async def test_selected_system_scope_preserves_locks_and_replaces_only_eligible_
         {"selected_source_system_id": 11},
         {"selected_source_system_id": 12},
     ]
+    source["object_mappings"][0]["output_template_code"] = "shared.object"
+    erp_mapping = deepcopy(source["object_mappings"][0])
+    erp_mapping.update(source_system_id=12, output_template_code="erp.object")
+    source["object_mappings"].append(erp_mapping)
+    row["mapping_count"] = 2
+    source["attribute_mappings"][0]["output_template_code"] = "shared.attribute"
+    source["mapping_templates"] = [
+        {"code": code, "is_active": False}
+        for code in ("shared.object", "erp.object", "shared.attribute")
+    ]
     row["applied_artifacts"] = [
         {
             "modeled_entity_type": "logical_entity",
-            "modeled_entity_schema_name": "silver", "modeled_entity_name": "Target501",
+            "modeled_entity_schema_name": "silver",
+            "modeled_entity_name": "Target501",
             "artifact_name": "erp.sql",
             "artifact_type": "sql_file",
             "generated_code_content": "SELECT 1",
@@ -266,6 +270,12 @@ async def test_selected_system_scope_preserves_locks_and_replaces_only_eligible_
     provider = cast(dict[str, Any], context.agent_context)["targets"][0]["context"]
     assert [item["system_code"] for item in provider["source_systems"]] == ["CRM"]
     assert len(provider["physical_sources"]) == 1
+    assert {item["code"] for item in provider["mapping_templates"]} == {
+        "shared.object",
+        "shared.attribute",
+    }
+    assert context.targets[0].code_input_digest == row["code_input_digest"]
+    assert len(source["mapping_templates"]) == 3
     cast(list[dict[str, Any]], row["applied_artifacts"])[0]["source_systems"].append(
         {
             "source_system_code": "CRM",
@@ -307,3 +317,9 @@ async def test_selected_system_scope_preserves_locks_and_replaces_only_eligible_
         await PostgresCodeGenerationContextRepository().load(
             ContextTransaction([row]), tenant_id=7, plan=plan
         )
+
+
+def test_frozen_code_plan_defaults_explicit_null_layout_to_combined() -> None:
+    values = _plan().model_dump()
+    values["code_generation_file_layout"] = None
+    assert AgentRunPlan.model_validate(values).code_generation_file_layout == "combined"

@@ -41,6 +41,7 @@ describe("Code Generation journey", () => {
     expect(within(ledger).getByText("order_mart", { exact: true })).toBeVisible();
     expect(screen.queryByLabelText("Target System code")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Contributing System code")).not.toBeInTheDocument();
+    if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
     await user.selectOptions(screen.getByLabelText("Status"), "stale");
     expect(within(ledger).getByText("customer", { exact: true })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Apply filters" }));
@@ -169,7 +170,7 @@ describe("Code Generation journey", () => {
     await screen.findByRole("table", { name: "Code Generation target Entities" });
     expect(screen.getByRole("button", { name: "Generate SQL" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Generate SQL" })).toBeDisabled();
-    expect(screen.getByText("Tenant Lock required to generate SQL")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Generate SQL" })).toHaveAttribute("title", "Tenant Lock required to generate SQL");
     unlocked.unmount();
 
     const denied = render(<WorkbenchApp router={createWorkbenchRouter({
@@ -178,7 +179,7 @@ describe("Code Generation journey", () => {
     })} />);
     await screen.findByRole("table", { name: "Code Generation target Entities" });
     expect(screen.getByRole("button", { name: "Generate SQL" })).toBeDisabled();
-    expect(screen.getByText("Architect permission required to generate SQL")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Generate SQL" })).toHaveAttribute("title", "Architect permission required to generate SQL");
     denied.unmount();
 
     const fetcher = codeGenerationFetchStub();
@@ -214,7 +215,6 @@ describe("Code Generation journey", () => {
       },
       prompt_overrides: {},
       code_generation_coverage_mode: "selected_targets",
-      sql_generation_guide_version_id: null,
       selected_system_codes: ["CRM"],
       code_generation_file_layout: "per_system",
     });
@@ -488,7 +488,6 @@ describe("Code Generation journey", () => {
     ["code_mapping_incomplete", "The selected Entities need at least one saved Object or Attribute transformation."],
     ["code_no_eligible_targets", "No selected Entities have a saved Mapping transformation."],
     ["code_system_unavailable", "A selected System no longer contributes to the selected Entities."],
-    ["sql_generation_guide_unavailable", "An active, published SQL generation guide is required."],
     ["workflow_prompt_unavailable", "A published Code generation prompt is unavailable."],
     ["tenant_lock_required", "Acquire the Tenant Lock on Home before generating SQL."],
     ["model_revision_conflict", "The Model changed. Close this dialog and refresh before generating SQL."],
@@ -666,7 +665,7 @@ function codeGenerationFetchStub(options: {
     if (url === "/api/v1/tenants/7/models/18/code-generation/artifacts/501") {
       return jsonResponse({
         ...generatedSqlDetail,
-        ...(options.nullableProvenance ? { guide: null, generator: null } : {}),
+        ...(options.nullableProvenance ? { generator: null } : {}),
         ...(options.stale ? { artifact_is_current: false, mapping_supports: [], mapping_support_count: 0, source_systems: [], source_system_count: 0 } : {}),
         ...(options.truncated ? { mapping_supports_truncated: true, mapping_support_count: 3 } : {}),
       });
@@ -830,16 +829,6 @@ const generatedSqlDetail = {
   mapping_supports_truncated: false,
   artifact_is_current: true,
   generated_code_status: "active",
-  guide: {
-    sql_generation_guide_id: 3,
-    sql_generation_guide_code: "databricks.standard",
-    sql_generation_guide_name: "Standard Databricks SQL",
-    guide_is_active: true,
-    sql_generation_guide_version_id: 13,
-    sql_generation_guide_version_number: 4,
-    sql_generation_guide_version_status: "published",
-    sql_generation_guide_digest: "a".repeat(64),
-  },
   workflow_run_id: 1100,
   generator: {
     generator_code: "gds_sql_generator",

@@ -98,9 +98,9 @@ describe("Mapping journey", () => {
     expect(transformation).toBeVisible();
     expect(within(transformation).getByText("customer_raw.is_deleted = false")).toBeVisible();
     expect(within(transformation).getByText("customer_address_raw")).toBeVisible();
-    const sources = within(transformation).getByRole("region", { name: "Sources" });
-    expect(within(transformation).getByText("customer_raw.is_deleted = false")
-      .compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const sources = within(transformation).getByRole("region", { name: "Source objects" });
+    expect(sources.compareDocumentPosition(within(transformation).getByText("customer_raw.is_deleted = false"))
+      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(transformation.compareDocumentPosition(attributes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText("Object transformation", { exact: true })).not.toBeInTheDocument();
     expect(await within(attributes).findByText("crm_customer.customer_name")).toBeVisible();
@@ -281,6 +281,7 @@ describe("Mapping journey", () => {
 
     expect(within(screen.getByRole("navigation", { name: "Mapping layer" })).getByRole("link", { name: "Logical" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByLabelText("Entity type")).not.toBeInTheDocument();
+    if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
     await user.selectOptions(screen.getByLabelText("Source System code"), "CRM");
     await user.selectOptions(screen.getByLabelText("Mapping status"), "inactive");
     await user.selectOptions(screen.getByLabelText("Mapping lock"), "false");
@@ -303,7 +304,7 @@ describe("Mapping journey", () => {
     await screen.findByRole("table", { name: "Object Mappings" });
     expect(await screen.findByRole("table", { name: "Object Mappings" })).toBeVisible();
     const mappings = within(screen.getByRole("table", { name: "Object Mappings" }));
-    expect(mappings.getAllByRole("columnheader").slice(1, 4).map((header) => header.textContent)).toEqual(["System", "Schema", "Entity name"]);
+    expect(mappings.getAllByRole("columnheader").slice(1, 5).map((header) => header.textContent)).toEqual(["System", "Entity order", "Schema", "Entity name"]);
     expect(mappings.getByRole("cell", { name: "silver_nwa" })).toBeVisible();
     expect(mappings.getByRole("cell", { name: "customer" })).toBeVisible();
     expect(mappings.getByRole("cell", { name: "CRM" })).toBeVisible();
@@ -539,7 +540,7 @@ describe("Mapping journey", () => {
     })} />);
     await screen.findByRole("table", { name: "Object Mappings" });
     expect(screen.getByRole("button", { name: "Generate mappings" })).toBeDisabled();
-    expect(screen.getByText("Tenant Lock required to run")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Generate mappings" })).toHaveAttribute("title", "Tenant Lock required to run");
     unlocked.unmount();
 
     const denied = render(<WorkbenchApp router={createWorkbenchRouter({
@@ -548,7 +549,7 @@ describe("Mapping journey", () => {
     })} />);
     await screen.findByRole("table", { name: "Object Mappings" });
     expect(screen.getByRole("button", { name: "Generate mappings" })).toBeDisabled();
-    expect(screen.getByText("Architect permission required to run")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Generate mappings" })).toHaveAttribute("title", "Architect permission required to run");
     denied.unmount();
 
     const fetcher = mappingFetchStub();
@@ -569,8 +570,8 @@ describe("Mapping journey", () => {
     expect(screen.getByLabelText("Object Mapping Output Template")).toHaveValue("");
     expect(screen.getByLabelText("Attribute Mapping Output Template")).toHaveValue("");
     expect(screen.getAllByRole("option", { name: "Use global default" })).toHaveLength(2);
-    expect(screen.getByText("mapping_object_default")).toBeVisible();
-    expect(screen.getByText("mapping_attribute_default")).toBeVisible();
+    expect(screen.getByText("mapping_logical_object_default")).toBeVisible();
+    expect(screen.getByText("mapping_logical_attribute_default")).toBeVisible();
     expect(screen.getByRole("option", {
       name: "Standard Object Mapping · Schema valid",
     })).toBeInTheDocument();
@@ -755,6 +756,10 @@ describe("Mapping journey", () => {
       await screen.findByRole("option", { name: "Standard Attribute Mapping · Schema valid" });
     }
     expect(within(dialog).queryByLabelText("Layer")).not.toBeInTheDocument();
+    const templateLayer = layer === "logical_entity" ? "logical" : "dimensional";
+    expect(within(dialog).getByText(`mapping_${templateLayer}_object_default`)).toBeVisible();
+    expect(within(dialog).getByText(`mapping_${templateLayer}_attribute_default`)).toBeVisible();
+    expect(fetcher.mock.calls.some(([input]) => String(input).includes(`/output-templates?target_type=mapping_object&active=true&page_size=200&entity_type=${layer}`))).toBe(true);
     expect(fetcher.mock.calls.some(([input]) => String(input).includes(`/mapping/generation-targets?entity_type=${layer}`))).toBe(true);
     await within(dialog).findByRole("checkbox", { name: "Generate silver_nwa.customer from CRM" });
     await user.selectOptions(screen.getByLabelText("Source System"), "2");
@@ -842,7 +847,7 @@ function mappingFetchStub(options: {
       });
     }
     if (url === "/api/v1/tenants/7/models/18/mapping/attributes/91") return jsonResponse(mappingAttributeDetail);
-    if (url === "/api/v1/tenants/7/output-templates?target_type=mapping_object&active=true&page_size=200") {
+    if (url.startsWith("/api/v1/tenants/7/output-templates?target_type=mapping_object&active=true&page_size=200&entity_type=")) {
       if (options.templatesUnavailable) return jsonResponse({ error: { code: "unavailable" } }, 503);
       return jsonResponse({
         tenant_id: 7,
@@ -856,7 +861,7 @@ function mappingFetchStub(options: {
         next_cursor: null,
       });
     }
-    if (url === "/api/v1/tenants/7/output-templates?target_type=mapping_attribute&active=true&page_size=200") {
+    if (url.startsWith("/api/v1/tenants/7/output-templates?target_type=mapping_attribute&active=true&page_size=200&entity_type=")) {
       if (options.templatesUnavailable) return jsonResponse({ error: { code: "unavailable" } }, 503);
       return jsonResponse({ tenant_id: 7, items: [attributeOutputTemplate], next_cursor: null });
     }

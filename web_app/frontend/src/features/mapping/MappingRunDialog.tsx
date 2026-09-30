@@ -63,8 +63,8 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
     queryFn: () => loadMappingGenerationTargets(api, tenantId, model.model_id, entityType),
   });
   const templates = useQuery({
-    queryKey: mappingQueryKeys.outputTemplates(tenantId, model.model_id),
-    queryFn: () => loadActiveMappingOutputTemplates(api, tenantId),
+    queryKey: mappingQueryKeys.outputTemplates(tenantId, model.model_id, entityType),
+    queryFn: () => loadActiveMappingOutputTemplates(api, tenantId, entityType),
   });
   const rows = useMemo(() => targets.data?.items ?? [], [targets.data?.items]);
   const systems = [...new Map(rows.map((row) => [row.source_system.system_id, row.source_system])).values()];
@@ -293,7 +293,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
         </fieldset>
         {targets.isError ? <button type="button" className="text-action" disabled={frozen} onClick={() => void targets.refetch()}>Retry loading targets</button> : null}
         <details className="mapping-advanced"><summary>Advanced settings</summary>
-          <MappingOutputTemplateSelection
+          <MappingOutputTemplateSelection entityType={entityType}
             mappingObjects={templates.data?.mappingObjects ?? []} mappingAttributes={templates.data?.mappingAttributes ?? []}
             objectValue={objectTemplate} attributeValue={attributeTemplate} disabled={frozen || templates.isPending || templates.isError}
             onObjectChange={setObjectTemplate} onAttributeChange={setAttributeTemplate} />

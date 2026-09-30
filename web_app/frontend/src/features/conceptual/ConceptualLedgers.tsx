@@ -1,3 +1,4 @@
+import { WorkflowFilters } from "../workflows/WorkflowCommandCenter";
 import { useMemo, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
@@ -268,7 +269,7 @@ function ConceptualFilterBar({
     }),
   });
   return (
-    <form
+    <WorkflowFilters><form
       className="workflow-filterbar conceptual-filterbar"
       aria-label={`Filter Conceptual ${kind}s`}
       onSubmit={(event) => {
@@ -338,7 +339,7 @@ function ConceptualFilterBar({
           Apply {kind} filters
         </button>
       </div>
-    </form>
+    </form></WorkflowFilters>
   );
 }
 

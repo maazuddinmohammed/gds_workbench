@@ -27,11 +27,12 @@ const stages = [
   { id: "validation", label: "Validation", to: "/tenants/$tenantId/validation/models/$modelId" },
 ] as const;
 
-export function ModelWorkspaceShell({ api, model, activeStage, tenantLock, children }: {
+export function ModelWorkspaceShell({ api, model, activeStage, tenantLock, lockControl, children }: {
   api: Pick<ModelsApi, "readModelOverview">;
   model: ModelDetail;
   activeStage: ModelStage;
   tenantLock: TenantLockState;
+  lockControl?: ReactNode;
   children: ReactNode;
 }) {
   const statusId = useId();
@@ -118,11 +119,12 @@ export function ModelWorkspaceShell({ api, model, activeStage, tenantLock, child
         <div className="model-identity-status">
           <span>Revision {model.model_revision}</span>
           {!model.is_active ? <span className="status-badge">Archived</span> : null}
-          <span className={tenantLock.owned_by_current_principal ? "model-lock is-held" : "model-lock"}>{lockLabel}</span>
+          {lockControl ?? <span className={tenantLock.owned_by_current_principal ? "model-lock is-held" : "model-lock"}>{lockLabel}</span>}
           <button className="model-status-refresh" type="button" aria-label="Refresh section status"
             title="Refresh section status" disabled={overview.isFetching}
             onClick={() => void Promise.all([
               overview.refetch(), client.invalidateQueries({ queryKey: ["model", model.tenant_id, model.model_id] }),
+              client.invalidateQueries({ queryKey: ["tenant-home", model.tenant_id] }),
             ])}>
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M5.5 8a7 7 0 0 1 11.7-3L20 8M4 16l2.8 3A7 7 0 0 0 18.5 16" /></svg>
           </button>

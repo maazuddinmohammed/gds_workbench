@@ -5,9 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import type { AnalysisFinding } from "./api";
 
 describe("Model Analysis", () => {
-  it("filters either relationship endpoint, selects findings, and opens full details", async () => {
+  it("filters either relationship endpoint and reviews findings in the complete table", async () => {
     const fetcher = analysisFetchStub();
     const user = userEvent.setup();
     render(<WorkbenchApp router={analysisRouter(fetcher)} />);
@@ -18,11 +19,22 @@ describe("Model Analysis", () => {
     expect(within(ledger).getByRole("columnheader", { name: "Inferred cardinality" })).toBeVisible();
     expect(within(ledger).getByRole("columnheader", { name: "Observed cardinality" })).toBeVisible();
     expect(within(ledger).getByText("Many to one")).toBeVisible();
-    expect(within(ledger).getByText("Not validated")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Lock selected" })).toBeDisabled();
+    expect(within(ledger).getAllByText("Not validated")).toHaveLength(5);
+    expect(within(ledger).getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
+      "", "From Object schema (A)", "From Object (A)", "From Attribute (A)", "To Object schema (B)", "To Object (B)", "To Attribute (B)",
+      "Relationship", "Inferred cardinality", "Observed cardinality", "Confidence",
+      "A count", "B count", "A → B mismatches", "B → A mismatches",
+      "A → B mismatch %", "B → A mismatch %", "Status", "Lock",
+    ]);
+    expect(within(ledger).getAllByText("bronze")).toHaveLength(2);
+    expect(within(ledger).queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Scrollable Analysis findings" })).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("button", { name: "Lock selected", hidden: true })).toBeDisabled();
 
+    if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
     await user.selectOptions(screen.getByLabelText("Object endpoint"), "501");
     await user.selectOptions(screen.getByLabelText("Validation state"), "unvalidated");
+    if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
     await user.click(screen.getByRole("checkbox", { name: "Show inactive" }));
     await user.click(screen.getByRole("button", { name: "Apply finding filters" }));
 
@@ -46,44 +58,48 @@ describe("Model Analysis", () => {
     expect(new Headers(reviewCall?.[1]?.headers).get("Idempotency-Key"))
       .toMatch(/^[0-9a-f-]{36}$/);
 
-    await user.click(screen.getByRole("link", { name: "Open finding 81" }));
-    expect(await screen.findByRole("heading", { name: /customer_raw.*invoice_raw/i })).toBeVisible();
-    expect(screen.getByText("Matched customer identifier semantics.")).toBeVisible();
-    expect(screen.getByText("Inferred cardinality: many to one")).toBeVisible();
-    expect(screen.getByText(/Observed cardinality: many to many/)).toBeVisible();
-    expect(screen.getByText(/Recorded counts differ from the inferred cardinality/)).toHaveTextContent("This does not block modeling.");
-    expect(screen.getByText("2 missing targets")).toBeVisible();
-    expect(screen.getByText("Locked")).toBeVisible();
+    expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/analysis/81"))).toBe(false);
   });
 
-  it.each([null, "supported", "inconclusive", "unsupported"] as const)("separates inference, record state and validation result (%s)", async (result) => {
-    const user = userEvent.setup();
-    const fetcher = analysisFetchStub({ detailResult: result });
-    render(<WorkbenchApp router={createWorkbenchRouter({
+  it("shows recorded metrics without fetching each finding or calculating from profiling totals", async () => {
+    const fetcher = analysisFetchStub({ findingOverrides: {
+      validation_state: "validated", validation_result: "unsupported",
+      from_row_count: 1000, to_row_count: 2000,
+      source_missing_target_count: 4, unused_target_count: 24,
+      source_missing_target_percent: 5, unused_target_percent: 24,
+      observed_cardinality: "many_to_many", cardinality_mismatch: true,
+    } });
+    render(<WorkbenchApp router={analysisRouter(fetcher)} />);
+    const ledger = await screen.findByRole("table", { name: "Analysis findings" });
+    const cells = within(within(ledger).getAllByRole("row")[1]!).getAllByRole("cell");
+    expect(cells.slice(11, 17).map((cell) => cell.textContent)).toEqual(["1,000", "2,000", "4", "24", "5.00%", "24.00%"]);
+    expect(within(ledger).getByText("Differs from inference")).toBeVisible();
+    expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/analysis/81"))).toBe(false);
+  });
+
+  it("distinguishes missing measurements, measured zero, and an undefined percentage", async () => {
+    render(<WorkbenchApp router={analysisRouter(analysisFetchStub({ findingOverrides: {
+      validation_state: "validated", validation_result: "inconclusive",
+      from_row_count: null, to_row_count: 0,
+      source_missing_target_count: 3, unused_target_count: 0,
+      source_missing_target_percent: 100, unused_target_percent: null,
+    } }))} />);
+    const ledger = await screen.findByRole("table", { name: "Analysis findings" });
+    const cells = within(within(ledger).getAllByRole("row")[1]!).getAllByRole("cell");
+    expect(cells.slice(11, 17).map((cell) => cell.textContent)).toEqual(["Not profiled", "0", "3", "0", "100.00%", "N/A"]);
+  });
+
+  it("redirects old finding links to the table and preserves the Model layer", async () => {
+    const fetcher = analysisFetchStub();
+    const router = createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/analysis/81"] }),
-    })} />);
-    const heading = await screen.findByRole("heading", { name: /customer_raw.*invoice_raw/i });
-    expect(heading).toHaveFocus();
-    expect(screen.getByText("Active")).toBeVisible();
-    expect(screen.getByText("Open")).toBeVisible();
-    expect(screen.getByText("Connection: crm-prod · Schema: bronze")).not.toBeVisible();
-    await user.click(screen.getByRole("heading", { name: "Relationship endpoints" }));
-    expect(screen.getByText("Connection: crm-prod · Schema: bronze")).toBeVisible();
-    expect(screen.getByText("Connection: erp-prod · Schema: bronze")).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Relationship inference" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Recorded validation evidence" })).toBeVisible();
-    if (result === null) {
-      expect(screen.getByText("Not validated")).toBeVisible();
-      expect(screen.getByText("No validation evidence is recorded for this finding.")).toBeVisible();
-      expect(screen.queryByRole("table", { name: "Recorded endpoint counts" })).not.toBeInTheDocument();
-    } else {
-      expect(screen.getAllByText(result)).toHaveLength(2);
-      expect(within(screen.getByRole("table", { name: "Recorded endpoint counts" })).getAllByRole("row")).toHaveLength(3);
-      expect(screen.getByText("Duplicate target keys").nextElementSibling).toHaveTextContent("0");
-      expect(screen.queryByRole("heading", { name: "Provenance" })).not.toBeInTheDocument();
-      expect(screen.queryByText("a".repeat(64))).not.toBeInTheDocument();
-    }
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/analysis/81?layer=dimensional"] }),
+    });
+    render(<WorkbenchApp router={router} />);
+    await screen.findByRole("table", { name: "Analysis findings" });
+    expect(router.state.location.pathname).toBe("/tenants/7/models/18/analysis");
+    expect(router.state.location.search).toEqual({ layer: "dimensional" });
+    expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/analysis/81"))).toBe(false);
   });
 
   it("unlocks, deactivates, and reactivates findings using each refreshed Model revision", async () => {
@@ -91,6 +107,7 @@ describe("Model Analysis", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={analysisRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Analysis findings" });
+    if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
     await user.click(screen.getByRole("checkbox", { name: "Show inactive" }));
     await user.click(screen.getByRole("button", { name: "Apply finding filters" }));
 
@@ -156,9 +173,9 @@ describe("Model Analysis", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={analysisRouter(analysisFetchStub({ hasTenantLock: false }))} />);
     await screen.findByRole("table", { name: "Analysis findings" });
-    expect(screen.getByRole("button", { name: "Lock selected" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Lock selected", hidden: true })).toBeDisabled();
     await user.click(screen.getByRole("checkbox", { name: "Select finding 81" }));
-    expect(screen.getByRole("button", { name: "Unlock selected" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Unlock selected", hidden: true })).toBeDisabled();
     expect(screen.getByText("Tenant Lock required for review updates.")).toBeVisible();
   });
 
@@ -168,12 +185,14 @@ describe("Model Analysis", () => {
     render(<WorkbenchApp router={analysisRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Analysis findings" });
 
-    await user.click(screen.getByRole("button", { name: "Runs" }));
+    await user.click(screen.getByRole("button", { name: "Show Analysis run activity" }));
     expect(await screen.findByRole("region", { name: "Analysis recent runs" })).toBeVisible();
     await waitFor(() => expect(screen.getAllByText("tool assisted authoring")).toHaveLength(2));
     expect(screen.getByText("Deterministic validation")).toBeVisible();
-    expect(screen.getByRole("table", { name: "Analysis runs" })).toBeVisible();
+    expect(screen.getByRole("list", { name: "Analysis run list" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Close activity" }));
 
+    if (!screen.getByText("Run", { selector: "summary" }).closest("details")?.open) await user.click(screen.getByText("Run", { selector: "summary" }));
     await user.click(screen.getByRole("button", { name: "Run inference" }));
     const inferenceDialog = await screen.findByRole("dialog", { name: "Configure Analysis inference" });
     for (const label of ["Agent SDK", "Provider", "Maximum turns", "Validation retries"]) {
@@ -219,6 +238,7 @@ describe("Model Analysis", () => {
       }),
     );
 
+    if (!screen.getByText("Run", { selector: "summary" }).closest("details")?.open) await user.click(screen.getByText("Run", { selector: "summary" }));
     await user.click(screen.getByRole("button", { name: "Validate pending" }));
     const validationDialog = await screen.findByRole("dialog", { name: "Configure Analysis validation" });
     await user.click(within(validationDialog).getByRole("button", { name: "Create and run validation" }));
@@ -244,6 +264,7 @@ describe("Model Analysis", () => {
     render(<WorkbenchApp router={analysisRouter(analysisFetchStub())} />);
     await screen.findByRole("table", { name: "Analysis findings" });
 
+    if (!screen.getByText("Run", { selector: "summary" }).closest("details")?.open) await user.click(screen.getByText("Run", { selector: "summary" }));
     await user.click(screen.getByRole("button", { name: "Run inference" }));
     const dialog = await screen.findByRole("dialog", { name: "Configure Analysis inference" });
     const executionMode = within(dialog).getByLabelText("Execution mode");
@@ -277,6 +298,7 @@ describe("Model Analysis", () => {
     render(<WorkbenchApp router={analysisRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Analysis findings" });
 
+    if (!screen.getByText("Run", { selector: "summary" }).closest("details")?.open) await user.click(screen.getByText("Run", { selector: "summary" }));
     await user.click(screen.getByRole("button", { name: "Run inference" }));
     const dialog = await screen.findByRole("dialog", { name: "Configure Analysis inference" });
     await user.click(within(dialog).getByRole("button", { name: "Create and run inference" }));
@@ -314,7 +336,7 @@ describe("Model Analysis", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The Model changed while Analysis results were loading.",
     );
-    expect(screen.getByRole("button", { name: "Lock selected" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Lock selected", hidden: true })).toBeDisabled();
     mismatchRender.unmount();
 
     render(<WorkbenchApp router={analysisRouter(analysisFetchStub({ error: true }))} />);
@@ -340,13 +362,13 @@ function analysisFetchStub(options: {
   modelRevision?: number;
   hasTenantLock?: boolean;
   findingLocked?: boolean;
-  detailResult?: "supported" | "inconclusive" | "unsupported" | null;
+  findingOverrides?: Partial<AnalysisFinding>;
   reviewFailureOnce?: "network" | "server" | "conflict";
 } = {}) {
   let inferenceStartAttempts = 0;
   let reviewAttempts = 0;
   let revision = 18;
-  const finding = { ...analysisFindingPayload, is_locked: options.findingLocked ?? false };
+  const finding = { ...analysisFindingPayload, is_locked: options.findingLocked ?? false, ...options.findingOverrides };
   const reviewedKeys = new Set<string>();
   return vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
@@ -365,17 +387,6 @@ function analysisFetchStub(options: {
         model_revision: options.modelRevision ?? revision,
         items: options.empty || (finding.status === "inactive" && !url.includes("show_inactive=true")) ? [] : [finding],
         next_cursor: null,
-      });
-    }
-    if (url === "/api/v1/tenants/7/models/18/analysis/81") {
-      return jsonResponse({ ...analysisDetailPayload, is_locked: finding.is_locked, status: finding.status,
-        ...(options.detailResult !== undefined ? {
-          validation_result: options.detailResult,
-          validation_state: options.detailResult === null ? "unvalidated" : "validated",
-          observed_cardinality: options.detailResult === null ? null : analysisDetailPayload.observed_cardinality,
-          cardinality_mismatch: options.detailResult !== null,
-          evidence: options.detailResult === null ? null : { ...analysisDetailPayload.evidence, result: options.detailResult },
-        } : {}),
       });
     }
     if (url === "/api/v1/tenants/7/models/18/change-sets/review") {
@@ -574,7 +585,7 @@ const toEndpoint = {
   object_name: "invoice_raw",
 };
 
-const analysisFindingPayload = {
+const analysisFindingPayload: AnalysisFinding = {
   analysis_result_id: 81,
   from_endpoint: fromEndpoint,
   to_endpoint: toEndpoint,
@@ -583,39 +594,17 @@ const analysisFindingPayload = {
   inferred_cardinality: "many_to_one",
   observed_cardinality: null,
   cardinality_mismatch: false,
+  from_row_count: 100,
+  to_row_count: null,
+  source_missing_target_count: null,
+  unused_target_count: null,
+  source_missing_target_percent: null,
+  unused_target_percent: null,
   validation_state: "unvalidated",
   validation_result: null,
   status: "active",
   is_locked: false,
   updated_at: "2026-08-24T14:20:00Z",
-};
-
-const analysisDetailPayload = {
-  ...analysisFindingPayload,
-  validation_state: "validated",
-  validation_result: "supported",
-  relationship_basis: "Matched customer identifier semantics.",
-  observed_cardinality: "many_to_many",
-  cardinality_mismatch: true,
-  relationship_basis_truncated: false,
-  evidence: {
-    validation_policy_version: "1.0.0",
-    validation_policy_digest: "a".repeat(64),
-    result: "supported",
-    source_non_null_count: 100,
-    source_distinct_count: 98,
-    target_non_null_count: 100,
-    target_distinct_count: 98,
-    source_missing_target_count: 2,
-    unused_target_count: 4,
-    duplicate_target_key_count: 0,
-  },
-  provenance: {
-    agent_run_id: null,
-    inference_workflow_run_id: 1048,
-    validation_workflow_run_id: 1049,
-  },
-  created_at: "2026-08-24T14:00:00Z",
 };
 
 const analysisRunsPayload = [

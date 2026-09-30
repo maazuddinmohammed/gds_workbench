@@ -35,6 +35,7 @@ from gds_etl_workbench.domain.snapshots.model import (
     model_snapshot_records,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadTransaction
+from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from gds_workbench_api.features.assertions.contracts import validate_safe_json
@@ -47,7 +48,7 @@ from gds_workbench_api.features.workflows.authoring.tool_configuration import (
     registered_tool_definitions,
 )
 
-from .context_inputs import project_context_inputs
+from .context_inputs import OBJECT_FIELDS, natural_key, project_context_inputs
 from .context_readers import FrozenContextReaders
 from .plan import AgentRunPlan, ModelWorkflow, WorkflowExecutionMode
 from .repair import AgentContextTooLargeError, load_default_agent_context_policy
@@ -155,6 +156,29 @@ SELECT selection.selection_order, selection.modeled_entity_id,
  ORDER BY selection.selection_order
 """
 
+_SUPPORTING_OBJECT_IDS_SQL: LiteralString = """
+SELECT object_record.object_id, placement.tenant_code, system.system_code,
+       connection.connection_code, object_record.object_schema, object_record.object_name
+  FROM jsonb_to_recordset(%s::JSONB) AS requested(
+       tenant_code TEXT, system_code TEXT, connection_code TEXT,
+       object_schema TEXT, object_name TEXT)
+  JOIN core.tenant AS placement
+    ON lower(btrim(placement.tenant_code)) = lower(btrim(requested.tenant_code))
+   AND placement.is_active
+  JOIN core.connection AS connection
+    ON connection.tenant_id = placement.tenant_id AND connection.is_active
+   AND lower(btrim(connection.connection_code)) = lower(btrim(requested.connection_code))
+  JOIN core.system AS system ON system.system_id = connection.system_id AND system.is_active
+   AND lower(btrim(system.system_code)) = lower(btrim(requested.system_code))
+  JOIN core.object AS object_record ON object_record.connection_id = connection.connection_id
+   AND lower(btrim(object_record.object_schema)) = lower(btrim(requested.object_schema))
+   AND lower(btrim(object_record.object_name)) = lower(btrim(requested.object_name))
+   AND object_record.is_active AND object_record.source_tenant_id = %s
+  JOIN reference.zone AS zone ON zone.zone_id = object_record.zone_id AND zone.is_active
+   AND lower(btrim(zone.zone_code)) IN ('source', 'bronze')
+ ORDER BY object_record.object_id
+"""
+
 _SELECTED_OBJECTS_SQL: LiteralString = """
 WITH selected AS (
     SELECT object_id, selection_order
@@ -198,7 +222,7 @@ SELECT selected.selection_order,
     ON system.system_id = eligibility.system_id
   JOIN reference.object_type AS object_type
     ON object_type.object_type_id = object_record.object_type_id
- WHERE %s IN ('analysis', 'conceptual', 'logical')
+ WHERE %s IN ('analysis', 'conceptual', 'logical', 'dimensional')
  ORDER BY selected.selection_order
 """
 
@@ -251,7 +275,7 @@ SELECT selected.selection_order,
     ON placement_tenant.tenant_id = connection.tenant_id
   JOIN core.system AS system
     ON system.system_id = eligibility.system_id
- WHERE %s IN ('analysis', 'conceptual', 'logical')
+ WHERE %s IN ('analysis', 'conceptual', 'logical', 'dimensional')
  ORDER BY selected.selection_order,
           attribute.attribute_ordinal_position,
           attribute.attribute_id
@@ -423,6 +447,8 @@ class AgentAuthoringContext(BaseModel):
     selected_scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     model_details: ModelDetailsRecord = Field(repr=False)
     selected_objects: tuple[SelectedObjectContext, ...] = Field(repr=False)
+    # Read-only physical lineage for Dimensional decisions; never candidate source eligibility.
+    supporting_objects: tuple[SelectedObjectContext, ...] = Field(default=(), repr=False)
     selected_logical_entities: tuple[SelectedLogicalEntityContext, ...] = Field(
         default=(), repr=False
     )
@@ -674,6 +700,8 @@ class PostgresAgentContextRepository:
             > self._limits.max_selected_objects
         ):
             raise AgentContextTooLargeError()
+        if plan.model_workflow == "dimensional" and plan.selected_object_ids:
+            raise AgentContextUnavailableError()
 
         try:
             model_row = await transaction.fetch_one(
@@ -708,8 +736,8 @@ class PostgresAgentContextRepository:
                 and len(attribute_rows) > self._limits.max_selected_attributes
             ):
                 raise AgentContextTooLargeError()
-            selected = _selected_objects(
-                plan=plan,
+            selected = _physical_object_groups(
+                object_ids=plan.selected_object_ids,
                 object_rows=object_rows,
                 attribute_rows=attribute_rows,
             )
@@ -720,6 +748,8 @@ class PostgresAgentContextRepository:
                 else None
             )
             selected_logical: tuple[SelectedLogicalEntityContext, ...] = ()
+            supporting_objects: tuple[SelectedObjectContext, ...] = ()
+            evidence_object_ids = plan.selected_object_ids
             if plan.model_workflow == "dimensional":
                 entity_rows = await transaction.fetch_all(
                     _SELECTED_LOGICAL_ENTITIES_SQL, (plan.workflow_run_id, plan.model_id)
@@ -769,18 +799,97 @@ class PostgresAgentContextRepository:
                     > self._limits.max_selected_attributes
                 ):
                     raise AgentContextTooLargeError()
+                if physical_scope is None:
+                    raise AgentContextUnavailableError()
+                # Only active physical lineage of the frozen Logical selection may
+                # contribute evidence. Current physical authorization/eligibility is
+                # an independent boundary; saved lineage alone is not permission.
+                support_objects: dict[PhysicalObjectKey, dict[str, str]] = {}
+                for logical in selected_logical:
+                    physical_sources = [
+                        source.source_object
+                        for source in logical.entity.sources
+                        if source.support_source_type == "object" and source.status == "active"
+                    ]
+                    physical_sources.extend(
+                        source.source_attribute
+                        for attribute in logical.attributes
+                        for source in attribute.sources
+                        if source.support_source_type == "attribute" and source.status == "active"
+                    )
+                    for source in physical_sources:
+                        key = _physical_key(source)
+                        if key in physical_scope.model_input_objects:
+                            support_objects[key] = {
+                                name: getattr(source, name) for name in OBJECT_FIELDS
+                            }
+                if (
+                    self._limits.max_selected_objects is not None
+                    and len(support_objects) > self._limits.max_selected_objects
+                ):
+                    raise AgentContextTooLargeError()
+                if support_objects:
+                    resolved = await transaction.fetch_all(
+                        _SUPPORTING_OBJECT_IDS_SQL,
+                        (
+                            Jsonb([support_objects[key] for key in sorted(support_objects)]),
+                            tenant_id,
+                        ),
+                    )
+                    resolved_keys = {natural_key(row) for row in resolved}
+                    if (
+                        len(resolved_keys) != len(resolved)
+                        or not resolved_keys <= support_objects.keys()
+                    ):
+                        raise AgentContextUnavailableError()
+                    evidence_object_ids = tuple(row["object_id"] for row in resolved)
+                    if len(set(evidence_object_ids)) != len(evidence_object_ids) or any(
+                        not isinstance(object_id, int)
+                        or isinstance(object_id, bool)
+                        or object_id <= 0
+                        for object_id in evidence_object_ids
+                    ):
+                        raise AgentContextUnavailableError()
+                    support_rows = await transaction.fetch_all(
+                        _SELECTED_OBJECTS_SQL,
+                        (list(evidence_object_ids), plan.model_id, "dimensional"),
+                    )
+                    support_attribute_rows = await transaction.fetch_all(
+                        _SELECTED_ATTRIBUTES_SQL,
+                        (
+                            list(evidence_object_ids),
+                            plan.model_id,
+                            "dimensional",
+                            None
+                            if self._limits.max_selected_attributes is None
+                            else self._limits.max_selected_attributes + 1,
+                        ),
+                    )
+                    if (
+                        self._limits.max_selected_attributes is not None
+                        and len(support_attribute_rows) > self._limits.max_selected_attributes
+                    ):
+                        raise AgentContextTooLargeError()
+                    supporting_objects = _physical_object_groups(
+                        object_ids=evidence_object_ids,
+                        object_rows=support_rows,
+                        attribute_rows=support_attribute_rows,
+                    )
+                    if {_physical_key(item.object) for item in supporting_objects} != resolved_keys:
+                        raise AgentContextUnavailableError()
             context = _assemble_context(
                 plan=plan,
                 model=model,
                 selected=selected,
                 selected_logical=selected_logical,
+                supporting_objects=supporting_objects,
                 snapshot=snapshot,
             )
             source_rows = await transaction.fetch_all(
-                _PROMPT_SOURCE_CONTEXT_SQL, (list(plan.selected_object_ids), tenant_id)
+                _PROMPT_SOURCE_CONTEXT_SQL, (list(evidence_object_ids), tenant_id)
             )
             provenance_rows = await transaction.fetch_all(
-                _PROFILE_PROVENANCE_SQL, (plan.model_id, list(plan.selected_object_ids))
+                _PROFILE_PROVENANCE_SQL, (plan.model_id, list(evidence_object_ids))
             )
             context = _with_prompt_evidence(
                 context,
@@ -788,6 +897,7 @@ class PostgresAgentContextRepository:
                 snapshot=snapshot,
                 source_rows=source_rows,
                 provenance_rows=provenance_rows,
+                evidence_object_ids=evidence_object_ids,
                 placement_rows=(
                     await transaction.fetch_all(_MODEL_GDS_CONTEXT_SQL, (plan.model_id, tenant_id))
                     if plan.model_workflow == "dimensional"
@@ -915,18 +1025,18 @@ def _model_context(
     )
 
 
-def _selected_objects(
+def _physical_object_groups(
     *,
-    plan: AgentRunPlan,
+    object_ids: tuple[int, ...],
     object_rows: list[dict[str, Any]],
     attribute_rows: list[dict[str, Any]],
 ) -> tuple[SelectedObjectContext, ...]:
-    if len(object_rows) != len(plan.selected_object_ids):
+    if len(object_rows) != len(object_ids):
         raise AgentContextUnavailableError()
 
     object_by_id: dict[int, tuple[int, ObjectRecord]] = {}
     for expected_order, (expected_id, row) in enumerate(
-        zip(plan.selected_object_ids, object_rows, strict=True),
+        zip(object_ids, object_rows, strict=True),
         start=1,
     ):
         object_id = row.get("object_id")
@@ -944,7 +1054,7 @@ def _selected_objects(
         object_by_id[expected_id] = (expected_order, record)
 
     attributes_by_object: dict[int, list[AttributeRecord]] = {
-        object_id: [] for object_id in plan.selected_object_ids
+        object_id: [] for object_id in object_ids
     }
     seen_attribute_ids: set[int] = set()
     for row in attribute_rows:
@@ -972,7 +1082,7 @@ def _selected_objects(
         attributes_by_object[object_id].append(record)
 
     selected: list[SelectedObjectContext] = []
-    for object_id in plan.selected_object_ids:
+    for object_id in object_ids:
         selection_order, object_record = object_by_id[object_id]
         attributes = attributes_by_object[object_id]
         ordinals = [attribute.attribute_ordinal_position for attribute in attributes]
@@ -996,6 +1106,7 @@ def _assemble_context(
     selected: tuple[SelectedObjectContext, ...],
     snapshot: ModelSnapshot,
     selected_logical: tuple[SelectedLogicalEntityContext, ...] = (),
+    supporting_objects: tuple[SelectedObjectContext, ...] = (),
 ) -> AgentAuthoringContext:
     if (
         snapshot.model_id != model.model_id
@@ -1016,19 +1127,26 @@ def _assemble_context(
     if plan.model_workflow == "dimensional":
         if selected or len(selected_logical) != len(plan.selected_entity_ids):
             raise AgentContextUnavailableError()
-    elif not selected_keys <= scope_keys:
+    elif supporting_objects or not selected_keys <= scope_keys:
         raise AgentContextUnavailableError()
 
+    evidence_keys = selected_keys | {_physical_key(item.object) for item in supporting_objects}
+    evidence_attribute_keys = {
+        (*_physical_key(attribute), normalize_model_key_value(attribute.attribute_name))
+        for item in (*selected, *supporting_objects)
+        for attribute in item.attributes
+    }
     profiles = tuple(
         profile
         for profile in snapshot.profiling.profiles
-        if _physical_key(profile) in selected_keys
+        if (*_physical_key(profile), normalize_model_key_value(profile.attribute_name))
+        in evidence_attribute_keys
     )
     analysis_relationships = tuple(
         relationship
         for relationship in snapshot.analysis.relationships
-        if _analysis_endpoint_key(relationship, "from") in selected_keys
-        or _analysis_endpoint_key(relationship, "to") in selected_keys
+        if _analysis_endpoint_key(relationship, "from") in evidence_keys
+        or _analysis_endpoint_key(relationship, "to") in evidence_keys
     )
 
     assertion_records = snapshot.assertion.records
@@ -1055,6 +1173,7 @@ def _assemble_context(
         selected_scope_digest=plan.selected_scope_digest,
         model_details=snapshot.model_input_scope.details,
         selected_objects=selected,
+        supporting_objects=supporting_objects,
         selected_logical_entities=selected_logical,
         profiles=profiles,
         analysis_relationships=analysis_relationships,
@@ -1084,10 +1203,14 @@ def _with_prompt_evidence(
     source_rows: list[dict[str, Any]],
     provenance_rows: list[dict[str, Any]],
     placement_rows: list[dict[str, Any]],
+    evidence_object_ids: tuple[int, ...],
 ) -> AgentAuthoringContext:
-    from .context_inputs import OBJECT_FIELDS, natural_key
-
-    selected = dict(zip(plan.selected_object_ids, context.selected_objects, strict=True))
+    physical_objects = (
+        context.supporting_objects
+        if plan.model_workflow == "dimensional"
+        else context.selected_objects
+    )
+    selected = dict(zip(evidence_object_ids, physical_objects, strict=True))
     sources: dict[tuple[Any, ...], dict[str, JsonValue]] = {}
     placements: dict[tuple[Any, ...], dict[str, JsonValue]] = {}
     for row in placement_rows:
@@ -1098,7 +1221,7 @@ def _with_prompt_evidence(
             raise AgentContextUnavailableError()
         obj = selected[row["object_id"]].object.model_dump(mode="json")
         key = {name: obj[name] for name in OBJECT_FIELDS}
-        if obj["zone_code"] != "source":
+        if obj["zone_code"] != "source" and plan.model_workflow != "dimensional":
             placement = {name: obj[name] for name in (*OBJECT_FIELDS[:3], "zone_code")}
             placement["zone_description"] = row["zone_description"]
             placements[(*natural_key(obj, OBJECT_FIELDS[:3]), obj["zone_code"])] = placement
@@ -1143,7 +1266,7 @@ def _with_prompt_evidence(
     assertion_scope = [
         {"tenant_code": snapshot.model_tenant_code, "system_code": system}
         for system in sorted(
-            {item.object.system_code for item in context.selected_objects}
+            {item.object.system_code for item in physical_objects}
             | {str(source["system_code"]) for source in sources.values()}
         )
         if snapshot.model_tenant_code

@@ -191,6 +191,7 @@ def assess_mapping_readiness(
         if (
             template is None
             or template.target_type != target_type
+            or template.modeled_entity_type not in (None, plan.modeled_entity_type)
             or template.schema_digest != selection.schema_digest
             or not template.schema_digest_is_valid
             or not template.is_active

@@ -19,9 +19,6 @@ CREATE TABLE application.workflow_run (
     code_generation_coverage_mode VARCHAR(30),
     code_generation_file_layout VARCHAR(30),
     code_generation_system_codes VARCHAR(100)[],
-    sql_generation_guide_id BIGINT,
-    sql_generation_guide_version_id BIGINT,
-    sql_generation_guide_digest CHAR(64),
     requested_batch_id VARCHAR(500),
     mapping_operation VARCHAR(20),
     mapping_coverage_mode VARCHAR(30),
@@ -78,15 +75,6 @@ CREATE TABLE application.workflow_run (
         actor_entra_principal_identity_id
     ) REFERENCES security.entra_principal_identity (
         entra_principal_identity_id
-    ) ON DELETE NO ACTION,
-    CONSTRAINT fk_workflow_run_sql_generation_guide_version FOREIGN KEY (
-        sql_generation_guide_version_id,
-        sql_generation_guide_id,
-        sql_generation_guide_digest
-    ) REFERENCES application.sql_generation_guide_version (
-        sql_generation_guide_version_id,
-        sql_generation_guide_id,
-        sql_generation_guide_digest
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_authoring_no_op_event FOREIGN KEY (
         authoring_no_op_model_event_log_id
@@ -199,8 +187,10 @@ CREATE TABLE application.workflow_run (
         )
     ),
     CONSTRAINT ck_workflow_run_code_generation_options CHECK (
-        (code_generation_file_layout IS NULL OR (model_workflow = 'code_generation'
-            AND code_generation_file_layout IN ('combined', 'per_system')))
+        ((model_workflow = 'code_generation'
+            AND code_generation_file_layout IS NOT NULL
+            AND code_generation_file_layout IN ('combined', 'per_system'))
+         OR (model_workflow <> 'code_generation' AND code_generation_file_layout IS NULL))
         AND (code_generation_system_codes IS NULL OR model_workflow = 'code_generation')
     ),
     CONSTRAINT ck_workflow_run_code_generation_request CHECK (
@@ -210,18 +200,9 @@ CREATE TABLE application.workflow_run (
             AND code_generation_coverage_mode IN (
                 'selected_targets', 'all_eligible_targets'
             )
-            AND num_nonnulls(
-                sql_generation_guide_id,
-                sql_generation_guide_version_id,
-                sql_generation_guide_digest
-            ) = 3
-            AND sql_generation_guide_digest ~ '^[0-9a-f]{64}$'
         ) OR (
             model_workflow <> 'code_generation'
             AND code_generation_coverage_mode IS NULL
-            AND sql_generation_guide_id IS NULL
-            AND sql_generation_guide_version_id IS NULL
-            AND sql_generation_guide_digest IS NULL
         )
     ),
     CONSTRAINT ck_workflow_run_mapping_request CHECK (
@@ -612,9 +593,6 @@ BEGIN
         NEW.code_generation_coverage_mode,
         NEW.code_generation_file_layout,
         NEW.code_generation_system_codes,
-        NEW.sql_generation_guide_id,
-        NEW.sql_generation_guide_version_id,
-        NEW.sql_generation_guide_digest,
         NEW.requested_batch_id,
         NEW.mapping_operation,
         NEW.mapping_coverage_mode,
@@ -648,9 +626,6 @@ BEGIN
         OLD.code_generation_coverage_mode,
         OLD.code_generation_file_layout,
         OLD.code_generation_system_codes,
-        OLD.sql_generation_guide_id,
-        OLD.sql_generation_guide_version_id,
-        OLD.sql_generation_guide_digest,
         OLD.requested_batch_id,
         OLD.mapping_operation,
         OLD.mapping_coverage_mode,
@@ -1196,7 +1171,6 @@ CREATE FUNCTION application.create_workflow_run(
     p_mapping_object_output_template_id BIGINT DEFAULT NULL,
     p_mapping_attribute_output_template_id BIGINT DEFAULT NULL,
     p_code_generation_coverage_mode VARCHAR(30) DEFAULT NULL,
-    p_sql_generation_guide_version_id BIGINT DEFAULT NULL,
     p_metadata_enrichment_description_targets JSONB DEFAULT NULL,
     p_mapping_targets JSONB DEFAULT NULL,
     p_code_generation_file_layout VARCHAR(30) DEFAULT NULL,
@@ -1213,10 +1187,7 @@ RETURNS TABLE (
     model_revision BIGINT,
     selected_scope_digest CHAR(64),
     selected_scope_count INTEGER,
-    code_generation_coverage_mode VARCHAR(30),
-    sql_generation_guide_id BIGINT,
-    sql_generation_guide_version_id BIGINT,
-    sql_generation_guide_digest CHAR(64)
+    code_generation_coverage_mode VARCHAR(30)
 )
 LANGUAGE plpgsql
 VOLATILE
@@ -1265,9 +1236,6 @@ DECLARE
     v_mapping_zone_code TEXT;
     v_mapping_object_output_template_schema_digest CHAR(64);
     v_mapping_attribute_output_template_schema_digest CHAR(64);
-    v_sql_generation_guide_id BIGINT;
-    v_sql_generation_guide_version_id BIGINT;
-    v_sql_generation_guide_digest CHAR(64);
     v_request_digest CHAR(64);
     v_prompt_snapshot_count INTEGER := 0;
 BEGIN
@@ -1331,6 +1299,9 @@ BEGIN
         RAISE EXCEPTION
             'Metadata Enrichment requires selected Objects';
     END IF;
+    IF p_model_workflow = 'code_generation' THEN
+        p_code_generation_file_layout := coalesce(p_code_generation_file_layout, 'combined');
+    END IF;
     IF p_code_generation_file_layout IS NOT NULL AND (p_model_workflow <> 'code_generation'
         OR p_code_generation_file_layout NOT IN ('combined', 'per_system')) THEN
         RAISE EXCEPTION 'Invalid Code Generation file layout';
@@ -1344,8 +1315,7 @@ BEGIN
             RAISE EXCEPTION
                 'Validation requires selected Systems and no Object selection';
         END IF;
-        IF p_code_generation_coverage_mode IS NOT NULL
-           OR p_sql_generation_guide_version_id IS NOT NULL THEN
+        IF p_code_generation_coverage_mode IS NOT NULL THEN
             RAISE EXCEPTION
                 'Code Generation inputs are unavailable for this Workflow Run';
         END IF;
@@ -1367,18 +1337,12 @@ BEGIN
             RAISE EXCEPTION
                 'All eligible target coverage requires an empty Object selection';
         END IF;
-        IF p_sql_generation_guide_version_id IS NOT NULL
-           AND p_sql_generation_guide_version_id <= 0 THEN
-            RAISE EXCEPTION
-                'SQL generation guide version is invalid';
-        END IF;
     ELSE
         IF cardinality(p_selected_system_codes) <> 0 THEN
             RAISE EXCEPTION
                 'System selection is available only for Validation';
         END IF;
-        IF p_code_generation_coverage_mode IS NOT NULL
-           OR p_sql_generation_guide_version_id IS NOT NULL THEN
+        IF p_code_generation_coverage_mode IS NOT NULL THEN
             RAISE EXCEPTION
                 'Code Generation inputs are unavailable for this Workflow Run';
         END IF;
@@ -1603,6 +1567,8 @@ BEGIN
          WHERE template.output_template_id =
                p_mapping_object_output_template_id
            AND template.output_template_target_type = 'mapping_object'
+           AND (template.output_template_modeled_entity_type IS NULL
+                OR template.output_template_modeled_entity_type = p_modeled_entity_type)
            AND template.is_active
            AND EXISTS (
                SELECT 1
@@ -1623,6 +1589,8 @@ BEGIN
          WHERE template.output_template_id =
                p_mapping_attribute_output_template_id
            AND template.output_template_target_type = 'mapping_attribute'
+           AND (template.output_template_modeled_entity_type IS NULL
+                OR template.output_template_modeled_entity_type = p_modeled_entity_type)
            AND template.is_active
            AND EXISTS (
                SELECT 1
@@ -1658,8 +1626,6 @@ BEGIN
                     'code_generation_coverage_mode',
                         p_code_generation_coverage_mode,
                     'code_generation_file_layout', p_code_generation_file_layout,
-                    'sql_generation_guide_version_id',
-                        p_sql_generation_guide_version_id,
                     'requested_batch_id', v_requested_batch_id,
                     'mapping_operation', p_mapping_operation,
                     'mapping_coverage_mode', p_mapping_coverage_mode,
@@ -1717,10 +1683,7 @@ BEGIN
             v_existing.model_revision,
             v_existing.selected_scope_digest,
             v_existing.selected_scope_count,
-            v_existing.code_generation_coverage_mode,
-            v_existing.sql_generation_guide_id,
-            v_existing.sql_generation_guide_version_id,
-            v_existing.sql_generation_guide_digest;
+            v_existing.code_generation_coverage_mode;
         RETURN;
     END IF;
 
@@ -1733,7 +1696,10 @@ BEGIN
               INTO p_mapping_object_output_template_id,
                    v_mapping_object_output_template_schema_digest
               FROM application.output_template AS template
-             WHERE lower(template.output_template_code) = 'mapping_object_default'
+             WHERE lower(template.output_template_code) = CASE p_modeled_entity_type
+                       WHEN 'logical_entity' THEN 'mapping_logical_object_default'
+                       ELSE 'mapping_dimensional_object_default' END
+               AND template.output_template_modeled_entity_type = p_modeled_entity_type
                AND template.output_template_target_type = 'mapping_object'
                AND template.is_active
                AND EXISTS (
@@ -1751,7 +1717,10 @@ BEGIN
               INTO p_mapping_attribute_output_template_id,
                    v_mapping_attribute_output_template_schema_digest
               FROM application.output_template AS template
-             WHERE lower(template.output_template_code) = 'mapping_attribute_default'
+             WHERE lower(template.output_template_code) = CASE p_modeled_entity_type
+                       WHEN 'logical_entity' THEN 'mapping_logical_attribute_default'
+                       ELSE 'mapping_dimensional_attribute_default' END
+               AND template.output_template_modeled_entity_type = p_modeled_entity_type
                AND template.output_template_target_type = 'mapping_attribute'
                AND template.is_active
                AND EXISTS (
@@ -1897,45 +1866,7 @@ BEGIN
             RAISE EXCEPTION 'Selected Code Generation System is unavailable';
         END IF;
 
-        IF p_sql_generation_guide_version_id IS NULL THEN
-            SELECT guide.sql_generation_guide_id,
-                   version.sql_generation_guide_version_id,
-                   version.sql_generation_guide_digest
-              INTO v_sql_generation_guide_id,
-                   v_sql_generation_guide_version_id,
-                   v_sql_generation_guide_digest
-              FROM application.sql_generation_guide AS guide
-              JOIN application.sql_generation_guide_version AS version
-                ON version.sql_generation_guide_id =
-                   guide.sql_generation_guide_id
-               AND version.sql_generation_guide_version_status = 'published'
-             WHERE guide.is_default
-               AND guide.is_active
-             ORDER BY version.sql_generation_guide_version_number DESC,
-                      version.sql_generation_guide_version_id DESC
-             LIMIT 1
-             FOR SHARE OF guide, version;
-        ELSE
-            SELECT guide.sql_generation_guide_id,
-                   version.sql_generation_guide_version_id,
-                   version.sql_generation_guide_digest
-              INTO v_sql_generation_guide_id,
-                   v_sql_generation_guide_version_id,
-                   v_sql_generation_guide_digest
-              FROM application.sql_generation_guide_version AS version
-              JOIN application.sql_generation_guide AS guide
-                ON guide.sql_generation_guide_id =
-                   version.sql_generation_guide_id
-             WHERE version.sql_generation_guide_version_id =
-                   p_sql_generation_guide_version_id
-               AND version.sql_generation_guide_version_status = 'published'
-               AND guide.is_active
-             FOR SHARE OF version, guide;
-        END IF;
-        IF NOT FOUND THEN
-            RAISE EXCEPTION
-                'Active published SQL generation guide is required';
-        END IF;
+
     END IF;
 
     IF p_model_workflow = 'mapping' THEN
@@ -2160,9 +2091,6 @@ BEGIN
         validation_retry_count,
         modeled_entity_type,
         code_generation_coverage_mode,
-        sql_generation_guide_id,
-        sql_generation_guide_version_id,
-        sql_generation_guide_digest,
         requested_batch_id,
         mapping_operation,
         mapping_coverage_mode,
@@ -2194,9 +2122,6 @@ BEGIN
         v_validation_retry_count,
         v_modeled_entity_type,
         p_code_generation_coverage_mode,
-        v_sql_generation_guide_id,
-        v_sql_generation_guide_version_id,
-        v_sql_generation_guide_digest,
         v_requested_batch_id,
         p_mapping_operation,
         p_mapping_coverage_mode,
@@ -2285,10 +2210,7 @@ BEGIN
         v_created.model_revision,
         v_created.selected_scope_digest,
         v_created.selected_scope_count,
-        v_created.code_generation_coverage_mode,
-        v_created.sql_generation_guide_id,
-        v_created.sql_generation_guide_version_id,
-        v_created.sql_generation_guide_digest;
+        v_created.code_generation_coverage_mode;
 END;
 $create_workflow_run$;
 
@@ -2318,7 +2240,6 @@ REVOKE ALL ON FUNCTION application.create_workflow_run(
     BIGINT,
     BIGINT,
     VARCHAR,
-    BIGINT,
     JSONB,
     JSONB,
     VARCHAR,

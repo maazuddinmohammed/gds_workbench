@@ -2,6 +2,7 @@
   max-width: 100%;
   max-height: 34rem;
   overflow: auto;
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-small);
   background: var(--surface);
 }
@@ -150,14 +151,28 @@
 .mapping-identity-strip > div { display: grid; gap: 0.2rem; min-width: 0; }
 .mapping-identity-strip dt { color: var(--muted); font-size: 0.61rem; font-weight: 650; }
 .mapping-identity-strip dd { margin: 0; font-size: 0.8rem; font-weight: 600; overflow-wrap: anywhere; }
+.mapping-detail-page .mapping-detail-heading { display: block; }
+.mapping-detail-identity { display: flex; align-items: center; flex-wrap: wrap; gap: 1.2rem 2rem; margin-top: 1rem; padding: 1.15rem 1.25rem; border: 1px solid var(--line); border-radius: var(--radius-medium); background: var(--soft); }
+.mapping-detail-name { flex: 1 1 14rem; min-width: 0; }
+.mapping-detail-name .eyebrow { margin: 0 0 .35rem; }
+.mapping-detail-name h1 { margin: 0; font-size: 1.4rem; overflow-wrap: anywhere; }
+.mapping-detail-identity .mapping-identity-strip { flex: 2 1 24rem; margin: 0; gap: 1rem 2rem; }
+.mapping-detail-identity .mapping-identity-strip > div { flex: 1; }
+.mapping-detail-identity .detail-badge-stack { margin-left: auto; }
+@media(max-width:42rem) { .mapping-detail-identity .detail-badge-stack { margin-left: 0; }.mapping-detail-identity .mapping-identity-strip { flex-basis: 100%; } }
 
-.mapping-transformation-panel { margin: 0.25rem 0 1.6rem; padding: 1.25rem; border: 1px solid var(--line-strong); border-radius: var(--radius-small); background: var(--surface); }
+.mapping-transformation-panel { margin: 0.25rem 0 1.6rem; padding: 0; background: var(--surface); }
 .mapping-transformation-panel > header { padding-bottom: 1rem; }
 .mapping-transformation-panel h2 { margin: 0; font-size: 1rem; letter-spacing: -0.02em; }
-.mapping-transformation-panel .mapping-logic-main + .mapping-logic-sources { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--line); }
-.mapping-logic-document, .mapping-logic-main, .mapping-logic-sources, .mapping-logic-field { min-width: 0; }
-.mapping-logic-field + .mapping-logic-field { margin-top: 1rem; }
-.mapping-logic-document h3 { margin: 0 0 0.5rem; color: var(--muted); font-size: 0.7rem; font-weight: 650; letter-spacing: normal; }
+.mapping-logic-document, .mapping-logic-field, .mapping-logic-value { min-width: 0; }
+.mapping-logic-grid { border: 1px solid var(--line-strong); border-radius: var(--radius-small); overflow: hidden; }
+.mapping-logic-field { display: grid; grid-template-columns: 10rem minmax(0, 1fr); border-bottom: 1px solid var(--line); }
+.mapping-logic-field:last-child { border-bottom: 0; }
+.mapping-logic-field > h3 {
+  margin: 0; padding: 1rem; border-right: 1px solid var(--line); background: var(--soft);
+  color: var(--ink-2); font-size: 0.75rem; font-weight: 650; line-height: 1.6; letter-spacing: normal; text-transform: none;
+}
+.mapping-logic-value { padding: 0.85rem 1rem; }
 .mapping-logic-expression { margin: 0; color: var(--ink); font-size: 0.85rem; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mapping-logic-document .mapping-normalized-document { border: 0; background: transparent; }
 .mapping-logic-document .mapping-normalized-document > div {
@@ -173,27 +188,30 @@
 .mapping-logic-document .mapping-value-list > li { padding: 0; }
 .mapping-logic-document .mapping-value-list > li::marker { color: var(--muted); }
 
-.mapping-logic-document .mapping-document-table-scroll { min-width: 0; max-width: 100%; overflow: auto; }
+.mapping-logic-document .mapping-document-table-scroll {
+  min-width: 0; max-width: 100%; overflow: auto; scrollbar-gutter: auto;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-small);
+}
 .mapping-document-table-scroll:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .mapping-logic-document .mapping-document-table-scroll > table.mapping-document-table {
-  width: 100%; min-width: 0; table-layout: auto; border-collapse: collapse; font-size: 0.75rem;
+  width: 100%; min-width: 0; table-layout: auto; border-collapse: separate; border-spacing: 0; font-size: 0.75rem;
 }
 .mapping-logic-document .mapping-document-table > :is(thead, tbody) > tr > :is(th, td) {
-  position: static; min-width: 8rem; max-width: none; width: auto; padding: 0.55rem 0.8rem; border: 0; border-bottom: 1px solid var(--line);
+  position: static; min-width: 8rem; max-width: none; width: auto; padding: 0.55rem 0.8rem;
+  border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
   background: transparent; font-size: 0.72rem; text-align: left; vertical-align: top; white-space: normal; overflow-wrap: normal; word-break: normal;
 }
+.mapping-logic-document .mapping-document-table > :is(thead, tbody) > tr > :is(th, td):last-child { border-right: 0; }
+.mapping-logic-document .mapping-document-table > tbody > tr:last-child > td { border-bottom: 0; }
 .mapping-logic-document .mapping-document-table > :is(thead, tbody) > tr > :is(
-  [data-source-field="connection_code"], [data-source-field="object_name"], [data-source-field="attribute_name"]
-) { min-width: 12rem; }
-.mapping-logic-document .mapping-document-table > :is(thead, tbody) > tr > [data-source-field="object_schema"] { min-width: 10rem; }
+  [data-source-field="object_name"], [data-source-field="attribute_name"]
+) { min-width: 10rem; }
 .mapping-logic-document .mapping-document-table > thead > tr > th {
-  color: var(--muted); font-weight: 600; text-transform: none; letter-spacing: normal; white-space: nowrap;
+  background: var(--soft); color: var(--muted); font-weight: 600; text-transform: none; letter-spacing: normal; white-space: nowrap;
 }
 .mapping-logic-document .mapping-document-table .mapping-json-scalar > span {
   overflow-wrap: normal; word-break: normal;
 }
-.mapping-logic-document .mapping-document-table > :is(thead, tbody) > tr > :is(th, td):first-child { padding-left: 0; }
-.mapping-logic-document .mapping-document-table > tbody > tr:last-child > td { border-bottom: 0; }
 
 .mapping-object-detail > .mapping-object-attributes { padding: 0; border-bottom: 0; }
 .mapping-object-attributes > header { align-items: center; margin-bottom: 0.85rem; }
@@ -205,8 +223,9 @@
   min-width: 18rem; max-width: 34rem; vertical-align: top; white-space: normal; overflow-wrap: anywhere;
 }
 .mapping-object-attributes .mapping-table-scroll.mapping-spreadsheet > table > :is(thead, tbody) > tr > :is(
-  [data-mapping-field="transformation"], [data-mapping-field="steps"], [data-mapping-field="transformation_steps"]
+  [data-mapping-field="transformation_logic"], [data-mapping-field="transformation"], [data-mapping-field="steps"], [data-mapping-field="transformation_steps"]
 ) { width: 32rem; min-width: 28rem; }
+.mapping-object-attributes .mapping-table-scroll.mapping-spreadsheet > table > :is(thead, tbody) > tr > [data-mapping-field="default_record"] { width: 10rem; min-width: 8rem; }
 .mapping-object-attributes .mapping-table-scroll.mapping-spreadsheet > table > tbody > tr > .mapping-document-column:has(.mapping-document-table) {
   max-width: none;
 }
@@ -229,7 +248,8 @@
 .mapping-inspector-details > .detail-fact-grid { margin-top: 1rem; }
 
 @media (max-width: 42rem) {
-  .mapping-transformation-panel { padding: 1rem; }
+  .mapping-logic-field { grid-template-columns: minmax(0, 1fr); }
+  .mapping-logic-field > h3 { padding: 0.65rem 1rem; border-right: 0; border-bottom: 1px solid var(--line); }
   .mapping-object-attributes > header { align-items: start; flex-direction: column; gap: 0.65rem; }
   .mapping-logic-document .mapping-normalized-document > div { grid-template-columns: 1fr; gap: 0.3rem; }
 }

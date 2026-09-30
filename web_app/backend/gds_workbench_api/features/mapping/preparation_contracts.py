@@ -198,6 +198,7 @@ class MappingOutputTemplate(_FrozenModel):
     name: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=2_000)
     target_type: Literal["mapping_object", "mapping_attribute"]
+    modeled_entity_type: ModeledEntityType | None = None
     schema_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     schema_digest_is_valid: bool
     is_active: bool
@@ -296,6 +297,8 @@ class MappingRunContext(_FrozenModel):
     output_templates: MappingOutputTemplateInventory = Field(repr=False)
     target: MappingModeledEntity = Field(repr=False)
     sources: tuple[MappingSource, ...] = Field(repr=False)
+    # Supporting provenance only. These never become eligible Mapping inputs.
+    upstream_physical_sources: tuple[MappingSource, ...] = Field(default=(), repr=False)
     headers: tuple[ExistingMappingHeader, ...] = Field(min_length=1, max_length=1, repr=False)
     authoring: MappingAuthoringPolicy = Field(repr=False)
 

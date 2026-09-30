@@ -125,6 +125,9 @@ class OutputTemplateProvenance(ContractModel):
     output_template_code: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,99}$")
     output_template_name: str = Field(min_length=1, max_length=200)
     output_template_target_type: Literal["mapping_object", "mapping_attribute"]
+    output_template_modeled_entity_type: Literal["logical_entity", "dimensional_entity"] | None = (
+        None
+    )
     output_template_schema_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     is_active: bool
 

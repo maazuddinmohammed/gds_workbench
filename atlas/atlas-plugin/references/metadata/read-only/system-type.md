@@ -48,6 +48,5 @@ Development provenance; these source files are not runtime dependencies of the p
 - `database/01_reference.sql:26`.
 - `database/seed/01_metadata_snapshot_demo.sql:4`.
 - `mcp_server/gds_etl_workbench/domain/snapshots/metadata.py:274,291`.
-- `docs/workflow-evidence-design.md:1822`.
 
 [All metadata tables](../index.md) · [Common validation](../validation.md)

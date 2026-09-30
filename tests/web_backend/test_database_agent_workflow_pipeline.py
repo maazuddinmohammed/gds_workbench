@@ -77,7 +77,6 @@ from tests.web_backend.test_database_mapping_source_context import (
     _seed_assertion_mapping_target,
     _seed_mapping_scope,
 )
-from tests.web_backend.test_database_sql_guide_seed import _guide_seed
 
 
 @pytest.fixture(scope="module")
@@ -88,7 +87,6 @@ def pipeline_database(
     _apply_sql(database, REFERENCE_SEED.read_text(encoding="utf-8"))
     _seed_super_admin(database)
     _apply_sql(database, _render_seed())
-    _apply_sql(database, _guide_seed())
     seed_mapping_output_templates(database)
     return database
 

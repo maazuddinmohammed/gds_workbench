@@ -3,7 +3,7 @@ import type { JsonObject, JsonValue } from "../../shared/contracts";
 // JSON object key order is not a source identity contract (PostgreSQL JSONB
 // may reorder it). Keep familiar source columns first, retaining custom fields.
 const sourceColumnOrder = [
-  "tenant_code", "system_code", "connection_code", "object_schema", "object_name", "attribute_name", "alias",
+  "object_schema", "object_name", "entity_type", "entity_schema_name", "entity_name", "attribute_name", "alias",
 ];
 
 export function MappingDocumentView({
@@ -39,7 +39,11 @@ export function MappingDocumentValue({ value, path, tabular = false }: {
     if (value.length === 0) return <span className="mapping-json-scalar"><span>No items</span></span>;
     if (tabular && value.every((entry): entry is JsonObject => entry !== null
       && typeof entry === "object" && !Array.isArray(entry) && Object.keys(entry).length > 0)) {
-      const columns = [...new Set(value.flatMap((entry) => Object.keys(entry)))];
+      const fields = [...new Set(value.flatMap((entry) => Object.keys(entry)))];
+      const isSourceTable = fields.some((key) => sourceColumnOrder.includes(key));
+      // Keep complete identities in the stored document and Original document view.
+      const columns = fields.filter((key) => !isSourceTable
+        || !["tenant_code", "system_code", "connection_code"].includes(key));
       columns.sort((left, right) => {
         const a = sourceColumnOrder.indexOf(left), b = sourceColumnOrder.indexOf(right);
         return (a < 0 ? sourceColumnOrder.length : a) - (b < 0 ? sourceColumnOrder.length : b);

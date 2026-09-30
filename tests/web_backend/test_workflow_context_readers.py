@@ -22,7 +22,10 @@ from gds_workbench_api.features.workflows.authoring.context_contracts import (
     INPUT_EXAMPLES,
     workflow_input_contracts,
 )
-from gds_workbench_api.features.workflows.authoring.context_inputs import OBJECT_FIELDS
+from gds_workbench_api.features.workflows.authoring.context_inputs import (
+    OBJECT_FIELDS,
+    project_context_inputs,
+)
 from gds_workbench_api.features.workflows.authoring.context_readers import (
     FrozenContextReaders,
 )
@@ -62,16 +65,36 @@ def physical_key(row: dict[str, Any]) -> dict[str, Any]:
 @pytest.mark.parametrize("workflow", ["analysis", "conceptual", "logical"])
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 @pytest.mark.parametrize("locked", [False, True])
-def test_existing_relationships_preserve_the_registered_lock_field(
+@pytest.mark.parametrize(
+    "validation_result", [None, "supported", "unsupported", "inconclusive"]
+)
+def test_existing_relationships_preserve_locks_and_recorded_validation(
     workflow: str,
     mode: str,
     locked: bool,
+    validation_result: str | None,
 ) -> None:
+    validation: dict[str, Any] = {}
+    if validation_result is not None:
+        non_null_count = 0 if validation_result == "inconclusive" else 4
+        duplicate_count = 1 if validation_result == "unsupported" else 0
+        validation = {
+            "validation_policy_version": "1.0.0",
+            "validation_result": validation_result,
+            "validation_source_non_null_count": non_null_count,
+            "validation_source_distinct_count": non_null_count,
+            "validation_target_non_null_count": non_null_count + duplicate_count,
+            "validation_target_distinct_count": non_null_count,
+            "validation_source_missing_target_count": 0,
+            "validation_unused_target_count": 0,
+            "validation_duplicate_target_key_count": duplicate_count,
+        }
     relationship = AnalysisResultRecord.model_validate(
         {
             **cast(dict[str, Any], _candidate())["relationships"][0],
             "analysis_result_status": "active",
             "analysis_result_is_locked": locked,
+            **validation,
         }
     )
     context = _context_bundle().context.model_copy(
@@ -120,23 +143,94 @@ def test_existing_relationships_preserve_the_registered_lock_field(
     assert (
         groups[0]["incoming_relationships"] == groups[1]["outgoing_relationships"] == []
     )
-    expected = relationship.model_dump(
-        mode="json",
-        exclude={
-            field
-            for field in AnalysisResultRecord.model_fields
-            if field.startswith("validation_")
-        },
-    )
+    expected = relationship.model_dump(mode="json")
     assert (
         groups[0]["outgoing_relationships"]
         == groups[1]["incoming_relationships"]
         == [expected]
     )
     assert expected["analysis_result_is_locked"] is locked
+    assert expected["validation_result"] == validation_result
+    if validation_result is None:
+        assert all(
+            value is None
+            for name, value in expected.items()
+            if name.startswith("validation_")
+        )
     if readers:
         result = cast(dict[str, Any], readers.invoke("get_object_relationships", {}))
         assert result["items"] == groups
+
+
+@pytest.mark.parametrize("workflow", ["analysis", "conceptual", "logical"])
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+@pytest.mark.parametrize(
+    "from_selected,to_selected",
+    [(True, True), (True, False), (False, True), (False, False)],
+)
+def test_relationship_context_does_not_widen_selected_objects(
+    workflow: str, mode: str, from_selected: bool, to_selected: bool
+) -> None:
+    record = cast(dict[str, Any], _candidate())["relationships"][0]
+    if not from_selected:
+        record["from_object_name"] = "unselected_orders"
+    if not to_selected:
+        record["to_object_name"] = "unselected_customers"
+    relationship = AnalysisResultRecord.model_validate(
+        {
+            **record,
+            "analysis_result_status": "active",
+            "analysis_result_is_locked": False,
+        }
+    )
+    context = _context_bundle().context.model_copy(
+        update={
+            "model_workflow": workflow,
+            "workflow_execution_mode": mode,
+            "analysis_relationships": (relationship,),
+        }
+    )
+    original_selection = context.selected_objects
+    values = project_context_inputs(context.model_dump(mode="json"))
+    readers = (
+        InMemoryAgentContextToolCatalog(
+            context=context,
+            max_result_bytes=128 * 1024,
+            max_catalog_bytes=256 * 1024,
+            max_page_records=20,
+        )
+        if mode == "tool_assisted"
+        else None
+    )
+    groups = (
+        cast(dict[str, Any], readers.invoke("get_object_relationships", {}))["items"]
+        if readers
+        else values["object_relationship_context"]
+    )
+    expected = relationship.model_dump(mode="json")
+    assert groups == values["object_relationship_context"]
+    assert groups[0]["outgoing_relationships"] == ([expected] if from_selected else [])
+    assert groups[1]["incoming_relationships"] == ([expected] if to_selected else [])
+    assert (
+        groups[0]["incoming_relationships"] == groups[1]["outgoing_relationships"] == []
+    )
+    assert context.selected_objects == original_selection
+    assert [item["object_name"] for item in values["object_context"]] == [
+        "order_raw",
+        "customer_raw",
+    ]
+    if readers:
+        assert (
+            cast(dict[str, Any], readers.invoke("get_objects", {}))["items"]
+            == values["object_context"]
+        )
+        for side, selected in (("from", from_selected), ("to", to_selected)):
+            if not selected:
+                outside_key = {
+                    field: record[f"{side}_{field}"] for field in OBJECT_FIELDS
+                }
+                with pytest.raises(AgentContextToolRequestError):
+                    readers.invoke("get_object_details", {"object_keys": [outside_key]})
 
 
 @pytest.mark.parametrize(
@@ -145,7 +239,7 @@ def test_existing_relationships_preserve_the_registered_lock_field(
         ("analysis", 6),
         ("conceptual", 10),
         ("logical", 18),
-        ("dimensional", 19),
+        ("dimensional", 23),
     ],
 )
 def test_approved_schema_examples_and_every_no_input_reader(

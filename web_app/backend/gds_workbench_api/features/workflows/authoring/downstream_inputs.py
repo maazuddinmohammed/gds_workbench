@@ -25,6 +25,7 @@ def downstream_reader_specs(workflow: str) -> ReaderSpecs:
             "get_mapping_sources": ("source_evidence", "source_object_keys", OBJECT_FIELDS),
             "get_existing_mapping": ("existing_mapping", None, ()),
             "get_mapping_support": ("mapping_support", None, ()),
+            "get_mapping_support_records": ("mapping_support_records", None, ()),
         }
     if workflow == "code_generation":
         return {
@@ -215,6 +216,7 @@ def project_downstream_inputs(workflow: str, context: dict[str, Any]) -> dict[st
             return {
                 "mapping_route": context["run"]["route"],
                 "mapping_support": deepcopy(context.get("mapping_support", {})),
+                "mapping_support_records": deepcopy(context.get("mapping_support_records", [])),
                 "operation": context["run"]["operation"],
                 "target_metadata": _without_internal_fields(context["target"]),
                 "source_evidence": _without_internal_fields(context["sources"]),
@@ -230,7 +232,7 @@ def project_downstream_inputs(workflow: str, context: dict[str, Any]) -> dict[st
             return {
                 **_sql_inputs(target["context"]),
                 "target_ref": target["target_ref"],
-                "sql_generation_guide": target["context"].get("guide", {}).get("content"),
+                "artifact_requirements": deepcopy(target["context"]["artifact_requirements"]),
             }
         if workflow == "validation":
             targets = [

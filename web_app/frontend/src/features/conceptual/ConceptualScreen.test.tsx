@@ -42,8 +42,8 @@ describe("Model Conceptual", () => {
     await screen.findByRole("table", { name: "Conceptual Objects" });
     expect(screen.getByLabelText("Object status")).toHaveValue("active");
     expect(screen.queryByRole("button", { name: "Record history" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Activate selected" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Unlock selected" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Activate selected" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Unlock selected", hidden: true })).toBeDisabled();
     await user.click(screen.getByRole("checkbox", { name: "Select Conceptual Object 41" }));
     await user.click(screen.getByRole("button", { name: "Unlock selected" }));
     expect(await screen.findByRole("dialog", { name: "Review unlock" })).toBeVisible();
@@ -57,7 +57,7 @@ describe("Model Conceptual", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     await user.click(screen.getByRole("button", { name: "Relationships" }));
     await screen.findByRole("table", { name: "Conceptual Relationships" });
-    expect(screen.getByRole("button", { name: "Lock selected" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Lock selected", hidden: true })).toBeDisabled();
     await user.click(screen.getByRole("checkbox", { name: "Select Conceptual Relationship 51" }));
     await user.click(screen.getByRole("button", { name: "Lock selected" }));
     await screen.findByRole("button", { name: "Apply this change" });
@@ -68,8 +68,9 @@ describe("Model Conceptual", () => {
       }) }),
     );
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
     await user.click(screen.getByRole("button", { name: "Apply Relationship filters" }));
-    expect(screen.getByRole("button", { name: "Lock selected" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Lock selected", hidden: true })).toBeDisabled();
   });
 
   it("filters Conceptual Objects and opens full support evidence", async () => {
@@ -80,6 +81,7 @@ describe("Model Conceptual", () => {
     const ledger = await screen.findByRole("table", { name: "Conceptual Objects" });
     expect(within(ledger).getByText("customer")).toBeVisible();
 
+    if (screen.getByRole("button", { name: /^Filters/ }).getAttribute("aria-expanded") === "false") await user.click(screen.getByRole("button", { name: /^Filters/ }));
     await user.type(screen.getByLabelText("Object name prefix"), " Customer ");
     await user.selectOptions(screen.getByLabelText("Object status"), "inactive");
     await user.selectOptions(screen.getByLabelText("Object lock"), "true");
@@ -95,7 +97,10 @@ describe("Model Conceptual", () => {
     expect(heading).toHaveFocus();
     expect(screen.getByText("One recognized customer identity.")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Support evidence" })).toBeVisible();
-    expect(screen.getAllByText("bronze.customer_raw")).toHaveLength(1);
+    const supports = screen.getByRole("table", { name: "Support evidence" });
+    expect(within(supports).getAllByRole("columnheader").slice(0, 4).map((cell) => cell.textContent)).toEqual(["Schema", "Object / assertion", "Rationale", "Role"]);
+    expect(within(supports).getByRole("cell", { name: "bronze" })).toBeVisible();
+    expect(within(supports).getByText("customer_raw")).toBeVisible();
     const physical = screen.getByRole("row", { name: "Support 61" });
     expect(within(physical).queryByText("Object 501")).not.toBeInTheDocument();
     expect(within(physical).getByText("Locked")).toBeVisible();
@@ -207,14 +212,14 @@ describe("Model Conceptual", () => {
     );
     await screen.findByRole("table", { name: "Conceptual Objects" });
     expect(screen.getByRole("button", { name: "Run Conceptual" })).toBeDisabled();
-    expect(screen.getByText("Tenant Lock required to run")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Run Conceptual" })).toHaveAttribute("title", "Tenant Lock required");
     unlocked.unmount();
 
     const fetcher = conceptualFetchStub();
     const user = userEvent.setup();
     render(<WorkbenchApp router={conceptualRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Conceptual Objects" });
-    expect(screen.getByText("Tenant Lock held")).toBeVisible();
+    expect(screen.getByText("Tenant Lock held by you")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Run Conceptual" }));
     expect(await screen.findByRole("heading", { name: "Configure Conceptual run" })).toBeVisible();
     const submit = screen.getByRole("button", { name: "Create and run Conceptual" });

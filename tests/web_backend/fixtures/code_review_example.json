@@ -1,0 +1,283 @@
+{
+  "workflow": "code_generation",
+  "note": "Synthetic Entity-owned Mapping: Databricks generates UserID; source user_id is separately mapped as SourceUserID. The current template definitions accompany complete Object and Attribute documents.",
+  "inputs": {
+    "target_metadata": {
+      "tenant_code": "NWA",
+      "tenant_catalog": "northwind",
+      "system_code": "GDS",
+      "connection_code": "lakehouse",
+      "object_schema": "silver_people",
+      "object_name": "User",
+      "object_description": "One row per source user.",
+      "zone_code": "silver",
+      "source_tenant_code": "NWA",
+      "source_tenant_name": "Northwind",
+      "tenant_name": "Shared warehouse",
+      "system_name": "Warehouse",
+      "attributes": [
+        {
+          "attribute_name": "UserID",
+          "attribute_data_type": "BIGINT",
+          "attribute_inferred_data_type": "BIGINT",
+          "attribute_nullability": false,
+          "attribute_ordinal_position": 1,
+          "attribute_description": null,
+          "is_surrogate_key": true,
+          "is_natural_key": false,
+          "is_meta_data": false,
+          "is_active": true,
+          "is_locked": false,
+          "population": "database"
+        },
+        {
+          "attribute_name": "SourceUserID",
+          "attribute_data_type": "STRING",
+          "attribute_inferred_data_type": "STRING",
+          "attribute_nullability": false,
+          "attribute_ordinal_position": 2,
+          "attribute_description": null,
+          "is_surrogate_key": false,
+          "is_natural_key": true,
+          "is_meta_data": false,
+          "is_active": true,
+          "is_locked": false,
+          "population": "mapping"
+        },
+        {
+          "attribute_name": "DisplayName",
+          "attribute_data_type": "STRING",
+          "attribute_inferred_data_type": "STRING",
+          "attribute_nullability": true,
+          "attribute_ordinal_position": 3,
+          "attribute_description": null,
+          "is_surrogate_key": false,
+          "is_natural_key": false,
+          "is_meta_data": false,
+          "is_active": true,
+          "is_locked": false,
+          "population": "mapping"
+        },
+        {
+          "attribute_name": "SourceSystemID",
+          "attribute_data_type": "BIGINT",
+          "attribute_inferred_data_type": "BIGINT",
+          "attribute_nullability": false,
+          "attribute_ordinal_position": 4,
+          "attribute_description": null,
+          "is_surrogate_key": false,
+          "is_natural_key": false,
+          "is_meta_data": true,
+          "is_active": true,
+          "is_locked": false,
+          "population": "mapping"
+        }
+      ],
+      "modeled_entity_type": "logical_entity",
+      "modeled_entity_schema_name": "silver_people",
+      "modeled_entity_name": "User",
+      "audit_columns_template": null,
+      "technical_columns_template": null
+    },
+    "source_metadata": [
+      {
+        "role": "primary",
+        "rationale": "Recorded customer source.",
+        "mapping_order": 1,
+        "is_locked": false,
+        "object": {
+          "tenant_code": "NWA",
+          "tenant_catalog": "northwind",
+          "system_code": "CRM",
+          "connection_code": "crm_bronze",
+          "object_schema": "bronze_crm",
+          "object_name": "users",
+          "object_description": "Synthetic user feed; identifier text retains source formatting.",
+          "zone_code": "bronze",
+          "is_active": true,
+          "is_locked": false,
+          "scope_is_active": true,
+          "scope_is_locked": false,
+          "attributes": [
+            {
+              "attribute_name": "user_id",
+              "attribute_data_type": "STRING",
+              "attribute_inferred_data_type": null,
+              "attribute_nullability": false,
+              "attribute_ordinal_position": 1,
+              "attribute_description": null,
+              "is_active": true,
+              "is_locked": false
+            },
+            {
+              "attribute_name": "display_name",
+              "attribute_data_type": "STRING",
+              "attribute_inferred_data_type": null,
+              "attribute_nullability": true,
+              "attribute_ordinal_position": 2,
+              "attribute_description": null,
+              "is_active": true,
+              "is_locked": false
+            },
+            {
+              "attribute_name": "is_enabled",
+              "attribute_data_type": "BOOLEAN",
+              "attribute_inferred_data_type": null,
+              "attribute_nullability": false,
+              "attribute_ordinal_position": 3,
+              "attribute_description": null,
+              "is_active": true,
+              "is_locked": false
+            }
+          ]
+        },
+        "source_system_code": "CRM"
+      }
+    ],
+    "source_systems": [
+      {
+        "system_code": "CRM",
+        "system_name": "CRM",
+        "source_system_value": 31
+      }
+    ],
+    "object_transformations": [
+      {
+        "object_dependency_order": 10,
+        "entity": {
+          "entity_type": "logical_entity",
+          "entity_name": "User",
+          "definition": "One user per source user ID.",
+          "classification": "entity",
+          "grain": "One row per source user.",
+          "entity_schema_name": "silver_people",
+          "assertions": []
+        },
+        "transformation": {
+          "source_tables": [
+            {
+              "tenant_code": "NWA",
+              "system_code": "CRM",
+              "connection_code": "crm_bronze",
+              "object_schema": "bronze_crm",
+              "object_name": "users"
+            }
+          ],
+          "filter_criteria": "Keep rows where s.is_enabled = TRUE before projection.",
+          "sample_query": "SELECT s.user_id AS SourceUserID, TRIM(s.display_name) AS DisplayName, CAST(31 AS BIGINT) AS SourceSystemID FROM bronze_crm.users s WHERE s.is_enabled = TRUE;"
+        },
+        "output_template_code": null,
+        "source_system_code": "CRM"
+      }
+    ],
+    "attribute_transformations": [
+      {
+        "target_attribute_name": "UserID",
+        "modeled_attribute_name": "UserID",
+        "target_attribute_ordinal_position": 1,
+        "output_template_code": null,
+        "transformation": {
+          "transformation_logic": "Databricks-generated; omit from load SELECT",
+          "default_record": null,
+          "source_columns": []
+        },
+        "source_system_code": "CRM",
+        "modeled_entity_type": "logical_entity",
+        "modeled_entity_schema_name": "silver_people",
+        "modeled_entity_name": "User"
+      },
+      {
+        "target_attribute_name": "SourceUserID",
+        "modeled_attribute_name": "SourceUserID",
+        "target_attribute_ordinal_position": 2,
+        "output_template_code": null,
+        "transformation": {
+          "transformation_logic": "s.user_id",
+          "default_record": null,
+          "source_columns": [
+            {
+              "tenant_code": "NWA",
+              "system_code": "CRM",
+              "connection_code": "crm_bronze",
+              "object_schema": "bronze_crm",
+              "object_name": "users",
+              "attribute_name": "user_id"
+            }
+          ]
+        },
+        "source_system_code": "CRM",
+        "modeled_entity_type": "logical_entity",
+        "modeled_entity_schema_name": "silver_people",
+        "modeled_entity_name": "User"
+      },
+      {
+        "target_attribute_name": "DisplayName",
+        "modeled_attribute_name": "DisplayName",
+        "target_attribute_ordinal_position": 3,
+        "output_template_code": null,
+        "transformation": {
+          "transformation_logic": "TRIM(s.display_name)",
+          "default_record": null,
+          "source_columns": [
+            {
+              "tenant_code": "NWA",
+              "system_code": "CRM",
+              "connection_code": "crm_bronze",
+              "object_schema": "bronze_crm",
+              "object_name": "users",
+              "attribute_name": "display_name"
+            }
+          ]
+        },
+        "source_system_code": "CRM",
+        "modeled_entity_type": "logical_entity",
+        "modeled_entity_schema_name": "silver_people",
+        "modeled_entity_name": "User"
+      },
+      {
+        "target_attribute_name": "SourceSystemID",
+        "modeled_attribute_name": "SourceSystemID",
+        "target_attribute_ordinal_position": 4,
+        "output_template_code": null,
+        "transformation": {
+          "transformation_logic": "CAST(31 AS BIGINT)",
+          "default_record": null,
+          "source_columns": []
+        },
+        "source_system_code": "CRM",
+        "modeled_entity_type": "logical_entity",
+        "modeled_entity_schema_name": "silver_people",
+        "modeled_entity_name": "User"
+      }
+    ],
+    "mapping_templates": [],
+    "target_ref": "target_1",
+    "artifact_requirements": {
+      "file_layout": "per_system",
+      "source_system_codes": [
+        "CRM"
+      ],
+      "preserved_artifact_names": []
+    }
+  },
+  "candidate": {
+    "issues": [],
+    "artifacts": [
+      {
+        "target_ref": "target_1",
+        "artifact_name": "user_crm.sql",
+        "artifact_role": "target_transformation",
+        "source_system_codes": [
+          "CRM"
+        ],
+        "generated_sql": "SELECT s.user_id AS SourceUserID, TRIM(s.display_name) AS DisplayName, CAST(31 AS BIGINT) AS SourceSystemID FROM bronze_crm.users s WHERE s.is_enabled = TRUE;"
+      }
+    ]
+  },
+  "validations": [
+    "Input schemas and the candidate are checked against runtime contracts.",
+    "Backend rechecks authorization, revision, typed ownership, source evidence, and current Mapping/Code digests.",
+    "Synthetic SQL omits the generated key, retains source identifiers and applies only supplied filters and expressions."
+  ],
+  "output_schema_source": "web_app/backend/gds_workbench_api/features/code_generation/candidate.py:CodeGenerationCandidateValidator.output_schema"
+}

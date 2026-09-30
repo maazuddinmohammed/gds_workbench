@@ -57,17 +57,6 @@ export interface CodeGenerationTargetPage {
   next_cursor: string | null;
 }
 
-export interface SqlGenerationGuideProvenance {
-  sql_generation_guide_id: number;
-  sql_generation_guide_code: string;
-  sql_generation_guide_name: string;
-  guide_is_active: boolean;
-  sql_generation_guide_version_id: number;
-  sql_generation_guide_version_number: number;
-  sql_generation_guide_version_status: "draft" | "published" | "retired";
-  sql_generation_guide_digest: string;
-}
-
 export interface SqlGeneratorProvenance {
   generator_code: string;
   generator_version: string;
@@ -88,7 +77,6 @@ export interface GeneratedSqlArtifactDetail {
   artifact_is_current: boolean;
   generated_code_status: "active" | "inactive" | "deprecated";
   generated_code_is_locked: boolean;
-  guide: SqlGenerationGuideProvenance | null;
   workflow_run_id: number | null;
   generator: SqlGeneratorProvenance | null;
   generated_at: string;

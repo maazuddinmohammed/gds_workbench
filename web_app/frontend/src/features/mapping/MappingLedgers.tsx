@@ -1,3 +1,4 @@
+import { WorkflowFilters } from "../workflows/WorkflowCommandCenter";
 import { reviewSelectionColumn } from "../model_record_review/selection";
 import { useId, useMemo, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
@@ -58,13 +59,13 @@ export function MappingObjectsLedger({
   const columns = useMemo<ColumnDef<MappingObject>[]>(() => [
     reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.mapping_object_id, "Mapping Objects"),
     { id: "source_system", header: "System", cell: ({ row }) => row.original.source_system.system_code },
+    { accessorKey: "dependency_order", header: "Entity order" },
     {
       id: "schema",
       header: "Schema",
       cell: ({ row }) => row.original.target.entity_schema_name,
     },
     { id: "entity", header: "Entity name", cell: ({ row }) => <strong>{row.original.target.entity_name}</strong> },
-    { accessorKey: "dependency_order", header: "Entity order" },
     { accessorKey: "status", header: "Status", cell: ({ getValue }) => humanize(getValue<string>()) },
     { accessorKey: "is_locked", header: "Lock", cell: ({ getValue }) => getValue<boolean>() ? "Locked" : "Open" },
     {
@@ -222,7 +223,7 @@ function MappingFilterBar({
     }),
   });
   return (
-    <form
+    <WorkflowFilters><form
       className={`workflow-filterbar mapping-filterbar${objectScoped ? " is-object-scoped" : ""}`}
       aria-label="Filter Mapping"
       onSubmit={(event) => {
@@ -281,7 +282,7 @@ function MappingFilterBar({
         <button className="button button-secondary button-small" type="submit">Apply Mapping filters</button>
       </div>
       <SourceFilterNotice unavailable={sourceChoices?.isUnavailable ?? false} />
-    </form>
+    </form></WorkflowFilters>
   );
 }
 

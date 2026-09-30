@@ -72,7 +72,6 @@ def test_request_body_limit_rejects_declared_and_streamed_oversize_bodies() -> N
     (
         "/api/v1/tenants/7/prompts/templates/1/versions",
         "/api/v1/tenants/7/prompts/render",
-        "/api/v1/tenants/7/sql-generation-guides/1/versions",
         "/api/v1/tenants/7/models/18/runs",
     ),
 )

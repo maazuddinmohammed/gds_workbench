@@ -65,6 +65,7 @@ def mapping_input_schemas() -> dict[str, dict[str, Any]]:
         "authoring_policy": TypeAdapter(MappingAuthoringPolicy),
         "readiness": TypeAdapter(MappingReadiness),
         "source_system": TypeAdapter(MappingSourceSystem),
+        "mapping_templates": TypeAdapter(list[MappingOutputTemplate]),
     }
     schemas: dict[str, dict[str, Any]] = {
         name: _project_schema(adapter.json_schema()) for name, adapter in adapters.items()
@@ -91,4 +92,32 @@ def mapping_input_schemas() -> dict[str, dict[str, Any]]:
     }
     schemas["object_output_template"] = template_schema
     schemas["attribute_output_template"] = deepcopy(template_schema)
+    schemas["mapping_support_records"] = {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "evidence_type": {
+                    "enum": [
+                        "target_attribute_lineage",
+                        "target_relationship",
+                        "analysis_relationship",
+                        "profile",
+                        "assertion",
+                        "source_logical_entity",
+                        "source_logical_attribute",
+                        "source_logical_relationship",
+                        "source_object_mapping",
+                        "source_attribute_mapping",
+                        "source_mapping_template",
+                        "physical_object",
+                        "physical_attribute",
+                    ]
+                },
+                "record": {"type": "object"},
+            },
+            "required": ["evidence_type", "record"],
+        },
+    }
     return schemas

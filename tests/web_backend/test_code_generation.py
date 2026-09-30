@@ -24,7 +24,6 @@ from gds_workbench_api.features.code_generation import (
     GeneratedSqlArtifactDetail,
     SqlArtifactBundleLimitExceededError,
     SqlArtifactDownload,
-    SqlGenerationGuideProvenance,
     SqlGeneratorProvenance,
     StoredSqlArtifactSummary,
     create_code_generation_router,
@@ -56,7 +55,12 @@ class StaticCodeGenerationService:
             model_revision=4,
             items=(
                 CodeGenerationTargetSummary(
-                    target=ModeledEntityReference(entity_type="logical_entity", entity_id=501, entity_schema_name="silver", entity_name="customer"),
+                    target=ModeledEntityReference(
+                        entity_type="logical_entity",
+                        entity_id=501,
+                        entity_schema_name="silver",
+                        entity_name="customer",
+                    ),
                     entity_type="logical_entity",
                     mapping_supports=(
                         CodeMappingSupport(
@@ -64,7 +68,8 @@ class StaticCodeGenerationService:
                             source=ModeledEntityReference(
                                 entity_type="logical_entity",
                                 entity_id=101,
-                                entity_schema_name="silver", entity_name="customer",
+                                entity_schema_name="silver",
+                                entity_name="customer",
                             ),
                             source_system=SourceSystemReference(
                                 system_id=31,
@@ -142,16 +147,6 @@ class StaticCodeGenerationService:
             mapping_supports_truncated=target.mapping_supports_truncated,
             artifact_is_current=True,
             generated_code_status="active",
-            guide=SqlGenerationGuideProvenance(
-                sql_generation_guide_id=1001,
-                sql_generation_guide_code="default_sql",
-                sql_generation_guide_name="Default SQL",
-                guide_is_active=True,
-                sql_generation_guide_version_id=1002,
-                sql_generation_guide_version_number=3,
-                sql_generation_guide_version_status="published",
-                sql_generation_guide_digest="d" * 64,
-            ),
             workflow_run_id=None,
             generator=SqlGeneratorProvenance(
                 generator_code="gds.sql",
@@ -251,7 +246,8 @@ def test_code_generation_targets_are_target_object_first_and_filterable() -> Non
             "source": {
                 "entity_type": "logical_entity",
                 "entity_id": 101,
-                "entity_schema_name": "silver", "entity_name": "customer",
+                "entity_schema_name": "silver",
+                "entity_name": "customer",
             },
             "source_system": {
                 "system_id": 31,
@@ -299,7 +295,6 @@ def test_generated_sql_artifact_detail_returns_only_stored_sql_and_safe_provenan
         "CRM",
         "ERP",
     ]
-    assert payload["guide"]["sql_generation_guide_version_number"] == 3
     assert payload["generator"] == {
         "generator_code": "gds.sql",
         "generator_version": "1.0.0",
@@ -329,7 +324,6 @@ class UnprovenancedStaticCodeGenerationService(StaticCodeGenerationService):
         )
         return detail.model_copy(
             update={
-                "guide": None,
                 "workflow_run_id": None,
                 "generator": None,
             }
@@ -349,7 +343,6 @@ def test_generated_sql_artifact_detail_allows_missing_workflow_provenance() -> N
         response = client.get("/api/v1/tenants/7/models/18/code-generation/artifacts/901")
 
     assert response.status_code == 200
-    assert response.json()["guide"] is None
     assert response.json()["workflow_run_id"] is None
     assert response.json()["generator"] is None
 
@@ -574,7 +567,12 @@ class CodeTargetTransaction:
         )
         return [
             {
-                "target": {"entity_id": 501, "entity_type": "logical_entity", "entity_schema_name": "silver", "entity_name": "customer"},
+                "target": {
+                    "entity_id": 501,
+                    "entity_type": "logical_entity",
+                    "entity_schema_name": "silver",
+                    "entity_name": "customer",
+                },
                 "entity_type": "logical_entity",
                 "mapping_supports": [
                     {
@@ -582,7 +580,8 @@ class CodeTargetTransaction:
                         "source": {
                             "entity_type": "logical_entity",
                             "entity_id": 101,
-                            "entity_schema_name": "silver", "entity_name": "customer",
+                            "entity_schema_name": "silver",
+                            "entity_name": "customer",
                         },
                         "source_system": {
                             "system_id": 31,
@@ -683,12 +682,9 @@ class SqlArtifactTransaction:
     ) -> dict[str, Any] | None:
         if "workflow.generated_code" in query:
             assert "application.store_generated_sql_artifact" not in query
-            assert "application.sql_generation_guide_version" in query
             assert "LEFT JOIN application.workflow_run AS generating_run" in query
             assert "LEFT JOIN LATERAL workflow.list_code_generation_target_context" in query
             assert "target_model.is_active" not in query
-            assert "AND guide.is_active" not in query
-            assert "sql_generation_guide_version_status = 'published'" not in query
             assert "artifact.model_revision" not in query
             assert "current_context.code_input_digest" in query
             assert "artifact.code_input_digest" in query
@@ -704,7 +700,12 @@ class SqlArtifactTransaction:
                 "generated_sql_artifact_id": 901,
                 "artifact_name": "customer.sql",
                 "model_id": 18,
-                "target": {"entity_id": 501, "entity_type": "logical_entity", "entity_schema_name": "silver", "entity_name": "customer"},
+                "target": {
+                    "entity_id": 501,
+                    "entity_type": "logical_entity",
+                    "entity_schema_name": "silver",
+                    "entity_name": "customer",
+                },
                 "entity_type": "logical_entity",
                 "source_systems": [
                     {
@@ -725,7 +726,8 @@ class SqlArtifactTransaction:
                         "source": {
                             "entity_type": "logical_entity",
                             "entity_id": 101,
-                            "entity_schema_name": "silver", "entity_name": "customer",
+                            "entity_schema_name": "silver",
+                            "entity_name": "customer",
                         },
                         "source_system": {
                             "system_id": 31,
@@ -739,16 +741,6 @@ class SqlArtifactTransaction:
                 "mapping_supports_truncated": False,
                 "artifact_is_current": True,
                 "generated_code_status": "active",
-                "guide": {
-                    "sql_generation_guide_id": 1001,
-                    "sql_generation_guide_code": "default_sql",
-                    "sql_generation_guide_name": "Default SQL",
-                    "guide_is_active": True,
-                    "sql_generation_guide_version_id": 1002,
-                    "sql_generation_guide_version_number": 3,
-                    "sql_generation_guide_version_status": "published",
-                    "sql_generation_guide_digest": "d" * 64,
-                },
                 "workflow_run_id": 1151,
                 "generator": {
                     "generator_code": "openai_agents",
@@ -820,8 +812,6 @@ async def test_database_sql_artifact_is_authorized_and_read_from_persistence() -
     assert detail.artifact_is_current is True
     assert [system.system_code for system in detail.source_systems] == ["CRM", "ERP"]
     assert detail.mapping_supports[0].source.entity_name == "customer"
-    assert detail.guide is not None
-    assert detail.guide.sql_generation_guide_digest == "d" * 64
     assert detail.generator is not None
     assert detail.generator.generator_code == "openai_agents"
     assert detail.generator.generator_version is None
@@ -840,7 +830,6 @@ class UnprovenancedSqlArtifactTransaction(SqlArtifactTransaction):
         unprovenanced = dict(row)
         unprovenanced.update(
             {
-                "guide": None,
                 "workflow_run_id": None,
                 "generator": None,
             }
@@ -880,7 +869,6 @@ async def test_database_sql_artifact_allows_missing_workflow_provenance() -> Non
     )
 
     assert detail.workflow_run_id is None
-    assert detail.guide is None
     assert detail.generator is None
 
 
@@ -951,11 +939,6 @@ class StaleSqlArtifactTransaction(SqlArtifactTransaction):
                 "mapping_support_count": 0,
                 "mapping_supports_truncated": False,
                 "artifact_is_current": False,
-                "guide": {
-                    **row["guide"],
-                    "guide_is_active": False,
-                    "sql_generation_guide_version_status": "retired",
-                },
             }
         )
         return stale
@@ -973,7 +956,7 @@ class StaleSqlArtifactDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_sql_artifact_remains_readable_when_context_and_guide_are_stale() -> None:
+async def test_database_sql_artifact_remains_readable_when_context_is_stale() -> None:
     service = DatabaseCodeGenerationService(
         database=StaleSqlArtifactDatabase(),
         authorizer=AuthorizationService(),
@@ -995,9 +978,6 @@ async def test_database_sql_artifact_remains_readable_when_context_and_guide_are
     assert detail.artifact_is_current is False
     assert detail.source_systems == ()
     assert detail.mapping_supports == ()
-    assert detail.guide is not None
-    assert detail.guide.guide_is_active is False
-    assert detail.guide.sql_generation_guide_version_status == "retired"
 
 
 class SqlDownloadTransaction:
@@ -1058,7 +1038,12 @@ class SqlDownloadTransaction:
                 {
                     "generated_sql_artifact_id": artifact_id,
                     "artifact_name": f"{object_name}.sql",
-                    "target": {"entity_id": object_id, "entity_type": "logical_entity", "entity_schema_name": "silver", "entity_name": object_name},
+                    "target": {
+                        "entity_id": object_id,
+                        "entity_type": "logical_entity",
+                        "entity_schema_name": "silver",
+                        "entity_name": object_name,
+                    },
                     "entity_type": "logical_entity",
                     "generated_sql": sql,
                     "generated_sql_byte_count": len(sql.encode()),

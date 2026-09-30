@@ -1,3 +1,4 @@
+import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
 import { ModelLayerActions } from "../model_record_review/ModelLayerActions";
 import { useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
@@ -84,7 +85,7 @@ export function ConceptualScreen({
   };
 
   return (
-    <div className="conceptual-page page-enter">
+    <WorkflowCommandCenter filterCount={Object.values(view === "objects" ? objectFilters : relationshipFilters).filter(Boolean).length} className="conceptual-page page-enter">
       <header className="workflow-commandbar model-section-toolbar conceptual-commandbar">
         <h1 className="model-section-title sr-only">Conceptual</h1>
         <div className="workflow-command-context">
@@ -96,6 +97,9 @@ export function ConceptualScreen({
               onClick={() => { setSelectedIds(new Set()); setView("objects"); }}
             >
               Objects
+              {objectsQuery.data ? <span className="command-count" aria-hidden="true" title="Loaded records matching the filters">
+                {objectsQuery.data.pages.reduce((total, page) => total + page.items.length, 0)}{objectsQuery.hasNextPage ? "+" : ""}
+              </span> : null}
             </button>
             <button
               className={view === "relationships" ? "is-active" : ""}
@@ -104,14 +108,18 @@ export function ConceptualScreen({
               onClick={() => { setSelectedIds(new Set()); setView("relationships"); }}
             >
               Relationships
+              {relationshipsQuery.data ? <span className="command-count" aria-hidden="true" title="Loaded records matching the filters">
+                {relationshipsQuery.data.pages.reduce((total, page) => total + page.items.length, 0)}{relationshipsQuery.hasNextPage ? "+" : ""}
+              </span> : null}
             </button>
           </nav>
-          <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
-            {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
-          </span>
+
         </div>
         <div className="workflow-command-actions">
+          <WorkflowCommandTools />
+          {canDelete ? <WorkflowMenu>
           <ModelLayerActions api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="conceptual" onApplied={() => setSelectedIds(new Set())} />
+          </WorkflowMenu> : null}
           <button className="button button-secondary button-small" type="button" disabled={activeReviewQuery.isFetching} onClick={() => void refresh()}>
             {activeReviewQuery.isFetching ? "Refreshing…" : "Refresh"}
           </button>
@@ -228,6 +236,6 @@ export function ConceptualScreen({
           }}
         />
       ) : null}
-    </div>
+    </WorkflowCommandCenter>
   );
 }

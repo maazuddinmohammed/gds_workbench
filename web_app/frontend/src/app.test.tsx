@@ -22,7 +22,7 @@ describe("tenant entry", () => {
     expect(screen.getByText("Maaz")).toBeVisible();
     expect(screen.getByText("maaz@example.test")).toBeVisible();
     const selected = screen.getByRole("button", { name: /Northwind Analytics/ });
-    expect(selected).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(selected).toHaveAttribute("aria-pressed", "true"));
 
     await user.click(screen.getByRole("button", { name: /Enter Atlas/ }));
 

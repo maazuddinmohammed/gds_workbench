@@ -94,9 +94,6 @@
 .model-section-toolbar .model-settings-tabs a { display: inline-flex; align-items: center; font-size: .82rem; font-weight: 650; }
 .model-workspace .model-settings-page { padding: 0; }
 .button.button-small { min-height: 2.15rem; padding: .5rem .72rem; font-size: .74rem; }
-.brand { gap: .6rem; }
-.brand strong { font-size: 1.35rem; letter-spacing: -.05em; }
-.brand .brand-mark { color: var(--surface); background: var(--orange); box-shadow: none; }
 @media (max-width: 58rem) {
   .workspace.workspace-ledger { padding: 0 1.4rem 3rem; }
   .model-identity { padding: 1.4rem 1.25rem; gap: 1rem; }

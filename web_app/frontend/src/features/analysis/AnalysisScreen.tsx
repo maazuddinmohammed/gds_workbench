@@ -1,9 +1,9 @@
+import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
 import { useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
 import type { ModelDetail } from "../models/api";
-import type { WorkflowRunFilterState } from "../workflows/api";
 import {
   loadWorkflowScope,
   workflowCreationQueryKeys,
@@ -19,9 +19,7 @@ import {
   type AnalysisReviewCommand,
 } from "./api";
 import { AnalysisResults } from "./AnalysisResults";
-import { AnalysisRuns } from "./AnalysisRuns";
 
-type AnalysisView = "results" | "runs";
 type RunDialogKind = "inference" | "validation" | null;
 
 export function AnalysisScreen({
@@ -36,10 +34,8 @@ export function AnalysisScreen({
   hasTenantLock: boolean;
 }) {
   const queryClient = useQueryClient();
-  const [view, setView] = useState<AnalysisView>("results");
   const [filters, setFilters] = useState<AnalysisFilters>({});
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [runState, setRunState] = useState<WorkflowRunFilterState>("");
   const [runDialog, setRunDialog] = useState<RunDialogKind>(null);
   const [recentRunId, setRecentRunId] = useState<number | null>(null);
   const [reviewNotice, setReviewNotice] = useState("");
@@ -58,21 +54,10 @@ export function AnalysisScreen({
     ),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
-    enabled: view === "results",
   });
   const endpointOptionsQuery = useQuery({
     queryKey: workflowCreationQueryKeys.bronzeScope(tenantId, model.model_id),
     queryFn: () => loadWorkflowScope(api, tenantId, model.model_id, "bronze"),
-  });
-  const runsQuery = useQuery({
-    queryKey: analysisQueryKeys.runs(tenantId, model.model_id, runState),
-    queryFn: () => api.listWorkflowRuns(
-      tenantId,
-      model.model_id,
-      "analysis",
-      runState,
-    ),
-    enabled: view === "runs",
   });
   const revisionMismatch = findingsQuery.data !== undefined
     && findingsQuery.data.pages.some((page) => page.model_revision !== model.model_revision);
@@ -120,14 +105,7 @@ export function AnalysisScreen({
   };
   const refresh = async () => {
     await Promise.all([
-      view === "results"
-        ? findingsQuery.refetch()
-        : Promise.all([
-          runsQuery.refetch(),
-          queryClient.invalidateQueries({
-            queryKey: workflowRunQueryKeys.recent(tenantId, model.model_id, "analysis"),
-          }),
-        ]),
+      findingsQuery.refetch(),
       endpointOptionsQuery.refetch(),
       queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
       queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
@@ -135,36 +113,18 @@ export function AnalysisScreen({
   };
 
   return (
-    <div className="analysis-page page-enter">
+    <WorkflowCommandCenter filterCount={Object.values(filters).filter(Boolean).length} className="analysis-page page-enter">
       <header className="workflow-commandbar model-section-toolbar">
         <h1 className="model-section-title sr-only">Analysis</h1>
         <div className="workflow-command-context">
-          <nav className="workflow-tabs" aria-label="Analysis views">
-            <button
-              className={view === "results" ? "is-active" : ""}
-              type="button"
-              aria-pressed={view === "results"}
-              onClick={() => setView("results")}
-            >
-              Results
-            </button>
-            <button
-              className={view === "runs" ? "is-active" : ""}
-              type="button"
-              aria-pressed={view === "runs"}
-              onClick={() => setView("runs")}
-            >
-              Runs
-            </button>
-          </nav>
-          <span className={hasTenantLock ? "lock-context is-held" : "lock-context"}>
-            {hasTenantLock ? "Tenant Lock held" : "Tenant Lock required to run"}
-          </span>
+          <strong className="workflow-view-label">Findings</strong>
         </div>
         <div className="workflow-command-actions">
+          <WorkflowCommandTools />
           <button className="button button-secondary button-small" type="button" onClick={refresh}>
             Refresh
           </button>
+          <WorkflowMenu label="Run" primary>
           <button
             className="button button-secondary button-small"
             type="button"
@@ -183,13 +143,12 @@ export function AnalysisScreen({
           >
             Validate pending
           </button>
+          </WorkflowMenu>
         </div>
       </header>
 
-      {view === "results" ? (
+
         <AnalysisResults
-          tenantId={tenantId}
-          modelId={model.model_id}
           items={findingsQuery.data?.pages.flatMap((page) => page.items) ?? []}
           endpointOptions={endpointOptionsQuery.data?.items ?? []}
           filters={filters}
@@ -219,8 +178,6 @@ export function AnalysisScreen({
             void findingsQuery.fetchNextPage();
           }}
         />
-      ) : (
-        <>
           <WorkflowRunMonitor
             api={api}
             tenantId={tenantId}
@@ -235,15 +192,6 @@ export function AnalysisScreen({
               });
             }}
           />
-          <AnalysisRuns
-            items={runsQuery.data?.items ?? []}
-            state={runState}
-            isLoading={runsQuery.isPending}
-            isError={runsQuery.isError}
-            onStateChange={setRunState}
-          />
-        </>
-      )}
 
       {runDialog ? (
         <WorkflowRunDialog
@@ -267,17 +215,14 @@ export function AnalysisScreen({
           onClose={() => setRunDialog(null)}
           onCreated={async (workflowRunId) => {
             setRecentRunId(workflowRunId);
-            setView("runs");
             await queryClient.invalidateQueries({
               queryKey: workflowRunQueryKeys.recent(tenantId, model.model_id, "analysis"),
             });
-            await queryClient.invalidateQueries({
-              queryKey: analysisQueryKeys.runs(tenantId, model.model_id, runState),
-            });
+
           }}
         />
       ) : null}
-    </div>
+    </WorkflowCommandCenter>
   );
 }
 

@@ -536,6 +536,8 @@ SELECT output_template_id
   FROM application.output_template
  WHERE lower(btrim(output_template_code)) = lower(btrim(%s))
    AND output_template_target_type = %s
+   AND (output_template_modeled_entity_type IS NULL
+        OR output_template_modeled_entity_type = %s)
    AND is_active
 """
 
@@ -902,8 +904,8 @@ class ModelMaterializer:
     _generated_code_ids: dict[tuple[str, str, str, str], int] = field(
         default_factory=dict[tuple[str, str, str, str], int]
     )
-    _output_template_ids: dict[tuple[str, str], int] = field(
-        default_factory=dict[tuple[str, str], int]
+    _output_template_ids: dict[tuple[str, str, str], int] = field(
+        default_factory=dict[tuple[str, str, str], int]
     )
     _validation_context_digests: dict[str, tuple[str, str | None]] = field(
         default_factory=dict[str, tuple[str, str | None]]
@@ -2292,16 +2294,17 @@ SELECT attribute.{config.attribute_id}
         self,
         code: str | None,
         target_type: str,
+        modeled_entity_type: str,
     ) -> int | None:
         if code is None:
             return None
-        key = (target_type, normalize_model_key_value(code))
+        key = (target_type, modeled_entity_type, normalize_model_key_value(code))
         cached = self._output_template_ids.get(key)
         if cached is not None:
             return cached
         row = await self.transaction.fetch_one(
             _RESOLVE_OUTPUT_TEMPLATE_SQL,
-            (code, target_type),
+            (code, target_type, modeled_entity_type),
         )
         if row is None:
             raise InvalidRequestError("A referenced Output Template was not found.")
@@ -2657,6 +2660,7 @@ SELECT attribute.{config.attribute_id}
             output_template_id = await self.resolve_output_template(
                 record.output_template_code,
                 "mapping_object",
+                record.modeled_entity_type,
             )
             mapping_workflow_run_id = None
         else:
@@ -2723,6 +2727,7 @@ SELECT attribute.{config.attribute_id}
             output_template_id = await self.resolve_output_template(
                 record.output_template_code,
                 "mapping_attribute",
+                record.modeled_entity_type,
             )
             mapping_workflow_run_id = None
         else:

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
@@ -27,6 +27,7 @@ import { useProfilingRunEvents } from "./useProfilingRunEvents";
 import { WorkflowTokenUsage } from "../workflows/WorkflowTokenUsage";
 
 export function ProfilingRuns({
+  compact = false,
   items,
   state,
   isLoading,
@@ -35,6 +36,7 @@ export function ProfilingRuns({
   onStateChange,
   onShowDetails,
 }: {
+  compact?: boolean;
   items: WorkflowRunRecord[];
   state: WorkflowRunFilterState;
   isLoading: boolean;
@@ -43,6 +45,8 @@ export function ProfilingRuns({
   onStateChange: (state: WorkflowRunFilterState) => void;
   onShowDetails: (runId: number) => void;
 }) {
+  const [runIdInput, setRunIdInput] = useState("");
+  const runIdNumber = Number(runIdInput);
   const stateForm = useForm({ defaultValues: { state } });
   const columns = useMemo<ColumnDef<WorkflowRunRecord>[]>(() => [
     {
@@ -116,6 +120,12 @@ export function ProfilingRuns({
         </stateForm.Field>
         <span>{items.length} recent {items.length === 1 ? "run" : "runs"}</span>
       </div>
+      {compact ? <form className="workflow-run-id-navigation" onSubmit={(event) => {
+        event.preventDefault(); if (Number.isSafeInteger(runIdNumber) && runIdNumber > 0) onShowDetails(runIdNumber);
+      }}>
+        <label><span>Run ID</span><input aria-label="Run ID" type="number" min="1" step="1" value={runIdInput} onChange={(event) => setRunIdInput(event.target.value)} /></label>
+        <button className="button button-secondary button-small" type="submit" disabled={!Number.isSafeInteger(runIdNumber) || runIdNumber <= 0}>Open run</button>
+      </form> : null}
       {isLoading ? (
         <div className="surface-state" aria-busy="true">Loading profiling runs…</div>
       ) : isError ? (
@@ -123,7 +133,13 @@ export function ProfilingRuns({
           Profiling runs could not be loaded.
         </div>
       ) : (
-        <WorkflowTable table={table} label="Profiling runs" selectedId={selectedRunId} />
+        compact ? <ol className="workflow-recent-runs" aria-label="Profiling run list">{items.map((run) => <li key={run.workflow_run_id}>
+          <button type="button" id={`profiling-run-trigger-${run.workflow_run_id}`} aria-pressed={selectedRunId === run.workflow_run_id}
+            className={selectedRunId === run.workflow_run_id ? "is-selected" : ""} onClick={() => onShowDetails(run.workflow_run_id)}>
+            <span><strong>PR-{run.workflow_run_id}</strong><small>{formatDateTime(run.created_at)} · {run.selected_scope_count} Objects</small></span>
+            <RunStateBadge state={run.workflow_run_state} />
+          </button>
+        </li>)}</ol> : <WorkflowTable table={table} label="Profiling runs" selectedId={selectedRunId} />
       )}
       {!isLoading && !isError && !items.length ? (
         <div className="empty-state compact">No profiling runs match this state.</div>
@@ -133,12 +149,16 @@ export function ProfilingRuns({
 }
 
 export function ProfilingRunDrawer({
+  embedded = false,
+  hasTenantLock = true,
   api,
   tenantId,
   model,
   runId,
   onClose,
 }: {
+  embedded?: boolean;
+  hasTenantLock?: boolean;
   api: ProfilingApi;
   tenantId: number;
   model: ModelDetail;
@@ -176,25 +196,25 @@ export function ProfilingRunDrawer({
     },
   });
 
-  useEffect(() => closeButton.current?.focus(), [runId]);
+  useEffect(() => { if (!embedded) closeButton.current?.focus(); }, [embedded, runId]);
 
   const run = runQuery.data;
   return (
     <aside
-      className="workflow-drawer run-drawer"
+      className={embedded ? "profiling-run-inline" : "workflow-drawer run-drawer"}
       aria-label="Profiling run details"
       onKeyDown={(event) => {
-        if (event.key === "Escape") onClose();
+        if (event.key === "Escape" && !embedded) onClose();
       }}
     >
-      <DrawerHeader
+      {embedded ? <header className="workflow-run-detail-header"><strong>PR-{runId}</strong>{run ? <RunStateBadge state={run.workflow_run_state} /> : null}</header> : <DrawerHeader
         eyebrow="Run events"
         title={`PR-${runId}`}
         closeLabel="Close profiling run details"
         closeRef={closeButton}
         onClose={onClose}
         badge={run ? <RunStateBadge state={run.workflow_run_state} /> : undefined}
-      />
+      />}
       {runQuery.isPending ? (
         <div className="surface-state" aria-busy="true">Loading run details…</div>
       ) : runQuery.isError || !run ? (
@@ -216,8 +236,9 @@ export function ProfilingRunDrawer({
               <button
                 className="button button-primary button-small"
                 type="button"
-                disabled={executeMutation.isPending}
-                onClick={() => executeMutation.mutate()}
+                disabled={executeMutation.isPending || !hasTenantLock}
+                title={hasTenantLock ? undefined : "Tenant Lock required"}
+                onClick={() => { if (hasTenantLock) executeMutation.mutate(); }}
               >
                 {executeMutation.isPending ? "Starting…" : "Execute queued run"}
               </button>

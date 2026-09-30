@@ -18,9 +18,6 @@ if TYPE_CHECKING:
     from tests.mcp.conftest import DisposablePostgres, TestRow
 
 SEED = Path(__file__).parents[2] / "database/seed/07_global_mapping_output_templates.template.sql"
-PROPOSAL = (
-    Path(__file__).parents[2] / "docs/workflow-prompts/mapping.output-templates.proposal.json"
-)
 
 
 def seed_mapping_output_templates(database: DisposablePostgres) -> None:
@@ -58,7 +55,10 @@ def seed_mapping_output_templates(database: DisposablePostgres) -> None:
                 (principal["principal_id"], tenant_id, object_id),
             )
         else:
-            tenant_id, object_id = identity["entra_tenant_id"], identity["entra_object_id"]
+            tenant_id, object_id = (
+                identity["entra_tenant_id"],
+                identity["entra_object_id"],
+            )
         seed = (
             SEED.read_text()
             .replace("__REPLACE_WITH_ENTRA_TENANT_ID__", str(tenant_id))
@@ -78,14 +78,16 @@ def _snapshot(database: DisposablePostgres) -> list[TestRow]:
             ) AS fields
               FROM application.output_template AS template
               JOIN application.output_template_field AS field USING (output_template_id)
-             WHERE output_template_code IN ('mapping_object_default', 'mapping_attribute_default')
+             WHERE output_template_code IN (
+                 'mapping_logical_object_default', 'mapping_logical_attribute_default',
+                 'mapping_dimensional_object_default', 'mapping_dimensional_attribute_default')
              GROUP BY template.output_template_id
              ORDER BY template.output_template_code
             """
         ).fetchall()
 
 
-def test_seed_matches_confirmed_fields_and_exact_replay_changes_nothing(
+def test_seed_persists_canonical_fields_and_exact_replay_changes_nothing(
     bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
     database = bootstrap_postgres_database
@@ -94,12 +96,17 @@ def test_seed_matches_confirmed_fields_and_exact_replay_changes_nothing(
     seed_mapping_output_templates(database)
     assert _snapshot(database) == before
     expected = {
-        item["output_template_code"]: item for item in json.loads(PROPOSAL.read_text())["templates"]
+        item["output_template_code"]: item
+        for item in json.loads(SEED.read_text().split("$mapping_templates$")[1])
     }
-    assert len(before) == 2
+    assert len(before) == 4
     for row in before:
         template = expected[row["output_template_code"]]
         assert row["output_template_target_type"] == template["output_template_target_type"]
+        assert (
+            row["output_template_modeled_entity_type"]
+            == template["output_template_modeled_entity_type"]
+        )
         assert len(row["fields"]) == len(template["fields"])
         for actual, expected_field in zip(row["fields"], template["fields"], strict=True):
             assert {key: actual[key] for key in expected_field} == expected_field
@@ -138,7 +145,7 @@ def test_changed_seed_refuses_to_overwrite_existing_templates(
     before = _snapshot(database)
     changed_seed = tmp_path / "changed_mapping_seed.sql"
     changed_seed.write_text(
-        SEED.read_text().replace("Default Object Mapping", "Changed Object Mapping")
+        SEED.read_text().replace("Default Logical Object Mapping", "Changed Object Mapping")
     )
     monkeypatch.setattr(f"{__name__}.SEED", changed_seed)
     with pytest.raises(RaiseException, match="Output Template code conflict"):
@@ -162,7 +169,12 @@ def test_new_mapping_runs_freeze_global_defaults_with_independent_custom_overrid
 
     database = bootstrap_postgres_database
     context = _seed_mapping_context(database, dimensional=dimensional)
-    defaults = {row["output_template_target_type"]: row for row in _snapshot(database)}
+    defaults = {
+        row["output_template_target_type"]: row
+        for row in _snapshot(database)
+        if row["output_template_modeled_entity_type"]
+        == ("dimensional_entity" if dimensional else "logical_entity")
+    }
     with database.connect_owner() as connection:
         object_override = (
             _seed_output_template(connection, context, "mapping_object")
@@ -228,13 +240,16 @@ def test_replay_keeps_frozen_defaults_when_current_default_is_unavailable(
                 (created["workflow_run_id"],),
             ).fetchone()
         )
-    with database.connect_owner() as connection, connection.transaction(force_rollback=True):
+    with (
+        database.connect_owner() as connection,
+        connection.transaction(force_rollback=True),
+    ):
         connection.execute(
             """
             UPDATE application.output_template SET is_active = FALSE
              WHERE output_template_code = %s
             """,
-            (f"mapping_{target.lower()}_default",),
+            (f"mapping_logical_{target.lower()}_default",),
         )
         replay = require_row(connection.execute(CREATE_MAPPING_RUN_SQL, parameters).fetchone())
         assert replay["created"] is False
@@ -251,3 +266,58 @@ def test_replay_keeps_frozen_defaults_when_current_default_is_unavailable(
             connection.transaction(),
         ):
             connection.execute(CREATE_MAPPING_RUN_SQL, _parameters(context, correlation_id=uuid4()))
+
+
+@pytest.mark.parametrize("dimensional", (False, True), ids=("logical", "dimensional"))
+@pytest.mark.parametrize("target", ("object", "attribute"))
+def test_mapping_run_rejects_opposite_layer_template(
+    bootstrap_postgres_database: DisposablePostgres,
+    dimensional: bool,
+    target: str,
+) -> None:
+    from tests.mcp.test_database_mapping_workflow_run import (
+        CREATE_MAPPING_RUN_SQL,
+        _parameters,
+        _seed_mapping_context,
+    )
+
+    database = bootstrap_postgres_database
+    context = _seed_mapping_context(database, dimensional=dimensional)
+    wrong_layer = "logical_entity" if dimensional else "dimensional_entity"
+    template = next(
+        row
+        for row in _snapshot(database)
+        if row["output_template_modeled_entity_type"] == wrong_layer
+        and row["output_template_target_type"] == f"mapping_{target}"
+    )
+    with (
+        database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="output template is unavailable"),
+    ):
+        connection.execute(
+            CREATE_MAPPING_RUN_SQL,
+            _parameters(
+                context,
+                correlation_id=uuid4(),
+                object_template_id=template["output_template_id"] if target == "object" else None,
+                attribute_template_id=template["output_template_id"]
+                if target == "attribute"
+                else None,
+            ),
+        )
+
+
+def test_template_layer_is_immutable(
+    bootstrap_postgres_database: DisposablePostgres,
+) -> None:
+    database = bootstrap_postgres_database
+    seed_mapping_output_templates(database)
+    with (
+        database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="schema is immutable"),
+    ):
+        connection.execute(
+            "UPDATE application.output_template SET output_template_modeled_entity_type = %s "
+            "WHERE output_template_code = %s",
+            ("dimensional_entity", "mapping_logical_object_default"),
+        )

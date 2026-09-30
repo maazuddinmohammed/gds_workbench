@@ -12,8 +12,39 @@ import type {
   WorkflowRunMonitorApi,
 } from "./api";
 import { WorkflowRunMonitor } from "./WorkflowRunMonitor";
+import { WorkflowCommandCenter, WorkflowCommandTools } from "./WorkflowCommandCenter";
 
 describe("Workflow Run monitor", () => {
+  it("loads details on opening Activity and preserves draft safeguards, state filters and manual refresh", async () => {
+    const api = monitorApi();
+    const user = userEvent.setup();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><WorkflowCommandCenter className="test-page">
+      <WorkflowCommandTools />
+      <WorkflowRunMonitor api={api} tenantId={7} modelId={18} modelRevision={5} workflow="conceptual"
+        hasTenantLock={false} focusRunId={null} onApplied={async () => undefined} />
+    </WorkflowCommandCenter></QueryClientProvider>);
+    await waitFor(() => expect(api.listWorkflowRuns).toHaveBeenCalledOnce());
+    expect(api.readWorkflowRun).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Show Conceptual run activity" }));
+    await screen.findByRole("article", { name: "Run 1048 details" });
+    await user.click(screen.getByRole("button", { name: "Draft" }));
+    expect(await screen.findByRole("button", { name: "Apply validated draft" })).toBeDisabled();
+    expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Activity" }));
+    expect(screen.getByText("Validated one bounded candidate.")).toBeVisible();
+    const reads = api.readWorkflowRun.mock.calls.length;
+    await user.click(screen.getByRole("button", { name: "Refresh runs" }));
+    await waitFor(() => expect(api.readWorkflowRun.mock.calls.length).toBeGreaterThan(reads));
+    api.listWorkflowRuns.mockResolvedValue({ items: [], next_cursor: null });
+    await user.selectOptions(screen.getByRole("combobox", { name: "Run state" }), "failed");
+    await screen.findByText("No recent Conceptual runs.");
+    expect(api.listWorkflowRuns).toHaveBeenLastCalledWith(7, 18, "conceptual", "failed", 5, undefined);
+    await user.type(screen.getByRole("spinbutton", { name: "Run ID" }), "1048");
+    await user.click(screen.getByRole("button", { name: "Open run" }));
+    expect(await screen.findByRole("article", { name: "Run 1048 details" })).toBeVisible();
+  });
+
   it("does not treat frozen Mapping pair selection ordinals as execution progress", async () => {
     const api = monitorApi();
     const run = partialMappingRun();

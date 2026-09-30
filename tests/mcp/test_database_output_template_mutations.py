@@ -618,8 +618,13 @@ def test_output_template_mutations_are_web_only_security_definer_functions(
                    has_table_privilege(
                        'gds_app_write',
                        'application.' || quote_ident(table_name),
-                       'SELECT,INSERT,UPDATE,DELETE'
-                   ) AS mcp_can_access
+                       'SELECT'
+                   ) AS mcp_can_read,
+                   has_table_privilege(
+                       'gds_app_write',
+                       'application.' || quote_ident(table_name),
+                       'INSERT,UPDATE,DELETE'
+                   ) AS mcp_can_mutate
               FROM unnest(
                        ARRAY['output_template', 'output_template_field']
                    ) AS output_table(table_name)
@@ -653,12 +658,14 @@ def test_output_template_mutations_are_web_only_security_definer_functions(
         {
             "table_name": "output_template",
             "web_can_mutate": False,
-            "mcp_can_access": True,
+            "mcp_can_read": True,
+            "mcp_can_mutate": False,
         },
         {
             "table_name": "output_template_field",
             "web_can_mutate": False,
-            "mcp_can_access": False,
+            "mcp_can_read": True,
+            "mcp_can_mutate": False,
         },
     ]
 

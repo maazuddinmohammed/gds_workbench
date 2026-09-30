@@ -1,3 +1,4 @@
+import { WorkflowCommandCenter, WorkflowCommandTools } from "../workflows/WorkflowCommandCenter";
 import { Link } from "@tanstack/react-router";
 import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
 import { useRef, useState } from "react";
@@ -89,7 +90,7 @@ export function MappingScreen({
   };
 
   return (
-    <div className={`mapping-workspace page-enter${selectedIds.size ? " has-selection" : ""}`}>
+    <WorkflowCommandCenter filterCount={Object.values(filters).filter(Boolean).length} className={`mapping-workspace page-enter${selectedIds.size ? " has-selection" : ""}`}>
       <h1 className="model-section-title sr-only">Mapping</h1>
       <header className="workflow-commandbar mapping-commandbar model-section-toolbar">
         <div className="workflow-command-context mapping-command-context">
@@ -110,11 +111,10 @@ export function MappingScreen({
             </nav>
             <span>{layer === "logical" ? "Logical Entities → Silver" : "Dimensional Entities → Gold"}</span>
           </div>
-          <span className={hasTenantLock && hasAppPermission ? "lock-context is-held" : "lock-context"}>
-            {permissionLabel}
-          </span>
+
         </div>
         <div className="workflow-command-actions">
+          <WorkflowCommandTools />
           <button ref={refreshButton} className="button button-secondary button-small" type="button" onClick={() => void refresh()}>
             Refresh
           </button>
@@ -179,7 +179,7 @@ export function MappingScreen({
           }}
         />
       ) : null}
-    </div>
+    </WorkflowCommandCenter>
   );
 }
 
