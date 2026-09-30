@@ -17,7 +17,7 @@ from gds_workbench_api.capabilities import (
 )
 from gds_workbench_api.features.workflows.usage.contracts import FoundryModelPricing
 
-_DEFAULT_TIMEOUT_SECONDS = 480
+_DEFAULT_TIMEOUT_SECONDS = 900
 
 
 class FoundryClientCredentials(BaseModel):
