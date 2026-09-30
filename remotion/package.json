@@ -1,0 +1,35 @@
+{
+  "name": "atlas-launch-video",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Atlas product launch film — editable Remotion composition",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "remotion studio --no-open",
+    "check": "eslint src && tsc --noEmit",
+    "build": "remotion bundle",
+    "render": "remotion render src/index.ts AtlasLaunch out/atlas-launch.mp4 --codec=h264 --crf=18",
+    "still": "remotion still src/index.ts AtlasLaunch out/atlas-poster.png --frame=70"
+  },
+  "dependencies": {
+    "@fontsource-variable/manrope": "5.3.0",
+    "@remotion/cli": "4.0.530",
+    "@remotion/fonts": "4.0.530",
+    "@remotion/media": "4.0.530",
+    "@remotion/transitions": "4.0.530",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.530"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "4.0.530",
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "eslint": "9.39.5",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3"
+  },
+  "sideEffects": [
+    "*.css"
+  ]
+}
