@@ -23,7 +23,9 @@ export function RunStateBadge({ state, partial = false }: {
 }) {
   const tone = partial ? "is-warning" : state === "completed" || state === "completed_with_repair"
     ? "is-success"
-    : state === "failed"
+    : state === "cancelled"
+      ? "is-neutral"
+      : state === "failed"
       ? "is-danger"
       : "is-warning";
   return <span className={`status-badge ${tone}`}>{partial ? "Partial results" : runStateLabel(state)}</span>;
@@ -36,6 +38,7 @@ function runStateLabel(state: WorkflowRunRecord["workflow_run_state"]): string {
     completed: "Completed",
     completed_with_repair: "Completed with repair",
     failed: "Failed",
+    cancelled: "Cancelled",
   };
   return labels[state];
 }

@@ -44,7 +44,7 @@ SELECT created.model_id,
        created.updated_time AS updated_at
   FROM application.create_model(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS created
 """
 
@@ -64,7 +64,7 @@ SELECT updated.model_id,
        updated.updated_time AS updated_at
   FROM application.update_model(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS updated
 """
 
@@ -274,6 +274,7 @@ def _complete_model_parameters(request: CompleteModelRequest) -> tuple[object, .
         request.default_validation_retry_count,
         request.default_mapping_source_system_id,
         request.logical_entity_scd_type,
+        request.dimensional_entity_scd_type,
     )
 
 

@@ -1,4 +1,4 @@
-"""Governed Workflow Run creation HTTP route."""
+"""Governed Workflow Run creation and cancellation HTTP route."""
 
 from typing import Annotated
 from uuid import UUID
@@ -10,6 +10,7 @@ from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.workflows.commands.contracts import (
     CreateWorkflowRunRequest,
+    WorkflowRunCancellationResult,
     WorkflowRunCommandResult,
 )
 from gds_workbench_api.features.workflows.commands.service import WorkflowCommandService
@@ -51,5 +52,26 @@ def create_workflow_commands_router(
         methods=["POST"],
         response_model=WorkflowRunCommandResult,
         status_code=status.HTTP_201_CREATED,
+    )
+
+    async def cancel_run(
+        tenant_id: Annotated[int, Path(gt=0)],
+        model_id: Annotated[int, Path(gt=0)],
+        workflow_run_id: Annotated[int, Path(gt=0)],
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
+    ) -> WorkflowRunCancellationResult:
+        return await service.cancel_run(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            workflow_run_id=workflow_run_id,
+        )
+
+    router.add_api_route(
+        "/{workflow_run_id}/cancel",
+        cancel_run,
+        methods=["POST"],
+        response_model=WorkflowRunCancellationResult,
     )
     return router

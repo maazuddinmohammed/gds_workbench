@@ -11,6 +11,7 @@ from psycopg.errors import InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from tests.mcp.enrichment_test_support import seed_model_enrichment
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.database_test_support import require_row
 from tests.mcp.test_database_metadata_enrichment_registration import _context, _create
@@ -48,6 +49,8 @@ def _start(
 def _load(
     database: DisposablePostgres, context: WorkflowContext, run_id: int
 ) -> dict[str, Any]:
+    with database.connect_owner() as connection:
+        seed_model_enrichment(connection, context.model_id)
     with psycopg.Connection[dict[str, Any]].connect(
         database.web_runtime_dsn(), row_factory=dict_row
     ) as connection:
@@ -117,7 +120,14 @@ def _full_results(
     keys += [
         (row["object_id"], row["attribute_id"], field)
         for row in attributes
-        for field in ("attribute_description", "attribute_inferred_data_type")
+        for field in (
+            "attribute_description",
+            "attribute_inferred_data_type",
+            "is_natural_key",
+            "is_primary_key",
+            "is_nullable",
+            "is_pii",
+        )
     ]
     return [
         keyed.get(key, _field(*key, None, status="inconclusive", method="none"))
@@ -193,6 +203,10 @@ def test_context_missing_relations_and_atomic_completion_replay(
                 ).fetchone()
             )["result"]
             assert page["applied_field_counts"] == {
+                "is_natural_key": 0,
+                "is_primary_key": 0,
+                "is_nullable": 0,
+                "is_pii": 0,
                 "object_description": 1,
                 "attribute_description": 1,
                 "attribute_inferred_data_type": 1,
@@ -208,8 +222,8 @@ def test_context_missing_relations_and_atomic_completion_replay(
     with database.connect_owner() as connection:
         row = require_row(
             connection.execute(
-                "SELECT attribute_data_type, attribute_inferred_data_type, attribute_description, is_locked FROM core.attribute WHERE attribute_id=%s",
-                (attribute_id,),
+                "SELECT attribute_data_type,enrichment.attribute_inferred_data_type,enrichment.attribute_description,enrichment.is_locked FROM core.attribute JOIN workflow.attribute_enrichment AS enrichment USING(attribute_id) WHERE attribute_id=%s AND enrichment.model_id=%s",
+                (attribute_id, context.model_id),
             ).fetchone()
         )
         assert row == dict(
@@ -276,9 +290,9 @@ def test_completion_replaces_unlocked_descriptions_and_preserves_locked_inactive
     )
     assert result["counts"] == {
         "applied": 1,
-        "locked": 2,
-        "inactive": 2,
-        "inconclusive": len(_full_results(database, run_id, [])) - 5,
+        "locked": 6,
+        "inactive": 6,
+        "inconclusive": len(_full_results(database, run_id, [])) - 13,
     }
     with database.connect_owner() as connection:
         assert (
@@ -326,8 +340,8 @@ def test_generated_null_clears_unlocked_description_but_not_inferred_type(
     with database.connect_owner() as connection:
         row = require_row(
             connection.execute(
-                "SELECT object_description, attribute_description, attribute_inferred_data_type FROM core.object JOIN core.attribute USING(object_id) WHERE attribute_id=%s",
-                (first[1],),
+                "SELECT object_description, attribute_description, attribute_inferred_data_type FROM workflow.object_enrichment JOIN workflow.attribute_enrichment USING(model_id,object_id) WHERE attribute_id=%s AND model_id=%s",
+                (first[1], context.model_id),
             ).fetchone()
         )
         assert row == {
@@ -848,7 +862,9 @@ def test_new_attribute_baseline_drift_completes_all_current_fields_changed(
     context, run_id, claim, attributes = _start(database)
     snapshot = _load(database, context, run_id)
     fields = _full_results(
-        database, run_id, [_field(*attributes[0], "attribute_description", "Candidate.")]
+        database,
+        run_id,
+        [_field(*attributes[0], "attribute_description", "Candidate.")],
     )
     with database.connect_owner() as connection:
         connection.execute(
@@ -856,10 +872,16 @@ def test_new_attribute_baseline_drift_completes_all_current_fields_changed(
             (attributes[0][0],),
         )
     result = _complete(
-        database, context, run_id, claim, snapshot["baseline_digest"], fields, full=False
+        database,
+        context,
+        run_id,
+        claim,
+        snapshot["baseline_digest"],
+        fields,
+        full=False,
     )
-    assert result["counts"] == {"changed": len(fields) + 2}
-    assert result["warning_count"] == len(fields) + 2
+    assert result["counts"] == {"changed": len(fields) + 6}
+    assert result["warning_count"] == len(fields) + 6
     assert (
         _complete(
             database,

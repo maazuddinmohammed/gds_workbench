@@ -547,7 +547,15 @@ async def test_dimensional_mapping_uses_logical_entities_without_registered_targ
     web_postgres_database: DisposablePostgres,
 ) -> None:
     scope = _seed_mapping_scope(web_postgres_database)
+    with web_postgres_database.connect_owner() as connection:
+        connection.execute(
+            "UPDATE model.model SET logical_entity_scd_type='type_1', "
+            "dimensional_entity_scd_type='type_2' WHERE model_id=%s",
+            (scope.plan.model_id,),
+        )
     context = await _load(web_postgres_database, scope)
+    assert context.authoring.logical_entity_scd_type == "type_1"
+    assert context.authoring.dimensional_entity_scd_type == "type_2"
     assert context.target.entity_schema_name == "gold"
     assert context.target.entity_id == scope.plan.pair.modeled_entity_id
     assert [

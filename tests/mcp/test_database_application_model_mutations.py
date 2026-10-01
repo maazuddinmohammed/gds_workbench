@@ -32,7 +32,7 @@ CREATE_MODEL_SQL: LiteralString = """
           %s::VARCHAR, %s::VARCHAR, '[]'::JSONB, '[]'::JSONB, %s::TEXT, %s::JSONB,
           %s::TEXT, %s::JSONB, %s::JSONB,
           %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR,
-          %s::INTEGER, %s::INTEGER, %s::BIGINT, %s::VARCHAR
+          %s::INTEGER, %s::INTEGER, %s::BIGINT, %s::VARCHAR, %s::VARCHAR
       )
 """
 
@@ -43,7 +43,7 @@ UPDATE_MODEL_SQL: LiteralString = """
           %s::VARCHAR, %s::VARCHAR, '[]'::JSONB, '[]'::JSONB, %s::TEXT, %s::JSONB,
           %s::TEXT, %s::JSONB, %s::JSONB,
           %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR,
-          %s::INTEGER, %s::INTEGER, %s::BIGINT, %s::VARCHAR
+          %s::INTEGER, %s::INTEGER, %s::BIGINT, %s::VARCHAR, %s::VARCHAR
       )
 """
 
@@ -149,6 +149,7 @@ def _create_model(
     context: ModelMutationContext,
     default_mapping_source_system_id: int | None = None,
     logical_entity_scd_type: str | None = None,
+    dimensional_entity_scd_type: str | None = None,
 ) -> TestRow:
     with _connect_web(postgres_database) as connection:
         return require_row(
@@ -173,6 +174,7 @@ def _create_model(
                     2,
                     default_mapping_source_system_id,
                     logical_entity_scd_type,
+                    dimensional_entity_scd_type,
                 ),
             ).fetchone()
         )
@@ -207,6 +209,7 @@ def _update_parameters(
             created["default_validation_retry_count"],
             created["default_mapping_source_system_id"],
             created["logical_entity_scd_type"],
+            created["dimensional_entity_scd_type"],
         )
     return (
         context.entra_tenant_id,
@@ -220,6 +223,7 @@ def _update_parameters(
         "Prefer dimensional business terms.",
         '[{"name":"EffectiveDate","type":"date"}]',
         '[{"name":"UpdatedTime","type":"timestamp"}]',
+        None,
         None,
         None,
         None,
@@ -426,9 +430,7 @@ def test_default_mapping_system_must_have_an_active_owned_connection(
         preserve_values=True,
     )
     with _connect_web(postgres_database) as connection:
-        unchanged = require_row(
-            connection.execute(UPDATE_MODEL_SQL, parameters).fetchone()
-        )
+        unchanged = require_row(connection.execute(UPDATE_MODEL_SQL, parameters).fetchone())
     assert unchanged["model_revision"] == created["model_revision"]
 
     with postgres_database.connect_owner() as connection:
@@ -459,7 +461,7 @@ def test_default_mapping_system_must_have_an_active_owned_connection(
     with _connect_web(postgres_database) as connection:
         cleared = require_row(
             connection.execute(
-                UPDATE_MODEL_SQL, parameters[:-2] + (None, parameters[-1])
+                UPDATE_MODEL_SQL, parameters[:-3] + (None, *parameters[-2:])
             ).fetchone()
         )
     assert cleared["default_mapping_source_system_id"] is None
@@ -483,7 +485,7 @@ def test_logical_scd_choice_persists_and_is_revision_fenced(
         with _connect_web(postgres_database) as connection:
             updated = require_row(
                 connection.execute(
-                    UPDATE_MODEL_SQL, parameters[:-1] + (choice,)
+                    UPDATE_MODEL_SQL, parameters[:-2] + (choice, parameters[-1])
                 ).fetchone()
             )
         assert updated["logical_entity_scd_type"] == choice
@@ -516,3 +518,57 @@ def test_database_rejects_unknown_logical_scd_choice(
     context = _seed_context(postgres_database)
     with pytest.raises(CheckViolation, match="ck_model_logical_entity_scd_type"):
         _create_model(postgres_database, context, logical_entity_scd_type="type_3")
+
+
+def test_dimensional_scd_choice_persists_and_is_revision_fenced(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = _seed_context(postgres_database)
+    stored = _create_model(
+        postgres_database, context, dimensional_entity_scd_type="type_2",
+        logical_entity_scd_type="type_1",
+    )
+    assert stored["dimensional_entity_scd_type"] == "type_2"
+    for choice in ("type_1", None):
+        parameters = _update_parameters(
+            context,
+            stored,
+            revision=stored["model_revision"],
+            name=stored["model_name"],
+            preserve_values=True,
+        )
+        with _connect_web(postgres_database) as connection:
+            updated = require_row(
+                connection.execute(UPDATE_MODEL_SQL, parameters[:-1] + (choice,)).fetchone()
+            )
+        assert updated["dimensional_entity_scd_type"] == choice
+        assert updated["logical_entity_scd_type"] == "type_1"
+        assert updated["model_revision"] == stored["model_revision"] + 1
+        with (
+            _connect_web(postgres_database) as connection,
+            pytest.raises(RaiseException, match="stale_model_revision"),
+        ):
+            connection.execute(UPDATE_MODEL_SQL, parameters)
+        with _connect_web(postgres_database) as connection:
+            unchanged = require_row(
+                connection.execute(
+                    UPDATE_MODEL_SQL,
+                    _update_parameters(
+                        context,
+                        updated,
+                        revision=updated["model_revision"],
+                        name=updated["model_name"],
+                        preserve_values=True,
+                    ),
+                ).fetchone()
+            )
+        assert unchanged["model_revision"] == updated["model_revision"]
+        stored = updated
+
+
+def test_database_rejects_unknown_dimensional_scd_choice(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = _seed_context(postgres_database)
+    with pytest.raises(CheckViolation, match="ck_model_dimensional_entity_scd_type"):
+        _create_model(postgres_database, context, dimensional_entity_scd_type="type_3")

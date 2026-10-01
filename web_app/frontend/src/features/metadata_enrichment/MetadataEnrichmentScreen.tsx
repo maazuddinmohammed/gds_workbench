@@ -9,18 +9,18 @@ import type { ModelDetail } from "../models/api";
 import type { ModelInputScopeApi, ModelInputScopeFilters, ModelInputScopeObject } from "../model_input_scope/api";
 import { ScopeFilterForm } from "../model_input_scope/ModelInputScopeScreen";
 import { useScopeFilterChoices } from "../model_input_scope/scopeFilterChoices";
-import type { MetadataApi, ObjectAttribute, ReviewMetadataRecordsCommand } from "../metadata/api";
+import type { ObjectAttribute } from "../metadata/api";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
 import { WorkflowTokenUsage } from "../workflows/WorkflowTokenUsage";
 import { RunStateBadge } from "../workflows/presentation";
 import { workflowRunQueryKeys, type WorkflowCreationApi, type WorkflowRunMonitorApi } from "../workflows/api";
-import type { MetadataEnrichmentTransport } from "./api";
+import type { EnrichmentEditFields, ReviewEnrichmentCommand, MetadataEnrichmentTransport } from "./api";
 
 type EnrichmentApi = WorkflowCreationApi & WorkflowRunMonitorApi & MetadataEnrichmentTransport
   & Pick<ModelInputScopeApi, "listModelInputScope" | "readModelInputScopeObject">
-  & Pick<MetadataApi, "reviewMetadataRecords">;
-type DescriptionRecord = { type: "object" | "attribute"; id: number; objectId: number; name: string; description: string | null; revision: string; truncated: boolean };
-type ReviewRequest = { command: ReviewMetadataRecordsCommand; key: string };
+;
+type DescriptionRecord = { type: "object" | "attribute"; id: number; objectId: number; name: string; description: string | null; revision: string; truncated: boolean; attribute?: ObjectAttribute };
+type ReviewRequest = { command: ReviewEnrichmentCommand; key: string };
 
 export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }: {
   api: EnrichmentApi; tenantId: number; model: ModelDetail; hasTenantLock: boolean;
@@ -40,30 +40,30 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
   const editTrigger = useRef<HTMLElement | null>(null);
   const returnObject = useRef<number | null>(null);
   const objects = useInfiniteQuery({
-    queryKey: ["model-input-scope", tenantId, model.model_id, filters],
-    queryFn: ({ pageParam }) => api.listModelInputScope(tenantId, model.model_id, filters, 200, pageParam),
+    queryKey: ["enrichment-objects", tenantId, model.model_id, filters],
+    queryFn: ({ pageParam }) => api.listEnrichmentObjects(tenantId, model.model_id, filters, 200, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
   const sourceChoices = useScopeFilterChoices(api, tenantId, model.model_id, model.model_revision);
   const detail = useQuery({
-    queryKey: ["model-input-scope-object", tenantId, model.model_id, objectId],
-    queryFn: () => api.readModelInputScopeObject(tenantId, model.model_id, objectId!), enabled: objectId !== null,
+    queryKey: ["enrichment-object", tenantId, model.model_id, objectId],
+    queryFn: () => api.readEnrichmentObject(tenantId, model.model_id, objectId!), enabled: objectId !== null,
   });
   const refreshMetadata = async () => {
-    await Promise.all(["model-input-scope", "model-scope-filter-choices", "model-input-scope-object", "metadata-object", "metadata-objects", "metadata-rows", "workflow-run-enrichment-scope"]
+    await Promise.all(["enrichment-objects", "enrichment-object", "model-overview", "model-input-scope", "model-scope-filter-choices", "model-input-scope-object", "metadata-object", "metadata-objects", "metadata-rows", "workflow-run-enrichment-scope"]
       .map((prefix) => client.invalidateQueries({ queryKey: [prefix, tenantId] })));
   };
   const review = useMutation({
     mutationFn: async (request: ReviewRequest) => {
-      const receipt = await api.reviewMetadataRecords(tenantId, request.command, request.key);
+      const receipt = await api.reviewEnrichment(tenantId, model.model_id, model.model_revision, request.command, request.key);
       const expected = new Set(request.command.records.map((item) => item.record_id));
       if (receipt.records.length !== expected.size || new Set(receipt.records.map((item) => item.record_id)).size !== expected.size
         || receipt.records.some((item) => !expected.has(item.record_id) || !/^[0-9a-f]{64}$/.test(item.review_revision))) throw new Error("Outcome unconfirmed");
       return receipt;
     },
     onSuccess: async () => {
-      pendingReview.current = null; setEditor(null); setSelectedIds(new Set()); setNotice("Metadata saved.");
+      pendingReview.current = null; setEditor(null); setSelectedIds(new Set()); setNotice("Model enrichment saved.");
       await refreshMetadata();
     },
     onError: (error) => {
@@ -72,12 +72,18 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
       }
     },
   });
+  const download = useMutation({ mutationFn: async () => {
+    const file = await api.exportEnrichment(tenantId, model.model_id);
+    const url = URL.createObjectURL(file.blob);
+    try { const link = document.createElement("a"); link.href = url; link.download = file.filename; document.body.append(link); link.click(); link.remove(); }
+    finally { URL.revokeObjectURL(url); }
+  }});
   const uncertain = review.isError && pendingReview.current !== null;
   const busy = review.isPending || uncertain;
   const changed = objects.data?.pages.some((page) => page.model_revision !== model.model_revision) ?? false;
   const current = !detail.isError && detail.data?.object_id === objectId ? detail.data : undefined;
   const rows = objects.isError || changed ? [] : objects.data?.pages.flatMap((page) => page.items) ?? [];
-  const submitReview = (command: ReviewMetadataRecordsCommand) => {
+  const submitReview = (command: ReviewEnrichmentCommand) => {
     if (busy || !hasTenantLock || refreshRequired) return;
     setNotice(""); pendingReview.current = { command, key: crypto.randomUUID() }; review.mutate(pendingReview.current);
   };
@@ -100,13 +106,13 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
       objectId: object.object_id, name: attribute?.attribute_name ?? object.object_name,
       description: attribute ? attribute.attribute_description : object.object_description ?? null,
       revision: (attribute ? attribute.review_revision : object.review_revision) ?? "",
-      truncated: (attribute ? attribute.description_truncated : object.description_truncated) ?? false };
+      truncated: (attribute ? attribute.description_truncated : object.description_truncated) ?? false, ...(attribute ? { attribute } : {}) };
     const locked = attribute?.is_locked ?? object.is_locked ?? false;
     const unavailable = busy || refreshRequired || changed || !hasTenantLock || object.source_tenant_id !== tenantId
       || !/^[0-9a-f]{64}$/.test(record.revision) || objects.isFetching || objects.isError
       || (attribute !== undefined && (detail.isFetching || detail.isError || !attribute.is_active || object.is_locked === true));
     const reason = object.source_tenant_id !== tenantId ? "Manage this metadata in its owning Tenant" : !hasTenantLock ? "Owned Tenant Lock required"
-      : attribute && object.is_locked ? "Unlock the parent Object first" : locked ? "Locked in Metadata" : undefined;
+      : attribute && object.is_locked ? "Unlock the parent Object first" : locked ? "Enrichment locked" : undefined;
     return <div className="enrichment-record-actions" aria-label={`Actions for ${record.name}`}>
       <button type="button" className="text-action" disabled={unavailable || locked} title={reason} onClick={(event) => { editTrigger.current = event.currentTarget; review.reset(); setEditor(record); }}>Edit</button>
     </div>;
@@ -143,6 +149,7 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
       </div>
       <div className="workflow-command-actions">
         <WorkflowCommandTools />
+        <button type="button" className="button button-secondary button-small" disabled={download.isPending || busy} onClick={() => download.mutate()}>{download.isPending ? "Exporting…" : "Export Excel"}</button>
         <button className="button button-secondary button-small" type="button" disabled={busy || objects.isFetching || detail.isFetching} onClick={() => void refresh()}>Refresh</button>
         {objectId === null ? <WorkflowMenu label="Run" primary>
         <button className={`button button-${objectId === null ? "secondary" : "primary"} button-small`} type="button" disabled={!hasTenantLock || busy || refreshRequired || changed || (objectId !== null && (!current || current.is_locked || current.source_tenant_id !== tenantId))} title={hasTenantLock ? undefined : "Owned Tenant Lock required"} onClick={() => setRunDialog("attribute")}>Run attribute enrichment</button>
@@ -158,6 +165,7 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
       {selected.length > 0 ? lockControls : null}
     </> : <EnrichmentHistory api={api} tenantId={tenantId} modelId={model.model_id} focusRunId={recentRunId} onRefresh={refresh} controls={lockControls} disabled={busy} />}
     {!editor && review.isError ? <div role="alert"><p>{error}</p>{uncertain ? <button type="button" className="button button-secondary button-small" onClick={() => { if (pendingReview.current) review.mutate(pendingReview.current); }}>Retry same save</button> : null}</div> : null}
+    {download.isError ? <p role="alert">Could not export the dictionary. Refresh and try again.</p> : null}
     {notice ? <p role="status">{notice}</p> : null}
     {objectId === null ? <section className="workflow-surface" aria-label="Current metadata">
       <WorkflowFilters>      <ScopeFilterForm sourceChoices={sourceChoices} ariaLabel="Filter Enrichment Objects" onApply={(nextFilters) => {
@@ -177,18 +185,19 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
       <header className="enrichment-detail-header"><div><small>{current?.object_schema}</small><h2 tabIndex={-1} ref={heading}>{current?.object_name ?? "Object details"}</h2></div>{current ? recordActions(current) : null}</header>
       {detail.isPending ? <p aria-busy="true">Loading Attributes…</p> : !current ? <p role="alert">Object details unavailable. Refresh to retry.</p> : <>
         <p className="enrichment-object-description">{current.object_description || "No description"}</p>
-        {current.is_locked ? <p className="lock-context">Object locked in Metadata. Unlock it to edit descriptions.</p> : null}
-        <div className="workflow-table-scroll table-scroll"><table className="enrichment-metadata-table" aria-label={`Attributes for ${current.object_name}`}><thead><tr><th className="selection-cell">{checkbox()}</th><th>Attribute</th><th>Inferred type</th><th>Description</th><th>Actions</th></tr></thead><tbody>
-          {current.attributes.slice(attributePage * 50, (attributePage + 1) * 50).map((attribute) => <tr key={attribute.attribute_id}><td className="selection-cell">{checkbox(attribute.attribute_id)}</td><td><strong>{attribute.attribute_name}</strong>{attribute.is_locked || !attribute.is_active ? <span className="metadata-lock-label">{!attribute.is_active ? "Inactive" : "Locked"}</span> : null}</td><td>{attribute.attribute_inferred_data_type ?? <span className="field-help">Not inferred</span>}</td><td className="enrichment-description">{attribute.attribute_description || <span className="field-help">No description</span>}</td><td>{recordActions(current, attribute)}</td></tr>)}
+        {current.is_locked ? <p className="lock-context">Object enrichment locked. Unlock it to edit results.</p> : null}
+        <div className="workflow-table-scroll table-scroll"><table className="enrichment-metadata-table" aria-label={`Attributes for ${current.object_name}`}><thead><tr><th className="selection-cell">{checkbox()}</th><th>Attribute</th><th>Position</th><th>Metadata type</th><th>Inferred type</th><th>Description</th><th>Natural key</th><th>Primary key</th><th>Nullable</th><th>PII</th><th>Actions</th></tr></thead><tbody>
+          {current.attributes.slice(attributePage * 50, (attributePage + 1) * 50).map((attribute) => <tr key={attribute.attribute_id}><td className="selection-cell">{checkbox(attribute.attribute_id)}</td><td><strong>{attribute.attribute_name}</strong>{attribute.is_locked || !attribute.is_active ? <span className="metadata-lock-label">{!attribute.is_active ? "Inactive" : "Locked"}</span> : null}</td><td>{attribute.attribute_ordinal_position}</td><td>{attribute.attribute_data_type}</td><td>{attribute.attribute_inferred_data_type ?? <span className="field-help">Not inferred</span>}</td><td className="enrichment-description">{attribute.attribute_description || <span className="field-help">No description</span>}</td>{(["is_natural_key", "is_primary_key", "is_nullable", "is_pii"] as const).map((flag) => <td key={flag}>{attribute.enrichment?.[flag] == null ? "Unknown" : attribute.enrichment[flag] ? "Yes" : "No"}</td>)}<td>{recordActions(current, attribute)}</td></tr>)}
         </tbody></table></div>
+        <TechnicalDictionary attributes={current.attributes} />
         {!current.attributes.length ? <p className="empty-state compact">No Attributes.</p> : null}
         {current.attributes.length > 50 ? <div className="enrichment-pagination"><span>{attributePage * 50 + 1}–{Math.min((attributePage + 1) * 50, current.attributes.length)} of {current.attributes.length}</span><button type="button" className="button button-secondary button-small" disabled={busy || attributePage === 0} onClick={() => { setSelectedIds(new Set()); setAttributePage((page) => page - 1); }}>Previous</button><button type="button" className="button button-secondary button-small" disabled={busy || (attributePage + 1) * 50 >= current.attributes.length} onClick={() => { setSelectedIds(new Set()); setAttributePage((page) => page + 1); }}>Next</button></div> : null}
       </>}
     </section>}
     {editor ? <DescriptionEditor record={editor} busy={busy} uncertain={uncertain} canSave={hasTenantLock && !refreshRequired} error={review.isError ? error : null}
       onClose={() => setEditor(null)} onRetry={() => { if (pendingReview.current) review.mutate(pendingReview.current); }}
-      onSave={(description) => submitReview({ record_type: editor.type, action: "describe", records: [{ record_id: editor.id, expected_revision: editor.revision, description }] })} /> : null}
-    {runDialog ? <WorkflowRunDialog api={api} tenantId={tenantId} model={model} kind="inference" workflow="metadata_enrichment" enrichmentTarget={runDialog} readEnrichmentObject={api.readModelInputScopeObject} {...(current && runDialog === "attribute" ? { enrichmentObject: current } : {})} initialSelectedIds={[...selectedIds]}
+      onSave={(description, fields) => submitReview({ record_type: editor.type, action: "edit", records: [{ record_id: editor.id, expected_revision: editor.revision, description, ...fields }] })} /> : null}
+    {runDialog ? <WorkflowRunDialog api={{ ...api, listModelInputScope: api.listEnrichmentObjects }} tenantId={tenantId} model={model} kind="inference" workflow="metadata_enrichment" enrichmentTarget={runDialog} readEnrichmentObject={api.readEnrichmentObject} {...(current && runDialog === "attribute" ? { enrichmentObject: current } : {})} initialSelectedIds={[...selectedIds]}
       executeCreated={async (runId, _mode, expectedModelRevision) => { await api.executeMetadataEnrichmentRun(tenantId, model.model_id, runId, expectedModelRevision); }}
       onClose={() => setRunDialog(null)} onCreated={async (runId) => { setRecentRunId(runId); await client.invalidateQueries({ queryKey: workflowRunQueryKeys.recent(tenantId, model.model_id, "metadata_enrichment") }); }} /> : null}
   </WorkflowCommandCenter>;
@@ -196,9 +205,18 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
 
 function DescriptionEditor({ record, busy, uncertain, canSave, error, onClose, onSave, onRetry }: {
   record: DescriptionRecord; busy: boolean; uncertain: boolean; canSave: boolean; error: string | null;
-  onClose: () => void; onSave: (description: string | null) => void; onRetry: () => void;
+  onClose: () => void; onSave: (description: string | null, fields?: EnrichmentEditFields) => void; onRetry: () => void;
 }) {
+  const initial = {
+    attribute_inferred_data_type: record.attribute?.attribute_inferred_data_type ?? null,
+    is_natural_key: record.attribute?.enrichment?.is_natural_key ?? null,
+    is_primary_key: record.attribute?.enrichment?.is_primary_key ?? null,
+    is_nullable: record.attribute?.enrichment?.is_nullable ?? null,
+    is_pii: record.attribute?.enrichment?.is_pii ?? null,
+  };
   const [value, setValue] = useState(record.description ?? "");
+  const [fields, setFields] = useState<EnrichmentEditFields>(initial);
+  const [discard, setDiscard] = useState(false);
   const dialog = useRef<HTMLElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -206,25 +224,58 @@ function DescriptionEditor({ record, busy, uncertain, canSave, error, onClose, o
     return () => previous?.focus();
   }, []);
   const bytes = new TextEncoder().encode(value).length;
+  const dirty = value !== (record.description ?? "") || JSON.stringify(fields) !== JSON.stringify(initial);
+  const close = () => { if (dirty) setDiscard(true); else onClose(); };
   return <div className="dialog-scrim" role="presentation"><section ref={dialog} className="run-configuration-dialog" role="dialog" aria-modal="true" aria-labelledby="description-editor-title" onKeyDown={(event) => {
-    if (event.key === "Escape" && !busy) { event.stopPropagation(); onClose(); }
+    if (event.key === "Escape" && !busy) { event.stopPropagation(); close(); }
     if (event.key === "Tab") {
-      const elements = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), textarea:not(:disabled)') ?? []);
+      const elements = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), textarea:not(:disabled), input:not(:disabled), select:not(:disabled)') ?? []);
       const first = elements[0], last = elements.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }
-  }}><header className="drawer-header"><h2 id="description-editor-title">Edit description</h2><button className="panel-close" type="button" aria-label="Close description editor" disabled={busy} onClick={onClose}>×</button></header>
-    <form className="description-editor-form" onSubmit={(event) => { event.preventDefault(); if (canSave && !busy && bytes <= 2000 && value !== (record.description ?? "")) onSave(value.trim() || null); }}>
+  }}><header className="drawer-header"><h2 id="description-editor-title">{record.type === "attribute" ? "Edit attribute enrichment" : "Edit object description"}</h2><button className="panel-close" type="button" aria-label="Close enrichment editor" disabled={busy} onClick={close}>×</button></header>
+    <form className="description-editor-form" onSubmit={(event) => { event.preventDefault(); if (canSave && !busy && bytes <= 2000 && dirty) onSave(value.trim() || null, record.type === "attribute" ? fields : undefined); }}>
       <label htmlFor="metadata-description">{record.name}</label><textarea ref={textarea} id="metadata-description" value={value} disabled={busy} rows={7} onChange={(event) => setValue(event.target.value)} />
-      {record.truncated ? <p role="note">This is a shortened preview. Saving replaces the full existing description.</p> : null}
+      {record.type === "attribute" ? <>
+        <label htmlFor="enrichment-inferred-type">Inferred data type</label>
+        <input id="enrichment-inferred-type" value={fields.attribute_inferred_data_type ?? ""} maxLength={100} disabled={busy} onChange={(event) => setFields({ ...fields, attribute_inferred_data_type: event.target.value || null })} />
+        {([
+          ["is_natural_key", "Natural key"], ["is_primary_key", "Primary key"],
+          ["is_nullable", "Nullable"], ["is_pii", "PII"],
+        ] as const).map(([key, label]) => <label key={key} htmlFor={`enrichment-${key}`}>{label}
+          <select id={`enrichment-${key}`} disabled={busy} value={fields[key] === null ? "unknown" : fields[key] ? "true" : "false"} onChange={(event) => setFields({ ...fields, [key]: event.target.value === "unknown" ? null : event.target.value === "true" })}>
+            <option value="unknown">Unknown</option><option value="true">Yes</option><option value="false">No</option>
+          </select>
+        </label>)}
+      </> : null}
       {bytes > 2000 ? <p role="alert">Description exceeds 2,000 UTF-8 bytes.</p> : null}
       {error ? <p role="alert">{error}</p> : null}
-      <footer className="target-review-actions"><button className="button button-secondary" type="button" disabled={busy} onClick={onClose}>Cancel</button>
-        {uncertain ? <button type="button" className="button button-primary" onClick={onRetry}>Retry same save</button> : <button className="button button-primary" type="submit" disabled={busy || !canSave || bytes > 2000 || value === (record.description ?? "")}>{busy ? "Saving…" : "Save description"}</button>}
+      {discard ? <div role="alert"><p>Discard unsaved changes?</p><button type="button" className="button button-secondary" onClick={() => setDiscard(false)}>Keep editing</button><button type="button" className="button button-secondary" onClick={onClose}>Discard changes</button></div> : null}
+      <footer className="target-review-actions"><button className="button button-secondary" type="button" disabled={busy} onClick={close}>Cancel</button>
+        {uncertain ? <button type="button" className="button button-primary" onClick={onRetry}>Retry same save</button> : <button className="button button-primary" type="submit" disabled={busy || !canSave || bytes > 2000 || !dirty}>{busy ? "Saving…" : "Save changes"}</button>}
       </footer>
     </form>
   </section></div>;
+}
+
+function TechnicalDictionary({ attributes }: { attributes: ObjectAttribute[] }) {
+  const columns = [
+    ["row_count", "Total rows"], ["non_null_count", "Non-null rows"], ["null_count", "Null rows"],
+    ["blank_count", "Blank rows"], ["distinct_count", "Distinct values"],
+    ["percent_populated", "Populated (%)"], ["percent_null", "Null (%)"], ["percent_blank", "Blank (%)"],
+    ["percent_distinct", "Distinct (%)"], ["percent_duplicates", "Duplicate (%)"],
+    ["min_data_length", "Minimum length"], ["max_data_length", "Maximum length"], ["avg_data_length", "Average length"],
+    ["updated_time", "Last profiled"], ["row_scope", "Row scope"], ["batch_id", "Batch ID"],
+  ] as const;
+  return <section className="detail-section" aria-label="Technical Data Dictionary">
+    <header><h2>Technical Data Dictionary</h2></header>
+    <div className="profile-evidence-table-scroll table-scroll" role="region" aria-label="Scrollable technical dictionary" tabIndex={0}>
+      <table className="profile-evidence-table"><thead><tr><th>Attribute</th><th>Position</th><th>Metadata type</th>{columns.map(([key, label]) => <th key={key}>{label}</th>)}</tr></thead>
+        <tbody>{attributes.map((attribute) => <tr key={attribute.attribute_id}><th scope="row">{attribute.attribute_name}</th><td>{attribute.attribute_ordinal_position}</td><td>{attribute.attribute_data_type}</td>{columns.map(([key]) => <td key={key}>{attribute.profile?.[key] ?? "Not recorded"}</td>)}</tr>)}</tbody>
+      </table>
+    </div>
+  </section>;
 }
 
 function EnrichmentHistory({ api, tenantId, modelId, focusRunId, onRefresh, controls, disabled }: {

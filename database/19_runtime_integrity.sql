@@ -392,6 +392,8 @@ BEGIN
                    'model.modeling_assertion_document',
                    'model.modeling_assertion_record',
                    'workflow.attribute_profile',
+                   'workflow.object_enrichment',
+                   'workflow.attribute_enrichment',
                    'workflow.analysis_result',
                    'workflow.conceptual_object',
                    'workflow.conceptual_relationship',
@@ -455,6 +457,7 @@ BEGIN
                        ('model.model', 'dimensional_schemas'),
                        ('model.model', 'default_mapping_source_system_id'),
                        ('model.model', 'logical_entity_scd_type'),
+                       ('model.model', 'dimensional_entity_scd_type'),
                        ('workflow.logical_entity', 'logical_entity_schema_name'),
                        ('workflow.dimensional_entity', 'dimensional_entity_schema_name'),
                        ('model.model', 'silver_model_naming_instructions'),
@@ -463,6 +466,15 @@ BEGIN
                        ('model.model', 'gold_model_technical_columns_template'),
                        ('model.model', 'gold_model_audit_columns_template'),
                        ('model.model_input_scope', 'is_active'),
+                       ('workflow.object_enrichment', 'object_description'),
+                       ('workflow.object_enrichment', 'is_locked'),
+                       ('workflow.attribute_enrichment', 'attribute_description'),
+                       ('workflow.attribute_enrichment', 'attribute_inferred_data_type'),
+                       ('workflow.attribute_enrichment', 'is_natural_key'),
+                       ('workflow.attribute_enrichment', 'is_primary_key'),
+                       ('workflow.attribute_enrichment', 'is_nullable'),
+                       ('workflow.attribute_enrichment', 'is_pii'),
+                       ('workflow.attribute_enrichment', 'is_locked'),
                        ('workflow.mapping_object', 'mapping_transformation_document'),
                        ('workflow.dimensional_relationship', 'dimensional_relationship_is_optional'),
                        ('workflow.generated_code', 'generated_code_content'),
@@ -738,6 +750,8 @@ BEGIN
                    'model.modeling_assertion_document',
                    'model.modeling_assertion_record',
                    'workflow.attribute_profile',
+                   'workflow.object_enrichment',
+                   'workflow.attribute_enrichment',
                    'workflow.analysis_result',
                    'workflow.conceptual_object',
                    'workflow.conceptual_relationship',
@@ -772,6 +786,15 @@ BEGIN
                ]) AS readable_relation(name)
          WHERE NOT has_table_privilege(
                    'gds_app_write', readable_relation.name, 'SELECT'
+               )
+    ) AND NOT EXISTS (
+        SELECT 1
+          FROM unnest(ARRAY[
+                   'workflow.object_enrichment', 'workflow.attribute_enrichment'
+               ]) AS enrichment_relation(name)
+         WHERE has_table_privilege(
+                   'gds_app_write', enrichment_relation.name,
+                   'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
                )
     ) AND NOT EXISTS (
         SELECT 1
@@ -975,7 +998,8 @@ BEGIN
                    'default_max_turns',
                    'default_validation_retry_count',
                    'default_mapping_source_system_id',
-                   'logical_entity_scd_type'
+                   'logical_entity_scd_type',
+                   'dimensional_entity_scd_type'
                ]) AS web_only_model_column(name)
          WHERE has_column_privilege(
                    'gds_app_write',
@@ -1154,7 +1178,8 @@ REVOKE UPDATE (
     default_max_turns,
     default_validation_retry_count,
     default_mapping_source_system_id,
-    logical_entity_scd_type
+    logical_entity_scd_type,
+    dimensional_entity_scd_type
 ) ON model.model FROM gds_app_write;
 GRANT INSERT ON
     mcp.model_change_set_event
@@ -1202,6 +1227,10 @@ GRANT INSERT, UPDATE ON
 TO gds_web_write;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
 ON workflow.attribute_profile FROM gds_web_write;
+-- Enrichment persistence remains function-only for both runtime roles.
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
+ON workflow.object_enrichment, workflow.attribute_enrichment
+FROM gds_app_write, gds_web_write;
 GRANT INSERT ON
     mcp.model_stage_chunk,
     mcp.model_stage_payload_chunk,
@@ -1230,7 +1259,8 @@ REVOKE UPDATE (
     default_max_turns,
     default_validation_retry_count,
     default_mapping_source_system_id,
-    logical_entity_scd_type
+    logical_entity_scd_type,
+    dimensional_entity_scd_type
 ) ON model.model FROM gds_web_write;
 REVOKE ALL ON ALL TABLES IN SCHEMA application
 FROM gds_app_write, gds_web_write;
@@ -1281,6 +1311,7 @@ GRANT EXECUTE ON FUNCTION application.create_model(
     INTEGER,
     INTEGER,
     BIGINT,
+    VARCHAR,
     VARCHAR
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.update_model(
@@ -1305,6 +1336,7 @@ GRANT EXECUTE ON FUNCTION application.update_model(
     INTEGER,
     INTEGER,
     BIGINT,
+    VARCHAR,
     VARCHAR
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.archive_model(
@@ -1423,6 +1455,9 @@ GRANT EXECUTE ON FUNCTION application.start_workflow_run(
     VARCHAR,
     BIGINT,
     BIGINT
+) TO gds_web_write;
+GRANT EXECUTE ON FUNCTION application.cancel_workflow_run(
+    UUID, UUID, VARCHAR, BIGINT, BIGINT, BIGINT
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.claim_next_workflow_run(INTEGER)
 TO gds_web_write;
@@ -1665,3 +1700,8 @@ GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA reference, core, security, model
     TO gds_migration;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reference, core, security, model, workflow, application, mcp
     TO gds_migration;
+
+GRANT EXECUTE ON FUNCTION workflow.enrichment_review_revision(BIGINT, BIGINT, BIGINT)
+TO gds_app_write, gds_web_write;
+
+GRANT EXECUTE ON FUNCTION application.review_model_enrichment(UUID, UUID, BIGINT, BIGINT, BIGINT, VARCHAR, VARCHAR, JSONB, UUID) TO gds_web_write;

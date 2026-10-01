@@ -96,6 +96,7 @@ SELECT run.workflow_run_id,
        jsonb_build_object(
            'model_name', target_model.model_name,
            'logical_entity_scd_type', target_model.logical_entity_scd_type,
+           'dimensional_entity_scd_type', target_model.dimensional_entity_scd_type,
            'naming_instructions', CASE run.modeled_entity_type
                WHEN 'logical_entity' THEN target_model.silver_model_naming_instructions
                ELSE target_model.gold_model_naming_instructions
@@ -242,7 +243,7 @@ SELECT jsonb_build_object(
                'is_global_data_store', source_connection.is_global_data_store,
                'object_schema', source_object.object_schema,
                'object_name', source_object.object_name,
-               'object_description', source_object.object_description,
+               'object_description', object_enrichment.object_description,
                'batch_attribute_name', source_object.batch_attribute_name,
                'zone_code', lower(btrim(source_zone.zone_code)),
                'scope_is_locked', source.scope_is_locked,
@@ -255,6 +256,9 @@ SELECT jsonb_build_object(
   FROM selected_sources AS source
   JOIN core.object AS source_object
     ON source_object.object_id = source.source_object_id
+  LEFT JOIN workflow.object_enrichment AS object_enrichment
+    ON object_enrichment.model_id = source.model_id
+   AND object_enrichment.object_id = source_object.object_id
   JOIN core.connection AS source_connection
     ON source_connection.connection_id = source_object.connection_id
   JOIN core.tenant AS source_placement_tenant
@@ -270,16 +274,22 @@ SELECT jsonb_build_object(
                           'attribute_id', attribute.attribute_id,
                           'attribute_name', attribute.attribute_name,
                           'attribute_data_type', attribute.attribute_data_type,
-                          'attribute_inferred_data_type', attribute.attribute_inferred_data_type,
+                          'attribute_inferred_data_type', enrichment.attribute_inferred_data_type,
+                          'is_natural_key', enrichment.is_natural_key,
+                          'is_primary_key', enrichment.is_primary_key,
+                          'is_nullable', enrichment.is_nullable, 'is_pii', enrichment.is_pii,
                           'attribute_nullability', attribute.attribute_nullability,
                           'attribute_ordinal_position', attribute.attribute_ordinal_position,
-                          'attribute_description', attribute.attribute_description,
+                          'attribute_description', enrichment.attribute_description,
                           'is_active', attribute.is_active
                       ) ORDER BY attribute.attribute_ordinal_position
                   ),
                   '[]'::JSONB
               ) AS items
          FROM core.attribute AS attribute
+         LEFT JOIN workflow.attribute_enrichment AS enrichment
+           ON enrichment.model_id = source.model_id
+          AND enrichment.attribute_id = attribute.attribute_id
         WHERE attribute.object_id = source_object.object_id
   ) AS attributes
  ORDER BY source.mapping_order NULLS LAST, source.source_mapping_id
@@ -319,7 +329,9 @@ SELECT jsonb_build_object(
 
 _MAPPING_SOURCE_CONTEXT_SQL: LiteralString = (
     "WITH selected_sources AS MATERIALIZED ("
-    "SELECT * FROM workflow.list_mapping_source_objects(%s, %s, %s, %s)) "
+    "SELECT owner.model_id, source.* FROM (SELECT %s::BIGINT AS model_id) AS owner "
+    "CROSS JOIN LATERAL workflow.list_mapping_source_objects("
+    "owner.model_id, %s, %s, %s) AS source) "
     "SELECT source FROM (("
     + _MAPPING_PHYSICAL_SOURCE_CONTEXT_SQL
     + ") UNION ALL ("
@@ -336,7 +348,7 @@ _MAPPING_UPSTREAM_PHYSICAL_CONTEXT_SQL: LiteralString = (
     "'evidence'::TEXT AS role, 'Upstream physical provenance, not a Gold input.'::TEXT "
     "AS rationale, NULL::INTEGER AS mapping_order, FALSE AS is_locked, "
     "input.object_id AS source_object_id, scope.model_input_scope_is_locked AS scope_is_locked, "
-    "scope.is_active AS scope_is_active "
+    "scope.is_active AS scope_is_active, scope.model_id "
     "FROM workflow.list_model_input_sources(%s) AS input "
     "JOIN model.model_input_scope AS scope ON scope.model_id = %s "
     "AND scope.object_id = input.object_id AND scope.is_active "

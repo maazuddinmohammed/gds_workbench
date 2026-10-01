@@ -41,7 +41,7 @@ const overview = {
   ],
 } satisfies ModelWorkflowOverview;
 const sectionNames = [
-  "Overview", "Settings", "Model Input Scope", "Assertions", "Metadata enrichment", "Profiling",
+  "Overview", "Settings", "Model Input Scope", "Assertions", "Profiling", "Metadata enrichment",
   "Analysis", "Conceptual", "Logical", "Dimensional", "Mapping", "Code generation", "Validation",
 ];
 
@@ -53,7 +53,7 @@ describe("Model workspace status ribbon", () => {
     const links = within(navigation).getAllByRole("link");
     expect(links.map((link) => link.getAttribute("aria-label"))).toEqual(sectionNames);
     const descriptions = [
-      "", "", "", "", "Completed", "Queued", "Running",
+      "", "", "", "", "Queued", "Completed", "Running",
       "Not run", "Failed", "Failed", "Results available", "Completed", "Not run",
     ];
     await waitFor(() => {
@@ -137,6 +137,8 @@ describe("Model workspace status ribbon", () => {
     expect(sections.getByRole("link", { name: "Settings" })).toHaveFocus();
     await user.keyboard("{ArrowRight}{ArrowRight}");
     expect(sections.getByRole("link", { name: "Assertions" })).toHaveFocus();
+    await user.keyboard("{ArrowRight}");
+    expect(sections.getByRole("link", { name: "Profiling" })).toHaveFocus();
     await user.keyboard("{ArrowRight}");
     expect(sections.getByRole("link", { name: "Metadata enrichment" })).toHaveFocus();
     await user.keyboard("{End}{ArrowRight}");

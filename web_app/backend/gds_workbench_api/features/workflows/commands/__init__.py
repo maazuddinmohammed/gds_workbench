@@ -1,7 +1,8 @@
-"""Governed, idempotent Workflow Run creation."""
+"""Governed, idempotent Workflow Run creation and cancellation."""
 
 from gds_workbench_api.features.workflows.commands.contracts import (
     CreateWorkflowRunRequest,
+    WorkflowRunCancellationResult,
     WorkflowRunCommandResult,
 )
 from gds_workbench_api.features.workflows.commands.router import (
@@ -18,6 +19,7 @@ __all__ = [
     "DatabaseWorkflowCommandService",
     "WorkflowCommandDatabase",
     "WorkflowCommandService",
+    "WorkflowRunCancellationResult",
     "WorkflowRunCommandResult",
     "create_workflow_commands_router",
 ]

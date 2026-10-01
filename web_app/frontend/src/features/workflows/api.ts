@@ -21,7 +21,8 @@ export type WorkflowRunState =
   | "running"
   | "completed"
   | "completed_with_repair"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 export interface AgentRunSelection {
   sdk_code: string;
@@ -287,7 +288,17 @@ export interface WorkflowDraftReview {
   terminal_at: string | null;
 }
 
+export interface WorkflowRunCancellationResult {
+  changed: boolean;
+  workflow_run_id: number;
+  workflow_run_state: "cancelled";
+  completed_at: string;
+}
+
 export interface WorkflowsApi {
+  cancelWorkflowRun: (
+    tenantId: number, modelId: number, workflowRunId: number,
+  ) => Promise<WorkflowRunCancellationResult>;
   readAgentCapabilities: () => Promise<AgentCapabilities>;
   listWorkflowRuns: (
     tenantId: number,
@@ -392,6 +403,11 @@ export interface WorkflowsApi {
 
 export function createWorkflowsApi(request: HttpRequest): WorkflowsApi {
   return {
+    cancelWorkflowRun: (tenantId, modelId, workflowRunId) =>
+      request<WorkflowRunCancellationResult>(
+        `/api/v1/tenants/${tenantId}/models/${modelId}/runs/${workflowRunId}/cancel`,
+        { method: "POST" },
+      ),
     readAgentCapabilities: () =>
       request<AgentCapabilities>("/api/v1/config/agent-capabilities"),
     listWorkflowRuns: (
@@ -637,6 +653,7 @@ export type WorkflowCreationApi = Pick<
 export type WorkflowRunMonitorApi = Pick<
   WorkflowsApi,
   | "applyWorkflowDraft"
+  | "cancelWorkflowRun"
   | "listWorkflowRunEvents"
   | "listWorkflowRuns"
   | "readWorkflowDraftReview"

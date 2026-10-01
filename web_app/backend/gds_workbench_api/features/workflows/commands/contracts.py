@@ -1,4 +1,4 @@
-"""Governed Workflow Run creation contracts."""
+"""Governed Workflow Run creation and cancellation contracts."""
 
 from datetime import datetime
 from typing import Annotated, Literal, Self
@@ -244,3 +244,12 @@ class WorkflowRunCommandResult(BaseModel):
         | None
     )
     created_at: datetime
+
+
+class WorkflowRunCancellationResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    changed: bool
+    workflow_run_id: int = Field(gt=0)
+    workflow_run_state: Literal["cancelled"]
+    completed_at: datetime

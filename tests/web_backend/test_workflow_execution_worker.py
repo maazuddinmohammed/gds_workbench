@@ -194,8 +194,22 @@ async def test_worker_leaves_an_unexpected_failure_claimed_for_bounded_recovery(
 
 
 @pytest.mark.asyncio
-async def test_worker_cancels_execution_when_the_claim_is_lost() -> None:
-    repository = FakeClaimRepository(_claim())
+@pytest.mark.parametrize(
+    "workflow",
+    [
+        "profiling",
+        "analysis",
+        "conceptual",
+        "logical",
+        "dimensional",
+        "mapping",
+        "code_generation",
+        "validation",
+        "metadata_enrichment",
+    ],
+)
+async def test_worker_cancels_execution_when_the_claim_is_lost(workflow: str) -> None:
+    repository = FakeClaimRepository(_claim().model_copy(update={"model_workflow": workflow}))
     repository.renew_fails = True
     dispatcher = BlockingDispatcher()
     worker = WorkflowExecutionWorker(

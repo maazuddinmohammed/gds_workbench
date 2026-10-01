@@ -62,6 +62,10 @@ APPLICATION_WEB_FUNCTIONS = (
         "uuid, uuid, character varying, bigint, bigint, uuid",
     ),
     (
+        "cancel_workflow_run",
+        "uuid, uuid, character varying, bigint, bigint, bigint",
+    ),
+    (
         "claim_next_workflow_run",
         "integer",
     ),
@@ -88,7 +92,8 @@ APPLICATION_WEB_FUNCTIONS = (
         "create_model",
         "uuid, uuid, character varying, bigint, character varying, character varying, "
         "jsonb, jsonb, text, jsonb, text, jsonb, jsonb, character varying, character varying, "
-        "character varying, character varying, integer, integer, bigint, character varying",
+        "character varying, character varying, integer, integer, bigint, character varying, "
+        "character varying",
     ),
     (
         "create_output_template",
@@ -167,6 +172,10 @@ APPLICATION_WEB_FUNCTIONS = (
         "uuid, uuid, character varying, bigint, character varying, character varying, jsonb, uuid",
     ),
     (
+        "review_model_enrichment",
+        "uuid, uuid, bigint, bigint, bigint, character varying, character varying, jsonb, uuid",
+    ),
+    (
         "save_prompt_template",
         "uuid, uuid, character varying, bigint, bigint, character varying, bigint, "
         "character varying, character varying, text, boolean, timestamp with time zone",
@@ -197,7 +206,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "uuid, uuid, character varying, bigint, bigint, character varying, "
         "character varying, jsonb, jsonb, text, jsonb, text, jsonb, jsonb, character varying, "
         "character varying, character varying, character varying, integer, integer, "
-        "bigint, character varying",
+        "bigint, character varying, character varying",
     ),
     (
         "update_output_template",
@@ -239,7 +248,7 @@ def test_application_web_function_allowlist_is_exact_and_verified(
             """
         ).fetchall()
 
-    assert len(APPLICATION_WEB_FUNCTIONS) == 40
+    assert len(APPLICATION_WEB_FUNCTIONS) == 42
     assert [(row["function_name"], row["argument_types"]) for row in rows] == list(
         APPLICATION_WEB_FUNCTIONS
     )
@@ -264,9 +273,7 @@ def test_application_web_function_allowlist_is_exact_and_verified(
             ) TO gds_web_write
             """
         )
-        connection.execute(
-            cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8"))
-        )
+        connection.execute(cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8")))
 
 
 def test_verify_install_rejects_direct_web_revision_audit_mutation(
@@ -281,9 +288,7 @@ def test_verify_install_rejects_direct_web_revision_audit_mutation(
             "GRANT INSERT (model_id, transaction_id) "
             "ON model.model_revision_transaction TO gds_web_write"
         )
-        connection.execute(
-            cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8"))
-        )
+        connection.execute(cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8")))
 
 
 def test_verify_install_rejects_direct_web_profile_mutation(
@@ -294,12 +299,8 @@ def test_verify_install_rejects_direct_web_profile_mutation(
         pytest.raises(RaiseException, match="runtime table privileges"),
         connection.transaction(),
     ):
-        connection.execute(
-            "GRANT INSERT ON workflow.attribute_profile TO gds_web_write"
-        )
-        connection.execute(
-            cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8"))
-        )
+        connection.execute("GRANT INSERT ON workflow.attribute_profile TO gds_web_write")
+        connection.execute(cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8")))
 
 
 def test_verify_install_requires_object_source_tenant_index(
@@ -316,9 +317,7 @@ def test_verify_install_requires_object_source_tenant_index(
             RENAME TO invalid_object_source_tenant_index
             """
         )
-        connection.execute(
-            cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8"))
-        )
+        connection.execute(cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8")))
 
 
 def test_verify_install_requires_immutable_workflow_change_set_binding(
@@ -335,9 +334,7 @@ def test_verify_install_requires_immutable_workflow_change_set_binding(
             DISABLE TRIGGER guard_model_change_set_workflow_binding
             """
         )
-        connection.execute(
-            cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8"))
-        )
+        connection.execute(cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8")))
 
 
 def test_last_tenant_preference_is_identity_derived_and_function_governed(

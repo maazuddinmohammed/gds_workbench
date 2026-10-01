@@ -21,10 +21,12 @@ def create_input_scope_router(
     *,
     identity_provider: IdentityProvider,
     service: ModelInputScopeService,
+    enrichment: bool = False,
 ) -> APIRouter:
     authenticate = principal_dependency(identity_provider)
     router = APIRouter(
-        prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/input-scope",
+        prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/"
+        + ("metadata-enrichment/objects" if enrichment else "input-scope"),
         tags=["model-input-scope"],
     )
 

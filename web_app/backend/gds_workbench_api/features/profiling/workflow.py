@@ -44,6 +44,7 @@ class ProfilingRunStart(BaseModel):
         "running",
         "completed",
         "completed_with_repair",
+        "cancelled",
         "failed",
     ]
     model_revision: int = Field(gt=0)

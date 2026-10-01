@@ -19,8 +19,11 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
     "model_details": (
         "Configure logical_schemas and dimensional_schemas before generating each layer.",
         "Treat Model policy as authoritative when it differs from default naming guidance.",
-        "Preserve logical_entity_scd_type in staged Model details; "
-        "change it only in Model settings.",
+        "Preserve logical_entity_scd_type and dimensional_entity_scd_type in staged Model details; "
+        "change them only in Model settings.",
+        "Dimensional SCD is independent: type_1 overwrites mutable Dimension descriptors; "
+        "type_2 historizes them. Stable identity stays fixed. Null leaves evidenced behavior. "
+        "It applies to Dimensions, not Facts or Bridges; backend projects technical columns.",
         "Logical SCD type_1 overwrites values; type_2 preserves versions; null is unspecified. "
         "The setting is guidance, not proof of keys, history Attributes or source behavior.",
     ),

@@ -12,7 +12,9 @@ from gds_workbench_api.features.workflows.authoring.context_contracts import (
 )
 from jsonschema import Draft202012Validator
 
-from tests.mcp.conftest import bootstrap_postgres_database as bootstrap_postgres_database
+from tests.mcp.conftest import (
+    bootstrap_postgres_database as bootstrap_postgres_database,
+)
 from tests.web_backend.test_database_metadata_enrichment_executor import (
     enrichment_seeded_database as enrichment_seeded_database,
 )
@@ -37,7 +39,10 @@ async def test_installed_metadata_seed_inputs_reach_real_stage_and_physical_comp
         definitions = {value.name: value for value in kwargs["variables"]}
         key = definitions["object_context"].resolver_key
         workflow = key.split(".")[1]
-        assert workflow in {"metadata_enrichment_object", "metadata_enrichment_attribute"}
+        assert workflow in {
+            "metadata_enrichment_object",
+            "metadata_enrichment_attribute",
+        }
         contracts = workflow_input_contracts(workflow)
         assert set(definitions) == set(contracts)
         values = kwargs["resolver_values"]
@@ -51,7 +56,8 @@ async def test_installed_metadata_seed_inputs_reach_real_stage_and_physical_comp
             inputs[name] = values[definition.resolver_key]
             assert Draft202012Validator(spec["schema"]).is_valid(inputs[name])  # pyright: ignore[reportUnknownMemberType]
             assert re.search(
-                r"\{\{\s*" + re.escape(name) + r"\s*\}\}", kwargs["templates"].instruction
+                r"\{\{\s*" + re.escape(name) + r"\s*\}\}",
+                kwargs["templates"].instruction,
             )
         assert len(inputs["object_context"]) == 1
         assert len(inputs["object_attribute_context"]) == 1
@@ -69,7 +75,16 @@ async def test_installed_metadata_seed_inputs_reach_real_stage_and_physical_comp
         if workflow == "metadata_enrichment_object":
             object_evidence[object_key] = object_row
         elif behavior == "normal":
-            assert object_evidence[object_key] == object_row
+            assert {
+                key: value
+                for key, value in object_evidence[object_key].items()
+                if key != "object_description"
+            } == {
+                key: value
+                for key, value in object_row.items()
+                if key != "object_description"
+            }
+            assert object_row["object_description"] is not None
         if behavior == "regenerate_attributes":
             assert workflow == "metadata_enrichment_attribute"
             assert len(attribute_row["selected_attribute_names"]) == 31
@@ -86,7 +101,9 @@ async def test_installed_metadata_seed_inputs_reach_real_stage_and_physical_comp
             frame = error.__traceback__
             while frame is not None and frame.tb_next is not None:
                 frame = frame.tb_next
-            boundary_errors.append((type(error).__name__, frame.tb_lineno if frame else 0))
+            boundary_errors.append(
+                (type(error).__name__, frame.tb_lineno if frame else 0)
+            )
             raise
 
     monkeypatch.setattr(stage_runner, "render_prompt", checked_render)

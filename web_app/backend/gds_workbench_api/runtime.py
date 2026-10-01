@@ -33,9 +33,13 @@ from gds_workbench_api.features.metadata import (
 )
 from gds_workbench_api.features.metadata.review import DatabaseMetadataReviewService
 from gds_workbench_api.features.metadata_change_sets import DatabaseMetadataChangeSetService
+from gds_workbench_api.features.metadata_enrichment.dictionary import (
+    DatabaseEnrichmentDictionaryService,
+)
 from gds_workbench_api.features.metadata_enrichment.read_service import (
     DatabaseMetadataEnrichmentReadService,
 )
+from gds_workbench_api.features.metadata_enrichment.review import DatabaseEnrichmentReviewService
 from gds_workbench_api.features.model_change_sets.service import DatabaseModelChangeSetService
 from gds_workbench_api.features.model_input_scope import DatabaseModelInputScopeService
 from gds_workbench_api.features.model_targets.service import DatabaseModelTargetsService
@@ -255,6 +259,13 @@ def create_runtime_app(
             database=runtime_database,
             authorizer=authorizer,
         ),
+        enrichment_dictionary_service=DatabaseEnrichmentDictionaryService(
+            database=runtime_database,
+            authorizer=authorizer,
+            cursor_signing_key=runtime_settings.cursor_signing_key,
+            enrichment=True,
+        ),
+        enrichment_review_service=DatabaseEnrichmentReviewService(database=runtime_database),
         metadata_enrichment_workflow_service=workflow_services.metadata_enrichment,
         metadata_enrichment_read_service=DatabaseMetadataEnrichmentReadService(
             database=runtime_database,

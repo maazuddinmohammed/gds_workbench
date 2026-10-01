@@ -58,6 +58,10 @@ def _payload() -> dict[str, Any]:
         "warning_count": 0,
         "counts": {"applied": 1, "existing": 1, "locked": 1},
         "applied_field_counts": {
+            "is_natural_key": 0,
+            "is_primary_key": 0,
+            "is_nullable": 0,
+            "is_pii": 0,
             "object_description": 0,
             "attribute_description": 0,
             "attribute_inferred_data_type": 1,
@@ -173,9 +177,13 @@ async def test_enrichment_read_pages_keep_whole_run_summary_and_safe_labels() ->
     assert pages[0].results[0].storage_type == "string"
     assert pages[2].results[0].object_name is None
     assert not pages[3].results
-    assert all(page.counts == {"applied": 1, "existing": 1, "locked": 1} for page in pages)
+    assert all(
+        page.counts == {"applied": 1, "existing": 1, "locked": 1} for page in pages
+    )
     assert "sample_values" not in pages[0].model_dump_json()
-    assert all(page.applied_field_counts["attribute_inferred_data_type"] == 1 for page in pages)
+    assert all(
+        page.applied_field_counts["attribute_inferred_data_type"] == 1 for page in pages
+    )
 
 
 async def test_enrichment_read_requires_authorization_before_run_lookup() -> None:
@@ -200,7 +208,7 @@ async def test_enrichment_read_rejects_foreign_model_or_wrong_workflow_before_re
     assert len(database.transaction.calls) == 2
 
 
-@pytest.mark.parametrize("limit,offset", [(0, 0), (201, 0), (1, -1), (1, 10_201)])
+@pytest.mark.parametrize("limit,offset", [(0, 0), (201, 0), (1, -1), (1, 30_201)])
 async def test_enrichment_read_revalidates_page_bounds(limit: int, offset: int) -> None:
     database = ReadDatabase()
     with pytest.raises(InvalidRequestError):
@@ -244,7 +252,9 @@ async def test_enrichment_read_rejects_malformed_or_unscoped_database_output(
         )
 
 
-def test_enrichment_result_router_publishes_paginated_contract_and_validates_inputs() -> None:
+def test_enrichment_result_router_publishes_paginated_contract_and_validates_inputs() -> (
+    None
+):
     database = ReadDatabase()
     principal = _principal()
     app = create_app(
@@ -263,7 +273,7 @@ def test_enrichment_result_router_publishes_paginated_contract_and_validates_inp
         assert response.json()["results"][0]["status"] == "existing"
         assert response.json()["next_offset"] == 2
         assert response.json()["result_count"] == 3
-        for query in ("limit=201", "offset=-1", "offset=10201"):
+        for query in ("limit=201", "offset=-1", "offset=30201"):
             assert (
                 client.get(
                     f"/api/v1/tenants/7/models/18/runs/1048/metadata-enrichment?{query}"
@@ -271,6 +281,8 @@ def test_enrichment_result_router_publishes_paginated_contract_and_validates_inp
                 == 422
             )
         database.transaction.route_exists = False
-        missing = client.get("/api/v1/tenants/7/models/18/runs/1048/metadata-enrichment")
+        missing = client.get(
+            "/api/v1/tenants/7/models/18/runs/1048/metadata-enrichment"
+        )
         assert missing.status_code == 404
         assert missing.json()["error"]["code"] == "workflow_run_not_found"

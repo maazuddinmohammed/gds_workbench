@@ -1,4 +1,4 @@
-"""Governed, idempotent Workflow Run creation implementation."""
+"""Governed, idempotent Workflow Run creation and cancellation implementation."""
 
 from contextlib import AbstractAsyncContextManager
 from typing import Never, Protocol
@@ -26,8 +26,10 @@ from gds_workbench_api.capabilities import (
 from gds_workbench_api.features.models import ModelNotFoundError, ModelRevisionConflictError
 from gds_workbench_api.features.workflows.commands.contracts import (
     CreateWorkflowRunRequest,
+    WorkflowRunCancellationResult,
     WorkflowRunCommandResult,
 )
+from gds_workbench_api.features.workflows.runs import WorkflowRunNotFoundError
 
 _MODEL_OWNER_SQL = """
 SELECT target_model.model_revision,
@@ -63,6 +65,15 @@ SELECT created.created,
 
 
 class WorkflowCommandService(Protocol):
+    async def cancel_run(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+    ) -> WorkflowRunCancellationResult: ...
+
     async def create_run(
         self,
         principal: RequestPrincipal,
@@ -89,6 +100,37 @@ class DatabaseWorkflowCommandService:
         self._database = database
         self._authorizer = authorizer
         self._agent_capability_registry = agent_capability_registry
+
+    async def cancel_run(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+    ) -> WorkflowRunCancellationResult:
+        try:
+            async with self._database.write_transaction() as transaction:
+                await self._authorizer.authorize_tenant(
+                    transaction,
+                    principal,
+                    tenant_id=tenant_id,
+                    policy=ToolPolicy.TENANT_MODEL_WRITE,
+                    model_id=model_id,
+                )
+                row = await transaction.fetch_one(
+                    """
+                    SELECT changed, workflow_run_id, workflow_run_state,
+                           completed_time AS completed_at
+                      FROM application.cancel_workflow_run(%s, %s, %s, %s, %s, %s)
+                    """,
+                    _identity_triple(principal) + (tenant_id, model_id, workflow_run_id),
+                )
+        except Exception as error:
+            _raise_safe_workflow_error(error)
+        if row is None:
+            raise DependencyUnavailableError()
+        return WorkflowRunCancellationResult.model_validate(row, strict=True)
 
     async def create_run(
         self,
@@ -199,6 +241,15 @@ def _raise_safe_workflow_error(error: Exception) -> Never:
     ):
         raise error
     message = _primary_database_message(error)
+    if message == "Workflow Run is unavailable":
+        raise WorkflowRunNotFoundError() from error
+    if message == "Workflow Run belongs to another Principal":
+        raise AuthorizationDeniedError() from error
+    if message == "workflow_run_cancellation_conflict":
+        raise WorkbenchError(
+            "workflow_run_cancellation_conflict",
+            "This run has already finished or saved its result. Refresh to see its outcome.",
+        ) from error
     if message == "stale_model_revision":
         raise ModelRevisionConflictError() from error
     if message == "metadata_description_conflict":
@@ -308,8 +359,9 @@ def _primary_database_message(error: Exception) -> str:
 
 
 def _controlled_denial_code(message: str) -> str | None:
-    prefix = "Workflow Run creation denied: "
-    if not message.startswith(prefix):
+    prefixes = ("Workflow Run creation denied: ", "Workflow Run cancellation denied: ")
+    prefix = next((value for value in prefixes if message.startswith(value)), None)
+    if prefix is None:
         return None
     code = message.removeprefix(prefix)
     if code in {

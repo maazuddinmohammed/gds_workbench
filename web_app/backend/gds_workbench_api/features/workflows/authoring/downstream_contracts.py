@@ -149,8 +149,11 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
         },
         "authoring_policy": {
             "description": "Model name, naming instructions and "
-            "audit/technical templates, plus logical_entity_scd_type history guidance. "
-            "For Logical targets type_1 overwrites current values; type_2 preserves versions. "
+            "audit/technical templates, plus independent logical_entity_scd_type and "
+            "dimensional_entity_scd_type history policies. Use logical_entity_scd_type for Logical "
+            "targets and dimensional_entity_scd_type for Gold Dimensions. type_1 overwrites "
+            "mutable values; type_2 preserves versions. Dimension policy does not govern Facts "
+            "or Bridges. Stable identity stays fixed. "
             "Null is unspecified. Do not infer keys or invent history Attributes. Apply only "
             "recorded policy to transformation content; "
             "use existing modeled Attributes.",
@@ -159,6 +162,7 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                 "audit_columns_template": None,
                 "model_name": "Customer Model",
                 "logical_entity_scd_type": "type_2",
+                "dimensional_entity_scd_type": "type_1",
                 "naming_instructions": "Use PascalCase names.",
                 "technical_columns_template": None,
             },
@@ -444,7 +448,10 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "attribute_custom_code": {"type": ["string", "null"]},
                             "population": {"enum": ["database", "framework", "mapping"]},
                             "is_surrogate_key": {"type": "boolean"},
-                            "is_natural_key": {"type": "boolean"},
+                            "is_natural_key": {"type": ["boolean", "null"]},
+                            "is_primary_key": {"type": ["boolean", "null"]},
+                            "is_nullable": {"type": ["boolean", "null"]},
+                            "is_pii": {"type": ["boolean", "null"]},
                             "is_meta_data": {"type": "boolean"},
                             "is_masking_required": {"type": "boolean"},
                             "logical_attribute_name": {
@@ -660,7 +667,10 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "attribute_custom_code": {"type": ["string", "null"]},
                             "population": {"enum": ["database", "framework", "mapping"]},
                             "is_surrogate_key": {"type": "boolean"},
-                            "is_natural_key": {"type": "boolean"},
+                            "is_natural_key": {"type": ["boolean", "null"]},
+                            "is_primary_key": {"type": ["boolean", "null"]},
+                            "is_nullable": {"type": ["boolean", "null"]},
+                            "is_pii": {"type": ["boolean", "null"]},
                             "is_meta_data": {"type": "boolean"},
                             "is_masking_required": {"type": "boolean"},
                             "logical_attribute_name": {
@@ -1433,7 +1443,10 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "attribute_custom_code": {"type": ["string", "null"]},
                             "population": {"enum": ["database", "framework", "mapping"]},
                             "is_surrogate_key": {"type": "boolean"},
-                            "is_natural_key": {"type": "boolean"},
+                            "is_natural_key": {"type": ["boolean", "null"]},
+                            "is_primary_key": {"type": ["boolean", "null"]},
+                            "is_nullable": {"type": ["boolean", "null"]},
+                            "is_pii": {"type": ["boolean", "null"]},
                             "is_meta_data": {"type": "boolean"},
                             "is_masking_required": {"type": "boolean"},
                             "logical_attribute_name": {
@@ -1501,7 +1514,10 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                             "attribute_custom_code": {"type": ["string", "null"]},
                             "population": {"enum": ["database", "framework", "mapping"]},
                             "is_surrogate_key": {"type": "boolean"},
-                            "is_natural_key": {"type": "boolean"},
+                            "is_natural_key": {"type": ["boolean", "null"]},
+                            "is_primary_key": {"type": ["boolean", "null"]},
+                            "is_nullable": {"type": ["boolean", "null"]},
+                            "is_pii": {"type": ["boolean", "null"]},
                             "is_meta_data": {"type": "boolean"},
                             "is_masking_required": {"type": "boolean"},
                             "logical_attribute_name": {

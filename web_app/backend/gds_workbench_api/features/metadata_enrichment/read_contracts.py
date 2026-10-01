@@ -22,7 +22,7 @@ class MetadataEnrichmentResult(EnrichmentFieldResult):
     def validate_record(self) -> MetadataEnrichmentResult:
         if (self.field_name == "object_description") != (self.attribute_id is None):
             raise ValueError("The field must match its physical metadata identity")
-        if (self.status == "applied") != (self.applied_value is not None):
+        if self.status != "applied" and self.applied_value is not None:
             raise ValueError("Only applied results contain a generated value")
         if (
             self.field_name == "attribute_inferred_data_type"
@@ -39,15 +39,15 @@ class MetadataEnrichmentResultPage(EnrichmentContract):
     model_revision: int = Field(gt=0)
     workflow_run_id: int = Field(gt=0)
     workflow_run_state: RunState
-    total_count: int = Field(ge=0, le=10_200)
-    result_count: int = Field(ge=0, le=10_200)
-    warning_count: int = Field(ge=0, le=10_200)
-    counts: dict[EnrichmentStatus, Annotated[int, Field(ge=0, le=10_200)]]
-    applied_field_counts: dict[EnrichmentField, Annotated[int, Field(ge=0, le=10_200)]]
+    total_count: int = Field(ge=0, le=30_200)
+    result_count: int = Field(ge=0, le=30_200)
+    warning_count: int = Field(ge=0, le=30_200)
+    counts: dict[EnrichmentStatus, Annotated[int, Field(ge=0, le=30_200)]]
+    applied_field_counts: dict[EnrichmentField, Annotated[int, Field(ge=0, le=30_200)]]
     results: tuple[MetadataEnrichmentResult, ...] = Field(max_length=200, repr=False)
     limit: int = Field(ge=1, le=200)
-    offset: int = Field(ge=0, le=10_200)
-    next_offset: int | None = Field(ge=1, le=10_200)
+    offset: int = Field(ge=0, le=30_200)
+    next_offset: int | None = Field(ge=1, le=30_200)
 
     @model_validator(mode="after")
     def validate_page(self) -> MetadataEnrichmentResultPage:
@@ -55,6 +55,10 @@ class MetadataEnrichmentResultPage(EnrichmentContract):
             "object_description",
             "attribute_description",
             "attribute_inferred_data_type",
+            "is_natural_key",
+            "is_primary_key",
+            "is_nullable",
+            "is_pii",
         } or sum(self.applied_field_counts.values()) != self.counts.get("applied", 0):
             raise ValueError("The applied field summary must reconcile")
         if self.total_count != self.result_count or sum(self.counts.values()) != self.total_count:

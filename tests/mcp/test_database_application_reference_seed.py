@@ -123,6 +123,7 @@ EXPECTED_NAMES = {
         "naming_instructions",
         "audit_columns",
         "technical_columns",
+        "dimensional_entity_scd_type",
     },
     "mapping": {
         "mapping_support",

@@ -52,7 +52,7 @@ class DatabaseMetadataEnrichmentReadService:
         limit: int = 100,
         offset: int = 0,
     ) -> MetadataEnrichmentResultPage:
-        if not 1 <= limit <= 200 or not 0 <= offset <= 10_200:
+        if not 1 <= limit <= 200 or not 0 <= offset <= 30_200:
             raise InvalidRequestError("The metadata enrichment result page is invalid.")
         # The governed read takes authorization share locks, which PostgreSQL
         # forbids in a READ ONLY transaction. Every application statement is SELECT.

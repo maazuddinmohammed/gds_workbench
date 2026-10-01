@@ -137,6 +137,9 @@ INPUT_SHAPES: dict[str, Any] = {
                                     "attribute_inferred_data_type": {"type": ["string", "null"]},
                                     "attribute_nullability": {"type": ["boolean", "null"]},
                                     "is_natural_key": {"type": ["boolean", "null"]},
+                                    "is_primary_key": {"type": ["boolean", "null"]},
+                                    "is_nullable": {"type": ["boolean", "null"]},
+                                    "is_pii": {"type": ["boolean", "null"]},
                                     "is_surrogate_key": {"type": ["boolean", "null"]},
                                     "is_masking_required": {"type": ["boolean", "null"]},
                                     "is_meta_data": {"type": ["boolean", "null"]},
@@ -3138,12 +3141,12 @@ INPUT_SHAPES: dict[str, Any] = {
         "schema": {"maxLength": 32768, "minLength": 1, "pattern": "\\S", "type": "string"},
     },
     "dimensional.audit_columns": {
-        "description": "Exact required Gold audit template. Same "
+        "description": "Effective Gold audit template; blank settings resolve to an empty "
+        "columns list. Same "
         "schema_version/ordered columns layout as "
         "Logical audit settings. Each column has "
         "semantic_name, data_type, nullable, definition. "
-        "Gold requires this template before model "
-        "execution.",
+        "Configured audit columns remain authoritative.",
         "schema": {
             "$defs": {
                 "GoldPolicyColumn": {
@@ -3190,7 +3193,7 @@ INPUT_SHAPES: dict[str, Any] = {
                 "columns": {
                     "items": {"$ref": "#/$defs/GoldPolicyColumn"},
                     "maxItems": 32,
-                    "minItems": 1,
+                    "minItems": 0,
                     "title": "Columns",
                     "type": "array",
                 },
@@ -3201,7 +3204,7 @@ INPUT_SHAPES: dict[str, Any] = {
         },
     },
     "dimensional.technical_columns": {
-        "description": "Exact required GoldTechnicalPolicy: "
+        "description": "Effective GoldTechnicalPolicy (standard keys/history fields when unset): "
         "schema_version, dimension_surrogate_key, "
         "fact_bridge_foreign_key, type_2. Do not add "
         "guessed policy fields. The current backend "
@@ -3302,6 +3305,16 @@ INPUT_SHAPES: dict[str, Any] = {
             "title": "GoldTechnicalPolicy",
             "type": "object",
         },
+    },
+    "dimensional.dimensional_entity_scd_type": {
+        "description": "Frozen Model policy for Dimension history, independent of Logical SCD. "
+        "type_1 overwrites mutable descriptors (change_behavior=overwrite); type_2 preserves "
+        "Dimension versions (change_behavior=historize). Stable identity Attributes remain fixed. "
+        "Null is unspecified: use evidenced per-Attribute behavior. Applies to Dimensions, not "
+        "Fact or Bridge history. Backend projects surrogate/foreign keys and configured Type 2 "
+        "effective/current columns. Do not invent business keys or source history; changing this "
+        "setting does not migrate previously applied data.",
+        "schema": {"enum": ["type_1", "type_2", None]},
     },
     "logical.logical_entity_scd_type": {
         "description": "Frozen Model guidance for Logical Entity change history. type_1 means "
@@ -4004,6 +4017,7 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         "technical_columns": "dimensional.technical_columns",
         "schemas": "dimensional.schemas",
         "selected_logical_entities": "selected_logical_entities",
+        "dimensional_entity_scd_type": "dimensional.dimensional_entity_scd_type",
     },
 }
 
@@ -4938,6 +4952,7 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
         "logical_entity_scd_type": "type_2",
     },
     "dimensional": {
+        "dimensional_entity_scd_type": "type_2",
         "gds_context": [
             {
                 "tenant_code": "GDS",
@@ -5851,3 +5866,19 @@ for _enrichment_workflow in ("metadata_enrichment_object", "metadata_enrichment_
     _attribute_group["selected_attribute_names"] = (
         [] if _enrichment_workflow == "metadata_enrichment_object" else ["CustomerCode"]
     )
+
+# Saved Model findings are distinct from registered physical nullability/masking.
+for _examples in INPUT_EXAMPLES.values():
+    for _group in _examples.get("object_attribute_context", []):
+        for _attribute in _group.get("attributes", []):
+            for _flag in ("is_primary_key", "is_nullable", "is_pii"):
+                _attribute.setdefault(_flag, None)
+INPUT_SHAPES["object_attribute_context"]["description"] += (
+    " Descriptions, inferred types and is_natural_key/is_primary_key/is_nullable/is_pii "
+    "are current Model enrichment. NULL means unknown, not false. Multiple true key flags "
+    "identify members of the chosen composite key, not independently unique columns. "
+    "attribute_nullability and is_masking_required remain registered physical metadata. "
+    "profile contains saved counts, percentages, lengths and measurement scope; batch "
+    "profiles cannot establish whole-table uniqueness or non-nullability. PII is an "
+    "inferred classification and must not weaken registered masking requirements."
+)

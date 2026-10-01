@@ -173,6 +173,66 @@ SELECT attribute.attribute_id,
           attribute.attribute_id
 """
 
+# Enrichment reuses the authorized scope ledger, with Model-owned values and witnesses.
+_ENRICHMENT_OBJECT_SQL: tuple[LiteralString, ...] = tuple(
+    (
+        statement.replace("object.object_description", "enrichment.object_description")
+        .replace("object.is_locked,", "coalesce(enrichment.is_locked, FALSE) AS is_locked,")
+        .replace(
+            "application.metadata_object_review_revision(object)",
+            "workflow.enrichment_review_revision(target_model.model_id, object.object_id)",
+        )
+        .replace(
+            "  JOIN core.system AS system",
+            """
+  LEFT JOIN workflow.object_enrichment AS enrichment
+    ON enrichment.model_id = target_model.model_id AND enrichment.object_id = object.object_id
+  JOIN core.system AS system""",
+        )
+    )
+    for statement in (_MODEL_INPUT_SCOPE_SQL, _MODEL_INPUT_SCOPE_DETAIL_SQL)
+)
+_ENRICHMENT_ATTRIBUTES_SQL: LiteralString = (
+    "WITH requested_model AS (SELECT %s::BIGINT AS model_id) "
+    + _MODEL_INPUT_SCOPE_ATTRIBUTES_SQL.replace(
+        "application.metadata_attribute_review_revision(attribute, object)",
+        "workflow.enrichment_review_revision("
+        "requested_model.model_id, object.object_id, attribute.attribute_id)",
+    )
+    .replace("attribute.attribute_description", "enrichment.attribute_description")
+    .replace("attribute.attribute_inferred_data_type,", "enrichment.attribute_inferred_data_type,")
+    .replace("attribute.is_locked,", "coalesce(enrichment.is_locked, FALSE) AS is_locked,")
+    .replace(
+        "attribute.is_active\n",
+        """attribute.is_active,
+       jsonb_build_object('is_natural_key', enrichment.is_natural_key,
+           'is_primary_key', enrichment.is_primary_key, 'is_nullable', enrichment.is_nullable,
+           'is_pii', enrichment.is_pii) AS enrichment,
+       CASE WHEN profile.attribute_id IS NOT NULL THEN
+           (to_jsonb(profile) - ARRAY['model_id', 'attribute_id', 'object_id', 'created_by',
+               'updated_by', 'created_time', 'agent_run_id', 'source_context_digest']) ||
+           jsonb_build_object('row_scope', CASE WHEN profile_run.workflow_run_id IS NULL THEN NULL
+               WHEN profile_run.requested_batch_id IS NULL THEN 'all_rows' ELSE 'batch' END,
+               'batch_id', profile_run.requested_batch_id)
+       END AS profile
+""",
+        1,
+    )
+    .replace(
+        "  FROM core.attribute AS attribute",
+        """  FROM core.attribute AS attribute
+ CROSS JOIN requested_model
+  LEFT JOIN workflow.attribute_enrichment AS enrichment
+    ON enrichment.model_id = requested_model.model_id
+   AND enrichment.attribute_id = attribute.attribute_id
+  LEFT JOIN workflow.attribute_profile AS profile
+    ON profile.model_id = requested_model.model_id AND profile.attribute_id = attribute.attribute_id
+  LEFT JOIN application.workflow_run AS profile_run
+    ON profile_run.workflow_run_id = profile.workflow_run_id
+   AND profile_run.model_id = profile.model_id""",
+    )
+)
+
 _SCOPE_VISIBLE_OBJECTS_CTE = """
 WITH requested_tenant AS (
     SELECT tenant_id FROM core.tenant WHERE tenant_id = %s AND is_active
@@ -333,10 +393,12 @@ class DatabaseModelInputScopeService:
         database: ModelInputScopeReadDatabase,
         authorizer: AuthorizationService,
         cursor_signing_key: bytes,
+        enrichment: bool = False,
     ) -> None:
         self._database = database
         self._authorizer = authorizer
         self._cursors = CursorCodec(cursor_signing_key)
+        self._enrichment = enrichment
 
     async def search_options(
         self,
@@ -493,7 +555,7 @@ class DatabaseModelInputScopeService:
             if header is None:
                 raise ModelNotFoundError()
             rows = await transaction.fetch_all(
-                _MODEL_INPUT_SCOPE_SQL,
+                _ENRICHMENT_OBJECT_SQL[0] if self._enrichment else _MODEL_INPUT_SCOPE_SQL,
                 (
                     tenant_id,
                     model_id,
@@ -542,13 +604,15 @@ class DatabaseModelInputScopeService:
                 model_id=model_id,
             )
             row = await transaction.fetch_one(
-                _MODEL_INPUT_SCOPE_DETAIL_SQL,
+                _ENRICHMENT_OBJECT_SQL[1] if self._enrichment else _MODEL_INPUT_SCOPE_DETAIL_SQL,
                 (tenant_id, model_id, object_id),
             )
             if row is None:
                 raise ModelInputScopeObjectNotFoundError()
             attributes = await transaction.fetch_all(
-                _MODEL_INPUT_SCOPE_ATTRIBUTES_SQL,
-                (object_id,),
+                _ENRICHMENT_ATTRIBUTES_SQL
+                if self._enrichment
+                else _MODEL_INPUT_SCOPE_ATTRIBUTES_SQL,
+                (model_id, object_id) if self._enrichment else (object_id,),
             )
         return ModelInputScopeDetail.model_validate({**row, "attributes": attributes})

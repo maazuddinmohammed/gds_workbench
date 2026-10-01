@@ -104,6 +104,7 @@ export type CodeGenerationApi = CodeGenerationTransport & ModelRecordHistoryApi
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"
+  | "cancelWorkflowRun"
     | "createWorkflowRun"
     | "executeCodeGenerationRun"
     | "listWorkflowRunEvents"

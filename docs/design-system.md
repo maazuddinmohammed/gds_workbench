@@ -69,8 +69,11 @@ correlation reference; never expose raw provider diagnostics or model payloads.
   readable prompt names/version; internal identifiers/digests belong in Details.
 - Selection survives search and nested Attribute selection. Complete selection data
   must load before a Run starts; failed loading must not create a partial selection.
-- Enrichment opens on physical metadata; keep history separate. Parent locks protect
-  children. Attribute details show descriptions and inferred types.
+- Profiling precedes Enrichment. Enrichment opens on current Model-owned results; keep
+  history separate. Parent Model enrichment locks protect children. Object details allow
+  description edits; Attribute details allow description/type and nullable key/PII flag edits.
+  Unknown is distinct from No. Show saved Profiles in a technical table and export both
+  dictionaries; retain unsaved edits on errors.
 - Analysis separates inference from measured validation. Missing, zero and unavailable
   measurements have distinct labels; zero denominators are N/A. Cardinality differences
   are review warnings. Percentages use their actual measured denominators.

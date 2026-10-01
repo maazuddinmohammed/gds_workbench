@@ -211,7 +211,7 @@ function WorkflowStateBadge({ state }: { state: WorkflowLedgerEntry["state"] }) 
     running: "Running",
     results_available: "Results available",
     completed_no_results: "Completed · no results",
-    failed: "Failed",
+    failed: "Failed", cancelled: "Cancelled",
   };
   const tone = state === "ready" || state === "results_available"
     ? "is-success"

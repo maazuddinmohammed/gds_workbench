@@ -273,9 +273,7 @@ def _context_bundle(
                 "model_name": "Sales Model",
                 "model_description": None,
                 "logical_schemas": [{"schema_name": "silver_nwa", "description": None}],
-                "dimensional_schemas": [
-                    {"schema_name": "gold_nwa", "description": None}
-                ],
+                "dimensional_schemas": [{"schema_name": "gold_nwa", "description": None}],
                 "silver_model_naming_instructions": None,
                 "silver_model_audit_columns_template": None,
                 "gold_model_naming_instructions": "Use business-facing Gold names.",
@@ -568,16 +566,12 @@ def _no_op_candidate() -> JsonValue:
     return cast(JsonValue, candidate)
 
 
-type _AgentResponse = (
-    JsonValue | Exception | Callable[[AgentExecutionRequest], JsonValue]
-)
+type _AgentResponse = JsonValue | Exception | Callable[[AgentExecutionRequest], JsonValue]
 
 
 @dataclass
 class _Database:
-    isolations: list[ReadIsolation] = field(
-        default_factory=lambda: list[ReadIsolation]()
-    )
+    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
 
     @asynccontextmanager
     async def write_transaction(
@@ -650,8 +644,7 @@ class _ContextRepository:
             ],
         }
         graph["logical_entity"] = [
-            item.entity.model_dump(mode="json")
-            for item in context.selected_logical_entities
+            item.entity.model_dump(mode="json") for item in context.selected_logical_entities
         ]
         graph["logical_attribute"] = [
             attribute.model_dump(mode="json")
@@ -699,9 +692,7 @@ class _ContextRepository:
             model_input_objects=frozenset(),
             model_input_attributes=frozenset(),
         )
-        return replace(
-            self.bundle, snapshot=snapshot_from_graph(graph), physical_scope=scope
-        )
+        return replace(self.bundle, snapshot=snapshot_from_graph(graph), physical_scope=scope)
 
 
 @dataclass
@@ -775,9 +766,7 @@ class _Handoff(RetainingHandoff):
 @dataclass
 class _Lifecycle:
     starts: list[tuple[RequestPrincipal, int, int, int, str, str | None, int]] = field(
-        default_factory=lambda: list[
-            tuple[RequestPrincipal, int, int, int, str, str | None, int]
-        ]()
+        default_factory=lambda: list[tuple[RequestPrincipal, int, int, int, str, str | None, int]]()
     )
 
     async def start(
@@ -810,9 +799,7 @@ class _Lifecycle:
             model_revision=expected_model_revision,
         )
 
-    events: list[AgentWorkflowEvent] = field(
-        default_factory=lambda: list[AgentWorkflowEvent]()
-    )
+    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
     finding_count: int | None = None
     failed: tuple[str, str] | None = None
     fail_event_sequence: int | None = None
@@ -895,9 +882,7 @@ class _NoOp:
             model_revision=request.expected_model_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
-                "completed_with_repair"
-                if request.final_event.attempt > 1
-                else "completed"
+                "completed_with_repair" if request.final_event.attempt > 1 else "completed"
             ),
             model_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
@@ -983,14 +968,74 @@ async def test_start_binds_dimensional_workflow_without_executing(
 
 
 @pytest.mark.asyncio
-async def test_missing_gold_policy_blocks_before_agent_execution() -> None:
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+@pytest.mark.parametrize("scd_type", [None, "type_1", "type_2"])
+async def test_dimensional_runs_with_optional_gold_templates_unset(
+    mode: Literal["one_shot", "tool_assisted"],
+    scd_type: Literal["type_1", "type_2"] | None,
+) -> None:
+    context = _context_bundle(mode=mode).context
+    details = context.model_details.model_copy(
+        update={
+            "logical_entity_scd_type": "type_1",
+            "dimensional_entity_scd_type": scd_type,
+            "gold_model_naming_instructions": None,
+            "gold_model_technical_columns_template": None,
+            "gold_model_audit_columns_template": None,
+        }
+    )
+    context = context.model_copy(update={"model_details": details})
+    catalog = (
+        InMemoryAgentContextToolCatalog(
+            context=context,
+            max_result_bytes=128 * 1024,
+            max_catalog_bytes=128 * 1024,
+            max_page_records=20,
+        )
+        if mode == "tool_assisted"
+        else None
+    )
+    bundle = AgentContextBundle(
+        context=context,
+        embedded_context=catalog.manifest
+        if catalog
+        else cast(JsonValue, context.model_dump(mode="json")),
+        tool_catalog=catalog,
+    )
+    agent = _AgentExecutor(responses=[_candidate()])
+    service, _, _, handoff, lifecycle = _service(agent=agent, context=bundle, plan=_plan(mode=mode))
+    await service.execute_started(
+        _principal(),
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        workflow_run_claim_token=_CLAIM_TOKEN,
+        expected_model_revision=7,
+    )
+    assert agent.requests and handoff.calls
+    assert lifecycle.failed is None
+    attributes = [
+        row
+        for change in handoff.calls[0]
+        if change.dataset == "dimensional_attribute"
+        for row in change.records
+    ]
+    dimension = [
+        row for row in attributes if row["dimensional_entity_name"] == "Customer Dimension"
+    ]
+    names = {row["dimensional_attribute_name"] for row in dimension}
+    assert "Customer DimensionKey" in names
+    assert {"EffectiveFrom", "EffectiveTo", "IsCurrent"}.issubset(names) is (scd_type == "type_2")
+    assert not any(row["dimensional_attribute_is_audit_column"] for row in attributes)
+
+
+@pytest.mark.asyncio
+async def test_invalid_gold_policy_blocks_before_agent_execution() -> None:
     context = _context_bundle()
     model_details = context.context.model_details.model_copy(
-        update={"gold_model_audit_columns_template": None}
+        update={"gold_model_audit_columns_template": {"schema_version": "invalid"}}
     )
-    authoring_context = context.context.model_copy(
-        update={"model_details": model_details}
-    )
+    authoring_context = context.context.model_copy(update={"model_details": model_details})
     agent = _AgentExecutor(responses=[_candidate()])
     service, _database, _authorizer, handoff, lifecycle = _service(
         agent=agent,
@@ -1021,9 +1066,7 @@ async def test_missing_gold_policy_blocks_before_agent_execution() -> None:
 async def test_one_shot_projects_gold_policy_then_foreign_key_once(
     relationship_optional: bool,
 ) -> None:
-    agent = _AgentExecutor(
-        responses=[_candidate(relationship_optional=relationship_optional)]
-    )
+    agent = _AgentExecutor(responses=[_candidate(relationship_optional=relationship_optional)])
     service, database, authorizer, handoff, lifecycle = _service(agent=agent)
 
     result = await service.execute_started(
@@ -1052,9 +1095,7 @@ async def test_one_shot_projects_gold_policy_then_foreign_key_once(
     assert handoff.workflows == ["dimensional"]
     assert len(handoff.calls) == 1
     attribute_change = next(
-        change
-        for change in handoff.calls[0]
-        if change.dataset == "dimensional_attribute"
+        change for change in handoff.calls[0] if change.dataset == "dimensional_attribute"
     )
     foreign_key = next(
         record
@@ -1064,9 +1105,7 @@ async def test_one_shot_projects_gold_policy_then_foreign_key_once(
     assert foreign_key["dimensional_attribute_name"] == "Bill To Customer key"
     assert foreign_key["dimensional_attribute_is_nullable"] is relationship_optional
     relationship_change = next(
-        change
-        for change in handoff.calls[0]
-        if change.dataset == "dimensional_relationship"
+        change for change in handoff.calls[0] if change.dataset == "dimensional_relationship"
     )
     assert relationship_change.records[0]["from_dimensional_attribute_name"] == (
         "Bill To Customer key"
@@ -1111,9 +1150,7 @@ async def test_tool_assisted_uses_local_catalog_and_same_change_contract() -> No
 
 @pytest.mark.asyncio
 async def test_validation_repair_keeps_original_context_then_hands_off_once() -> None:
-    agent = _AgentExecutor(
-        responses=[_candidate(source_name="outside_selection"), _candidate()]
-    )
+    agent = _AgentExecutor(responses=[_candidate(source_name="outside_selection"), _candidate()])
     service, _database, _authorizer, handoff, _lifecycle = _service(agent=agent)
 
     await service.execute_started(
@@ -1214,12 +1251,8 @@ async def test_valid_unchanged_candidate_completes_as_no_op() -> None:
 
 
 @pytest.mark.asyncio
-async def test_repaired_unchanged_candidate_preserves_attempt_in_no_op_receipt() -> (
-    None
-):
-    agent = _AgentExecutor(
-        responses=[cast(JsonValue, {"invalid": True}), _no_op_candidate()]
-    )
+async def test_repaired_unchanged_candidate_preserves_attempt_in_no_op_receipt() -> None:
+    agent = _AgentExecutor(responses=[cast(JsonValue, {"invalid": True}), _no_op_candidate()])
     no_op = _NoOp()
     service, _database, _authorizer, handoff, lifecycle = _service(
         agent=agent,

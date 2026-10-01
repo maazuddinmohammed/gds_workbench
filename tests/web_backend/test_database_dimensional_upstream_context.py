@@ -18,6 +18,7 @@ from gds_workbench_api.features.workflows.authoring.context_inputs import OBJECT
 from psycopg.types.json import Jsonb
 
 from tests.mcp.conftest import DisposablePostgres
+from tests.mcp.enrichment_test_support import seed_model_enrichment
 from tests.web_backend.test_database_mapping_source_context import _seed_mapping_scope
 from tests.web_backend.test_database_model_change_sets import _required_id
 from tests.web_backend.test_dimensional_executor import _plan
@@ -32,6 +33,11 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
     scope = _seed_mapping_scope(database, dimensional=False)
     foreign = _seed_mapping_scope(database, dimensional=False)
     with database.connect_owner() as connection:
+        connection.execute(
+            "UPDATE model.model SET logical_entity_scd_type='type_1', "
+            "dimensional_entity_scd_type='type_2' WHERE model_id=%s",
+            (scope.plan.model_id,),
+        )
         other_model_id = _required_id(
             connection.execute(
                 """INSERT INTO model.model (tenant_id, model_name, logical_schemas)
@@ -128,6 +134,7 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
                    attribute_inferred_data_type='BIGINT' WHERE object_id=ANY(%s)""",
             ([scope.bronze_object_id, scope.source_object_id],),
         )
+        seed_model_enrichment(connection, scope.plan.model_id)
         connection.execute(
             """INSERT INTO workflow.attribute_profile (model_id, object_id, attribute_id,
                 source_context_digest, row_count, non_null_count, null_count, distinct_count,
@@ -209,11 +216,18 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
     )
     await runtime.open()
     try:
-        async with runtime.read_transaction(isolation=ReadIsolation.REPEATABLE_READ) as transaction:
+        async with runtime.read_transaction(
+            isolation=ReadIsolation.REPEATABLE_READ
+        ) as transaction:
             probe = await transaction.fetch_all(
                 _SUPPORTING_OBJECT_IDS_SQL,
                 (
-                    Jsonb([{field: row[field] for field in OBJECT_FIELDS} for row in probe_rows]),
+                    Jsonb(
+                        [
+                            {field: row[field] for field in OBJECT_FIELDS}
+                            for row in probe_rows
+                        ]
+                    ),
                     scope.tenant_id,
                 ),
             )
@@ -235,6 +249,8 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
             )
     finally:
         await runtime.close()
+    assert result.context.model_details.logical_entity_scd_type == "type_1"
+    assert result.context.model_details.dimensional_entity_scd_type == "type_2"
     assert result.context.selected_objects == ()
     assert len(result.context.selected_logical_entities) == 1
     assert len(result.context.supporting_objects) == 2
@@ -248,7 +264,9 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
         if row["object_id"] != foreign.bronze_object_id
     }
     assert actual_keys == expected_keys
-    assert {group.object.object_schema for group in result.context.supporting_objects} == {
+    assert {
+        group.object.object_schema for group in result.context.supporting_objects
+    } == {
         "sales",
         "source",
     }
@@ -262,6 +280,7 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
         if result.tool_catalog
         else cast(dict[str, Any], result.embedded_context)["prompt_inputs"]
     )
+    assert values["dimensional_entity_scd_type"] == "type_2"
     assert len(values["object_context"]) == len(values["object_attribute_context"]) == 2
     assert len(values["source_context"]) == len(values["ingestion_mapping"]) == 1
     attributes = [
@@ -274,16 +293,26 @@ async def test_dimensional_repository_loads_only_authorized_active_selected_line
         for attribute in attributes
     )
     profiles = [
-        attribute["profile"] for attribute in attributes if attribute["profile"] is not None
+        attribute["profile"]
+        for attribute in attributes
+        if attribute["profile"] is not None
     ]
     assert len(profiles) == 1 and profiles[0]["distinct_count"] == 8
     assert profiles[0]["profiled_at"] is not None
     assert profiles[0]["row_scope"] is None
     assert (
-        sum(len(group["outgoing_relationships"]) for group in values["object_relationship_context"])
+        sum(
+            len(group["outgoing_relationships"])
+            for group in values["object_relationship_context"]
+        )
         == 1
     )
     if result.tool_catalog:
         assert (
-            len(cast(dict[str, Any], result.tool_catalog.invoke("get_objects", {}))["items"]) == 2
+            len(
+                cast(dict[str, Any], result.tool_catalog.invoke("get_objects", {}))[
+                    "items"
+                ]
+            )
+            == 2
         )

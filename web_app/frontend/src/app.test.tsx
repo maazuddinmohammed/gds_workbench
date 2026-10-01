@@ -549,7 +549,7 @@ describe("Model overview", () => {
     const modelSections = screen.getByRole("navigation", { name: "Model sections" });
     expect(within(workspaceNavigation).queryByRole("link", { name: "Mapping" })).not.toBeInTheDocument();
     expect(within(modelSections).getAllByRole("link").map((item) => item.getAttribute("aria-label"))).toEqual([
-      "Overview", "Settings", "Model Input Scope", "Assertions", "Metadata enrichment", "Profiling",
+      "Overview", "Settings", "Model Input Scope", "Assertions", "Profiling", "Metadata enrichment",
       "Analysis", "Conceptual", "Logical", "Dimensional", "Mapping", "Code generation", "Validation",
     ]);
     await user.click(within(workspaceNavigation).getByRole("button", { name: "Collapse workspace navigation" }));

@@ -181,6 +181,7 @@ export type MappingApi = MappingTransport & ModelRecordReviewApi
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"
+  | "cancelWorkflowRun"
     | "createWorkflowRun"
     | "executeMappingRun"
     | "listWorkflowRunEvents"

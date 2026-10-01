@@ -95,7 +95,8 @@ CREATE FUNCTION application.create_model(
     p_default_max_turns INTEGER,
     p_default_validation_retry_count INTEGER,
     p_default_mapping_source_system_id BIGINT DEFAULT NULL,
-    p_logical_entity_scd_type VARCHAR(10) DEFAULT NULL
+    p_logical_entity_scd_type VARCHAR(10) DEFAULT NULL,
+    p_dimensional_entity_scd_type VARCHAR(10) DEFAULT NULL
 )
 RETURNS SETOF model.model
 LANGUAGE plpgsql
@@ -148,7 +149,8 @@ BEGIN
         default_max_turns,
         default_validation_retry_count,
         default_mapping_source_system_id,
-        logical_entity_scd_type
+        logical_entity_scd_type,
+        dimensional_entity_scd_type
     ) VALUES (
         p_tenant_id,
         p_model_name,
@@ -167,7 +169,8 @@ BEGIN
         p_default_max_turns,
         p_default_validation_retry_count,
         p_default_mapping_source_system_id,
-        p_logical_entity_scd_type
+        p_logical_entity_scd_type,
+        p_dimensional_entity_scd_type
     )
     RETURNING target_model.* INTO v_created;
 
@@ -204,6 +207,7 @@ REVOKE ALL ON FUNCTION application.create_model(
     INTEGER,
     INTEGER,
     BIGINT,
+    VARCHAR,
     VARCHAR
 ) FROM PUBLIC;
 
@@ -229,7 +233,8 @@ CREATE FUNCTION application.update_model(
     p_default_max_turns INTEGER,
     p_default_validation_retry_count INTEGER,
     p_default_mapping_source_system_id BIGINT DEFAULT NULL,
-    p_logical_entity_scd_type VARCHAR(10) DEFAULT NULL
+    p_logical_entity_scd_type VARCHAR(10) DEFAULT NULL,
+    p_dimensional_entity_scd_type VARCHAR(10) DEFAULT NULL
 )
 RETURNS SETOF model.model
 LANGUAGE plpgsql
@@ -295,7 +300,8 @@ BEGIN
         v_existing.default_max_turns,
         v_existing.default_validation_retry_count,
         v_existing.default_mapping_source_system_id,
-        v_existing.logical_entity_scd_type
+        v_existing.logical_entity_scd_type,
+        v_existing.dimensional_entity_scd_type
     ) IS NOT DISTINCT FROM ROW(
         p_model_name,
         p_model_description,
@@ -313,7 +319,8 @@ BEGIN
         p_default_max_turns,
         p_default_validation_retry_count,
         p_default_mapping_source_system_id,
-        p_logical_entity_scd_type
+        p_logical_entity_scd_type,
+        p_dimensional_entity_scd_type
     ) THEN
         RETURN NEXT v_existing;
         RETURN;
@@ -345,6 +352,7 @@ BEGIN
                p_default_validation_retry_count,
            default_mapping_source_system_id = p_default_mapping_source_system_id,
            logical_entity_scd_type = p_logical_entity_scd_type,
+           dimensional_entity_scd_type = p_dimensional_entity_scd_type,
            updated_time = v_updated_time,
            updated_by = CURRENT_USER
      WHERE target_model.model_id = p_model_id
@@ -384,6 +392,7 @@ REVOKE ALL ON FUNCTION application.update_model(
     INTEGER,
     INTEGER,
     BIGINT,
+    VARCHAR,
     VARCHAR
 ) FROM PUBLIC;
 
@@ -2388,19 +2397,24 @@ AS $list_code_generation_target_context$
               'object_id',o.object_id,'source_tenant_id',o.source_tenant_id,'tenant_id',t.tenant_id,
               'tenant_code',t.tenant_code,'tenant_catalog',t.tenant_catalog,'system_id',system.system_id,'system_code',system.system_code,
               'connection_id',c.connection_id,'connection_code',c.connection_code,'object_schema',o.object_schema,'object_name',o.object_name,
-              'object_description',o.object_description,'fc_object_schema',o.fc_object_schema,'fc_object_name',o.fc_object_name,
+              'object_description',object_enrichment.object_description,'fc_object_schema',o.fc_object_schema,'fc_object_name',o.fc_object_name,
               'foreign_catalog',c.foreign_catalog,'batch_attribute_name',o.batch_attribute_name,'zone_code',lower(z.zone_code),
               'is_active',o.is_active,'is_locked',o.is_locked,'scope_is_active',source.scope_is_active,'scope_is_locked',source.scope_is_locked,
               'attributes',(SELECT coalesce(jsonb_agg(jsonb_build_object(
                 'attribute_id',a.attribute_id,'attribute_name',a.attribute_name,'attribute_ordinal_position',a.attribute_ordinal_position,
-                'attribute_data_type',a.attribute_data_type,'attribute_inferred_data_type',a.attribute_inferred_data_type,
-                'attribute_nullability',a.attribute_nullability,'attribute_description',a.attribute_description,
+                'attribute_data_type',a.attribute_data_type,'attribute_inferred_data_type',enrichment.attribute_inferred_data_type,
+                'attribute_nullability',a.attribute_nullability,'attribute_description',enrichment.attribute_description,
                 'fc_attribute_name',a.fc_attribute_name,'attribute_custom_code',a.attribute_custom_code,
-                'is_surrogate_key',a.is_surrogate_key,'is_natural_key',a.is_natural_key,'is_meta_data',a.is_meta_data,
+                'is_surrogate_key',a.is_surrogate_key,'is_natural_key',enrichment.is_natural_key,'is_primary_key',enrichment.is_primary_key,
+                'is_nullable',enrichment.is_nullable,'is_pii',enrichment.is_pii,'is_meta_data',a.is_meta_data,
                 'is_masking_required',a.is_masking_required,'is_active',a.is_active,'is_locked',a.is_locked
-              ) ORDER BY a.attribute_ordinal_position,a.attribute_id),'[]'::JSONB) FROM core.attribute AS a WHERE a.object_id = o.object_id)
+              ) ORDER BY a.attribute_ordinal_position,a.attribute_id),'[]'::JSONB) FROM core.attribute AS a LEFT JOIN workflow.attribute_enrichment AS enrichment
+                  ON enrichment.model_id = target.model_id AND enrichment.attribute_id = a.attribute_id
+                WHERE a.object_id = o.object_id)
             ) AS document
-            FROM core.object AS o JOIN core.connection AS c ON c.connection_id = o.connection_id
+            FROM core.object AS o LEFT JOIN workflow.object_enrichment AS object_enrichment
+              ON object_enrichment.model_id = target.model_id AND object_enrichment.object_id = o.object_id
+             JOIN core.connection AS c ON c.connection_id = o.connection_id
              JOIN core.tenant AS t ON t.tenant_id = c.tenant_id JOIN core.system AS system ON system.system_id = c.system_id
              JOIN reference.zone AS z ON z.zone_id = o.zone_id WHERE o.object_id = source.source_object_id
           ) AS physical ON TRUE

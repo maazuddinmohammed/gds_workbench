@@ -32,7 +32,7 @@
     text.textContent = label(field);
     const metadata = document.createElement("small");
     const keyField = state.loaded.definition.canonical_key?.includes(field);
-    const modelSetting = state.area === "model" && state.dataset === "model_details" && field === "logical_entity_scd_type";
+    const modelSetting = state.area === "model" && state.dataset === "model_details" && ["logical_entity_scd_type", "dimensional_entity_scd_type"].includes(field);
     metadata.textContent = [keyField && "Natural key", state.loaded.schema?.required?.includes(field) && "Required", details.fixed && "Fixed", modelSetting && "Change in Model settings", details.type].filter(Boolean).join(" · ");
     fieldLabel.append(text, metadata);
     let control;

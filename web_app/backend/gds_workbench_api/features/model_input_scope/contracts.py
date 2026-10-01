@@ -104,8 +104,21 @@ class ModelInputScopeCandidatePage(BaseModel):
     next_cursor: str | None = Field(default=None, max_length=2048)
 
 
+class ModelAttributeEnrichment(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    is_natural_key: bool | None = None
+    is_primary_key: bool | None = None
+    is_nullable: bool | None = None
+    is_pii: bool | None = None
+
+
+class ModelInputScopeAttribute(ObjectAttribute):
+    enrichment: ModelAttributeEnrichment | None = None
+    profile: dict[str, object] | None = Field(default=None, repr=False)
+
+
 class ModelInputScopeDetail(ModelInputScopeObject):
-    attributes: tuple[ObjectAttribute, ...]
+    attributes: tuple[ModelInputScopeAttribute | ObjectAttribute, ...]
     total_attribute_count: int = Field(ge=0)
 
     @model_validator(mode="after")

@@ -267,7 +267,7 @@ CREATE TABLE application.workflow_run (
     CONSTRAINT ck_workflow_run_state CHECK (
         workflow_run_state IN (
             'queued', 'running', 'completed',
-            'completed_with_repair', 'failed'
+            'completed_with_repair', 'failed', 'cancelled'
         )
     ),
     CONSTRAINT ck_workflow_run_claim CHECK (
@@ -320,6 +320,11 @@ CREATE TABLE application.workflow_run (
             AND started_time >= created_time
             AND completed_time IS NOT NULL
             AND completed_time >= started_time
+        ) OR (
+            workflow_run_state = 'cancelled'
+            AND completed_time IS NOT NULL
+            AND completed_time >= coalesce(started_time, created_time)
+            AND (started_time IS NULL OR started_time >= created_time)
         )
     ),
     CONSTRAINT ck_workflow_run_failure CHECK (
@@ -652,7 +657,7 @@ BEGIN
     END IF;
 
     IF OLD.workflow_run_state IN (
-        'completed', 'completed_with_repair', 'failed'
+        'completed', 'completed_with_repair', 'failed', 'cancelled'
     ) THEN
         RAISE EXCEPTION 'terminal workflow run is immutable' USING ERRCODE = '55000';
     END IF;
@@ -710,6 +715,8 @@ BEGIN
 
     IF NOT (
         (OLD.workflow_run_state = 'queued' AND NEW.workflow_run_state = 'running')
+        OR (OLD.workflow_run_state IN ('queued', 'running')
+            AND NEW.workflow_run_state = 'cancelled')
         OR (
             OLD.workflow_run_state = 'running'
             AND NEW.workflow_run_state IN (
@@ -749,6 +756,18 @@ ALTER TABLE model.modeling_assertion_record
 
 ALTER TABLE workflow.attribute_profile
     ADD CONSTRAINT fk_attribute_profile_workflow_run
+    FOREIGN KEY (workflow_run_id, model_id)
+    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    ON DELETE NO ACTION;
+
+ALTER TABLE workflow.object_enrichment
+    ADD CONSTRAINT fk_object_enrichment_workflow_run
+    FOREIGN KEY (workflow_run_id, model_id)
+    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    ON DELETE NO ACTION;
+
+ALTER TABLE workflow.attribute_enrichment
+    ADD CONSTRAINT fk_attribute_enrichment_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
@@ -2005,12 +2024,6 @@ BEGIN
     END IF;
 
     IF p_metadata_enrichment_description_targets IS NOT NULL THEN
-        SELECT * INTO v_decision FROM security.authorize_tenant_operation(
-            p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
-            v_model.tenant_id, 'tenant_metadata_write');
-        IF NOT coalesce(v_decision.authorized, FALSE) THEN
-            RAISE EXCEPTION 'Workflow Run creation denied: authorization_denied';
-        END IF;
         IF EXISTS (
             SELECT 1 FROM jsonb_array_elements(p_metadata_enrichment_description_targets) AS target
             WHERE NOT EXISTS (
@@ -2018,11 +2031,15 @@ BEGIN
                 LEFT JOIN core.attribute AS attribute ON attribute.object_id = object.object_id
                     AND attribute.attribute_id = (target->>'attribute_id')::BIGINT
                 WHERE object.object_id = (target->>'object_id')::BIGINT
-                  AND object.source_tenant_id = v_model.tenant_id AND object.is_active AND NOT object.is_locked
+                  AND object.source_tenant_id = v_model.tenant_id AND object.is_active
+                  AND NOT coalesce((SELECT is_locked FROM workflow.object_enrichment
+                      WHERE model_id = p_model_id AND object_id = object.object_id), FALSE)
                   AND CASE WHEN target->>'attribute_id' IS NULL
-                      THEN application.metadata_object_review_revision(object) = target->>'expected_revision'
-                      ELSE attribute.is_active AND NOT attribute.is_locked
-                          AND application.metadata_attribute_review_revision(attribute, object) = target->>'expected_revision' END
+                      THEN workflow.enrichment_review_revision(p_model_id, object.object_id) = target->>'expected_revision'
+                      ELSE attribute.is_active
+                          AND NOT coalesce((SELECT is_locked FROM workflow.attribute_enrichment
+                              WHERE model_id = p_model_id AND attribute_id = attribute.attribute_id), FALSE)
+                          AND workflow.enrichment_review_revision(p_model_id, object.object_id, attribute.attribute_id) = target->>'expected_revision' END
             )
         ) THEN RAISE EXCEPTION 'metadata_description_conflict'; END IF;
     END IF;
@@ -2433,6 +2450,110 @@ REVOKE ALL ON FUNCTION application.start_workflow_run(
     VARCHAR,
     BIGINT,
     BIGINT
+) FROM PUBLIC;
+
+-- Cancellation is a web command, independent of workflow kind and stale Model revisions.
+-- Revoke the claim in the same transaction so workers cannot commit further results.
+CREATE FUNCTION application.cancel_workflow_run(
+    p_entra_tenant_id UUID,
+    p_entra_object_id UUID,
+    p_expected_principal_type VARCHAR(30),
+    p_tenant_id BIGINT,
+    p_model_id BIGINT,
+    p_workflow_run_id BIGINT
+)
+RETURNS TABLE (
+    changed BOOLEAN,
+    workflow_run_id BIGINT,
+    workflow_run_state VARCHAR(30),
+    completed_time TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $cancel_workflow_run$
+DECLARE
+    v_run RECORD;
+    v_decision RECORD;
+    v_completed_time TIMESTAMPTZ;
+    v_next_sequence BIGINT;
+    v_attempt INTEGER;
+BEGIN
+    SELECT * INTO v_decision
+      FROM security.authorize_tenant_operation(
+          p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
+          p_tenant_id, 'tenant_model_write'
+      );
+    IF NOT FOUND OR NOT v_decision.authorized THEN
+        RAISE EXCEPTION 'Workflow Run cancellation denied: %',
+            coalesce(v_decision.denial_code, 'authorization_denied');
+    END IF;
+
+    SELECT run.* INTO v_run
+      FROM application.workflow_run AS run
+      JOIN model.model AS target_model
+        ON target_model.model_id = run.model_id
+       AND target_model.tenant_id = p_tenant_id
+       AND target_model.is_active
+     WHERE run.workflow_run_id = p_workflow_run_id
+       AND run.model_id = p_model_id
+     FOR UPDATE OF run, target_model;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Workflow Run is unavailable';
+    END IF;
+    IF v_run.actor_principal_id <> v_decision.principal_id THEN
+        RAISE EXCEPTION 'Workflow Run belongs to another Principal';
+    END IF;
+    IF v_run.workflow_run_state = 'cancelled' THEN
+        RETURN QUERY SELECT FALSE, v_run.workflow_run_id,
+            v_run.workflow_run_state, v_run.completed_time;
+        RETURN;
+    END IF;
+    IF v_run.workflow_run_state NOT IN ('queued', 'running')
+       OR v_run.metadata_enrichment_receipt_digest IS NOT NULL
+       OR v_run.authoring_no_op_candidate_digest IS NOT NULL
+       OR EXISTS (
+           SELECT 1 FROM mcp.model_change_set AS change_set
+            WHERE change_set.workflow_run_id = p_workflow_run_id
+              AND change_set.model_change_set_status IN ('validated', 'applied')
+       ) THEN
+        RAISE EXCEPTION 'workflow_run_cancellation_conflict';
+    END IF;
+
+    SELECT coalesce(max(event.model_event_log_sequence), 0) + 1,
+           coalesce(max(event.model_event_log_attempt), 1)
+      INTO v_next_sequence, v_attempt
+      FROM model.model_event_log AS event
+     WHERE event.workflow_run_id = p_workflow_run_id;
+    v_completed_time := clock_timestamp();
+    UPDATE application.workflow_run AS run
+       SET workflow_run_state = 'cancelled',
+           completed_time = v_completed_time,
+           workflow_run_claim_token_digest = NULL,
+           workflow_run_claimed_time = NULL,
+           workflow_run_claim_heartbeat_time = NULL,
+           workflow_run_claim_expires_time = NULL,
+           updated_time = v_completed_time,
+           updated_by = CURRENT_USER
+     WHERE run.workflow_run_id = p_workflow_run_id;
+
+    INSERT INTO model.model_event_log (
+        model_id, correlation_id, workflow_run_id, model_event_log_sequence,
+        model_event_log_attempt, model_workflow, model_event_log_stage,
+        model_event_log_status, model_event_log_message, finding_count
+    ) VALUES (
+        v_run.model_id, v_run.correlation_id, v_run.workflow_run_id, v_next_sequence,
+        v_attempt, v_run.model_workflow, 'workflow_run.cancelled',
+        'warning', 'Workflow run cancelled. Previously saved results are retained.', 0
+    );
+    RETURN QUERY SELECT TRUE, v_run.workflow_run_id, 'cancelled'::VARCHAR(30),
+        v_completed_time;
+END;
+$cancel_workflow_run$;
+
+REVOKE ALL ON FUNCTION application.cancel_workflow_run(
+    UUID, UUID, VARCHAR, BIGINT, BIGINT, BIGINT
 ) FROM PUBLIC;
 
 CREATE FUNCTION application.claim_next_workflow_run(
@@ -3831,7 +3952,8 @@ CREATE TABLE application.metadata_enrichment_result (
     ),
     CONSTRAINT ck_metadata_enrichment_field CHECK (
         (field_name = 'object_description' AND attribute_id IS NULL)
-        OR (field_name IN ('attribute_description', 'attribute_inferred_data_type')
+        OR (field_name IN ('attribute_description', 'attribute_inferred_data_type',
+                          'is_natural_key', 'is_primary_key', 'is_nullable', 'is_pii')
             AND attribute_id IS NOT NULL)
     ),
     CONSTRAINT ck_metadata_enrichment_status CHECK (
@@ -3839,16 +3961,21 @@ CREATE TABLE application.metadata_enrichment_result (
                    'unavailable', 'inconclusive')
     ),
     CONSTRAINT ck_metadata_enrichment_evidence CHECK (
-        evidence_method IN ('agent_description', 'source_comment', 'registered_type',
+        evidence_method IN ('agent_description', 'agent_key_inference',
+            'source_comment', 'registered_type',
             'source_schema', 'bronze_schema', 'source_sample', 'bronze_sample', 'none')
     ),
     CONSTRAINT ck_metadata_enrichment_value CHECK (
         (status <> 'applied' AND applied_value IS NULL)
-        OR (status = 'applied' AND (
-            (field_name <> 'attribute_inferred_data_type' AND applied_value IS NULL)
-            OR (reference.is_nonblank(applied_value)
-            AND CASE WHEN field_name = 'attribute_inferred_data_type'
-                THEN length(applied_value) <= 100 ELSE octet_length(applied_value) <= 2000 END)))
+        OR (status = 'applied' AND CASE
+            WHEN field_name IN ('is_natural_key', 'is_primary_key', 'is_nullable', 'is_pii') THEN
+                applied_value IS NULL OR applied_value IN ('true', 'false')
+            WHEN field_name = 'attribute_inferred_data_type' THEN
+                reference.is_nonblank(applied_value) AND length(applied_value) <= 100
+            ELSE applied_value IS NULL OR (
+                reference.is_nonblank(applied_value) AND octet_length(applied_value) <= 2000
+            )
+        END)
     ),
     CONSTRAINT ck_metadata_enrichment_sample_count CHECK (sample_count BETWEEN 0 AND 50)
 );

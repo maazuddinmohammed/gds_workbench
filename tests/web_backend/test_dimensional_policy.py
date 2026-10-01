@@ -13,6 +13,7 @@ from gds_etl_workbench.domain.modeling_records import (
 )
 from gds_etl_workbench.domain.snapshots.model import DimensionalSection
 from gds_workbench_api.features.dimensional.policy import (
+    DimensionalProjectionConflictError,
     project_dimensional_foreign_key_policy,
     project_dimensional_gold_policy,
     validate_dimensional_gold_policy,
@@ -21,7 +22,8 @@ from gds_workbench_api.features.dimensional.policy import (
 
 def _entity(name: str = "Customer Dimension") -> DimensionalEntityRecord:
     return DimensionalEntityRecord(
-        dimensional_entity_schema_name="gold", dimensional_entity_name=name,
+        dimensional_entity_schema_name="gold",
+        dimensional_entity_name=name,
         dimensional_entity_definition=f"One {name}.",
         dimensional_entity_type="dimension",
         dimensional_fact_type=None,
@@ -41,7 +43,8 @@ def _business_attribute(
     change_behavior: Literal["fixed", "overwrite", "historize"] | None = "fixed",
 ) -> DimensionalAttributeRecord:
     return DimensionalAttributeRecord(
-        dimensional_entity_schema_name="gold", dimensional_entity_name=entity,
+        dimensional_entity_schema_name="gold",
+        dimensional_entity_name=entity,
         dimensional_attribute_name="Customer Name",
         dimensional_attribute_definition="Customer name.",
         dimensional_attribute_data_type="string",
@@ -64,7 +67,8 @@ def _business_attribute(
 
 def _fact(name: str = "Sales Fact") -> DimensionalEntityRecord:
     return DimensionalEntityRecord(
-        dimensional_entity_schema_name="gold", dimensional_entity_name=name,
+        dimensional_entity_schema_name="gold",
+        dimensional_entity_name=name,
         dimensional_entity_definition="One row per sale.",
         dimensional_entity_type="fact",
         dimensional_fact_type="transaction",
@@ -98,9 +102,11 @@ def _relationship(
     return DimensionalRelationshipRecord(
         dimensional_relationship_name="Sales to customer",
         dimensional_relationship_definition="Each sale references its customer.",
-        from_dimensional_entity_schema_name="gold", from_dimensional_entity_name="Sales Fact",
+        from_dimensional_entity_schema_name="gold",
+        from_dimensional_entity_name="Sales Fact",
         from_dimensional_attribute_name="Source Customer ID",
-        to_dimensional_entity_schema_name="gold", to_dimensional_entity_name="Customer Dimension",
+        to_dimensional_entity_schema_name="gold",
+        to_dimensional_entity_name="Customer Dimension",
         to_dimensional_attribute_name="Customer Name",
         dimensional_relationship_kind="foreign_key",
         dimensional_relationship_cardinality="many_to_one",
@@ -254,7 +260,8 @@ def test_projection_covers_applied_active_and_new_active_entities() -> None:
         update={"dimensional_entity_status": "inactive"}
     )
     fact = DimensionalEntityRecord(
-        dimensional_entity_schema_name="gold", dimensional_entity_name="Sales Fact",
+        dimensional_entity_schema_name="gold",
+        dimensional_entity_name="Sales Fact",
         dimensional_entity_definition="One sales event.",
         dimensional_entity_type="fact",
         dimensional_fact_type="transaction",
@@ -368,7 +375,8 @@ def test_projection_rejects_business_name_collision() -> None:
 def test_projection_rejects_locked_policy_rewrite() -> None:
     entity = _entity()
     locked_surrogate = DimensionalAttributeRecord(
-        dimensional_entity_schema_name="gold", dimensional_entity_name=entity.dimensional_entity_name,
+        dimensional_entity_schema_name="gold",
+        dimensional_entity_name=entity.dimensional_entity_name,
         dimensional_attribute_name="Customer Dimension key",
         dimensional_attribute_definition="Old but structurally compatible definition.",
         dimensional_attribute_data_type="bigint",
@@ -406,7 +414,8 @@ def test_projection_rejects_locked_policy_rewrite() -> None:
 def test_projection_rejects_incompatible_existing_policy_attribute() -> None:
     entity = _entity()
     incompatible = DimensionalAttributeRecord(
-        dimensional_entity_schema_name="gold", dimensional_entity_name=entity.dimensional_entity_name,
+        dimensional_entity_schema_name="gold",
+        dimensional_entity_name=entity.dimensional_entity_name,
         dimensional_attribute_name="Loaded At",
         dimensional_attribute_definition="Wrong type.",
         dimensional_attribute_data_type="string",
@@ -467,7 +476,7 @@ def test_projection_rejects_partial_or_invalid_v1_policy_group() -> None:
             changes=(),
             applied=None,
             raw_technical_template=technical,
-            raw_audit_template={"schema_version": "1.0", "columns": []},
+            raw_audit_template={"schema_version": "1.0", "columns": [{}]},
         )
 
 
@@ -644,9 +653,11 @@ def test_foreign_key_projection_uses_dimension_name_without_role() -> None:
 def test_foreign_key_projection_rejects_reversed_fact_dimension_orientation() -> None:
     relationship = _relationship().model_copy(
         update={
-            "from_dimensional_entity_schema_name": "gold", "from_dimensional_entity_name": "Customer Dimension",
+            "from_dimensional_entity_schema_name": "gold",
+            "from_dimensional_entity_name": "Customer Dimension",
             "from_dimensional_attribute_name": "Customer Name",
-            "to_dimensional_entity_schema_name": "gold", "to_dimensional_entity_name": "Sales Fact",
+            "to_dimensional_entity_schema_name": "gold",
+            "to_dimensional_entity_name": "Sales Fact",
             "to_dimensional_attribute_name": "Source Customer ID",
         }
     )
@@ -677,3 +688,58 @@ def test_foreign_key_projection_rejects_reversed_fact_dimension_orientation() ->
             applied=None,
             raw_technical_template=_technical_template(),
         )
+
+
+@pytest.mark.parametrize("scd_type,behavior", [("type_1", "historize"), ("type_2", "overwrite")])
+def test_dimension_scd_policy_rejects_conflicting_candidate_behavior(
+    scd_type: Literal["type_1", "type_2"],
+    behavior: Literal["historize", "overwrite"],
+) -> None:
+    with pytest.raises(DimensionalProjectionConflictError, match="change_behavior conflicts"):
+        project_dimensional_gold_policy(
+            changes=(
+                StageModelChange(
+                    dataset="dimensional_entity", records=[_entity().model_dump(mode="json")]
+                ),
+                StageModelChange(
+                    dataset="dimensional_attribute",
+                    records=[_business_attribute(change_behavior=behavior).model_dump(mode="json")],
+                ),
+            ),
+            applied=None,
+            raw_technical_template=_technical_template(),
+            raw_audit_template=_audit_template(),
+            scd_type=scd_type,
+        )
+
+
+@pytest.mark.parametrize("scd_type,behavior", [("type_1", "overwrite"), ("type_2", "historize")])
+def test_dimension_scd_policy_preserves_business_behavior_and_excludes_fact_history(
+    scd_type: Literal["type_1", "type_2"],
+    behavior: Literal["historize", "overwrite"],
+) -> None:
+    projected = project_dimensional_gold_policy(
+        changes=(
+            StageModelChange(
+                dataset="dimensional_entity",
+                records=[_entity().model_dump(mode="json"), _fact().model_dump(mode="json")],
+            ),
+            StageModelChange(
+                dataset="dimensional_attribute",
+                records=[
+                    _business_attribute(change_behavior=behavior).model_dump(mode="json"),
+                    _fact_business_attribute().model_dump(mode="json"),
+                ],
+            ),
+        ),
+        applied=None,
+        raw_technical_template=_technical_template(),
+        raw_audit_template=_audit_template(),
+        scd_type=scd_type,
+    )
+    rows = _attribute_records(projected)
+    business = next(row for row in rows if row["dimensional_attribute_name"] == "Customer Name")
+    assert business["dimensional_attribute_change_behavior"] == behavior
+    history = [row for row in rows if row["dimensional_attribute_name"] == "Effective From"]
+    assert len(history) == (1 if scd_type == "type_2" else 0)
+    assert all(row["dimensional_entity_name"] == "Customer Dimension" for row in history)

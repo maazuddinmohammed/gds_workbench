@@ -191,7 +191,8 @@ class OverviewTransaction:
         assert "workflow.mapping_object" in query
         assert "workflow.generated_code" in query
         assert "workflow.validation_group" in query
-        assert "attribute.attribute_inferred_data_type" in query
+        assert "workflow.attribute_enrichment" in query
+        assert "workflow.object_enrichment" in query
         assert "PARTITION BY run.model_workflow" in query
         assert "modeled_entity_type =" not in query
         assert parameters == (7, 18)

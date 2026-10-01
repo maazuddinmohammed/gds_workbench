@@ -159,7 +159,7 @@ class MetadataEnrichmentRepository:
     ) -> MetadataEnrichmentCompletion:
         documents = [item.model_dump(mode="json") for item in results]
         if (
-            len(results) > 10_200
+            len(results) > 30_200
             or len(json.dumps(documents, ensure_ascii=False).encode("utf-8")) > 24 * 1024 * 1024
         ):
             raise InvalidRequestError("The metadata enrichment result limit was exceeded.")

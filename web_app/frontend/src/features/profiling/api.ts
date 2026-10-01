@@ -115,6 +115,7 @@ export type ProfilingApi = ProfilingTransport
     | "readWorkflowRun"
     | "listWorkflowRunEvents"
     | "executeProfilingRun"
+    | "cancelWorkflowRun"
   >
   & Pick<ModelInputScopeApi, "listModelInputScope">;
 

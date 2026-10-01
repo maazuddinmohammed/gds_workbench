@@ -23,7 +23,7 @@ export interface ModelCollection {
 }
 
 export interface ModelSchemaDefinition { schema_name: string; description: string | null; }
-export type LogicalEntityScdType = "type_1" | "type_2";
+export type ModelEntityScdType = "type_1" | "type_2";
 
 export interface ModelDetail {
   model_id: number;
@@ -36,7 +36,8 @@ export interface ModelDetail {
   dimensional_schemas: ModelSchemaDefinition[];
   silver_model_naming_instructions: string | null;
   silver_model_audit_columns_template: unknown;
-  logical_entity_scd_type?: LogicalEntityScdType | null;
+  logical_entity_scd_type?: ModelEntityScdType | null;
+  dimensional_entity_scd_type?: ModelEntityScdType | null;
   gold_model_naming_instructions: string | null;
   gold_model_technical_columns_template: unknown;
   gold_model_audit_columns_template: unknown;
@@ -68,7 +69,8 @@ export type WorkflowLedgerState =
   | "running"
   | "results_available"
   | "completed_no_results"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 export type QualityWarningCode =
   | "scope_empty"
@@ -99,7 +101,7 @@ export interface ModelSectionState {
     | "assertions" | "analysis" | "conceptual" | "logical" | "dimensional" | "mapping"
     | "code-generation" | "validation";
   state: "available" | "ready" | "empty" | "not_run" | "queued" | "running"
-    | "completed" | "failed" | "results_available";
+    | "completed" | "failed" | "cancelled" | "results_available";
 }
 
 export interface CreateModelCommand {
@@ -109,7 +111,8 @@ export interface CreateModelCommand {
   dimensional_schemas: ModelSchemaDefinition[];
   silver_model_naming_instructions: string | null;
   silver_model_audit_columns_template: JsonObject | null;
-  logical_entity_scd_type: LogicalEntityScdType | null;
+  logical_entity_scd_type: ModelEntityScdType | null;
+  dimensional_entity_scd_type?: ModelEntityScdType | null;
   gold_model_naming_instructions: string | null;
   gold_model_technical_columns_template: JsonObject | null;
   gold_model_audit_columns_template: JsonObject | null;

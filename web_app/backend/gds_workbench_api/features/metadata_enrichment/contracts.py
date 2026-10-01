@@ -8,13 +8,20 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 type EnrichmentField = Literal[
-    "object_description", "attribute_description", "attribute_inferred_data_type"
+    "object_description",
+    "attribute_description",
+    "attribute_inferred_data_type",
+    "is_natural_key",
+    "is_primary_key",
+    "is_nullable",
+    "is_pii",
 ]
 type EnrichmentStatus = Literal[
     "applied", "existing", "locked", "inactive", "changed", "unavailable", "inconclusive"
 ]
 type EvidenceMethod = Literal[
     "agent_description",
+    "agent_key_inference",
     "source_comment",
     "registered_type",
     "source_schema",
@@ -66,6 +73,10 @@ class EnrichmentAttribute(EnrichmentContract):
     attribute_data_type: str
     attribute_inferred_data_type: str | None
     attribute_description: str | None = Field(repr=False)
+    is_natural_key: bool | None = None
+    is_primary_key: bool | None = None
+    is_nullable: bool | None = None
+    is_pii: bool | None = None
     attribute_ordinal_position: int = Field(gt=0)
     is_active: bool
     is_locked: bool
@@ -133,16 +144,23 @@ class EnrichmentFieldResult(EnrichmentContract):
             raise ValueError("Only applied fields may include a value")
         if (
             self.status == "applied"
-            and self.field_name == "attribute_inferred_data_type"
+            and self.field_name in ("attribute_inferred_data_type",)
             and self.applied_value is None
         ):
             raise ValueError("An applied inferred type must contain a value")
         if (
-            self.field_name == "attribute_inferred_data_type"
+            self.field_name in ("attribute_inferred_data_type",)
             and self.applied_value is not None
             and (len(self.applied_value) > 100 or re.search(r"[\x00-\x1f\x7f]", self.applied_value))
         ):
             raise ValueError("The inferred type is invalid")
+        if self.field_name in (
+            "is_natural_key",
+            "is_primary_key",
+            "is_nullable",
+            "is_pii",
+        ) and self.applied_value not in (None, "true", "false"):
+            raise ValueError("Key, nullability and PII findings must be boolean or unknown")
         return self
 
 
@@ -152,5 +170,5 @@ class MetadataEnrichmentCompletion(EnrichmentContract):
     model_revision: int = Field(gt=0)
     workflow_run_state: Literal["completed", "completed_with_repair"]
     warning_count: int = Field(ge=0)
-    result_count: int = Field(ge=0, le=10_200)
+    result_count: int = Field(ge=0, le=30_200)
     counts: dict[EnrichmentStatus, int]

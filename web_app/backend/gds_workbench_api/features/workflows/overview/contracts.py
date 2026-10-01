@@ -41,6 +41,7 @@ type ModelSectionState = Literal[
     "running",
     "completed",
     "failed",
+    "cancelled",
     "results_available",
 ]
 type WorkflowRunState = Literal[
@@ -49,6 +50,7 @@ type WorkflowRunState = Literal[
     "completed",
     "completed_with_repair",
     "failed",
+    "cancelled",
 ]
 type WorkflowLedgerState = Literal[
     "empty",
@@ -59,6 +61,7 @@ type WorkflowLedgerState = Literal[
     "results_available",
     "completed_no_results",
     "failed",
+    "cancelled",
 ]
 type QualityWarningCode = Literal[
     "scope_empty",

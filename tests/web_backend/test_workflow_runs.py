@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
+import pytest
 from fastapi.testclient import TestClient
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.configuration import AuthMode
@@ -22,6 +23,8 @@ from gds_workbench_api.main import create_app
 
 
 class StaticWorkflowRunService:
+    terminal_state: RunState = "completed"
+
     async def list_runs(
         self,
         principal: RequestPrincipal,
@@ -51,7 +54,7 @@ class StaticWorkflowRunService:
                     modeled_entity_type=None,
                     selected_scope_count=8,
                     requested_batch_id="10428",
-                    workflow_run_state="completed",
+                    workflow_run_state=self.terminal_state,
                     actor_display_name="Maaz",
                     created_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
                     started_at=datetime(2026, 8, 24, 14, 0, 1, tzinfo=UTC),
@@ -78,7 +81,7 @@ class StaticWorkflowRunService:
             modeled_entity_type=None,
             selected_scope_count=8,
             requested_batch_id="10428",
-            workflow_run_state="completed",
+            workflow_run_state=self.terminal_state,
             actor_display_name="Maaz",
             created_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
             started_at=datetime(2026, 8, 24, 14, 0, 1, tzinfo=UTC),
@@ -136,14 +139,16 @@ class StaticWorkflowRunService:
         )
 
 
-def _app() -> TestClient:
+def _app(state: RunState = "completed") -> TestClient:
+    service = StaticWorkflowRunService()
+    service.terminal_state = state
     app = create_app(
         identity_provider=IdentityProvider(
             AuthMode.DEV,
             local_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
             local_principal_object_id=UUID("22222222-2222-2222-2222-222222222222"),
         ),
-        workflow_run_service=StaticWorkflowRunService(),
+        workflow_run_service=service,
     )
     return TestClient(app)
 
@@ -190,9 +195,12 @@ def test_run_detail_and_incremental_events_are_separate_bounded_reads() -> None:
     }
 
 
-def test_event_stream_supports_ordered_reconnect_and_stops_for_terminal_run() -> None:
+@pytest.mark.parametrize("state", ["completed", "cancelled"])
+def test_event_stream_supports_ordered_reconnect_and_stops_for_terminal_run(
+    state: RunState,
+) -> None:
     with (
-        _app() as client,
+        _app(state) as client,
         client.stream(
             "GET",
             "/api/v1/tenants/7/models/18/runs/1048/events/stream",

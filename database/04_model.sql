@@ -55,6 +55,7 @@ CREATE TABLE model.model (
     dimensional_schemas JSONB NOT NULL DEFAULT '[]'::JSONB,
     default_mapping_source_system_id BIGINT,
     logical_entity_scd_type VARCHAR(10),
+    dimensional_entity_scd_type VARCHAR(10),
     silver_model_naming_instructions TEXT,
     silver_model_audit_columns_template JSONB,
     gold_model_naming_instructions TEXT,
@@ -85,6 +86,9 @@ CREATE TABLE model.model (
     CONSTRAINT ck_model_logical_schemas CHECK (model.valid_schema_list(logical_schemas)),
     CONSTRAINT ck_model_logical_entity_scd_type CHECK (
         logical_entity_scd_type IS NULL OR logical_entity_scd_type IN ('type_1', 'type_2')
+    ),
+    CONSTRAINT ck_model_dimensional_entity_scd_type CHECK (
+        dimensional_entity_scd_type IS NULL OR dimensional_entity_scd_type IN ('type_1', 'type_2')
     ),
     CONSTRAINT ck_model_dimensional_schemas CHECK (model.valid_schema_list(dimensional_schemas)),
     CONSTRAINT ck_model_silver_naming_instructions CHECK (

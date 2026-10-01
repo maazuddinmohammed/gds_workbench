@@ -44,14 +44,16 @@ test('columns preserve identity and draft labels never claim staging',async()=>{
 });
 test('Model settings owned by the web app remain visible and read-only in the editor', async () => {
  const root=workspace();state(root,{model:{id:7,name:'Sales'}});
- const row={model_name:'Sales',model_purpose:'Customer reporting',logical_entity_scd_type:'type_2'};
+ const row={model_name:'Sales',model_purpose:'Customer reporting',logical_entity_scd_type:'type_2',dimensional_entity_scd_type:'type_1'};
  const definition=dataset('model_details',[],[row]);
- definition.schema={type:'object','x-gds-change-set-eligible':true,properties:{model_name:{type:'string'},model_purpose:{type:'string'},logical_entity_scd_type:{anyOf:[{type:'string',enum:['type_1','type_2']},{type:'null'}]}}};
+ definition.schema={type:'object','x-gds-change-set-eligible':true,properties:{model_name:{type:'string'},model_purpose:{type:'string'},logical_entity_scd_type:{anyOf:[{type:'string',enum:['type_1','type_2']},{type:'null'}]},dimensional_entity_scd_type:{anyOf:[{type:'string',enum:['type_1','type_2']},{type:'null'}]}}};
  snapshot(root,'model',[definition]);root.directory('model-change-set').file('model_details.json',JSON.stringify([row]));
  const {api,document,dom}=await app(root);await api.switchArea('model','model_details');
  document.querySelector('[data-source="changeset"]').click();document.querySelector('[data-row-action]').click();document.querySelector('[data-action="edit-detail-draft"]').click();
  const scd=document.querySelector('[data-row-field="logical_entity_scd_type"]');
  assert.equal(scd.value,'"type_2"');assert.equal(scd.disabled,true);
+ const dimensional=document.querySelector('[data-row-field="dimensional_entity_scd_type"]');
+ assert.equal(dimensional.value,'"type_1"');assert.equal(dimensional.disabled,true);
  assert.match(scd.closest('.row-editor-field').textContent,/Model settings/);
  assert.equal(document.querySelector('[data-row-field="model_purpose"]').disabled,false);
  dom.window.close();

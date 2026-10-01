@@ -232,6 +232,11 @@ describe("Model Profiling", () => {
       ))).toHaveLength(2);
     });
     expect(await within(drawer).findByText("Running")).toBeVisible();
+    await user.click(within(drawer).getByRole("button", { name: "Cancel run" }));
+    expect(await within(drawer).findByText("Cancelled")).toBeVisible();
+    expect(within(drawer).queryByRole("button", { name: "Cancel run" })).not.toBeInTheDocument();
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/tenants/7/models/18/runs/1049/cancel",
+      expect.objectContaining({ method: "POST" }));
   });
 
   it("keeps empty server results explicit", async () => {
@@ -270,6 +275,7 @@ function profilingFetchStub(options: {
 } = {}): ReturnType<typeof vi.fn<typeof fetch>> {
   let runCreated = false;
   let runExecuted = false;
+  let runCancelled = false;
   let executeAttempts = 0;
 
   return vi.fn<typeof fetch>(async (input, init) => {
@@ -295,7 +301,7 @@ function profilingFetchStub(options: {
     if (url.startsWith("/api/v1/tenants/7/models/18/runs?workflow=profiling")) {
       return jsonResponse({
         items: runCreated
-          ? [profilingRunPayload(1049, runExecuted ? "running" : "queued")]
+          ? [profilingRunPayload(1049, runCancelled ? "cancelled" : runExecuted ? "running" : "queued")]
           : [profilingRunPayload(1048, "completed")],
         next_cursor: null,
       });
@@ -310,6 +316,10 @@ function profilingFetchStub(options: {
         prompt_snapshot_count: 0,
         created_at: "2026-08-24T15:00:00Z",
       }, 201);
+    }
+    if (url === "/api/v1/tenants/7/models/18/runs/1049/cancel" && init?.method === "POST") {
+      runCancelled = true;
+      return jsonResponse({ changed: true, workflow_run_id: 1049, workflow_run_state: "cancelled", completed_at: "2026-10-01T14:00:00Z" });
     }
     if (url === "/api/v1/tenants/7/models/18/profiling/runs/1049/execute" && init?.method === "POST") {
       executeAttempts += 1;
@@ -327,7 +337,7 @@ function profilingFetchStub(options: {
     const runMatch = url.match(/^\/api\/v1\/tenants\/7\/models\/18\/runs\/(1048|1049)$/);
     if (runMatch) {
       const runId = Number(runMatch[1]);
-      const state = runId === 1049 ? (runExecuted ? "running" : "queued") : "completed";
+      const state = runId === 1049 ? (runCancelled ? "cancelled" : runExecuted ? "running" : "queued") : "completed";
       return jsonResponse({
         ...profilingRunPayload(runId, state),
         correlation_id: runId === 1049
@@ -531,7 +541,7 @@ const profilingDetailPayload = {
 
 function profilingRunPayload(
   workflowRunId: number,
-  workflowRunState: "queued" | "running" | "completed",
+  workflowRunState: "queued" | "running" | "completed" | "cancelled",
 ) {
   return {
     workflow_run_id: workflowRunId,

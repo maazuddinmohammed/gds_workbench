@@ -96,6 +96,10 @@ async def test_enrichment_results_are_readable_without_lock_and_hide_reowned_lab
             "object_description": 0,
             "attribute_description": 0,
             "attribute_inferred_data_type": 1,
+            "is_natural_key": 0,
+            "is_primary_key": 0,
+            "is_nullable": 0,
+            "is_pii": 0,
         }
         assert first.next_offset == 1
         page = await service.read_results(
@@ -135,7 +139,9 @@ async def test_enrichment_results_are_readable_without_lock_and_hide_reowned_lab
             model_id=context.model_id,
             workflow_run_id=run_id,
         )
-        historical = next(row for row in reowned.results if row.result_id == applied.result_id)
+        historical = next(
+            row for row in reowned.results if row.result_id == applied.result_id
+        )
         assert historical.applied_value == "bigint"
         assert (
             historical.object_schema,

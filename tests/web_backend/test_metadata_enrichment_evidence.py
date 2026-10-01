@@ -97,7 +97,8 @@ class _Executor:
         default_factory=lambda: dict[str, tuple[JsonValue, ...]](), repr=False
     )
     transform: (
-        Callable[[str, DatabricksSqlExecutionResult], DatabricksSqlExecutionResult] | None
+        Callable[[str, DatabricksSqlExecutionResult], DatabricksSqlExecutionResult]
+        | None
     ) = None
     calls: list[tuple[str, str, tuple[str, ...]]] = field(
         default_factory=lambda: list[tuple[str, str, tuple[str, ...]]]()
@@ -129,7 +130,10 @@ class _Executor:
                 raise data_type
             result = DatabricksSqlExecutionResult(
                 columns=("column_name", "full_data_type", "comment"),
-                rows=tuple((column, data_type, "Synthetic schema comment.") for column in columns),
+                rows=tuple(
+                    (column, data_type, "Synthetic schema comment.")
+                    for column in columns
+                ),
                 rows_truncated=False,
                 cells_truncated=False,
             )
@@ -137,7 +141,8 @@ class _Executor:
             result = DatabricksSqlExecutionResult(
                 columns=tuple(f"c{index}" for index in range(len(columns))),
                 rows=tuple(
-                    tuple(value for _ in columns) for value in self.samples.get(catalog, ())
+                    tuple(value for _ in columns)
+                    for value in self.samples.get(catalog, ())
                 ),
                 rows_truncated=False,
                 cells_truncated=False,
@@ -148,9 +153,13 @@ class _Executor:
 def _reader(executor: _Executor | None) -> MetadataEvidenceReader:
     async def connection_loader(connection_id: int) -> DatabricksSqlConnection:
         assert connection_id == 1
-        return DatabricksSqlConnection("synthetic.invalid", "/synthetic", "synthetic-test-value")
+        return DatabricksSqlConnection(
+            "synthetic.invalid", "/synthetic", "synthetic-test-value"
+        )
 
-    return MetadataEvidenceReader(executor=executor, connection_loader=connection_loader)
+    return MetadataEvidenceReader(
+        executor=executor, connection_loader=connection_loader
+    )
 
 
 @pytest.mark.asyncio
@@ -159,7 +168,9 @@ async def test_actual_source_schema_overrides_registered_metadata(
     registered: str,
 ) -> None:
     item = _object(registered=registered)
-    executor = _Executor({"source_catalog": "DECIMAL(18,2)", "bronze_catalog": "STRING"})
+    executor = _Executor(
+        {"source_catalog": "DECIMAL(18,2)", "bronze_catalog": "STRING"}
+    )
     reader = _reader(executor)
     await reader.collect((item,))
     assert reader.infer_type(item, item.attributes[0]) == TypeEvidence(
@@ -198,7 +209,9 @@ async def test_unavailable_source_uses_registered_type_without_sampling(
     )
     reader = _reader(executor if connector_available else None)
     await reader.collect((item,))
-    assert reader.infer_type(item, item.attributes[0]) == TypeEvidence("INT", "registered_type")
+    assert reader.infer_type(item, item.attributes[0]) == TypeEvidence(
+        "INT", "registered_type"
+    )
     assert all(kind == "schema" for kind, _, _ in executor.calls)
 
 
@@ -211,19 +224,27 @@ async def test_leading_zero_source_identifiers_remain_string() -> None:
     )
     reader = _reader(executor)
     await reader.collect((item,))
-    assert reader.infer_type(item, item.attributes[0]) == TypeEvidence("STRING", "source_sample", 2)
+    assert reader.infer_type(item, item.attributes[0]) == TypeEvidence(
+        "STRING", "source_sample", 2
+    )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mask_location", ["target", "source"])
+@pytest.mark.parametrize("mask_location", ["target", "source", "model_pii"])
 async def test_masked_attributes_never_enter_sample_queries(mask_location: str) -> None:
     item = _object()
     attribute = item.attributes[0]
     if mask_location == "source":
         assert attribute.source is not None
         attribute = attribute.model_copy(
-            update={"source": attribute.source.model_copy(update={"is_masking_required": True})}
+            update={
+                "source": attribute.source.model_copy(
+                    update={"is_masking_required": True}
+                )
+            }
         )
+    elif mask_location == "model_pii":
+        attribute = attribute.model_copy(update={"is_pii": True})
     else:
         attribute = attribute.model_copy(update={"is_masking_required": True})
     item = item.model_copy(update={"attributes": (attribute,)})
@@ -240,7 +261,9 @@ async def test_masked_target_does_not_consume_cached_unmasked_source_samples() -
     masked_attribute = unmasked.attributes[0].model_copy(
         update={"attribute_id": 2_000, "is_masking_required": True}
     )
-    masked = unmasked.model_copy(update={"object_id": 21, "attributes": (masked_attribute,)})
+    masked = unmasked.model_copy(
+        update={"object_id": 21, "attributes": (masked_attribute,)}
+    )
     executor = _Executor(
         {"source_catalog": "STRING", "bronze_catalog": "STRING"},
         {"source_catalog": ("10", "20"), "bronze_catalog": ("10", "20")},
@@ -250,7 +273,9 @@ async def test_masked_target_does_not_consume_cached_unmasked_source_samples() -
     assert reader.infer_type(unmasked, unmasked.attributes[0]) == TypeEvidence(
         "BIGINT", "source_sample", 2
     )
-    assert reader.infer_type(masked, masked_attribute) == TypeEvidence("STRING", "source_schema")
+    assert reader.infer_type(masked, masked_attribute) == TypeEvidence(
+        "STRING", "source_schema"
+    )
 
 
 @pytest.mark.asyncio
@@ -265,7 +290,9 @@ async def test_ambiguous_source_falls_back_to_bronze(
     bronze_type: str, expected: TypeEvidence
 ) -> None:
     item = _object(source=False)
-    executor = _Executor({"bronze_catalog": bronze_type}, {"bronze_catalog": ("12", "34")})
+    executor = _Executor(
+        {"bronze_catalog": bronze_type}, {"bronze_catalog": ("12", "34")}
+    )
     reader = _reader(executor)
     await reader.collect((item,))
     assert reader.source_schema(item.attributes[0]) is None
@@ -279,8 +306,12 @@ async def test_wide_object_uses_bounded_complete_schema_and_sample_batches() -> 
     executor = _Executor({"bronze_catalog": "STRING"}, {"bronze_catalog": ("1", "2")})
     reader = _reader(executor)
     await reader.collect((item,))
-    schema_batches = [columns for kind, _, columns in executor.calls if kind == "schema"]
-    sample_batches = [columns for kind, _, columns in executor.calls if kind == "sample"]
+    schema_batches = [
+        columns for kind, _, columns in executor.calls if kind == "schema"
+    ]
+    sample_batches = [
+        columns for kind, _, columns in executor.calls if kind == "sample"
+    ]
     assert list(map(len, schema_batches)) == [50, 50, 1]
     assert list(map(len, sample_batches)) == [25, 25, 25, 25, 1]
     expected = {attribute.attribute_name for attribute in item.attributes}
@@ -297,7 +328,9 @@ async def test_wide_object_uses_bounded_complete_schema_and_sample_batches() -> 
 async def test_truncated_evidence_cannot_author_a_narrower_type(
     truncation: str,
 ) -> None:
-    def truncate(kind: str, result: DatabricksSqlExecutionResult) -> DatabricksSqlExecutionResult:
+    def truncate(
+        kind: str, result: DatabricksSqlExecutionResult
+    ) -> DatabricksSqlExecutionResult:
         if truncation == "schema_rows" and kind == "schema":
             return replace(result, rows_truncated=True)
         if truncation == "sample_cells" and kind == "sample":
@@ -333,16 +366,24 @@ async def test_truncated_schema_comment_is_not_used_as_a_complete_description() 
     schema = reader.source_schema(item.attributes[0])
     assert schema is not None and schema.comment is None
     # The bounded primitive type remains complete; the comment is omitted.
-    assert reader.infer_type(item, item.attributes[0]) == TypeEvidence("BIGINT", "source_schema")
+    assert reader.infer_type(item, item.attributes[0]) == TypeEvidence(
+        "BIGINT", "source_schema"
+    )
 
 
 @pytest.mark.asyncio
-async def test_legitimate_multiline_source_comment_is_retained_as_schema_evidence() -> None:
+async def test_legitimate_multiline_source_comment_is_retained_as_schema_evidence() -> (
+    None
+):
     comment = "Customer identifier.\nPreserve leading zeros.\tExternal reference."
 
-    def multiline(kind: str, result: DatabricksSqlExecutionResult) -> DatabricksSqlExecutionResult:
+    def multiline(
+        kind: str, result: DatabricksSqlExecutionResult
+    ) -> DatabricksSqlExecutionResult:
         if kind == "schema":
-            return replace(result, rows=tuple((row[0], row[1], comment) for row in result.rows))
+            return replace(
+                result, rows=tuple((row[0], row[1], comment) for row in result.rows)
+            )
         return result
 
     item = _object()
@@ -368,7 +409,9 @@ async def test_raw_samples_are_not_retained_in_reader_evidence() -> None:
     )
     reader = _reader(executor)
     await reader.collect((item,))
-    assert reader.infer_type(item, item.attributes[0]) == TypeEvidence("STRING", "source_sample", 1)
+    assert reader.infer_type(item, item.attributes[0]) == TypeEvidence(
+        "STRING", "source_sample", 1
+    )
     assert reader._samples and all(
         isinstance(value, TypeEvidence) for value in reader._samples.values()
     )

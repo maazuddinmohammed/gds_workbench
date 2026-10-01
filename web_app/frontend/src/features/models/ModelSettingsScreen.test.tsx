@@ -20,6 +20,7 @@ const model: ModelDetail = {
   default_max_turns: 11, default_validation_retry_count: 2, is_active: true, updated_at: "2026-09-27T00:00:00Z",
   default_mapping_source_system_id: null,
   logical_entity_scd_type: "type_2",
+  dimensional_entity_scd_type: "type_1",
 };
 const home: TenantHomeRecord = {
   tenant: { tenant_id: 7, tenant_code: "DATA", tenant_name: "Data", tenant_description: null, tenant_visibility: "private", effective_role: "architect" },
@@ -73,6 +74,23 @@ describe("Model Settings", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("saved at revision 9");
     const write = fetcher.mock.calls.find(([, init]) => init?.method === "PUT");
     expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({ logical_entity_scd_type: scdType || null, expected_model_revision: 8 });
+  });
+
+  it.each(["type_1", "type_2", ""] as const)("saves independent Dimensional SCD policy: %s", async (scdType) => {
+    const { fetcher } = setup();
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "Definition" });
+    await user.click(screen.getByText("Gold settings", { exact: true }));
+    const select = screen.getByRole("combobox", { name: "Dimensional entity SCD type" });
+    expect(select).toHaveValue("type_1");
+    await user.selectOptions(select, scdType);
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("saved at revision 9");
+    const write = fetcher.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({
+      dimensional_entity_scd_type: scdType || null, logical_entity_scd_type: "type_2", expected_model_revision: 8,
+    });
+    expect(screen.getByRole("combobox", { name: "Dimensional entity SCD type" })).toHaveValue(scdType);
   });
 
   it("retains Dimensional context while moving between Definition and Prompts", async () => {

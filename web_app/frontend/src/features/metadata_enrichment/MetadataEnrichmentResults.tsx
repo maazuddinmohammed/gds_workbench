@@ -8,13 +8,14 @@ const FIELD_NAMES: Record<EnrichmentField, string> = {
   object_description: "Object description",
   attribute_description: "Attribute description",
   attribute_inferred_data_type: "Inferred type",
+  is_natural_key: "Natural key", is_primary_key: "Primary key", is_nullable: "Nullable", is_pii: "PII",
 };
 const STATUS_NAMES: Record<EnrichmentStatus, string> = {
-  applied: "Filled", existing: "Preserved", locked: "Locked", inactive: "Inactive",
+  applied: "Saved", existing: "Preserved", locked: "Locked", inactive: "Inactive",
   changed: "Changed since run started", unavailable: "Evidence unavailable", inconclusive: "Inconclusive",
 };
 const EVIDENCE_NAMES: Record<EnrichmentEvidence, string> = {
-  agent_description: "Agent description", source_comment: "Source comment",
+  agent_key_inference: "Agent attribute inference", agent_description: "Agent description", source_comment: "Source comment",
   registered_type: "Registered metadata type", source_schema: "Source schema",
   bronze_schema: "Bronze schema", source_sample: "Source samples", bronze_sample: "Bronze samples",
   none: "No evidence used",
@@ -39,15 +40,16 @@ export function MetadataEnrichmentResults({ api, tenantId, modelId, runId }: {
   const unresolved = (page.counts.unavailable ?? 0) + (page.counts.inconclusive ?? 0);
   return (
     <section className="enrichment-results" aria-label="Metadata enrichment results" aria-busy={query.isFetching}>
-      <h3>{filled ? `${filled} missing fields filled` : "No missing values filled"}</h3>
-      <dl className="enrichment-totals" aria-label="Fields filled across this run">
+      <h3>{filled ? `${filled} fields saved` : "No values saved"}</h3>
+      <dl className="enrichment-totals" aria-label="Fields saved across this run">
         <div><dt>Object descriptions</dt><dd>{page.applied_field_counts.object_description}</dd></div>
         <div><dt>Attribute descriptions</dt><dd>{page.applied_field_counts.attribute_description}</dd></div>
         <div><dt>Inferred types</dt><dd>{page.applied_field_counts.attribute_inferred_data_type}</dd></div>
+        {(["is_natural_key", "is_primary_key", "is_nullable", "is_pii"] as const).map((field) => <div key={field}><dt>{FIELD_NAMES[field]}</dt><dd>{page.applied_field_counts[field]}</dd></div>)}
       </dl>
       <p>{page.counts.existing ?? 0} preserved · {page.counts.locked ?? 0} locked · {unresolved} unresolved</p>
-      {unresolved > 0 ? <p className="inline-warning">Unresolved fields remain empty because evidence was unavailable or inconclusive.</p> : null}
-      {(page.counts.changed ?? 0) > 0 ? <p className="inline-warning">{page.counts.changed} fields were skipped because physical metadata changed during the run.</p> : null}
+      {unresolved > 0 ? <p className="inline-warning">Unresolved fields remain unchanged because evidence was unavailable or inconclusive.</p> : null}
+      {(page.counts.changed ?? 0) > 0 ? <p className="inline-warning">{page.counts.changed} fields were skipped because metadata or Model enrichment changed during the run.</p> : null}
       {(page.counts.inactive ?? 0) > 0 ? <p>{page.counts.inactive} inactive fields skipped.</p> : null}
       <p className="enrichment-history-note">Saved values from Run {runId} · Model revision {page.model_revision}. Names and storage types reflect current metadata.</p>
       {page.total_count > 0 ? <>
@@ -65,7 +67,7 @@ export function MetadataEnrichmentResults({ api, tenantId, modelId, runId }: {
                 <td><details>
                   <summary>Inspect {FIELD_NAMES[result.field_name].toLowerCase()}</summary>
                   <dl>
-                    {result.applied_value !== null ? <div><dt>{result.field_name === "attribute_inferred_data_type" ? "Inferred type filled by this run" : "Description filled by this run"}</dt><dd className="enrichment-value">{result.applied_value}</dd></div> : <div><dt>Value filled by this run</dt><dd>None — {STATUS_NAMES[result.status].toLowerCase()}</dd></div>}
+                    {result.applied_value !== null ? <div><dt>{result.field_name === "attribute_inferred_data_type" ? "Inferred type filled by this run" : "Value saved by this run"}</dt><dd className="enrichment-value">{result.applied_value}</dd></div> : <div><dt>Value filled by this run</dt><dd>{result.status === "applied" ? "Unknown / cleared" : `None — ${STATUS_NAMES[result.status].toLowerCase()}`}</dd></div>}
                     {result.attribute_id !== null ? <div><dt>Current storage type</dt><dd>{result.storage_type ?? "Unavailable"}</dd></div> : null}
                     <div><dt>Evidence</dt><dd>{EVIDENCE_NAMES[result.evidence_method]}{result.sample_count > 0 ? ` · ${result.sample_count} samples` : ""}</dd></div>
                     <div><dt>Record reference</dt><dd>Object {result.object_id}{result.attribute_id !== null ? ` · Attribute ${result.attribute_id}` : ""}</dd></div>

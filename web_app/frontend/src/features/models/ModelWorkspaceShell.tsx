@@ -16,8 +16,8 @@ const stages = [
   { id: "settings", label: "Settings", to: "/tenants/$tenantId/models/$modelId/settings" },
   { id: "scope", label: "Input scope", to: "/tenants/$tenantId/models/$modelId/input-scope", accessibleName: "Model Input Scope" },
   { id: "assertions", label: "Assertions", to: "/tenants/$tenantId/models/$modelId/assertions" },
-  { id: "metadata-enrichment", label: "Enrichment", to: "/tenants/$tenantId/models/$modelId/metadata-enrichment", accessibleName: "Metadata enrichment" },
   { id: "profiling", label: "Profiling", to: "/tenants/$tenantId/models/$modelId/profiling" },
+  { id: "metadata-enrichment", label: "Enrichment", to: "/tenants/$tenantId/models/$modelId/metadata-enrichment", accessibleName: "Metadata enrichment" },
   { id: "analysis", label: "Analysis", to: "/tenants/$tenantId/models/$modelId/analysis" },
   { id: "conceptual", label: "Conceptual", to: "/tenants/$tenantId/models/$modelId/conceptual" },
   { id: "logical", label: "Logical", to: "/tenants/$tenantId/models/$modelId/logical" },
@@ -50,7 +50,7 @@ export function ModelWorkspaceShell({ api, model, activeStage, tenantLock, lockC
   }, [client, model.model_id, model.model_revision, model.tenant_id]);
   const statusLabels: Record<ModelSectionState["state"], string> = {
     available: "Available", ready: "Ready", empty: "Not set", not_run: "Not run",
-    queued: "Queued", running: "Running", completed: "Completed", failed: "Failed",
+    queued: "Queued", running: "Running", completed: "Completed", failed: "Failed", cancelled: "Cancelled",
     results_available: "Results available",
   };
   const currentStates = !overview.isError && overview.data?.model_revision === model.model_revision

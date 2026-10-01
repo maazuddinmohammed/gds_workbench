@@ -77,6 +77,7 @@ export type ValidationApi = ValidationTransport & ModelRecordReviewApi
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"
+  | "cancelWorkflowRun"
     | "createWorkflowRun"
     | "executeValidationRun"
     | "listWorkflowRunEvents"

@@ -121,6 +121,7 @@ def _complete_model_payload() -> dict[str, object]:
         "default_validation_retry_count": 2,
         "default_mapping_source_system_id": 32,
         "logical_entity_scd_type": "type_2",
+        "dimensional_entity_scd_type": "type_1",
     }
 
 
@@ -346,6 +347,7 @@ async def test_database_create_model_authorizes_lock_and_passes_full_identity_co
         2,
         32,
         "type_2",
+        "type_1",
     )
 
 
@@ -474,6 +476,7 @@ async def test_revision_commands_precheck_path_tenant_and_call_only_governed_fun
         2,
         32,
         "type_2",
+        "type_1",
     )
     assert archive_call == ("archive", identity + (18, 5))
 
@@ -486,6 +489,8 @@ async def test_revision_commands_precheck_path_tenant_and_call_only_governed_fun
         {"default_agent_sdk_code": ""},
         {"default_mapping_source_system_id": 0},
         {"default_mapping_source_system_id": True},
+        {"dimensional_entity_scd_type": "type_3"},
+        {"dimensional_entity_scd_type": True},
         {"logical_entity_scd_type": "type_3"},
         {"logical_entity_scd_type": "SCD2"},
         {"logical_entity_scd_type": 2},

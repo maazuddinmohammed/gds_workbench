@@ -103,6 +103,10 @@ class MappingRunPlan(_FrozenModel):
 
 
 class MappingPhysicalAttribute(_FrozenModel):
+    is_natural_key: bool | None = None
+    is_primary_key: bool | None = None
+    is_nullable: bool | None = None
+    is_pii: bool | None = None
     attribute_id: int = Field(gt=0)
     attribute_name: str = Field(min_length=1, max_length=400)
     attribute_data_type: str = Field(min_length=1, max_length=100)
@@ -278,6 +282,7 @@ class MappingSource(_FrozenModel):
 class MappingAuthoringPolicy(_FrozenModel):
     model_name: str = Field(min_length=1, max_length=255)
     logical_entity_scd_type: Literal["type_1", "type_2"] | None = None
+    dimensional_entity_scd_type: Literal["type_1", "type_2"] | None = None
     naming_instructions: str | None = Field(default=None, repr=False)
     audit_columns_template: JsonObject | None = Field(default=None, repr=False)
     technical_columns_template: JsonObject | None = Field(default=None, repr=False)

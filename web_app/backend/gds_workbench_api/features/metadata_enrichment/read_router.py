@@ -26,7 +26,7 @@ def create_metadata_enrichment_read_router(
         model_id: Annotated[int, Path(gt=0)],
         workflow_run_id: Annotated[int, Path(gt=0)],
         limit: Annotated[int, Query(ge=1, le=200)] = 100,
-        offset: Annotated[int, Query(ge=0, le=10200)] = 0,
+        offset: Annotated[int, Query(ge=0, le=30200)] = 0,
         *,
         principal: RequestPrincipal = Depends(authenticate),
     ) -> MetadataEnrichmentResultPage:

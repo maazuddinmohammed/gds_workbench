@@ -24,6 +24,7 @@ import {
   stageLabel,
 } from "./shared";
 import { useProfilingRunEvents } from "./useProfilingRunEvents";
+import { CancelWorkflowRun } from "../workflows/CancelWorkflowRun";
 import { WorkflowTokenUsage } from "../workflows/WorkflowTokenUsage";
 
 export function ProfilingRuns({
@@ -114,6 +115,7 @@ export function ProfilingRuns({
                 <option value="completed">Completed</option>
                 <option value="completed_with_repair">Completed with repair</option>
                 <option value="failed">Failed</option>
+                <option value="cancelled">Cancelled</option>
               </select>
             </label>
           )}
@@ -230,6 +232,15 @@ export function ProfilingRunDrawer({
             <Fact label="Batch ID" value={run.requested_batch_id ?? "Not used"} />
           </dl>
           <WorkflowTokenUsage usage={run.token_usage} />
+          <CancelWorkflowRun key={runId} api={api} tenantId={tenantId} modelId={model.model_id}
+            run={run} hasTenantLock={hasTenantLock} onCancelled={async () => {
+              await Promise.all([
+                runQuery.refetch(), eventsQuery.refetch(),
+                queryClient.invalidateQueries({ queryKey: profilingQueryKeys.runs(tenantId, model.model_id) }),
+                queryClient.invalidateQueries({ queryKey: ["model-overview", tenantId, model.model_id] }),
+                queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
+              ]);
+            }} />
           {run.workflow_run_state === "queued" ? (
             <div className="queued-run-action">
               <p>Creation does not execute Profiling. Start this queued run explicitly.</p>

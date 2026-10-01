@@ -32,6 +32,8 @@ export interface ObjectCatalogSummary {
   is_locked: boolean;
 }
 export interface ObjectAttribute {
+  enrichment?: { is_natural_key: boolean | null; is_primary_key: boolean | null; is_nullable: boolean | null; is_pii: boolean | null } | null;
+  profile?: Record<string, number | string | null> | null;
   attribute_id: number;
   review_revision: string;
   attribute_name: string;

@@ -2508,12 +2508,6 @@ BEGIN
     IF v_run.actor_principal_id <> v_decision.principal_id THEN
         RAISE EXCEPTION 'workflow_run_owner_mismatch';
     END IF;
-    SELECT * INTO v_decision FROM security.authorize_tenant_operation(
-        p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
-        v_run.tenant_id, 'tenant_metadata_write');
-    IF NOT coalesce(v_decision.authorized, FALSE) THEN
-        RAISE EXCEPTION 'metadata_enrichment_denied';
-    END IF;
     IF v_run.model_workflow <> 'metadata_enrichment'
        OR v_run.workflow_run_state <> 'running' THEN
         RAISE EXCEPTION 'metadata_enrichment_run_not_running';
@@ -2568,6 +2562,8 @@ BEGIN
          WHERE selection.workflow_run_id = p_workflow_run_id
     ), objects AS MATERIALIZED (
         SELECT object.*, lower(btrim(zone.zone_code)) AS zone_code,
+               enriched.object_description AS model_object_description,
+               coalesce(enriched.is_locked, FALSE) AS model_is_locked,
                connection.tenant_id, tenant.tenant_catalog, system.system_code,
                jsonb_build_object('tenant_code', physical_tenant.tenant_code,
                    'system_code', system.system_code, 'connection_code', connection.connection_code,
@@ -2604,7 +2600,7 @@ BEGIN
                             'schema', object.object_schema, 'table', object.object_name)
                    END
                END AS relation,
-               jsonb_build_object('object', to_jsonb(object),
+               jsonb_build_object('object', to_jsonb(object), 'enrichment', to_jsonb(enriched),
                    'connection', to_jsonb(connection), 'tenant', to_jsonb(tenant),
                    'system', to_jsonb(system), 'zone', to_jsonb(zone),
                    'gds_connection', to_jsonb(gds), 'physical_tenant', to_jsonb(physical_tenant),
@@ -2618,6 +2614,8 @@ BEGIN
           JOIN reference.system_type AS system_type USING (system_type_id)
           JOIN reference.connection_type AS connection_type USING (connection_type_id)
           LEFT JOIN core.connection AS gds ON gds.connection_id = tenant.gds_connection_id
+          LEFT JOIN workflow.object_enrichment AS enriched ON enriched.model_id = v_run.model_id
+              AND enriched.object_id = object.object_id
          WHERE object.object_id IN (SELECT object_id FROM selected)
             OR object.object_id IN (
                 SELECT mapping.source_object_id FROM core.ingestion_object_mapping AS mapping
@@ -2644,6 +2642,12 @@ BEGIN
          WHERE attribute_mapping.target_object_id IN (SELECT object_id FROM selected)
     ), attributes AS MATERIALIZED (
         SELECT attribute.*, object.zone_code,
+               enriched.attribute_description AS model_attribute_description,
+               enriched.attribute_inferred_data_type AS model_inferred_data_type,
+               enriched.is_natural_key AS model_is_natural_key,
+               enriched.is_primary_key, enriched.is_nullable, enriched.is_pii,
+               coalesce(enriched.is_locked, FALSE) AS model_is_locked,
+               to_jsonb(enriched) AS enrichment_baseline,
                CASE WHEN profile.attribute_id IS NOT NULL THEN jsonb_build_object(
                    'profiled_at', profile.updated_time,
                    'row_scope', CASE WHEN profile_run.workflow_run_id IS NOT NULL
@@ -2663,6 +2667,8 @@ BEGIN
                          THEN nullif(btrim(attribute.fc_attribute_name), '')
                     ELSE attribute.attribute_name END AS relation_column
           FROM core.attribute AS attribute JOIN objects AS object USING (object_id)
+          LEFT JOIN workflow.attribute_enrichment AS enriched ON enriched.model_id = v_run.model_id
+              AND enriched.attribute_id = attribute.attribute_id
           LEFT JOIN workflow.attribute_profile AS profile ON profile.model_id = v_run.model_id
               AND profile.object_id = attribute.object_id AND profile.attribute_id = attribute.attribute_id
           LEFT JOIN application.workflow_run AS profile_run ON profile_run.workflow_run_id = profile.workflow_run_id
@@ -2676,8 +2682,8 @@ BEGIN
     )
     SELECT coalesce(jsonb_agg(jsonb_build_object(
                'object_id', object.object_id, 'object_name', object.object_name,
-               'object_schema', object.object_schema, 'object_description', object.object_description,
-               'is_active', object.is_active, 'is_locked', object.is_locked,
+               'object_schema', object.object_schema, 'object_description', object.model_object_description,
+               'is_active', object.is_active, 'is_locked', object.model_is_locked,
                'zone_code', object.zone_code, 'source_tenant_id', object.source_tenant_id,
                'tenant_id', object.tenant_id, 'tenant_catalog', object.tenant_catalog,
                'system_code', object.system_code, 'connection_id', object.connection_id,
@@ -2697,18 +2703,20 @@ BEGIN
                    'gds_context', CASE WHEN object.zone_code = 'source' THEN '[]'::JSONB
                        ELSE jsonb_build_array(object.gds_context) END,
                    'object_context', jsonb_build_array(object.physical_key || jsonb_build_object(
-                       'object_description', object.object_description, 'zone_code', object.zone_code)),
+                       'object_description', object.model_object_description, 'zone_code', object.zone_code)),
                    'object_attribute_context', jsonb_build_array(object.physical_key || jsonb_build_object(
                        'selected_attribute_names', (SELECT coalesce(jsonb_agg(attribute.attribute_name
                            ORDER BY attribute.attribute_ordinal_position, attribute.attribute_id), '[]'::JSONB)
                            FROM attributes AS attribute WHERE attribute.object_id = object.object_id AND attribute.is_active),
                        'attributes', (SELECT coalesce(jsonb_agg(jsonb_build_object(
                            'attribute_name', attribute.attribute_name,
-                           'attribute_description', attribute.attribute_description,
+                           'attribute_description', attribute.model_attribute_description,
                            'attribute_data_type', attribute.attribute_data_type,
-                           'attribute_inferred_data_type', attribute.attribute_inferred_data_type,
+                           'attribute_inferred_data_type', attribute.model_inferred_data_type,
                            'attribute_nullability', attribute.attribute_nullability,
-                           'is_natural_key', attribute.is_natural_key,
+                           'is_natural_key', attribute.model_is_natural_key,
+                           'is_primary_key', attribute.is_primary_key,
+                           'is_nullable', attribute.is_nullable, 'is_pii', attribute.is_pii,
                            'is_surrogate_key', attribute.is_surrogate_key,
                            'is_masking_required', attribute.is_masking_required,
                            'is_meta_data', attribute.is_meta_data, 'profile', attribute.profile
@@ -2729,10 +2737,13 @@ BEGIN
                    SELECT coalesce(jsonb_agg(jsonb_build_object(
                        'attribute_id', attribute.attribute_id, 'attribute_name', attribute.attribute_name,
                        'attribute_data_type', attribute.attribute_data_type,
-                       'attribute_inferred_data_type', attribute.attribute_inferred_data_type,
-                       'attribute_description', attribute.attribute_description,
+                       'attribute_inferred_data_type', attribute.model_inferred_data_type,
+                       'attribute_description', attribute.model_attribute_description,
                        'attribute_ordinal_position', attribute.attribute_ordinal_position,
-                       'is_active', attribute.is_active, 'is_locked', attribute.is_locked,
+                       'is_natural_key', attribute.model_is_natural_key,
+                       'is_primary_key', attribute.is_primary_key,
+                       'is_nullable', attribute.is_nullable, 'is_pii', attribute.is_pii,
+                       'is_active', attribute.is_active, 'is_locked', attribute.model_is_locked,
                        'is_masking_required', attribute.is_masking_required,
                        'relation_column', attribute.relation_column,
                        'source_candidate_count', attribute.source_candidate_count,
@@ -2779,8 +2790,8 @@ BEGIN
                     AND attribute.attribute_id = (target->>'attribute_id')::BIGINT
                 WHERE object.object_id = (target->>'object_id')::BIGINT
                   AND CASE WHEN target->>'attribute_id' IS NULL
-                      THEN application.metadata_object_review_revision(object) = target->>'expected_revision'
-                      ELSE application.metadata_attribute_review_revision(attribute, object) = target->>'expected_revision' END
+                      THEN workflow.enrichment_review_revision(v_run.model_id, object.object_id) = target->>'expected_revision'
+                      ELSE workflow.enrichment_review_revision(v_run.model_id, object.object_id, attribute.attribute_id) = target->>'expected_revision' END
             )
         ));
     RETURN v_context;
@@ -2869,7 +2880,7 @@ DECLARE
     v_warnings INTEGER;
 BEGIN
     IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 200
-       OR p_offset IS NULL OR p_offset NOT BETWEEN 0 AND 10200 THEN
+       OR p_offset IS NULL OR p_offset NOT BETWEEN 0 AND 30200 THEN
         RAISE EXCEPTION 'metadata_enrichment_invalid_page';
     END IF;
     SELECT run.* INTO v_run FROM application.workflow_run AS run
@@ -2892,7 +2903,11 @@ BEGIN
     SELECT jsonb_build_object(
         'object_description', count(*) FILTER (WHERE result.field_name = 'object_description'),
         'attribute_description', count(*) FILTER (WHERE result.field_name = 'attribute_description'),
-        'attribute_inferred_data_type', count(*) FILTER (WHERE result.field_name = 'attribute_inferred_data_type')
+        'attribute_inferred_data_type', count(*) FILTER (WHERE result.field_name = 'attribute_inferred_data_type'),
+        'is_natural_key', count(*) FILTER (WHERE result.field_name = 'is_natural_key'),
+        'is_primary_key', count(*) FILTER (WHERE result.field_name = 'is_primary_key'),
+        'is_nullable', count(*) FILTER (WHERE result.field_name = 'is_nullable'),
+        'is_pii', count(*) FILTER (WHERE result.field_name = 'is_pii')
     ) INTO v_applied_field_counts
       FROM application.metadata_enrichment_result AS result
      WHERE result.workflow_run_id = p_workflow_run_id AND result.status = 'applied';
@@ -2945,7 +2960,7 @@ DECLARE
     v_summary JSONB;
 BEGIN
     IF p_results IS NULL OR jsonb_typeof(p_results) <> 'array'
-       OR jsonb_array_length(p_results) > 10200 OR octet_length(p_results::TEXT) > 25165824
+       OR jsonb_array_length(p_results) > 30200 OR octet_length(p_results::TEXT) > 25165824
        OR p_expected_baseline_digest IS NULL OR p_expected_baseline_digest !~ '^[0-9a-f]{64}$'
        OR p_workflow_run_claim_token IS NULL THEN
         RAISE EXCEPTION 'metadata_enrichment_invalid_results';
@@ -2964,10 +2979,6 @@ BEGIN
         v_run.tenant_id, 'tenant_model_write');
     IF NOT coalesce(v_decision.authorized, FALSE) THEN RAISE EXCEPTION 'metadata_enrichment_denied'; END IF;
     IF v_run.actor_principal_id <> v_decision.principal_id THEN RAISE EXCEPTION 'workflow_run_owner_mismatch'; END IF;
-    SELECT * INTO v_decision FROM security.authorize_tenant_operation(
-        p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
-        v_run.tenant_id, 'tenant_metadata_write');
-    IF NOT coalesce(v_decision.authorized, FALSE) THEN RAISE EXCEPTION 'metadata_enrichment_denied'; END IF;
     IF v_run.model_workflow <> 'metadata_enrichment' THEN RAISE EXCEPTION 'metadata_enrichment_run_unavailable'; END IF;
     IF p_expected_model_revision IS NULL OR v_run.model_revision <> p_expected_model_revision
        OR v_run.current_model_revision <> p_expected_model_revision THEN
@@ -3030,13 +3041,13 @@ BEGIN
         RAISE EXCEPTION 'metadata_enrichment_duplicate_result';
     END IF;
     IF v_run.metadata_enrichment_description_targets IS NOT NULL THEN
-        IF jsonb_array_length(p_results) <> (SELECT sum(CASE WHEN target->>'attribute_id' IS NULL THEN 1 ELSE 2 END)
+        IF jsonb_array_length(p_results) <> (SELECT sum(CASE WHEN target->>'attribute_id' IS NULL THEN 1 ELSE 6 END)
               FROM jsonb_array_elements(v_run.metadata_enrichment_description_targets) AS target)
            OR EXISTS (
                SELECT target->'object_id', target->'attribute_id', field.name
                  FROM jsonb_array_elements(v_run.metadata_enrichment_description_targets) AS target
                  CROSS JOIN LATERAL (SELECT CASE WHEN target->>'attribute_id' IS NULL THEN 'object_description' ELSE 'attribute_description' END AS name
-                     UNION ALL SELECT 'attribute_inferred_data_type' WHERE target->>'attribute_id' IS NOT NULL) AS field
+                     UNION ALL SELECT name FROM (VALUES ('attribute_inferred_data_type'), ('is_natural_key'), ('is_primary_key'), ('is_nullable'), ('is_pii')) AS attribute_field(name) WHERE target->>'attribute_id' IS NOT NULL) AS field
                EXCEPT
                SELECT result->'object_id', result->'attribute_id', result->>'field_name'
                  FROM jsonb_array_elements(p_results) AS result
@@ -3052,7 +3063,7 @@ BEGIN
             SELECT attribute.object_id, attribute.attribute_id, field.name
               FROM core.attribute AS attribute
               JOIN application.workflow_run_object_selection AS selection USING (object_id)
-              CROSS JOIN (VALUES ('attribute_description'), ('attribute_inferred_data_type')) AS field(name)
+              CROSS JOIN (VALUES ('attribute_description'), ('attribute_inferred_data_type'), ('is_natural_key'), ('is_primary_key'), ('is_nullable'), ('is_pii')) AS field(name)
              WHERE selection.workflow_run_id = p_workflow_run_id
         ) AS expected
     ) OR EXISTS (
@@ -3062,7 +3073,7 @@ BEGIN
         SELECT jsonb_build_array(object -> 'object_id', attribute -> 'attribute_id', field.name)
           FROM jsonb_array_elements(v_context -> 'objects') AS object,
                jsonb_array_elements(object -> 'attributes') AS attribute,
-               (VALUES ('attribute_description'), ('attribute_inferred_data_type')) AS field(name)
+               (VALUES ('attribute_description'), ('attribute_inferred_data_type'), ('is_natural_key'), ('is_primary_key'), ('is_nullable'), ('is_pii')) AS field(name)
         EXCEPT
         SELECT jsonb_build_array(result -> 'object_id', result -> 'attribute_id', result -> 'field_name')
           FROM jsonb_array_elements(p_results) AS result
@@ -3082,9 +3093,9 @@ BEGIN
            OR jsonb_typeof(v_result -> 'field_name') <> 'string'
            OR jsonb_typeof(v_result -> 'status') <> 'string'
            OR jsonb_typeof(v_result -> 'evidence_method') <> 'string'
-           OR v_result ->> 'field_name' NOT IN ('object_description', 'attribute_description', 'attribute_inferred_data_type')
+           OR v_result ->> 'field_name' NOT IN ('object_description', 'attribute_description', 'attribute_inferred_data_type', 'is_natural_key', 'is_primary_key', 'is_nullable', 'is_pii')
            OR v_result ->> 'status' NOT IN ('applied', 'existing', 'locked', 'inactive', 'changed', 'unavailable', 'inconclusive')
-           OR v_result ->> 'evidence_method' NOT IN ('agent_description', 'source_comment', 'registered_type', 'source_schema', 'bronze_schema', 'source_sample', 'bronze_sample', 'none')
+           OR v_result ->> 'evidence_method' NOT IN ('agent_description', 'agent_key_inference', 'source_comment', 'registered_type', 'source_schema', 'bronze_schema', 'source_sample', 'bronze_sample', 'none')
            OR jsonb_typeof(v_result -> 'applied_value') NOT IN ('null', 'string') THEN
             RAISE EXCEPTION 'metadata_enrichment_invalid_result';
         END IF;
@@ -3098,13 +3109,13 @@ BEGIN
                OR (v_result ->> 'attribute_id') !~ '^[1-9][0-9]{0,17}$'))
            OR (v_result ->> 'status' <> 'applied' AND v_value IS NOT NULL)
            OR (v_result ->> 'status' = 'applied' AND (
-               (v_value IS NULL AND v_field = 'attribute_inferred_data_type')
+               (v_value IS NULL AND v_field IN ('attribute_inferred_data_type'))
                OR (v_value IS NOT NULL AND NOT reference.is_nonblank(v_value))
-               OR CASE WHEN v_field = 'attribute_inferred_data_type'
+               OR CASE WHEN v_field IN ('attribute_inferred_data_type')
                     THEN v_value ~ '[[:cntrl:]]'
                     ELSE translate(v_value, chr(9) || chr(10) || chr(13), '') ~ '[[:cntrl:]]' END
-               OR (v_field = 'attribute_inferred_data_type' AND length(v_value) > 100)
-               OR (v_field <> 'attribute_inferred_data_type' AND octet_length(v_value) > 2000))) THEN
+               OR (v_field IN ('attribute_inferred_data_type') AND length(v_value) > 100)
+               OR (v_field NOT IN ('attribute_inferred_data_type') AND octet_length(v_value) > 2000))) THEN
             RAISE EXCEPTION 'metadata_enrichment_invalid_value';
         END IF;
         v_attribute_id := (v_result ->> 'attribute_id')::BIGINT;
@@ -3112,18 +3123,24 @@ BEGIN
           JOIN application.workflow_run_object_selection AS selection USING (object_id)
          WHERE selection.workflow_run_id = p_workflow_run_id AND object.object_id = v_object_id;
         IF NOT FOUND THEN RAISE EXCEPTION 'metadata_enrichment_result_outside_scope'; END IF;
-        v_current := v_object.object_description;
-        v_status := CASE WHEN NOT v_object.is_active THEN 'inactive' WHEN v_object.is_locked THEN 'locked' END;
+        SELECT object_description INTO v_current FROM workflow.object_enrichment
+         WHERE model_id = v_run.model_id AND object_id = v_object_id;
+        v_status := CASE WHEN NOT v_object.is_active THEN 'inactive'
+            WHEN coalesce((SELECT is_locked FROM workflow.object_enrichment
+                WHERE model_id = v_run.model_id AND object_id = v_object_id), FALSE) THEN 'locked' END;
         IF v_attribute_id IS NOT NULL THEN
             SELECT * INTO v_attribute FROM core.attribute AS attribute
              WHERE attribute.attribute_id = v_attribute_id AND attribute.object_id = v_object_id;
             IF NOT FOUND THEN RAISE EXCEPTION 'metadata_enrichment_result_outside_scope'; END IF;
-            v_current := CASE v_field WHEN 'attribute_description' THEN v_attribute.attribute_description
-                ELSE v_attribute.attribute_inferred_data_type END;
+            SELECT to_jsonb(enriched)->>v_field INTO v_current FROM workflow.attribute_enrichment AS enriched
+             WHERE model_id = v_run.model_id AND attribute_id = v_attribute_id;
             v_status := CASE WHEN NOT v_attribute.is_active THEN 'inactive'
-                WHEN v_status IS NOT NULL THEN v_status WHEN v_attribute.is_locked THEN 'locked' END;
+                WHEN v_status IS NOT NULL THEN v_status
+                WHEN coalesce((SELECT is_locked FROM workflow.attribute_enrichment
+                    WHERE model_id = v_run.model_id AND attribute_id = v_attribute_id), FALSE) THEN 'locked' END;
             IF v_result ->> 'evidence_method' IN ('source_sample', 'bronze_sample') AND (
-                v_attribute.is_masking_required OR EXISTS (
+                v_attribute.is_masking_required OR coalesce((SELECT is_pii FROM workflow.attribute_enrichment
+                    WHERE model_id = v_run.model_id AND attribute_id = v_attribute_id), FALSE) OR EXISTS (
                     SELECT 1 FROM jsonb_array_elements(v_context -> 'objects') AS object,
                         jsonb_array_elements(object -> 'attributes') AS attribute
                      WHERE (attribute ->> 'attribute_id')::BIGINT = v_attribute_id
@@ -3134,29 +3151,46 @@ BEGIN
             RAISE EXCEPTION 'metadata_enrichment_invalid_evidence';
         END IF;
         IF v_result ->> 'status' = 'applied' AND (
-            (v_field <> 'attribute_inferred_data_type' AND v_result ->> 'evidence_method' NOT IN ('agent_description', 'source_comment'))
-            OR (v_field = 'attribute_inferred_data_type' AND v_result ->> 'evidence_method' NOT IN ('registered_type', 'source_schema', 'bronze_schema', 'source_sample', 'bronze_sample'))
+            (v_field IN ('object_description', 'attribute_description') AND v_result ->> 'evidence_method' NOT IN ('agent_description', 'source_comment'))
+            OR (v_field IN ('is_natural_key', 'is_primary_key', 'is_nullable', 'is_pii') AND (
+                v_result ->> 'evidence_method' <> 'agent_key_inference'
+                OR (v_value IS NOT NULL AND v_value NOT IN ('true', 'false'))))
+            OR (v_field IN ('attribute_inferred_data_type') AND v_result ->> 'evidence_method' NOT IN ('registered_type', 'source_schema', 'bronze_schema', 'source_sample', 'bronze_sample'))
         ) THEN RAISE EXCEPTION 'metadata_enrichment_invalid_evidence'; END IF;
         -- The original baseline fences every attempted patch. Locked descriptions
         -- remain immutable; generated unlocked descriptions, including null, replace
         -- current text. Inferred types still fill only missing values.
         v_status := CASE WHEN v_drift THEN 'changed' WHEN v_status IS NOT NULL THEN v_status
-            WHEN reference.is_nonblank(v_current) AND v_field = 'attribute_inferred_data_type' THEN 'existing'
+            WHEN reference.is_nonblank(v_current) AND v_field IN ('attribute_inferred_data_type') THEN 'existing'
             WHEN v_result ->> 'status' IN ('applied', 'unavailable', 'inconclusive') THEN v_result ->> 'status'
             ELSE 'inconclusive' END;
         IF v_status = 'applied' THEN
             IF v_field = 'object_description' THEN
-                UPDATE core.object SET object_description = v_value,
-                    updated_time = clock_timestamp(), updated_by = v_decision.principal_id::TEXT
-                 WHERE object_id = v_object_id;
-            ELSIF v_field = 'attribute_description' THEN
-                UPDATE core.attribute SET attribute_description = v_value,
-                    updated_time = clock_timestamp(), updated_by = v_decision.principal_id::TEXT
-                 WHERE attribute_id = v_attribute_id;
+                INSERT INTO workflow.object_enrichment (model_id, object_id, object_description,
+                    workflow_run_id, created_by, updated_by)
+                VALUES (v_run.model_id, v_object_id, v_value, p_workflow_run_id,
+                    v_decision.principal_id::TEXT, v_decision.principal_id::TEXT)
+                ON CONFLICT (model_id, object_id) DO UPDATE SET
+                    object_description = EXCLUDED.object_description,
+                    workflow_run_id = EXCLUDED.workflow_run_id,
+                    updated_time = clock_timestamp(), updated_by = EXCLUDED.updated_by;
             ELSE
-                UPDATE core.attribute SET attribute_inferred_data_type = v_value,
+                -- Field identity is validated above; one row per Model/Attribute.
+                INSERT INTO workflow.attribute_enrichment (model_id, object_id, attribute_id,
+                    workflow_run_id, created_by, updated_by)
+                VALUES (v_run.model_id, v_object_id, v_attribute_id, p_workflow_run_id,
+                    v_decision.principal_id::TEXT, v_decision.principal_id::TEXT)
+                ON CONFLICT (model_id, attribute_id) DO NOTHING;
+                UPDATE workflow.attribute_enrichment SET
+                    attribute_description = CASE WHEN v_field = 'attribute_description' THEN v_value ELSE attribute_description END,
+                    attribute_inferred_data_type = CASE WHEN v_field = 'attribute_inferred_data_type' THEN v_value ELSE attribute_inferred_data_type END,
+                    is_natural_key = CASE WHEN v_field = 'is_natural_key' THEN v_value::BOOLEAN ELSE is_natural_key END,
+                    is_primary_key = CASE WHEN v_field = 'is_primary_key' THEN v_value::BOOLEAN ELSE is_primary_key END,
+                    is_nullable = CASE WHEN v_field = 'is_nullable' THEN v_value::BOOLEAN ELSE is_nullable END,
+                    is_pii = CASE WHEN v_field = 'is_pii' THEN v_value::BOOLEAN ELSE is_pii END,
+                    workflow_run_id = p_workflow_run_id,
                     updated_time = clock_timestamp(), updated_by = v_decision.principal_id::TEXT
-                 WHERE attribute_id = v_attribute_id;
+                WHERE model_id = v_run.model_id AND attribute_id = v_attribute_id;
             END IF;
         END IF;
         INSERT INTO application.metadata_enrichment_result (
@@ -3182,7 +3216,7 @@ BEGIN
               SELECT attribute.object_id, attribute.attribute_id, field.name
                 FROM core.attribute AS attribute
                 JOIN application.workflow_run_object_selection AS selection USING (object_id)
-                CROSS JOIN (VALUES ('attribute_description'), ('attribute_inferred_data_type')) AS field(name)
+                CROSS JOIN (VALUES ('attribute_description'), ('attribute_inferred_data_type'), ('is_natural_key'), ('is_primary_key'), ('is_nullable'), ('is_pii')) AS field(name)
                WHERE selection.workflow_run_id = p_workflow_run_id
           ) AS expected
          WHERE NOT EXISTS (
@@ -3242,6 +3276,7 @@ REVOKE ALL ON FUNCTION application.metadata_attribute_review_revision(core.attri
 CREATE TABLE application.metadata_review_event (
     metadata_review_event_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES core.tenant (tenant_id),
+    model_id BIGINT,
     actor_principal_id BIGINT NOT NULL REFERENCES security.principal (principal_id),
     correlation_id UUID NOT NULL,
     record_type VARCHAR(10) NOT NULL,
@@ -3251,9 +3286,12 @@ CREATE TABLE application.metadata_review_event (
     before_records JSONB NOT NULL,
     records JSONB NOT NULL,
     created_time TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    CONSTRAINT fk_metadata_review_model FOREIGN KEY (model_id, tenant_id)
+        REFERENCES model.model (model_id, tenant_id) ON DELETE NO ACTION,
     CONSTRAINT uq_metadata_review_request UNIQUE (tenant_id, actor_principal_id, correlation_id),
     CONSTRAINT ck_metadata_review_action CHECK (
-        record_type IN ('object', 'attribute') AND action IN ('lock', 'unlock', 'deactivate', 'reactivate', 'describe')
+        record_type IN ('object', 'attribute') AND action IN ('lock', 'unlock', 'deactivate', 'reactivate', 'describe', 'edit')
+        AND (action <> 'edit' OR model_id IS NOT NULL)
         AND request_digest ~ '^[0-9a-f]{64}$'
     ),
     CONSTRAINT ck_metadata_review_records CHECK (
@@ -3725,3 +3763,176 @@ END;
 $delete_model_records$;
 REVOKE ALL ON FUNCTION application.delete_model_records(
     UUID, UUID, BIGINT, BIGINT, BIGINT, UUID, JSONB) FROM PUBLIC;
+
+-- Human Model-local enrichment edits. The receipt stores witnesses, never descriptions.
+CREATE FUNCTION application.review_model_enrichment(
+    p_entra_tenant_id UUID, p_entra_object_id UUID, p_tenant_id BIGINT,
+    p_model_id BIGINT, p_expected_model_revision BIGINT,
+    p_record_type VARCHAR, p_action VARCHAR, p_records JSONB, p_correlation_id UUID
+)
+RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
+AS $review_model_enrichment$
+DECLARE
+    v_decision RECORD;
+    v_existing application.metadata_review_event%ROWTYPE;
+    v_item JSONB;
+    v_object_id BIGINT;
+    v_attribute_id BIGINT;
+    v_revision TEXT;
+    v_request_digest CHAR(64);
+    v_before JSONB := '[]'::JSONB;
+    v_records JSONB := '[]'::JSONB;
+    v_event_id BIGINT;
+    v_count INTEGER := 0;
+    v_locked BOOLEAN;
+    v_parent_locked BOOLEAN;
+    v_allowed TEXT[];
+BEGIN
+    IF p_correlation_id IS NULL OR p_record_type IS NULL
+       OR p_record_type NOT IN ('object', 'attribute') OR p_action IS NULL
+       OR p_action NOT IN ('edit', 'lock', 'unlock') OR p_records IS NULL
+       OR jsonb_typeof(p_records) <> 'array' THEN
+        RAISE EXCEPTION 'enrichment_invalid_review';
+    END IF;
+    IF jsonb_array_length(p_records) NOT BETWEEN 1 AND 200
+       OR octet_length(p_records::TEXT) > 524288
+       OR (SELECT count(DISTINCT item->>'record_id') FROM jsonb_array_elements(p_records) AS item)
+           <> jsonb_array_length(p_records) THEN
+        RAISE EXCEPTION 'enrichment_invalid_review';
+    END IF;
+    SELECT * INTO v_decision FROM application.authorize_model_record_review(
+        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, p_model_id);
+    IF v_decision.denial_code IS NOT NULL THEN RAISE EXCEPTION '%', v_decision.denial_code; END IF;
+    v_request_digest := encode(sha256(convert_to(jsonb_build_object(
+        'model_id', p_model_id, 'model_revision', p_expected_model_revision,
+        'record_type', p_record_type, 'action', p_action, 'records', p_records
+    )::TEXT, 'UTF8')), 'hex');
+    SELECT * INTO v_existing FROM application.metadata_review_event
+     WHERE tenant_id = p_tenant_id AND actor_principal_id = v_decision.principal_id
+       AND correlation_id = p_correlation_id;
+    IF FOUND THEN
+        IF v_existing.request_digest <> v_request_digest THEN
+            RAISE EXCEPTION 'enrichment_review_conflict';
+        END IF;
+        RETURN jsonb_build_object('review_event_id', v_existing.metadata_review_event_id,
+            'action_count', v_existing.action_count, 'records', v_existing.records);
+    END IF;
+    IF p_expected_model_revision IS NULL OR v_decision.model_revision <> p_expected_model_revision THEN
+        RAISE EXCEPTION 'stale_model_revision';
+    END IF;
+    IF EXISTS (SELECT 1 FROM application.workflow_run WHERE tenant_id = p_tenant_id
+        AND workflow_run_state IN ('queued', 'running')) THEN
+        RAISE EXCEPTION 'tenant_workflow_conflict';
+    END IF;
+    v_allowed := ARRAY['record_id', 'expected_revision'];
+    IF p_action = 'edit' THEN
+        v_allowed := v_allowed || ARRAY['description'];
+        IF p_record_type = 'attribute' THEN
+            v_allowed := v_allowed || ARRAY['attribute_inferred_data_type', 'is_natural_key',
+                'is_primary_key', 'is_nullable', 'is_pii'];
+        END IF;
+    END IF;
+    FOR v_item IN SELECT value FROM jsonb_array_elements(p_records) ORDER BY value->>'record_id'
+    LOOP
+        IF jsonb_typeof(v_item) <> 'object' OR NOT v_item ?& v_allowed
+           OR v_item - v_allowed <> '{}'::JSONB
+           OR jsonb_typeof(v_item->'record_id') IS DISTINCT FROM 'number'
+           OR (v_item->>'record_id') !~ '^[1-9][0-9]{0,17}$'
+           OR jsonb_typeof(v_item->'expected_revision') IS DISTINCT FROM 'string'
+           OR (v_item->>'expected_revision') !~ '^[0-9a-f]{64}$'
+           OR (p_action = 'edit' AND (
+               jsonb_typeof(v_item->'description') NOT IN ('string', 'null')
+               OR octet_length(v_item->>'description') > 2000
+               OR translate(v_item->>'description', chr(9)||chr(10)||chr(13), '') ~ '[[:cntrl:]]'
+           )) OR (p_action = 'edit' AND p_record_type = 'attribute' AND (
+               jsonb_typeof(v_item->'attribute_inferred_data_type') NOT IN ('string', 'null')
+               OR length(v_item->>'attribute_inferred_data_type') > 100
+               OR (v_item->>'attribute_inferred_data_type') ~ '[[:cntrl:]]'
+               OR EXISTS (SELECT 1 FROM unnest(ARRAY['is_natural_key','is_primary_key','is_nullable','is_pii']) AS flag
+                   WHERE jsonb_typeof(v_item->flag) NOT IN ('boolean', 'null'))
+           )) THEN RAISE EXCEPTION 'enrichment_invalid_review'; END IF;
+        v_attribute_id := CASE WHEN p_record_type = 'attribute' THEN (v_item->>'record_id')::BIGINT END;
+        SELECT object.object_id INTO v_object_id
+          FROM core.object AS object JOIN model.model_input_scope AS scope USING (object_id)
+         WHERE scope.model_id = p_model_id AND scope.is_active AND object.is_active
+           AND object.source_tenant_id = p_tenant_id
+           AND ((p_record_type = 'object' AND object.object_id = (v_item->>'record_id')::BIGINT)
+             OR (p_record_type = 'attribute' AND EXISTS (SELECT 1 FROM core.attribute
+                  WHERE attribute_id = v_attribute_id AND object_id = object.object_id AND is_active)))
+         FOR UPDATE OF object, scope;
+        IF NOT FOUND THEN RAISE EXCEPTION 'enrichment_selection_conflict'; END IF;
+        IF v_attribute_id IS NOT NULL THEN
+            PERFORM 1 FROM core.attribute WHERE attribute_id = v_attribute_id FOR UPDATE;
+        END IF;
+        v_revision := workflow.enrichment_review_revision(p_model_id, v_object_id, v_attribute_id);
+        IF v_revision IS DISTINCT FROM v_item->>'expected_revision' THEN
+            RAISE EXCEPTION 'enrichment_revision_conflict';
+        END IF;
+        SELECT is_locked INTO v_parent_locked FROM workflow.object_enrichment
+         WHERE model_id = p_model_id AND object_id = v_object_id FOR UPDATE;
+        v_locked := coalesce(v_parent_locked, FALSE);
+        IF v_attribute_id IS NOT NULL THEN
+            IF v_locked THEN RAISE EXCEPTION 'object_locked'; END IF;
+            SELECT is_locked INTO v_locked FROM workflow.attribute_enrichment
+             WHERE model_id = p_model_id AND attribute_id = v_attribute_id FOR UPDATE;
+        END IF;
+        IF p_action = 'edit' AND coalesce(v_locked, FALSE) THEN
+            RAISE EXCEPTION 'enrichment_locked';
+        END IF;
+        v_before := v_before || jsonb_build_array(jsonb_build_object(
+            'record_id', (v_item->>'record_id')::BIGINT, 'review_revision', v_revision));
+        IF v_attribute_id IS NULL THEN
+            INSERT INTO workflow.object_enrichment (model_id, object_id, object_description,
+                is_locked, created_by, updated_by)
+            VALUES (p_model_id, v_object_id, nullif(btrim(v_item->>'description'), ''),
+                p_action = 'lock', v_decision.principal_id::TEXT, v_decision.principal_id::TEXT)
+            ON CONFLICT (model_id, object_id) DO UPDATE SET
+                object_description = CASE WHEN p_action = 'edit' THEN EXCLUDED.object_description ELSE workflow.object_enrichment.object_description END,
+                is_locked = CASE WHEN p_action = 'edit' THEN workflow.object_enrichment.is_locked ELSE p_action = 'lock' END,
+                updated_time = clock_timestamp(), updated_by = EXCLUDED.updated_by;
+        ELSE
+            INSERT INTO workflow.attribute_enrichment (model_id, object_id, attribute_id,
+                attribute_description, attribute_inferred_data_type, is_natural_key, is_primary_key,
+                is_nullable, is_pii, is_locked, created_by, updated_by)
+            VALUES (p_model_id, v_object_id, v_attribute_id, nullif(btrim(v_item->>'description'), ''),
+                nullif(btrim(v_item->>'attribute_inferred_data_type'), ''),
+                (v_item->>'is_natural_key')::BOOLEAN, (v_item->>'is_primary_key')::BOOLEAN,
+                (v_item->>'is_nullable')::BOOLEAN, (v_item->>'is_pii')::BOOLEAN,
+                p_action = 'lock', v_decision.principal_id::TEXT, v_decision.principal_id::TEXT)
+            ON CONFLICT (model_id, attribute_id) DO UPDATE SET
+                attribute_description = CASE WHEN p_action = 'edit' THEN EXCLUDED.attribute_description ELSE workflow.attribute_enrichment.attribute_description END,
+                attribute_inferred_data_type = CASE WHEN p_action = 'edit' THEN EXCLUDED.attribute_inferred_data_type ELSE workflow.attribute_enrichment.attribute_inferred_data_type END,
+                is_natural_key = CASE WHEN p_action = 'edit' THEN EXCLUDED.is_natural_key ELSE workflow.attribute_enrichment.is_natural_key END,
+                is_primary_key = CASE WHEN p_action = 'edit' THEN EXCLUDED.is_primary_key ELSE workflow.attribute_enrichment.is_primary_key END,
+                is_nullable = CASE WHEN p_action = 'edit' THEN EXCLUDED.is_nullable ELSE workflow.attribute_enrichment.is_nullable END,
+                is_pii = CASE WHEN p_action = 'edit' THEN EXCLUDED.is_pii ELSE workflow.attribute_enrichment.is_pii END,
+                is_locked = CASE WHEN p_action = 'edit' THEN workflow.attribute_enrichment.is_locked ELSE p_action = 'lock' END,
+                updated_time = clock_timestamp(), updated_by = EXCLUDED.updated_by;
+        END IF;
+        v_count := v_count + 1;
+    END LOOP;
+    -- Read all final witnesses together: an Object edit can affect child witnesses.
+    FOR v_item IN SELECT value FROM jsonb_array_elements(p_records) ORDER BY (value->>'record_id')::BIGINT
+    LOOP
+        v_attribute_id := CASE WHEN p_record_type = 'attribute' THEN (v_item->>'record_id')::BIGINT END;
+        v_object_id := CASE WHEN v_attribute_id IS NULL THEN (v_item->>'record_id')::BIGINT
+            ELSE (SELECT object_id FROM core.attribute WHERE attribute_id = v_attribute_id) END;
+        v_locked := CASE WHEN v_attribute_id IS NULL THEN
+            (SELECT is_locked FROM workflow.object_enrichment WHERE model_id = p_model_id AND object_id = v_object_id)
+            ELSE (SELECT is_locked FROM workflow.attribute_enrichment WHERE model_id = p_model_id AND attribute_id = v_attribute_id) END;
+        v_records := v_records || jsonb_build_array(jsonb_build_object(
+            'record_id', (v_item->>'record_id')::BIGINT, 'is_active', TRUE, 'is_locked', v_locked,
+            'review_revision', workflow.enrichment_review_revision(p_model_id, v_object_id, v_attribute_id)));
+    END LOOP;
+    SELECT * INTO v_decision FROM application.authorize_model_record_review(
+        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, p_model_id);
+    IF v_decision.denial_code IS NOT NULL THEN RAISE EXCEPTION '%', v_decision.denial_code; END IF;
+    INSERT INTO application.metadata_review_event (tenant_id, model_id, actor_principal_id,
+        correlation_id, record_type, action, request_digest, action_count, before_records, records)
+    VALUES (p_tenant_id, p_model_id, v_decision.principal_id, p_correlation_id,
+        p_record_type, p_action, v_request_digest, v_count, v_before, v_records)
+    RETURNING metadata_review_event_id INTO v_event_id;
+    RETURN jsonb_build_object('review_event_id', v_event_id, 'action_count', v_count, 'records', v_records);
+END;
+$review_model_enrichment$;
+REVOKE ALL ON FUNCTION application.review_model_enrichment(UUID, UUID, BIGINT, BIGINT, BIGINT, VARCHAR, VARCHAR, JSONB, UUID) FROM PUBLIC;

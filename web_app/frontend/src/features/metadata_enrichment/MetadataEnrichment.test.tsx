@@ -1,6 +1,6 @@
+import type { ReviewEnrichmentCommand } from "./api";
 import { MetadataEnrichmentScreen } from "./MetadataEnrichmentScreen";
 import type { ModelInputScopeDetail } from "../model_input_scope/api";
-import type { ReviewMetadataRecordsCommand } from "../metadata/api";
 import { ApiError } from "../../core/http";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
@@ -69,7 +69,7 @@ const field = (overrides: Partial<MetadataEnrichmentResult> = {}): MetadataEnric
 const page = (overrides: Partial<MetadataEnrichmentResultPage> = {}): MetadataEnrichmentResultPage => ({
   tenant_id: 7, model_id: 18, model_revision: 18, workflow_run_id: 1048, workflow_run_state: "completed",
   total_count: 3, result_count: 3, warning_count: 0, counts: { applied: 2, locked: 1 },
-  applied_field_counts: { object_description: 1, attribute_description: 0, attribute_inferred_data_type: 1 },
+  applied_field_counts: { is_natural_key: 0, is_primary_key: 0, is_nullable: 0, is_pii: 0, object_description: 1, attribute_description: 0, attribute_inferred_data_type: 1 },
   results: [field(), field({ result_id: 2, attribute_id: 81, attribute_name: "customer_id", storage_type: "STRING", field_name: "attribute_inferred_data_type", evidence_method: "source_sample", applied_value: "BIGINT", sample_count: 50 }),
     field({ result_id: 3, attribute_id: 81, attribute_name: "customer_id", storage_type: "STRING", field_name: "attribute_description", status: "locked", evidence_method: "none", applied_value: null })],
   limit: 100, offset: 0, next_offset: null, ...overrides,
@@ -175,7 +175,7 @@ describe("Metadata enrichment Model screen", () => {
         lock: { is_locked: true, owner_display_name: "Fixture user", owned_by_current_principal: true, purpose: "Test", acquired_at: "2026-09-05T12:00:00Z", expires_at: "2026-09-06T12:00:00Z" },
         lock_actions: { can_acquire: false, can_renew: true, can_release: true, can_override: false }, systems: [] });
       if (url.endsWith("/models/18")) return respond(model);
-      if (url.includes("/input-scope?")) return respond({ model_revision: 18, items: [scope(501), scope(502, "bronze")], next_cursor: null });
+      if (url.includes("/metadata-enrichment/objects?")) return respond({ model_revision: 18, items: [scope(501), scope(502, "bronze")], next_cursor: null });
       if (url.endsWith("/agent-capabilities")) return respond(capabilities);
       if (url.includes("/runs?")) return respond({ items: current ? [current] : [], next_cursor: null });
       if (url.endsWith("/runs") && init?.method === "POST") {
@@ -222,7 +222,7 @@ describe("Metadata enrichment results", () => {
   it("shows accurate field totals, historical values, storage type and evidence without Apply", async () => {
     const api = { readMetadataEnrichmentResults: vi.fn(async () => page()) }; const user = userEvent.setup();
     setup(<MetadataEnrichmentResults api={api} tenantId={7} modelId={18} runId={1048} />);
-    await screen.findByRole("heading", { name: "2 missing fields filled" });
+    await screen.findByRole("heading", { name: "2 fields saved" });
     expect(screen.getByText("0 preserved · 1 locked · 0 unresolved")).toBeVisible();
     await user.click(screen.getByText("Inspect inferred type"));
     expect(screen.getByText("BIGINT")).toBeVisible();
@@ -235,12 +235,12 @@ describe("Metadata enrichment results", () => {
   });
   it("distinguishes a no-op from unresolved evidence and unavailable current labels", async () => {
     const api = { readMetadataEnrichmentResults: vi.fn(async () => page({ counts: { existing: 1, inconclusive: 1, unavailable: 1 }, warning_count: 2,
-      applied_field_counts: { object_description: 0, attribute_description: 0, attribute_inferred_data_type: 0 },
+      applied_field_counts: { is_natural_key: 0, is_primary_key: 0, is_nullable: 0, is_pii: 0, object_description: 0, attribute_description: 0, attribute_inferred_data_type: 0 },
       results: [field({ object_name: null, object_schema: null, attribute_id: 81, attribute_name: null, field_name: "attribute_inferred_data_type", status: "inconclusive", evidence_method: "source_sample", applied_value: null, sample_count: 50 })] })) };
     setup(<MetadataEnrichmentResults api={api} tenantId={7} modelId={18} runId={1048} />);
-    expect(await screen.findByText("No missing values filled")).toBeVisible();
+    expect(await screen.findByText("No values saved")).toBeVisible();
     expect(screen.getByText("1 preserved · 0 locked · 2 unresolved")).toBeVisible();
-    expect(screen.getByText(/Unresolved fields remain empty/)).toBeVisible();
+    expect(screen.getByText(/Unresolved fields remain unchanged/)).toBeVisible();
     expect(screen.getByRole("rowheader")).toHaveTextContent("Object 501Attribute 81");
   });
   it.each(["tenant", "model", "run", "offset", "state"])("hides a mismatched %s response", async (mismatch) => {
@@ -258,20 +258,20 @@ describe("Metadata enrichment results", () => {
       listWorkflowRuns: vi.fn<WorkflowRunMonitorApi["listWorkflowRuns"]>(async () => ({ items: [run], next_cursor: null })),
       readWorkflowRun: vi.fn(async () => ({ ...run, model_change_set_id: "unrelated-draft", model_change_set_status: "validated" as const, draft_revision: 2, candidate_digest: "d".repeat(64), validated_at: run.completed_at })),
       listWorkflowRunEvents: vi.fn<WorkflowRunMonitorApi["listWorkflowRunEvents"]>(async () => ({ items: [], next_after_sequence: 0 })),
-      readWorkflowDraftReview: vi.fn(), applyWorkflowDraft: vi.fn(),
+      readWorkflowDraftReview: vi.fn(), applyWorkflowDraft: vi.fn(), cancelWorkflowRun: vi.fn(),
       readMetadataEnrichmentResults: vi.fn(async (_tenant: number, _model: number, _run: number, _limit = 100, offset = 0) => page({ offset,
-        total_count: 101, result_count: 101, counts: { applied: 101 }, applied_field_counts: { object_description: 1, attribute_description: 0, attribute_inferred_data_type: 100 },
+        total_count: 101, result_count: 101, counts: { applied: 101 }, applied_field_counts: { is_natural_key: 0, is_primary_key: 0, is_nullable: 0, is_pii: 0, object_description: 1, attribute_description: 0, attribute_inferred_data_type: 100 },
         results: offset === 0 ? Array.from({ length: 100 }, (_, index) => field({ result_id: index + 1, object_name: `object_${index}` })) : [field({ result_id: 101, object_name: "last_object" })], next_offset: offset === 0 ? 100 : null })),
     };
     const user = userEvent.setup();
     setup(<WorkflowRunMonitor api={api} enrichmentApi={api} tenantId={7} modelId={18} modelRevision={18} workflow="metadata_enrichment" hasTenantLock focusRunId={1048} onApplied={vi.fn(async () => undefined)} />);
-    await screen.findByRole("heading", { name: "101 missing fields filled" });
+    await screen.findByRole("heading", { name: "101 fields saved" });
     expect(screen.queryByLabelText("Validated draft status")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Next results" }));
     await screen.findByText("crm.last_object");
     expect(api.readMetadataEnrichmentResults).toHaveBeenLastCalledWith(7, 18, 1048, 100, 100);
     expect(screen.getByText("101–101 of 101 fields")).toBeVisible();
-    expect(within(screen.getByLabelText("Fields filled across this run")).getByText("100")).toBeVisible();
+    expect(within(screen.getByLabelText("Fields saved across this run")).getByText("100")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Refresh runs" }));
     await waitFor(() => expect(api.readMetadataEnrichmentResults).toHaveBeenCalledTimes(3));
     expect(api.readMetadataEnrichmentResults).toHaveBeenLastCalledWith(7, 18, 1048, 100, 100);
@@ -298,7 +298,7 @@ describe("current metadata enrichment workspace", () => {
       attributes: [{ attribute_id: 81, review_revision: revision, attribute_name: "customer_id", attribute_ordinal_position: 1,
         attribute_description: "Customer identifier.", attribute_data_type: "STRING", attribute_inferred_data_type: "BIGINT",
         attribute_nullability: false, is_surrogate_key: false, is_natural_key: true, is_meta_data: false,
-        is_masking_required: false, is_mapped: false, is_purge: false, is_locked: false, is_active: true }],
+        is_masking_required: false, is_mapped: false, is_purge: false, is_locked: false, is_active: true, profile: { row_count: 10, non_null_count: 10, null_count: 0 } }],
     };
     const api = {
       ...creationApi(),
@@ -308,22 +308,30 @@ describe("current metadata enrichment workspace", () => {
       listWorkflowRuns: vi.fn(async () => ({ items: [run], next_cursor: null })),
       readWorkflowRun: vi.fn(async () => run),
       listWorkflowRunEvents: vi.fn(async () => ({ items: [], next_after_sequence: 0 })),
-      readWorkflowDraftReview: vi.fn(), applyWorkflowDraft: vi.fn(), listWorkflowDraftRecords: vi.fn(),
+      readWorkflowDraftReview: vi.fn(), applyWorkflowDraft: vi.fn(), cancelWorkflowRun: vi.fn(), listWorkflowDraftRecords: vi.fn(),
       readMetadataEnrichmentResults: vi.fn(),
       executeMetadataEnrichmentRun: vi.fn(async () => ({ workflow_run_id: 1048, model_revision: 18, workflow_run_state: "running" as const, changed: true })),
-      reviewMetadataRecords: vi.fn(async (_tenantId: number, command: ReviewMetadataRecordsCommand, _key: string) => {
+      reviewEnrichment: vi.fn(async (_tenantId: number, _modelId: number, _revision: number, command: ReviewEnrichmentCommand, _key: string) => {
         if (options.failOnce && attempts++ === 0) throw new ApiError(503, "dependency_unavailable", "Synthetic response");
         revision = "b".repeat(64);
-        const description = command.action === "describe" ? command.records[0]!.description : undefined;
+        const description = command.action === "edit" ? command.records[0]!.description : undefined;
         if (command.record_type === "object") metadata = { ...metadata, review_revision: revision,
           ...(description !== undefined ? { object_description: description } : { is_locked: command.action === "lock" }) };
         else metadata = { ...metadata, attributes: metadata.attributes.map((attribute) => ({ ...attribute, review_revision: revision,
-          ...(description !== undefined ? { attribute_description: description } : { is_locked: command.action === "lock" }) })) };
+          ...(description !== undefined ? { attribute_description: description,
+            attribute_inferred_data_type: command.records[0]!.attribute_inferred_data_type ?? null,
+            enrichment: { is_natural_key: command.records[0]!.is_natural_key ?? null,
+              is_primary_key: command.records[0]!.is_primary_key ?? null, is_nullable: command.records[0]!.is_nullable ?? null,
+              is_pii: command.records[0]!.is_pii ?? null } } : { is_locked: command.action === "lock" }) })) };
         return { review_event_id: 1, action_count: command.records.length, records: command.records.map((item) => ({ record_id: item.record_id, review_revision: revision, is_locked: command.action === "lock", is_active: true })) };
       }),
     };
-    setup(<MetadataEnrichmentScreen api={api} tenantId={7} model={model} hasTenantLock />);
-    return api;
+    const enrichmentApi = { ...api, listEnrichmentObjects: api.listModelInputScope,
+      readEnrichmentObject: api.readModelInputScopeObject,
+      exportEnrichment: vi.fn(async () => ({ blob: new Blob(), filename: "Model_Enrichment.xlsx" })),
+    };
+    setup(<MetadataEnrichmentScreen api={enrichmentApi} tenantId={7} model={model} hasTenantLock />);
+    return enrichmentApi;
   }
 
   it("locks selected Objects together with only Edit in row actions", async () => {
@@ -334,8 +342,8 @@ describe("current metadata enrichment workspace", () => {
     expect(within(table).queryByRole("button", { name: "Lock" })).not.toBeInTheDocument();
     await user.click(within(table).getByRole("checkbox", { name: "Select all visible records" }));
     await user.click(screen.getByRole("button", { name: "Lock" }));
-    await screen.findByText("Metadata saved.");
-    expect(api.reviewMetadataRecords.mock.calls[0]?.[1]).toEqual({ record_type: "object", action: "lock", records: [501, 502].map((record_id) => ({ record_id, expected_revision: "a".repeat(64) })) });
+    await screen.findByText("Model enrichment saved.");
+    expect(api.reviewEnrichment.mock.calls[0]?.[3]).toEqual({ record_type: "object", action: "lock", records: [501, 502].map((record_id) => ({ record_id, expected_revision: "a".repeat(64) })) });
     expect(within(table).getAllByText("Locked")).toHaveLength(2);
   });
 
@@ -358,16 +366,16 @@ describe("current metadata enrichment workspace", () => {
     await user.click(within(table).getByRole("button", { name: "Edit" }));
     const input = screen.getByRole("textbox", { name: "customers" }); expect(input).toHaveFocus();
     await user.clear(input); await user.type(input, "Active customer accounts.");
-    await user.click(screen.getByRole("button", { name: "Save description" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     const retry = await screen.findByRole("button", { name: "Retry same save" });
     expect(input).toBeDisabled(); expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
     await user.click(retry);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(within(table).getByText("Active customer accounts.")).toBeVisible();
     expect(within(table).getByRole("button", { name: "Edit" })).toHaveFocus();
-    const calls = api.reviewMetadataRecords.mock.calls;
+    const calls = api.reviewEnrichment.mock.calls;
     expect(calls).toHaveLength(2); expect(calls[0]).toEqual(calls[1]);
-    expect(calls[0]![1]).toEqual({ record_type: "object", action: "describe", records: [{ record_id: 501, expected_revision: "a".repeat(64), description: "Active customer accounts." }] });
+    expect(calls[0]![3]).toEqual({ record_type: "object", action: "edit", records: [{ record_id: 501, expected_revision: "a".repeat(64), description: "Active customer accounts." }] });
   });
 
   it("uses physical Object locks and allows editing Attribute descriptions inside Object details", async () => {
@@ -375,7 +383,7 @@ describe("current metadata enrichment workspace", () => {
     const table = await screen.findByRole("table", { name: "Object metadata" });
     await user.click(within(table).getByRole("checkbox", { name: "Select Object 501" }));
     await user.click(screen.getByRole("button", { name: "Lock" }));
-    await waitFor(() => expect(api.reviewMetadataRecords).toHaveBeenCalledOnce());
+    await waitFor(() => expect(api.reviewEnrichment).toHaveBeenCalledOnce());
     await user.click(within(table).getByRole("checkbox", { name: "Select Object 501" }));
     expect(within(table).getByRole("button", { name: "Edit" })).toBeDisabled();
     expect(within(table).queryByRole("button", { name: "Regenerate" })).not.toBeInTheDocument();
@@ -384,15 +392,60 @@ describe("current metadata enrichment workspace", () => {
     await waitFor(() => expect(within(table).getByRole("button", { name: "Edit" })).toBeEnabled());
     await user.click(within(table).getByRole("button", { name: "Show details for customers" }));
     const attributes = await screen.findByRole("table", { name: "Attributes for customers" });
-    expect(within(attributes).getByText("BIGINT")).toBeVisible(); expect(within(attributes).queryByText("STRING")).not.toBeInTheDocument();
+    expect(within(attributes).getByText("BIGINT")).toBeVisible(); expect(within(attributes).getByText("STRING")).toBeVisible();
     await user.click(within(attributes).getByRole("button", { name: "Edit" }));
     await user.clear(screen.getByRole("textbox", { name: "customer_id" }));
     await user.type(screen.getByRole("textbox", { name: "customer_id" }), "Stable customer identifier.");
-    await user.click(screen.getByRole("button", { name: "Save description" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     await within(attributes).findByText("Stable customer identifier.");
-    expect(api.reviewMetadataRecords.mock.lastCall?.[1]).toEqual({ record_type: "attribute", action: "describe", records: [{ record_id: 81, expected_revision: "a".repeat(64), description: "Stable customer identifier." }] });
+    expect(api.reviewEnrichment.mock.lastCall?.[3]).toEqual({ record_type: "attribute", action: "edit", records: [{ record_id: 81, expected_revision: "a".repeat(64), description: "Stable customer identifier.", attribute_inferred_data_type: "BIGINT", is_natural_key: null, is_primary_key: null, is_nullable: null, is_pii: null }] });
     await user.click(screen.getByRole("button", { name: "← Back to Objects" }));
     expect(screen.getByRole("button", { name: "Show details for customers" })).toHaveFocus();
+  });
+
+  it("edits every finding, preserves flag-only drafts, and shows technical evidence", async () => {
+    const api = metadataFixture(); const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Show details for customers" }));
+    const attributes = await screen.findByRole("table", { name: "Attributes for customers" });
+    const technical = screen.getByRole("region", { name: "Technical Data Dictionary" });
+    expect(within(technical).getByText("0")).toBeVisible();
+    expect(within(technical).getAllByText("Not recorded").length).toBeGreaterThan(0);
+    await user.click(within(attributes).getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+    await user.selectOptions(screen.getByLabelText("Natural key"), "true");
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+    await user.keyboard("{Escape}");
+    expect(screen.getByText("Discard unsaved changes?")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Keep editing" }));
+    await user.selectOptions(screen.getByLabelText("Primary key"), "true");
+    await user.selectOptions(screen.getByLabelText("Nullable"), "false");
+    await user.selectOptions(screen.getByLabelText("PII"), "false");
+    await user.clear(screen.getByLabelText("Inferred data type"));
+    await user.type(screen.getByLabelText("Inferred data type"), "INT");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(api.reviewEnrichment.mock.lastCall?.[3].records[0]).toMatchObject({ description: "Customer identifier.",
+      attribute_inferred_data_type: "INT", is_natural_key: true, is_primary_key: true, is_nullable: false, is_pii: false });
+    expect(within(attributes).getAllByText("Yes")).toHaveLength(2);
+    expect(within(attributes).getAllByText("No")).toHaveLength(2);
+    await user.click(within(attributes).getByRole("button", { name: "Edit" }));
+    await user.selectOptions(screen.getByLabelText("PII"), "unknown");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(api.reviewEnrichment).toHaveBeenCalledOnce();
+  });
+
+  it("downloads the saved two-sheet dictionary", async () => {
+    const api = metadataFixture(); const user = userEvent.setup();
+    const create = vi.fn(() => "blob:fixture"); const revoke = vi.fn();
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke }));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    try {
+      await user.click(await screen.findByRole("button", { name: "Export Excel" }));
+      await waitFor(() => expect(api.exportEnrichment).toHaveBeenCalledWith(7, 18));
+      await waitFor(() => expect(click).toHaveBeenCalledOnce());
+      expect(create).toHaveBeenCalledOnce(); expect(revoke).toHaveBeenCalledWith("blob:fixture");
+    } finally { click.mockRestore(); vi.unstubAllGlobals(); }
   });
 
   it("offers separate Object and Attribute actions and respects Object page selection", async () => {

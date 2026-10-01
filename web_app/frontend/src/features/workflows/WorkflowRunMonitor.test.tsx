@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../core/http";
 import type { ModelsApi } from "../models/api";
 import type {
+  ModelWorkflow,
   WorkflowDraftReview,
   WorkflowRunDetail,
   WorkflowRunEvent,
@@ -14,7 +15,52 @@ import type {
 import { WorkflowRunMonitor } from "./WorkflowRunMonitor";
 import { WorkflowCommandCenter, WorkflowCommandTools } from "./WorkflowCommandCenter";
 
+
 describe("Workflow Run monitor", () => {
+  it.each(["analysis", "conceptual", "logical", "dimensional", "mapping", "code_generation", "validation", "metadata_enrichment"] as const)(
+    "cancels a running %s run and refreshes its saved status", async (workflow) => {
+      const api = monitorApi();
+      const run: WorkflowRunDetail = { ...workflowRun(false), model_workflow: workflow,
+        workflow_run_state: "running", completed_at: null, model_change_set_id: null,
+        model_change_set_status: null, draft_revision: null, candidate_digest: null, validated_at: null };
+      api.readWorkflowRun.mockResolvedValue(run);
+      api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
+      renderMonitor(api, vi.fn(async () => undefined), workflow);
+      const cancel = await screen.findByRole("button", { name: "Cancel run" });
+      const cancelled: WorkflowRunDetail = { ...run, workflow_run_state: "cancelled", completed_at: "2026-10-01T14:00:00Z" };
+      api.readWorkflowRun.mockResolvedValue(cancelled);
+      api.listWorkflowRuns.mockResolvedValue({ items: [cancelled], next_cursor: null });
+      await userEvent.setup().click(cancel);
+      await waitFor(() => expect(api.cancelWorkflowRun).toHaveBeenCalledExactlyOnceWith(7, 18, 1048));
+      await waitFor(() => expect(screen.queryByRole("button", { name: /Cancel run|Cancelling/ })).not.toBeInTheDocument());
+      expect(screen.getAllByText("Cancelled").length).toBeGreaterThan(0);
+      expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
+    },
+  );
+
+  it("allows queued cancellation to be retried after an uncertain response", async () => {
+    const api = monitorApi();
+    const run: WorkflowRunDetail = { ...workflowRun(false), workflow_run_state: "queued",
+      model_change_set_id: null, model_change_set_status: null };
+    api.readWorkflowRun.mockResolvedValue(run);
+    api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
+    api.cancelWorkflowRun.mockRejectedValueOnce(new Error("Network unavailable"));
+    renderMonitor(api, vi.fn(async () => undefined));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Cancel run" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Cancellation could not be confirmed");
+    await user.click(screen.getByRole("button", { name: "Cancel run" }));
+    await waitFor(() => expect(api.cancelWorkflowRun).toHaveBeenCalledTimes(2));
+  });
+
+  it("requires a Tenant Lock for cancellation", async () => {
+    const api = monitorApi();
+    api.readWorkflowRun.mockResolvedValue({ ...workflowRun(false), workflow_run_state: "running" });
+    renderMonitor(api, vi.fn(async () => undefined), "conceptual", 1048, undefined, false);
+    expect(await screen.findByRole("button", { name: "Cancel run" })).toBeDisabled();
+    expect(api.cancelWorkflowRun).not.toHaveBeenCalled();
+  });
+
   it("loads details on opening Activity and preserves draft safeguards, state filters and manual refresh", async () => {
     const api = monitorApi();
     const user = userEvent.setup();
@@ -816,6 +862,7 @@ describe("Workflow Run monitor", () => {
     const user = userEvent.setup();
     renderMonitor(api, vi.fn(async () => undefined));
     const trigger = await screen.findByRole("button", { name: "Apply validated draft" });
+    expect(screen.queryByRole("button", { name: "Cancel run" })).not.toBeInTheDocument();
     const appRoot = trigger.closest("#root");
 
     await user.click(trigger);
@@ -840,7 +887,7 @@ describe("Workflow Run monitor", () => {
 function renderMonitor(
   api: WorkflowRunMonitorApi,
   onApplied: () => Promise<void>,
-  workflow: "analysis" | "conceptual" | "validation" | "code_generation" | "mapping" = "conceptual",
+  workflow: Exclude<ModelWorkflow, "profiling"> = "conceptual",
   focusRunId: number | null = 1048,
   readOverview?: ModelsApi["readModelOverview"],
   hasTenantLock = true,
@@ -897,6 +944,9 @@ function monitorApi(options: {
     options.expiredReview ?? false,
   );
   return {
+    cancelWorkflowRun: vi.fn<WorkflowRunMonitorApi["cancelWorkflowRun"]>(async (_tenant, _model, runId) => ({
+      changed: true, workflow_run_id: runId, workflow_run_state: "cancelled", completed_at: "2026-10-01T14:00:00Z",
+    })),
     listWorkflowRuns: vi.fn<WorkflowRunMonitorApi["listWorkflowRuns"]>(
       async () => ({ items: [run], next_cursor: null }),
     ),

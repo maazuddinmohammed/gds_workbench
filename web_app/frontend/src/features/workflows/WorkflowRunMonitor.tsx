@@ -26,6 +26,7 @@ import {
 } from "./presentation";
 import { MetadataEnrichmentResults } from "../metadata_enrichment/MetadataEnrichmentResults";
 import { enrichmentResultKey, type MetadataEnrichmentTransport } from "../metadata_enrichment/api";
+import { CancelWorkflowRun } from "./CancelWorkflowRun";
 import { FailedWorkflowDraft } from "./FailedWorkflowDraft";
 import { WorkflowTokenUsage } from "./WorkflowTokenUsage";
 import { WorkflowActivityPanel, WorkflowCommandContext } from "./WorkflowCommandCenter";
@@ -316,7 +317,7 @@ export function WorkflowRunMonitor({
             <option value="">All states</option>
             <option value="queued">Queued</option><option value="running">Running</option>
             <option value="completed">Completed</option><option value="completed_with_repair">Completed with repair</option>
-            <option value="failed">Failed</option>
+            <option value="failed">Failed</option><option value="cancelled">Cancelled</option>
           </select>
         </label> : null}
         <div className="workflow-run-monitor-layout">
@@ -389,6 +390,8 @@ export function WorkflowRunMonitor({
               </div>
             ) : (
               <>
+              <CancelWorkflowRun key={`cancel-${run.workflow_run_id}`} api={api} tenantId={tenantId}
+                modelId={modelId} run={run} hasTenantLock={hasTenantLock} onCancelled={refreshAll} />
               <WorkflowRunDetailView
                 key={run.workflow_run_id}
                 tabbed={commandCenter}

@@ -33,6 +33,7 @@ SELECT model.model_id,
        model.logical_schemas,
        model.dimensional_schemas,
        model.logical_entity_scd_type,
+       model.dimensional_entity_scd_type,
        model.silver_model_naming_instructions,
        model.silver_model_audit_columns_template,
        model.gold_model_naming_instructions,
@@ -64,6 +65,7 @@ class ModelDetails(ContractModel):
     logical_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
     dimensional_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
     logical_entity_scd_type: Literal["type_1", "type_2"] | None = None
+    dimensional_entity_scd_type: Literal["type_1", "type_2"] | None = None
     silver_model_naming_instructions: str | None = Field(default=None, max_length=32768)
     silver_model_audit_columns_template: dict[str, JsonValue] | None
     gold_model_naming_instructions: str | None = Field(default=None, max_length=32768)

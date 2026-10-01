@@ -29,6 +29,7 @@ type RunState = Literal[
     "completed",
     "completed_with_repair",
     "failed",
+    "cancelled",
 ]
 type ModelChangeSetStatus = Literal[
     "active",

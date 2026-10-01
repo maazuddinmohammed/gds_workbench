@@ -70,6 +70,11 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
                       AND column_name = 'logical_entity_scd_type'
                       AND data_type = 'character varying'
                       AND character_maximum_length = 10 AND is_nullable = 'YES')
+       AND EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'model' AND table_name = 'model'
+                      AND column_name = 'dimensional_entity_scd_type'
+                      AND data_type = 'character varying'
+                      AND character_maximum_length = 10 AND is_nullable = 'YES')
        AND to_regclass('workflow.generated_code') IS NOT NULL
        AND to_regclass('model.model_event_log') IS NOT NULL AS schema_ready,
        current_user = 'gds_web_write'
@@ -147,7 +152,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
            'application.create_model(uuid,uuid,character varying,bigint,'
            'character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,'
            'character varying,character varying,character varying,'
-           'character varying,integer,integer,bigint,character varying)'),
+           'character varying,integer,integer,bigint,character varying,character varying)'),
            'EXECUTE'
        ), FALSE)
        AND has_function_privilege(
@@ -362,9 +367,9 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND (SELECT count(*) = 26
               FROM application.workflow_stage
              WHERE is_active)
-       AND (SELECT count(*) = 186
+       AND (SELECT count(*) = 188
               FROM application.workflow_stage_variable)
-       AND (SELECT count(*) = 186
+       AND (SELECT count(*) = 188
               FROM application.workflow_stage_variable
              WHERE is_active) AS application_reference_ready
 """

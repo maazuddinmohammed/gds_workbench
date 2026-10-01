@@ -607,6 +607,11 @@
 
 .workflow-draft-confirmation {
   width: min(36rem, 100%);
+  max-height: calc(100dvh - 3rem);
+  padding: 1.25rem;
+  overflow: auto;
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
 }
 
 .workflow-draft-confirmation h2 {

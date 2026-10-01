@@ -136,3 +136,17 @@ test('Dimensional Mapping resolves peer Dimensional key lookups without physical
   object.modeled_entity_type = attribute.modeled_entity_type = 'logical_entity';
   assert.ok(codes(validate(value)).includes('mapping.source-kind'));
 });
+
+test('Model Change Sets preserve the web-owned Dimensional SCD setting', () => {
+  for (const original of [null, 'type_1', 'type_2']) {
+    for (const proposed of [null, 'type_1', 'type_2']) {
+      const baseline = {model_name: 'Sales', dimensional_entity_scd_type: original};
+      const pending = {...baseline, model_purpose: 'Updated purpose', dimensional_entity_scd_type: proposed};
+      const value = new Map([loaded('model_details', [], [pending], [baseline])]);
+      assert.equal(codes(validate(value)).includes('model_policy_read_only'), original !== proposed);
+    }
+  }
+  const baseline = {model_name: 'Sales'};
+  const value = new Map([loaded('model_details', [], [{...baseline, dimensional_entity_scd_type: null}], [baseline])]);
+  assert.deepEqual(codes(validate(value)), []);
+});

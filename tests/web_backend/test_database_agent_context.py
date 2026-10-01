@@ -164,6 +164,15 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
             (model_id, object_id, attributes[0]["attribute_id"], "a" * 64),
         )
 
+        connection.execute(
+            "INSERT INTO workflow.object_enrichment(model_id,object_id,object_description) VALUES(%s,%s,'Model object description')",
+            (model_id, object_id),
+        )
+        connection.execute(
+            "INSERT INTO workflow.attribute_enrichment(model_id,object_id,attribute_id,attribute_description,attribute_inferred_data_type,is_natural_key,is_primary_key,is_nullable,is_pii) VALUES(%s,%s,%s,'Model attribute description','BIGINT',TRUE,TRUE,FALSE,NULL)",
+            (model_id, object_id, attributes[0]["attribute_id"]),
+        )
+
     stages = installed_stages[(workflow, mode)]
     plan = _plan(
         model_id=model_id, model_revision=model_revision, object_id=object_id
@@ -242,6 +251,13 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
             list[dict[str, Any]], values[prefix + "object_attribute_context"]
         )
         assert attribute_groups[0]["attributes"][0]["profile"]["avg_data_length"] == 3.5
+        enriched = attribute_groups[0]["attributes"][0]
+        assert enriched["attribute_description"] == "Model attribute description"
+        assert enriched["attribute_inferred_data_type"] == "BIGINT"
+        assert [
+            enriched[flag]
+            for flag in ("is_natural_key", "is_primary_key", "is_nullable", "is_pii")
+        ] == [True, True, False, None]
         assert values[prefix + "source_context"] and values[prefix + "gds_context"]
         assert values[prefix + "ingestion_mapping"]
         rendered = render_prompt(

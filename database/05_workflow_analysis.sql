@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: computed Attribute Profile and Analysis Sections.
+-- GDS ETL Workbench Release 1: Profiling, Enrichment, and Analysis Sections.
 
 CREATE SCHEMA workflow;
 
@@ -64,6 +64,91 @@ CREATE TABLE workflow.attribute_profile (
         AND (percent_distinct IS NULL OR percent_distinct BETWEEN 0 AND 100)
     )
 );
+
+-- Current enrichment belongs to the Model, independently of physical metadata.
+-- Object and Attribute enrichment may be saved independently.
+CREATE TABLE workflow.object_enrichment (
+    model_id BIGINT NOT NULL,
+    object_id BIGINT NOT NULL,
+    object_description TEXT,
+    workflow_run_id BIGINT,
+    is_locked BOOLEAN NOT NULL DEFAULT FALSE,
+    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    PRIMARY KEY (model_id, object_id),
+    CONSTRAINT fk_object_enrichment_model FOREIGN KEY (model_id)
+        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_object_enrichment_scope FOREIGN KEY (model_id, object_id)
+        REFERENCES model.model_input_scope (model_id, object_id) ON DELETE NO ACTION,
+    CONSTRAINT ck_object_enrichment_description CHECK (
+        object_description IS NULL OR (
+            reference.is_nonblank(object_description)
+            AND octet_length(object_description) <= 2000
+        )
+    )
+);
+
+CREATE TABLE workflow.attribute_enrichment (
+    model_id BIGINT NOT NULL,
+    attribute_id BIGINT NOT NULL,
+    object_id BIGINT NOT NULL,
+    attribute_description TEXT,
+    attribute_inferred_data_type VARCHAR(100),
+    -- NULL means unknown; FALSE is an explicit negative finding.
+    is_natural_key BOOLEAN,
+    is_primary_key BOOLEAN,
+    is_nullable BOOLEAN,
+    is_pii BOOLEAN,
+    workflow_run_id BIGINT,
+    is_locked BOOLEAN NOT NULL DEFAULT FALSE,
+    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    PRIMARY KEY (model_id, attribute_id),
+    CONSTRAINT fk_attribute_enrichment_model FOREIGN KEY (model_id)
+        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_attribute_enrichment_scope FOREIGN KEY (model_id, object_id)
+        REFERENCES model.model_input_scope (model_id, object_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_attribute_enrichment_attribute FOREIGN KEY (attribute_id, object_id)
+        REFERENCES core.attribute (attribute_id, object_id) ON DELETE NO ACTION,
+    CONSTRAINT ck_attribute_enrichment_description CHECK (
+        attribute_description IS NULL OR (
+            reference.is_nonblank(attribute_description)
+            AND octet_length(attribute_description) <= 2000
+        )
+    ),
+    CONSTRAINT ck_attribute_enrichment_inferred_type CHECK (
+        attribute_inferred_data_type IS NULL
+        OR reference.is_nonblank(attribute_inferred_data_type)
+    )
+);
+
+-- Model-local review witnesses include the physical identity and parent lock.
+CREATE FUNCTION workflow.enrichment_review_revision(
+    p_model_id BIGINT, p_object_id BIGINT, p_attribute_id BIGINT DEFAULT NULL
+)
+RETURNS TEXT LANGUAGE sql STABLE SET search_path = pg_catalog SET timezone = 'UTC'
+AS $enrichment_review_revision$
+    SELECT encode(sha256(convert_to(jsonb_build_object(
+        'model_id', scope.model_id, 'scope', to_jsonb(scope),
+        'object', to_jsonb(object), 'object_enrichment', to_jsonb(enriched_object),
+        'attribute', to_jsonb(attribute), 'attribute_enrichment', to_jsonb(enriched_attribute)
+    )::TEXT, 'UTF8')), 'hex')
+    FROM model.model_input_scope AS scope
+    JOIN core.object AS object USING (object_id)
+    LEFT JOIN core.attribute AS attribute ON attribute.object_id = object.object_id
+        AND attribute.attribute_id = p_attribute_id
+    LEFT JOIN workflow.object_enrichment AS enriched_object
+        ON enriched_object.model_id = scope.model_id AND enriched_object.object_id = scope.object_id
+    LEFT JOIN workflow.attribute_enrichment AS enriched_attribute
+        ON enriched_attribute.model_id = scope.model_id
+        AND enriched_attribute.attribute_id = attribute.attribute_id
+    WHERE scope.model_id = p_model_id AND scope.object_id = p_object_id
+        AND (p_attribute_id IS NULL OR attribute.attribute_id IS NOT NULL);
+$enrichment_review_revision$;
 
 CREATE TABLE workflow.analysis_result (
     analysis_result_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -189,6 +274,8 @@ CREATE INDEX ix_attribute_profile_object
     ON workflow.attribute_profile (model_id, object_id, attribute_id);
 CREATE INDEX ix_attribute_profile_digest
     ON workflow.attribute_profile (model_id, source_context_digest);
+CREATE INDEX ix_attribute_enrichment_object
+    ON workflow.attribute_enrichment (model_id, object_id, attribute_id);
 CREATE INDEX ix_analysis_result_model_status
     ON workflow.analysis_result (model_id, analysis_result_status);
 CREATE INDEX ix_analysis_result_from_endpoint

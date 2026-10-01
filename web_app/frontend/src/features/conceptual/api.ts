@@ -152,6 +152,7 @@ export type ConceptualApi = ConceptualTransport
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"
+  | "cancelWorkflowRun"
     | "createWorkflowRun"
     | "executeConceptualRun"
     | "listWorkflowRunEvents"

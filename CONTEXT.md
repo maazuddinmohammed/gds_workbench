@@ -37,7 +37,7 @@ Systems are independent. Internal numeric IDs are not business identifiers.
 | --- | --- |
 | Profiling | Deterministic measurements for selected physical Attributes, over all rows or an explicit batch. |
 | Attribute Profile | Current saved measurements with time/row-scope provenance; refresh replaces current measurements. |
-| Metadata Enrichment | Separate Object and Attribute description workflows using metadata and Profiles; locked descriptions stay protected. Attribute enrichment can fill independently supported missing inferred types. |
+| Metadata Enrichment | Runs after Profiling. Model-owned Object descriptions and Attribute descriptions, inferred types, natural/primary key, nullability and PII findings; human edits and locks stay Model-specific. Data Dictionary and Technical Data Dictionary export current saved results. |
 | Ingestion Mapping | Registered Source-to-Bronze Object/Attribute lineage; source provenance cannot be guessed from names. |
 | Analysis Result | Inferred relationship between real physical Attributes, including reasoning and confidence. Inferred cardinality and measured validation remain separate. |
 | Modeling Assertion | Persisted contextual statement, requirement, KPI/reporting need or source fact with document provenance. Requirements are not proof that data exists. |
@@ -46,6 +46,14 @@ Systems are independent. Internal numeric IDs are not business identifiers.
 | Dimensional Model | Schema-qualified dimensions, facts and bridges supported by applied Logical Entities/Attributes or Assertions. |
 | Source Context | Business/physical source dictionary used to interpret evidence. Exact fields come from workflow input contracts. |
 | GDS Context | Target platform placement and model configuration; not source business evidence. |
+
+Logical and Dimensional SCD policies are independent Model settings (`type_1`,
+`type_2`, or unspecified). Dimensional Type 1 overwrites mutable descriptors;
+Type 2 preserves Dimension versions. Stable identity stays fixed; Fact/Bridge
+behavior is unchanged. Runs freeze both policies and Mapping receives both.
+Blank Gold technical settings use standard surrogate/foreign keys and
+EffectiveFrom/EffectiveTo/IsCurrent columns; blank audit settings add no audit
+columns. Explicit templates remain authoritative.
 
 Missing information, measured zero, failed validation and contradictory evidence
 are different states. Preserve each. An Assertion can explain required behavior;
@@ -94,7 +102,7 @@ and external orchestration, requiring separate authorization.
 | Snapshot | Immutable authorized metadata/model export, with versioned schemas and natural keys; Model snapshots pin a revision. |
 | Local Reference | Typed draft-local identity for a new record; Apply resolves the server-generated ID. |
 | Stage Batch | Atomic bounded transport for replacing complete datasets. Code fragments reassemble into complete records before validation. |
-| Workflow Run | Durable queued/running/terminal execution. At most one runs per Tenant, independently of Tenant Lock ownership. |
+| Workflow Run | Durable queued/running/terminal execution. At most one runs per Tenant, independently of Tenant Lock ownership. The run owner holding the Tenant Lock can cancel queued/running runs; cancellation revokes the claim and retains saved results. |
 | Prompt Template | Versioned system/instruction text, selected variables and readers. Runs freeze their effective published versions. |
 | Default Prompt | Published assignment resolved through supported scope/default rules; editing seed files does not update an installed database. |
 | Apply Receipt | Durable result of explicit governed Apply, including resulting revision and idempotent replay identity. |

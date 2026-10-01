@@ -141,6 +141,7 @@ class ModelDetailsRecord(ModelingRecord):
     logical_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
     dimensional_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
     logical_entity_scd_type: Literal["type_1", "type_2"] | None = None
+    dimensional_entity_scd_type: Literal["type_1", "type_2"] | None = None
 
     @model_validator(mode="after")
     def validate_policy_fields(self) -> ModelDetailsRecord:

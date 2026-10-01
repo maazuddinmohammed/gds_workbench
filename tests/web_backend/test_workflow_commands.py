@@ -23,6 +23,9 @@ from gds_workbench_api.features.workflows.commands import (
     DatabaseWorkflowCommandService,
     WorkflowRunCommandResult,
 )
+from gds_workbench_api.features.workflows.commands.contracts import (
+    WorkflowRunCancellationResult,
+)
 from gds_workbench_api.main import create_app
 from pydantic import ValidationError
 
@@ -60,6 +63,23 @@ def test_workflow_request_preserves_large_explicit_selection(workflow: str) -> N
 
 
 class StaticWorkflowCommandService:
+    async def cancel_run(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+    ) -> WorkflowRunCancellationResult:
+        assert principal.actor_kind is ActorKind.HUMAN
+        assert (tenant_id, model_id, workflow_run_id) == (7, 18, 1048)
+        return WorkflowRunCancellationResult(
+            changed=True,
+            workflow_run_id=workflow_run_id,
+            workflow_run_state="cancelled",
+            completed_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
+        )
+
     async def create_run(
         self,
         principal: RequestPrincipal,
@@ -1132,3 +1152,40 @@ async def test_incomplete_mapping_prerequisite_returns_an_actionable_controlled_
         )
     assert caught.value.message == expected_message
     assert caught.value.code == expected_code
+
+
+def test_cancel_workflow_http_contract() -> None:
+    with _app() as client:
+        response = client.post("/api/v1/tenants/7/models/18/runs/1048/cancel")
+        assert response.status_code == 200
+        assert response.json()["workflow_run_state"] == "cancelled"
+        assert client.post("/api/v1/tenants/7/models/18/runs/0/cancel").status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("message", "code"),
+    [
+        (
+            "Workflow Run cancellation denied: tenant_lock_required",
+            "tenant_lock_required",
+        ),
+        ("Workflow Run cancellation denied: tenant_locked", "tenant_locked"),
+        (
+            "Workflow Run cancellation denied: authorization_denied",
+            "authorization_denied",
+        ),
+        ("Workflow Run belongs to another Principal", "authorization_denied"),
+        ("Workflow Run is unavailable", "workflow_run_not_found"),
+        ("workflow_run_cancellation_conflict", "workflow_run_cancellation_conflict"),
+        ("unexpected internal diagnostic", "dependency_unavailable"),
+    ],
+)
+def test_cancellation_errors_are_safe(message: str, code: str) -> None:
+    from gds_workbench_api.features.workflows.commands.service import (
+        _raise_safe_workflow_error,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    with pytest.raises(WorkbenchError) as caught:
+        _raise_safe_workflow_error(RuntimeError(message))
+    assert caught.value.code == code
+    assert "internal diagnostic" not in caught.value.message

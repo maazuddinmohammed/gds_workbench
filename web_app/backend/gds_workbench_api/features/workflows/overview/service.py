@@ -136,17 +136,25 @@ WITH target_model AS (
     SELECT 8,
            'metadata_enrichment',
            count(DISTINCT object.object_id) FILTER (
-               WHERE nullif(btrim(object.object_description), '') IS NOT NULL
-                  OR nullif(btrim(attribute.attribute_description), '') IS NOT NULL
-                  OR nullif(btrim(attribute.attribute_inferred_data_type), '') IS NOT NULL
+               WHERE nullif(btrim(object_enrichment.object_description), '') IS NOT NULL
+                  OR nullif(btrim(attribute_enrichment.attribute_description), '') IS NOT NULL
+                  OR nullif(btrim(attribute_enrichment.attribute_inferred_data_type), '')
+                       IS NOT NULL
+                  OR num_nonnulls(attribute_enrichment.is_natural_key,
+                      attribute_enrichment.is_primary_key, attribute_enrichment.is_nullable,
+                      attribute_enrichment.is_pii) > 0
            )::INTEGER,
            0::INTEGER,
            max(greatest(
-               CASE WHEN nullif(btrim(object.object_description), '') IS NOT NULL
-                    THEN object.updated_time END,
-               CASE WHEN nullif(btrim(attribute.attribute_description), '') IS NOT NULL
-                      OR nullif(btrim(attribute.attribute_inferred_data_type), '') IS NOT NULL
-                    THEN attribute.updated_time END
+               CASE WHEN nullif(btrim(object_enrichment.object_description), '') IS NOT NULL
+                    THEN object_enrichment.updated_time END,
+               CASE WHEN nullif(btrim(attribute_enrichment.attribute_description), '') IS NOT NULL
+                      OR nullif(btrim(attribute_enrichment.attribute_inferred_data_type), '')
+                       IS NOT NULL
+                      OR num_nonnulls(attribute_enrichment.is_natural_key,
+                      attribute_enrichment.is_primary_key, attribute_enrichment.is_nullable,
+                      attribute_enrichment.is_pii) > 0
+                    THEN attribute_enrichment.updated_time END
            ))
       FROM target_model
       LEFT JOIN model.model_input_scope AS scope
@@ -155,6 +163,12 @@ WITH target_model AS (
         ON object.object_id = scope.object_id AND object.is_active
       LEFT JOIN core.attribute AS attribute
         ON attribute.object_id = object.object_id AND attribute.is_active
+      LEFT JOIN workflow.object_enrichment AS object_enrichment
+        ON object_enrichment.model_id = target_model.model_id
+       AND object_enrichment.object_id = object.object_id
+      LEFT JOIN workflow.attribute_enrichment AS attribute_enrichment
+        ON attribute_enrichment.model_id = target_model.model_id
+       AND attribute_enrichment.attribute_id = attribute.attribute_id
     UNION ALL
     SELECT 9,
            'mapping',
@@ -251,7 +265,7 @@ class WorkflowOverviewDatabase(Protocol):
 def _ledger_state(metric: WorkflowMetric) -> WorkflowLedgerState:
     if metric.workflow == "scope":
         return "ready" if metric.result_count else "empty"
-    if metric.latest_run_state in ("queued", "running", "failed"):
+    if metric.latest_run_state in ("queued", "running", "failed", "cancelled"):
         return metric.latest_run_state
     if metric.result_count:
         return "results_available"
@@ -267,7 +281,7 @@ def _section_state(
 ) -> ModelSectionState:
     if metric.workflow == "scope":
         return "ready" if metric.result_count else "empty"
-    if metric.latest_run_state in ("queued", "running", "failed"):
+    if metric.latest_run_state in ("queued", "running", "failed", "cancelled"):
         return metric.latest_run_state
     # A completed Run is a lifecycle fact, not a statement that its draft was
     # applied, all targets have coverage, or the stored results are still current.

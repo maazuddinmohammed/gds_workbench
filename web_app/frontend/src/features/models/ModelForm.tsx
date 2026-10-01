@@ -6,7 +6,7 @@ import { ApiError } from "../../core/http";
 import type { JsonObject } from "../../shared/contracts";
 import type { SystemRecord } from "../tenants/api";
 import { reasoningEffortDisplayName, type WorkflowsApi } from "../workflows/api";
-import type { CreateModelCommand, LogicalEntityScdType, ModelDetail } from "./api";
+import type { CreateModelCommand, ModelEntityScdType, ModelDetail } from "./api";
 import "./model-schemas.css";
 
 const layerFields = [
@@ -48,7 +48,8 @@ export function ModelForm({
   const schemaToFocus = useRef<string | null>(null);
   const [agentModelCode, setAgentModelCode] = useState(initialModel?.default_agent_model_code ?? "");
   const [mappingSourceSystemId, setMappingSourceSystemId] = useState(initialModel?.default_mapping_source_system_id?.toString() ?? "");
-  const [logicalScdType, setLogicalScdType] = useState<LogicalEntityScdType | "">(initialModel?.logical_entity_scd_type ?? "");
+  const [logicalScdType, setLogicalScdType] = useState<ModelEntityScdType | "">(initialModel?.logical_entity_scd_type ?? "");
+  const [dimensionalScdType, setDimensionalScdType] = useState<ModelEntityScdType | "">(initialModel?.dimensional_entity_scd_type ?? "");
   const [reasoningCode, setReasoningCode] = useState(initialModel?.default_reasoning_effort_code ?? "");
   const [agentDefaultsChanged, setAgentDefaultsChanged] = useState(false);
   const [agentSettingsOpen, setAgentSettingsOpen] = useState(false);
@@ -85,6 +86,7 @@ export function ModelForm({
       silver_model_naming_instructions: null,
       silver_model_audit_columns_template: null,
       logical_entity_scd_type: logicalScdType || null,
+      dimensional_entity_scd_type: dimensionalScdType || null,
       gold_model_naming_instructions: null,
       gold_model_technical_columns_template: null,
       gold_model_audit_columns_template: null,
@@ -287,12 +289,24 @@ export function ModelForm({
                     <select name="logical_entity_scd_type" value={logicalScdType}
                       aria-labelledby="logical-scd-type-label"
                       aria-describedby="logical-scd-type-help"
-                      onChange={(event) => setLogicalScdType(event.target.value as LogicalEntityScdType | "")}>
+                      onChange={(event) => setLogicalScdType(event.target.value as ModelEntityScdType | "")}>
                       <option value="">Not specified</option>
                       <option value="type_1">SCD Type 1 — overwrite changes</option>
                       <option value="type_2">SCD Type 2 — preserve history</option>
                     </select>
                     <small id="logical-scd-type-help" className="field-help">Guides Logical entity and Mapping generation.</small>
+                  </label> : null}
+                  {group.title === "Gold settings" ? <label>
+                    <span id="dimensional-scd-type-label">Dimensional entity SCD type</span>
+                    <select name="dimensional_entity_scd_type" value={dimensionalScdType}
+                      aria-labelledby="dimensional-scd-type-label"
+                      aria-describedby="dimensional-scd-type-help"
+                      onChange={(event) => setDimensionalScdType(event.target.value as ModelEntityScdType | "")}>
+                      <option value="">Not specified</option>
+                      <option value="type_1">SCD Type 1 — overwrite changes</option>
+                      <option value="type_2">SCD Type 2 — preserve history</option>
+                    </select>
+                    <small id="dimensional-scd-type-help" className="field-help">Controls Dimension history and Mapping generation. Type 1 overwrites changes; Type 2 keeps versions. Facts and Bridges are unaffected.</small>
                   </label> : null}
                   {group.fields.map((field) => (
                     <label key={field.name}>

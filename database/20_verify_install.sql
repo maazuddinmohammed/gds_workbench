@@ -13,6 +13,7 @@ DECLARE
     v_databricks_function_count INTEGER;
     v_application_web_function_count INTEGER;
     v_application_web_function_signatures TEXT[] := ARRAY[
+        'application.review_model_enrichment(uuid,uuid,bigint,bigint,bigint,character varying,character varying,jsonb,uuid)',
         'application.metadata_object_review_revision(core.object)',
         'application.metadata_attribute_review_revision(core.attribute,core.object)',
         'application.delete_model_records(uuid,uuid,bigint,bigint,bigint,uuid,jsonb)',
@@ -21,8 +22,8 @@ DECLARE
         'application.review_metadata_records(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,uuid)',
         'application.archive_model(uuid,uuid,character varying,bigint,bigint)',
         'application.set_principal_last_tenant(uuid,uuid,character varying,bigint)',
-        'application.create_model(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer,bigint,character varying)',
-        'application.update_model(uuid,uuid,character varying,bigint,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer,bigint,character varying)',
+        'application.create_model(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer,bigint,character varying,character varying)',
+        'application.update_model(uuid,uuid,character varying,bigint,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer,bigint,character varying,character varying)',
         'application.save_prompt_template(uuid,uuid,character varying,bigint,bigint,character varying,bigint,character varying,character varying,text,boolean,timestamp with time zone)',
         'application.save_prompt_template_draft(uuid,uuid,character varying,bigint,bigint,text,text,text,timestamp with time zone,text[])',
         'application.transition_prompt_template_version(uuid,uuid,character varying,bigint,character varying,character varying)',
@@ -31,6 +32,7 @@ DECLARE
         'application.update_output_template(uuid,uuid,character varying,bigint,character varying,character varying,boolean,timestamp with time zone)',
         'application.create_workflow_run(uuid,uuid,character varying,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,character varying,character varying,bigint,bigint,bigint,character varying,jsonb,jsonb,character varying,bigint[])',
         'application.start_workflow_run(uuid,uuid,character varying,bigint,bigint)',
+        'application.cancel_workflow_run(uuid,uuid,character varying,bigint,bigint,bigint)',
         'application.claim_next_workflow_run(integer)',
         'application.renew_workflow_run_claim(bigint,uuid,integer)',
         'application.release_workflow_run_claim(bigint,uuid)',
@@ -769,6 +771,78 @@ BEGIN
         RAISE EXCEPTION 'Physical metadata enrichment columns are invalid';
     END IF;
 
+    IF EXISTS (
+        SELECT 1
+          FROM (VALUES
+              ('object_enrichment', 'model_id', 'bigint', 'NO'),
+              ('object_enrichment', 'object_id', 'bigint', 'NO'),
+              ('object_enrichment', 'object_description', 'text', 'YES'),
+              ('object_enrichment', 'workflow_run_id', 'bigint', 'YES'),
+              ('object_enrichment', 'is_locked', 'boolean', 'NO'),
+              ('attribute_enrichment', 'model_id', 'bigint', 'NO'),
+              ('attribute_enrichment', 'attribute_id', 'bigint', 'NO'),
+              ('attribute_enrichment', 'object_id', 'bigint', 'NO'),
+              ('attribute_enrichment', 'attribute_description', 'text', 'YES'),
+              ('attribute_enrichment', 'attribute_inferred_data_type', 'character varying', 'YES'),
+              ('attribute_enrichment', 'is_natural_key', 'boolean', 'YES'),
+              ('attribute_enrichment', 'is_primary_key', 'boolean', 'YES'),
+              ('attribute_enrichment', 'is_nullable', 'boolean', 'YES'),
+              ('attribute_enrichment', 'is_pii', 'boolean', 'YES'),
+              ('attribute_enrichment', 'workflow_run_id', 'bigint', 'YES'),
+              ('attribute_enrichment', 'is_locked', 'boolean', 'NO')
+          ) AS expected(table_name, column_name, data_type, is_nullable)
+          LEFT JOIN information_schema.columns AS actual
+            ON actual.table_schema = 'workflow'
+           AND actual.table_name = expected.table_name
+           AND actual.column_name = expected.column_name
+         WHERE actual.column_name IS NULL
+            OR actual.data_type <> expected.data_type
+            OR actual.is_nullable <> expected.is_nullable
+            OR (expected.column_name IN ('is_natural_key', 'is_primary_key', 'is_nullable', 'is_pii')
+                AND actual.column_default IS NOT NULL)
+            OR (expected.column_name = 'attribute_inferred_data_type'
+                AND actual.character_maximum_length IS DISTINCT FROM 100)
+    ) OR EXISTS (
+        SELECT 1
+          FROM (VALUES
+              ('workflow.object_enrichment', 'object_enrichment_pkey', 'p'),
+              ('workflow.object_enrichment', 'fk_object_enrichment_model', 'f'),
+              ('workflow.object_enrichment', 'fk_object_enrichment_scope', 'f'),
+              ('workflow.object_enrichment', 'fk_object_enrichment_workflow_run', 'f'),
+              ('workflow.object_enrichment', 'ck_object_enrichment_description', 'c'),
+              ('workflow.attribute_enrichment', 'attribute_enrichment_pkey', 'p'),
+              ('workflow.attribute_enrichment', 'fk_attribute_enrichment_model', 'f'),
+              ('workflow.attribute_enrichment', 'fk_attribute_enrichment_scope', 'f'),
+              ('workflow.attribute_enrichment', 'fk_attribute_enrichment_attribute', 'f'),
+              ('workflow.attribute_enrichment', 'fk_attribute_enrichment_workflow_run', 'f'),
+              ('workflow.attribute_enrichment', 'ck_attribute_enrichment_description', 'c'),
+              ('workflow.attribute_enrichment', 'ck_attribute_enrichment_inferred_type', 'c')
+          ) AS expected(relation_name, constraint_name, constraint_type)
+          LEFT JOIN pg_catalog.pg_constraint AS actual
+            ON actual.conrelid = to_regclass(expected.relation_name)
+           AND actual.conname = expected.constraint_name
+         WHERE actual.oid IS NULL
+            OR actual.contype::TEXT <> expected.constraint_type
+            OR NOT actual.convalidated
+    ) THEN
+        RAISE EXCEPTION 'Model enrichment storage contract is invalid';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM unnest(ARRAY[
+              'workflow.object_enrichment', 'workflow.attribute_enrichment'
+          ]) AS enrichment_relation(name)
+         CROSS JOIN unnest(ARRAY['gds_app_write', 'gds_web_write']) AS runtime_role(name)
+         WHERE NOT has_table_privilege(runtime_role.name, enrichment_relation.name, 'SELECT')
+            OR has_table_privilege(
+                runtime_role.name, enrichment_relation.name,
+                'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+            )
+    ) THEN
+        RAISE EXCEPTION 'Model enrichment runtime privileges are invalid';
+    END IF;
+
     IF NOT EXISTS (
         SELECT 1
           FROM information_schema.columns AS column_record
@@ -988,7 +1062,8 @@ BEGIN
                       'default_max_turns',
                       'default_validation_retry_count',
                       'default_mapping_source_system_id',
-                      'logical_entity_scd_type'
+                      'logical_entity_scd_type',
+                      'dimensional_entity_scd_type'
                   ]) AS web_only_model_column(name)
             WHERE has_column_privilege(
                       'gds_app_write',
@@ -1217,7 +1292,8 @@ BEGIN
                       'default_max_turns',
                       'default_validation_retry_count',
                       'default_mapping_source_system_id',
-                      'logical_entity_scd_type'
+                      'logical_entity_scd_type',
+                      'dimensional_entity_scd_type'
                   ]) AS web_only_model_column(name)
             WHERE has_column_privilege(
                       'gds_web_write', 'model.model',

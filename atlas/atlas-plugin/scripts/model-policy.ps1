@@ -26,9 +26,11 @@ function Get-AtlasModelPolicy($States, $MetadataStates, $Model) {
     }
     $details = if ($rows.ContainsKey('model_details') -and $rows.model_details.Count -gt 0) { $rows.model_details[0] } else { $Model }
     foreach ($state in $States) {
-        if ($state.Dataset.name -ceq 'model_details' -and @($state.Baseline).Count -gt 0 -and @($state.Pending).Count -gt 0 -and
-            (Get-Property $state.Baseline[0] 'logical_entity_scd_type') -cne (Get-Property $state.Pending[0] 'logical_entity_scd_type')) {
-            Add-PolicyIssue $issues 'model_policy_read_only' 'model_details' 'logical_entity_scd_type' 'Logical SCD type must be changed through Model settings.'
+        foreach ($field in @('logical_entity_scd_type', 'dimensional_entity_scd_type')) {
+            if ($state.Dataset.name -ceq 'model_details' -and @($state.Baseline).Count -gt 0 -and @($state.Pending).Count -gt 0 -and
+                (Get-Property $state.Baseline[0] $field) -cne (Get-Property $state.Pending[0] $field)) {
+                Add-PolicyIssue $issues 'model_policy_read_only' 'model_details' $field 'SCD type must be changed through Model settings.'
+            }
         }
     }
     foreach ($dataset in @('conceptual_object', 'conceptual_relationship', 'logical_submodel', 'logical_entity', 'logical_attribute', 'logical_relationship', 'dimensional_submodel', 'dimensional_entity', 'dimensional_attribute', 'dimensional_relationship')) {

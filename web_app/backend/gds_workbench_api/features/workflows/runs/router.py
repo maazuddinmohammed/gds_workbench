@@ -153,6 +153,7 @@ def create_workflow_runs_router(
                     "completed",
                     "completed_with_repair",
                     "failed",
+                    "cancelled",
                 }:
                     return
                 if await request.is_disconnected():

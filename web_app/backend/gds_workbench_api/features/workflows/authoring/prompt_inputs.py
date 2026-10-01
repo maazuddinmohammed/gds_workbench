@@ -32,6 +32,7 @@ from pydantic import (
 )
 
 from gds_workbench_api.features.metadata_enrichment.contracts import EvidenceMethod
+from gds_workbench_api.features.workflows.authoring.gold_policy import effective_gold_templates
 
 from .agent_execution import LocalAgentToolDefinition
 from .context import SelectedLogicalEntityContext, SelectedObjectContext
@@ -1251,6 +1252,15 @@ def project_prompt_input_values(
                     if not isinstance(model_details, dict):
                         raise ValueError
                     value = model_details[path.removeprefix("model_details.")]
+                    if name in {"gold_technical_policy", "gold_audit_policy"}:
+                        raw_technical = model_details["gold_model_technical_columns_template"]
+                        raw_audit = model_details["gold_model_audit_columns_template"]
+                        if (raw_technical is not None and not isinstance(raw_technical, dict)) or (
+                            raw_audit is not None and not isinstance(raw_audit, dict)
+                        ):
+                            raise ValueError
+                        technical, audit = effective_gold_templates(raw_technical, raw_audit)
+                        value = technical if name == "gold_technical_policy" else audit
                 else:
                     value = context[path]
                 # Existing canonical models contain tuples and Decimal values whose

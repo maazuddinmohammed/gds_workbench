@@ -81,6 +81,7 @@ type RunningState = Literal[
     "completed",
     "completed_with_repair",
     "failed",
+    "cancelled",
 ]
 type TerminalState = Literal["completed", "completed_with_repair", "failed"]
 type ProgressStatus = Literal["running", "warning", "blocked"]

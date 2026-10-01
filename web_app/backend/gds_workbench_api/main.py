@@ -73,11 +73,19 @@ from gds_workbench_api.features.metadata_change_sets import (
     MetadataChangeSetService,
     create_metadata_change_sets_router,
 )
+from gds_workbench_api.features.metadata_enrichment.dictionary import (
+    DatabaseEnrichmentDictionaryService,
+    create_enrichment_dictionary_router,
+)
 from gds_workbench_api.features.metadata_enrichment.read_router import (
     create_metadata_enrichment_read_router,
 )
 from gds_workbench_api.features.metadata_enrichment.read_service import (
     MetadataEnrichmentReadService,
+)
+from gds_workbench_api.features.metadata_enrichment.review import (
+    DatabaseEnrichmentReviewService,
+    create_enrichment_review_router,
 )
 from gds_workbench_api.features.metadata_enrichment.router import (
     MetadataEnrichmentWorkflowService,
@@ -157,6 +165,8 @@ def create_app(
     model_change_set_service: ModelChangeSetService | None = None,
     workflow_draft_apply_service: WorkflowDraftApplyService | None = None,
     model_input_scope_service: ModelInputScopeService | None = None,
+    enrichment_dictionary_service: DatabaseEnrichmentDictionaryService | None = None,
+    enrichment_review_service: DatabaseEnrichmentReviewService | None = None,
     agent_capability_registry: AgentCapabilityRegistry | None = None,
     tenant_lock_service: TenantLockService | None = None,
     metadata_service: MetadataService | None = None,
@@ -458,6 +468,20 @@ def create_app(
             create_metadata_enrichment_workflow_router(
                 identity_provider=identity_provider,
                 service=metadata_enrichment_workflow_service,
+            )
+        )
+    if enrichment_dictionary_service is not None:
+        app.include_router(
+            create_enrichment_dictionary_router(
+                identity_provider=identity_provider,
+                service=enrichment_dictionary_service,
+            )
+        )
+    if enrichment_review_service is not None:
+        app.include_router(
+            create_enrichment_review_router(
+                identity_provider=identity_provider,
+                service=enrichment_review_service,
             )
         )
     if metadata_enrichment_read_service is not None:

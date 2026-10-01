@@ -34,11 +34,12 @@ from .repository import MetadataEnrichmentRepository
 
 
 class DescriptionValidator:
-    def __init__(self, targets: dict[str, str]) -> None:
+    def __init__(self, targets: dict[str, str], *, attributes: bool = False) -> None:
         self.targets = targets
+        self.attributes = attributes
 
     def output_schema(self) -> dict[str, JsonValue]:
-        return cast(
+        schema = cast(
             dict[str, JsonValue],
             {
                 "type": "object",
@@ -63,13 +64,41 @@ class DescriptionValidator:
             },
         )
 
+        if self.attributes:
+            properties = cast(dict[str, JsonValue], schema["properties"])
+            properties["attributes"] = {
+                "type": "object",
+                "additionalProperties": False,
+                "required": list(self.targets),
+                "properties": {
+                    ref: {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["is_natural_key", "is_primary_key", "is_nullable", "is_pii"],
+                        "properties": {
+                            name: {"type": ["boolean", "null"]}
+                            for name in (
+                                "is_natural_key",
+                                "is_primary_key",
+                                "is_nullable",
+                                "is_pii",
+                            )
+                        },
+                    }
+                    for ref in self.targets
+                },
+            }
+            schema["required"] = ["descriptions", "attributes"]
+        return schema
+
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
         descriptions = candidate.get("descriptions") if isinstance(candidate, dict) else None
         if (
             not isinstance(candidate, dict)
             or not isinstance(descriptions, dict)
             or set(descriptions) != set(self.targets)
-            or set(candidate) != {"descriptions"}
+            or set(candidate)
+            != ({"descriptions", "attributes"} if self.attributes else {"descriptions"})
         ):
             return AgentCandidateValidation(
                 issues=(
@@ -102,6 +131,29 @@ class DescriptionValidator:
                         message=(
                             "Provide a meaningful description within 2000 UTF-8 bytes; "
                             "use null when unknown."
+                        ),
+                    )
+                )
+        if self.attributes:
+            attributes = candidate.get("attributes")
+            flags = {"is_natural_key", "is_primary_key", "is_nullable", "is_pii"}
+            if (
+                not isinstance(attributes, dict)
+                or set(attributes) != set(self.targets)
+                or any(
+                    not isinstance(value, dict)
+                    or set(value) != flags
+                    or any(flag is not None and type(flag) is not bool for flag in value.values())
+                    for value in attributes.values()
+                )
+            ):
+                issues.append(
+                    AgentValidationIssue(
+                        code="candidate.attribute_findings",
+                        path=("attributes",),
+                        message=(
+                            "Return all four boolean-or-null findings "
+                            "for exactly the selected attributes."
                         ),
                     )
                 )
@@ -321,6 +373,16 @@ class DatabaseMetadataEnrichmentExecutor:
                             evidence_method="none",
                         )
                     )
+                    for flag in ("is_natural_key", "is_primary_key", "is_nullable", "is_pii"):
+                        results.append(
+                            EnrichmentFieldResult(
+                                object_id=item.object_id,
+                                attribute_id=attribute.attribute_id,
+                                field_name=flag,
+                                status=description_status,
+                                evidence_method="none",
+                            )
+                        )
                     if description_status == "inconclusive":
                         ref = json.dumps(
                             [*object_key, attribute.attribute_name],
@@ -344,7 +406,9 @@ class DatabaseMetadataEnrichmentExecutor:
 
             maximum_attempt = 1
             for unit_number, (prompt_workflow, inputs, assigned, positions) in enumerate(units, 1):
-                validator = DescriptionValidator(assigned)
+                validator = DescriptionValidator(
+                    assigned, attributes=prompt_workflow == "metadata_enrichment_attribute"
+                )
                 stage_context = cast(JsonValue, {"prompt_inputs": inputs})
                 try:
                     outcome = await self._stage.run(
@@ -371,13 +435,51 @@ class DatabaseMetadataEnrichmentExecutor:
                                 "evidence_method": "agent_description",
                             }
                         )
+                    if not validator.attributes:
+                        for future_workflow, future_inputs, _, _ in units[unit_number:]:
+                            if future_workflow != "metadata_enrichment_attribute":
+                                continue
+                            object_context = future_inputs.get("object_context")
+                            if (
+                                isinstance(object_context, list)
+                                and len(object_context) == 1
+                                and isinstance(object_context[0], dict)
+                            ):
+                                key = json.dumps(
+                                    [object_context[0][name] for name in key_fields],
+                                    ensure_ascii=False,
+                                    separators=(",", ":"),
+                                )
+                                if key in descriptions:
+                                    object_context[0]["object_description"] = descriptions[key]
+                    if validator.attributes:
+                        findings = cast(
+                            dict[str, dict[str, bool | None]],
+                            cast(dict[str, JsonValue], outcome.candidate)["attributes"],
+                        )
+                        for ref, flags in findings.items():
+                            for offset, flag in enumerate(
+                                ("is_natural_key", "is_primary_key", "is_nullable", "is_pii"), 1
+                            ):
+                                value = flags[flag]
+                                index = positions[ref] + offset
+                                results[index] = results[index].model_copy(
+                                    update={
+                                        "status": "applied",
+                                        "evidence_method": "agent_key_inference",
+                                        "applied_value": None
+                                        if value is None
+                                        else str(value).lower(),
+                                    }
+                                )
                 except WorkbenchError as error:
                     # Retry belongs to the shared runner. Never split an Object unit or
                     # substitute tools; preserve type completion and continue the next unit.
                     for position in positions.values():
-                        results[position] = results[position].model_copy(
-                            update={"status": "unavailable"}
-                        )
+                        for offset in range(5 if validator.attributes else 1):
+                            results[position + offset] = results[position + offset].model_copy(
+                                update={"status": "unavailable"}
+                            )
                     await progress.append(
                         attempt=maximum_attempt,
                         stage="candidate_authoring",

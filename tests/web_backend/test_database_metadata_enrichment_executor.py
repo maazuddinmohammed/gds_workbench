@@ -38,6 +38,7 @@ from gds_workbench_api.features.workflows.commands import (
 from gds_workbench_api.integrations.agents.composition import LocalFakeAgentAdapter
 from pydantic import JsonValue
 
+from tests.mcp.enrichment_test_support import seed_model_enrichment
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.conftest import (
     bootstrap_postgres_database as bootstrap_postgres_database,
@@ -123,7 +124,23 @@ class DescriptionAgent(LocalFakeAgentAdapter):
         if self.behavior == "regenerate_null":
             nulls: dict[str, JsonValue] = {str(ref): None for ref in refs}
             return AgentExecutionResult(
-                candidate={"descriptions": nulls}, turn_count=1, tool_call_count=0
+                candidate={
+                    "descriptions": nulls,
+                    "attributes": {
+                        ref: {
+                            flag: None
+                            for flag in (
+                                "is_natural_key",
+                                "is_primary_key",
+                                "is_nullable",
+                                "is_pii",
+                            )
+                        }
+                        for ref in nulls
+                    },
+                },
+                turn_count=1,
+                tool_call_count=0,
             )
         assert "sample_rows" not in json.dumps(request.context)
         assert all(
@@ -140,7 +157,29 @@ class DescriptionAgent(LocalFakeAgentAdapter):
             return AgentExecutionResult(
                 candidate="unusable provider response", turn_count=1, tool_call_count=0
             )
-        return await super().execute(request)
+        result = await super().execute(request)
+        if (
+            self.behavior == "normal"
+            and isinstance(result.candidate, dict)
+            and "attributes" in result.candidate
+        ):
+            return result.model_copy(
+                update={
+                    "candidate": {
+                        **result.candidate,
+                        "attributes": {
+                            str(ref): {
+                                "is_natural_key": True,
+                                "is_primary_key": True,
+                                "is_nullable": False,
+                                "is_pii": False,
+                            }
+                            for ref in refs
+                        },
+                    }
+                }
+            )
+        return result
 
 
 @pytest.mark.asyncio
@@ -337,6 +376,26 @@ async def test_shared_executor_completes_physical_enrichment(
                 "UPDATE core.object SET is_locked=TRUE WHERE object_id=ANY(%s)",
                 (list(context.selected_object_ids),),
             )
+    with database.connect_owner() as connection:
+        seed_model_enrichment(connection, context.model_id)
+        if regenerations:
+            regenerations = [
+                target.model_copy(
+                    update={
+                        "expected_revision": require_row(
+                            connection.execute(
+                                "SELECT workflow.enrichment_review_revision(%s,%s,%s) AS revision",
+                                (
+                                    context.model_id,
+                                    target.object_id,
+                                    target.attribute_id,
+                                ),
+                            ).fetchone()
+                        )["revision"]
+                    }
+                )
+                for target in regenerations
+            ]
     principal = RequestPrincipal(
         actor_kind=ActorKind.HUMAN,
         entra_tenant_id=context.entra_tenant_id,
@@ -390,7 +449,7 @@ async def test_shared_executor_completes_physical_enrichment(
         if behavior == "regenerate_changed":
             with database.connect_owner() as connection:
                 connection.execute(
-                    "UPDATE core.attribute SET attribute_description='Concurrent edit.' "
+                    "UPDATE workflow.attribute_enrichment SET attribute_description='Concurrent edit.' "
                     "WHERE attribute_id=%s",
                     (first_attribute,),
                 )
@@ -432,9 +491,10 @@ async def test_shared_executor_completes_physical_enrichment(
     with database.connect_owner() as connection:
         attribute = require_row(
             connection.execute(
-                "SELECT attribute_data_type,attribute_inferred_data_type,attribute_description "
-                "FROM core.attribute WHERE attribute_id=%s",
-                (first_attribute,),
+                "SELECT attribute_data_type,enrichment.attribute_inferred_data_type,enrichment.attribute_description,enrichment.is_natural_key,enrichment.is_primary_key,enrichment.is_nullable,enrichment.is_pii "
+                "FROM core.attribute JOIN workflow.attribute_enrichment AS enrichment USING(attribute_id) "
+                "WHERE attribute_id=%s AND enrichment.model_id=%s",
+                (first_attribute, context.model_id),
             ).fetchone()
         )
         outcomes = connection.execute(
@@ -508,34 +568,13 @@ async def test_shared_executor_completes_physical_enrichment(
             assert len(agent.requested_keys) == 4
             assert all(len(key) == 6 for key in agent.requested_keys)
             assert len({key[:5] for key in agent.requested_keys}) == 2
-            for attribute_id, before in before_attributes.items():
-                after = after_attributes[attribute_id]
-                if attribute_id not in selected_ids:
-                    assert after == before
-                else:
-                    assert (
-                        after["attribute_description"]
-                        != before["attribute_description"]
-                    )
-                    permitted = {
-                        "attribute_description",
-                        "attribute_inferred_data_type",
-                        "updated_time",
-                        "updated_by",
-                    }
-                    assert {
-                        key: value
-                        for key, value in before.items()
-                        if key not in permitted
-                    } == {
-                        key: value
-                        for key, value in after.items()
-                        if key not in permitted
-                    }
+            assert after_attributes == before_attributes, (
+                "Physical metadata must remain unchanged"
+            )
     assert len(outcomes) == (
-        sum(1 if target.attribute_id is None else 2 for target in regenerations)
+        sum(1 if target.attribute_id is None else 6 for target in regenerations)
         if regenerations
-        else len(context.selected_object_ids) + 2 * len(attributes)
+        else len(context.selected_object_ids) + 6 * len(attributes)
     )
     assert state["failure_code"] is None
     assert attribute["attribute_data_type"] == "DECIMAL(12,2)"
@@ -551,9 +590,9 @@ async def test_shared_executor_completes_physical_enrichment(
         assert result.counts == (
             {"changed": len(outcomes)}
             if behavior == "regenerate_changed"
-            else {"applied": 1, "existing": 1}
+            else {"applied": 5, "existing": 1}
             if behavior == "regenerate_existing_type"
-            else {"applied": 6, "inconclusive": 2}
+            else {"applied": 22, "inconclusive": 2}
             if behavior == "regenerate_bulk_attributes"
             else {"applied": len(outcomes)}
         )
@@ -588,3 +627,9 @@ async def test_shared_executor_completes_physical_enrichment(
         else:
             assert attribute["attribute_description"] is not None
             assert result.counts["applied"] > 1
+
+    if behavior == "normal":
+        assert [
+            attribute[flag]
+            for flag in ("is_natural_key", "is_primary_key", "is_nullable", "is_pii")
+        ] == [True, True, False, False]

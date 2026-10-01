@@ -12,6 +12,14 @@ import {
 } from "./api";
 
 describe("Workflow HTTP adapter", () => {
+  it("cancels exactly the selected Tenant, Model and run", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => jsonResponse({ workflow_run_state: "cancelled" }));
+    const api = createWorkflowsApi(createHttpRequest(fetcher));
+    await api.cancelWorkflowRun(7, 18, 1048);
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith(
+      "/api/v1/tenants/7/models/18/runs/1048/cancel", expect.objectContaining({ method: "POST" }),
+    );
+  });
   it("fetches generated records for an explicitly selected draft dataset", async () => {
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({}));
     const api = createWorkflowsApi(createHttpRequest(fetcher));

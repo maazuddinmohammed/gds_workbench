@@ -44,6 +44,7 @@ class CompleteModelRequest(BaseModel):
     )
     default_mapping_source_system_id: int | None = Field(default=None, gt=0)
     logical_entity_scd_type: Literal["type_1", "type_2"] | None = None
+    dimensional_entity_scd_type: Literal["type_1", "type_2"] | None = None
     silver_model_naming_instructions: str | None = Field(
         default=None,
         min_length=1,

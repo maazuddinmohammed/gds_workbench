@@ -124,6 +124,7 @@ export type AnalysisApi = AnalysisTransport
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"
+  | "cancelWorkflowRun"
     | "createWorkflowRun"
     | "executeAnalysisInferenceRun"
     | "executeAnalysisValidationRun"

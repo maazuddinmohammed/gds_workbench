@@ -34,6 +34,7 @@ from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextRepository,
     PostgresAgentContextRepository,
 )
+from gds_workbench_api.features.workflows.authoring.gold_policy import effective_gold_templates
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
     AgentWorkflowRunStart,
@@ -233,13 +234,17 @@ class DimensionalWorkflow:
                 )
 
             model_details = context.context.model_details
+            technical, audit = effective_gold_templates(
+                model_details.gold_model_technical_columns_template,
+                model_details.gold_model_audit_columns_template,
+            )
             validate_dimensional_gold_policy(
                 naming_instructions=effective_naming_instructions(
                     "dimensional",
                     model_details.gold_model_naming_instructions,
                 ),
-                raw_technical_template=(model_details.gold_model_technical_columns_template),
-                raw_audit_template=model_details.gold_model_audit_columns_template,
+                raw_technical_template=technical,
+                raw_audit_template=audit,
             )
 
             execution_mode = plan.workflow_execution_mode
@@ -516,17 +521,22 @@ def _project_dimensional_changes(
     context: AgentContextBundle,
 ) -> tuple[StageModelChange, ...]:
     details = context.context.model_details
+    technical, audit = effective_gold_templates(
+        details.gold_model_technical_columns_template,
+        details.gold_model_audit_columns_template,
+    )
     changes = validator.parse_validated(candidate)
     changes = project_dimensional_gold_policy(
         changes=changes,
         applied=context.context.applied.dimensional,
-        raw_technical_template=details.gold_model_technical_columns_template,
-        raw_audit_template=details.gold_model_audit_columns_template,
+        raw_technical_template=technical,
+        raw_audit_template=audit,
+        scd_type=details.dimensional_entity_scd_type,
     )
     return project_dimensional_foreign_key_policy(
         changes=changes,
         applied=context.context.applied.dimensional,
-        raw_technical_template=details.gold_model_technical_columns_template,
+        raw_technical_template=technical,
     )
 
 

@@ -118,7 +118,7 @@ def test_dimensional_inputs_match_real_history_policy_and_dataset_shapes(
             base.model_details.gold_model_technical_columns_template
         )
         broken = cast(dict[str, Any], deepcopy(context))
-        broken["model_details"]["gold_model_technical_columns_template"] = None
+        broken["model_details"]["gold_model_technical_columns_template"] = {"schema_version": "invalid"}
         with pytest.raises(InvalidRequestError):
             project_prompt_input_values(
                 plan=plan, stage=stage, context=broken, resolver_values={}

@@ -199,7 +199,7 @@ SELECT selected.selection_order,
        object_record.fc_object_schema,
        object_record.fc_object_name,
        object_record.object_transformation,
-       object_record.object_description,
+       enrichment.object_description,
        object_record.batch_attribute_name,
        object_type.object_type_code,
        eligibility.zone_code,
@@ -211,6 +211,8 @@ SELECT selected.selection_order,
   JOIN core.object AS object_record
     ON object_record.object_id = eligibility.object_id
    AND object_record.connection_id = eligibility.connection_id
+  LEFT JOIN workflow.object_enrichment AS enrichment
+    ON enrichment.model_id = eligibility.model_id AND enrichment.object_id = eligibility.object_id
   JOIN core.connection AS connection
     ON connection.connection_id = eligibility.connection_id
    AND connection.system_id = eligibility.system_id
@@ -246,9 +248,9 @@ SELECT selected.selection_order,
        attribute.attribute_name,
        attribute.fc_attribute_name,
        attribute.attribute_ordinal_position,
-       attribute.attribute_description,
+       enrichment.attribute_description,
        attribute.attribute_data_type,
-       attribute.attribute_inferred_data_type,
+       enrichment.attribute_inferred_data_type,
        attribute.attribute_nullability,
        attribute.attribute_custom_code,
        attribute.is_surrogate_key,
@@ -258,7 +260,10 @@ SELECT selected.selection_order,
        attribute.is_mapped,
        attribute.is_purge,
        attribute.is_locked,
-       attribute.is_active
+       attribute.is_active,
+       jsonb_build_object('is_natural_key', enrichment.is_natural_key,
+           'is_primary_key', enrichment.is_primary_key, 'is_nullable', enrichment.is_nullable,
+           'is_pii', enrichment.is_pii) AS enrichment
   FROM selected
   JOIN eligible_attributes AS eligibility
     ON eligibility.object_id = selected.object_id
@@ -268,6 +273,9 @@ SELECT selected.selection_order,
   JOIN core.attribute AS attribute
     ON attribute.attribute_id = eligibility.attribute_id
    AND attribute.object_id = eligibility.object_id
+  LEFT JOIN workflow.attribute_enrichment AS enrichment
+    ON enrichment.model_id = eligibility.model_id
+   AND enrichment.attribute_id = eligibility.attribute_id
   JOIN core.connection AS connection
     ON connection.connection_id = eligibility.connection_id
    AND connection.system_id = eligibility.system_id
@@ -397,12 +405,16 @@ def load_default_agent_context_limits() -> AgentContextLimits:
     )
 
 
+class EnrichedAttributeRecord(AttributeRecord):
+    enrichment: dict[str, JsonValue] = Field(default_factory=dict, repr=False)
+
+
 class SelectedObjectContext(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     selection_order: int = Field(gt=0)
     object: ObjectRecord = Field(repr=False)
-    attributes: tuple[AttributeRecord, ...] = Field(repr=False)
+    attributes: tuple[EnrichedAttributeRecord, ...] = Field(repr=False)
 
 
 class SelectedLogicalEntityContext(BaseModel):
@@ -1053,7 +1065,7 @@ def _physical_object_groups(
         )
         object_by_id[expected_id] = (expected_order, record)
 
-    attributes_by_object: dict[int, list[AttributeRecord]] = {
+    attributes_by_object: dict[int, list[EnrichedAttributeRecord]] = {
         object_id: [] for object_id in object_ids
     }
     seen_attribute_ids: set[int] = set()
@@ -1069,7 +1081,7 @@ def _physical_object_groups(
         ):
             raise AgentContextUnavailableError()
         seen_attribute_ids.add(attribute_id)
-        record = AttributeRecord.model_validate(
+        record = EnrichedAttributeRecord.model_validate(
             {
                 key: value
                 for key, value in row.items()

@@ -134,7 +134,7 @@ class GoldAuditPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     schema_version: Literal["1.0"] = "1.0"
-    columns: tuple[GoldPolicyColumn, ...] = Field(min_length=1, max_length=32)
+    columns: tuple[GoldPolicyColumn, ...] = Field(min_length=0, max_length=32)
 
     @model_validator(mode="after")
     def validate_names(self) -> GoldAuditPolicy:
@@ -164,6 +164,7 @@ def project_dimensional_gold_policy(
     applied: DimensionalSection | None,
     raw_technical_template: dict[str, object] | None,
     raw_audit_template: dict[str, object] | None,
+    scd_type: Literal["type_1", "type_2"] | None = None,
 ) -> tuple[StageModelChange, ...]:
     """Project Entity-local surrogate, Type 2, and audit Attributes.
 
@@ -206,6 +207,20 @@ def project_dimensional_gold_policy(
         if entity.dimensional_entity_status != "active":
             continue
         entity_attributes = [record for key, record in attributes.items() if key[:2] == entity_key]
+        if entity.dimensional_entity_type == "dimension" and scd_type is not None:
+            incompatible = "historize" if scd_type == "type_1" else "overwrite"
+            if any(
+                row.dimensional_attribute_change_behavior == incompatible
+                and row.dimensional_attribute_status == "active"
+                and row.dimensional_attribute_role not in ("technical", "audit")
+                for row in entity_attributes
+            ):
+                raise DimensionalProjectionConflictError(
+                    f"Dimension change_behavior conflicts with {scd_type}. "
+                    "Use overwrite for Type 1 mutable descriptors, historize for Type 2, "
+                    "and fixed for stable identity. Preserve locked Attributes."
+                )
+
         is_new_entity = entity_key not in {_entity_key(row) for row in baseline.entities}
         if is_new_entity or any(
             row.dimensional_attribute_key_role == "surrogate"
@@ -261,11 +276,17 @@ def project_dimensional_gold_policy(
                     "definition fits 2000 characters. Preserve the frozen policy."
                 ) from None
             specifications.append((surrogate, "technical", "surrogate"))
-            if entity.dimensional_entity_type == "dimension" and any(
-                record.dimensional_attribute_change_behavior == "historize"
-                and record.dimensional_attribute_role not in ("technical", "audit")
-                and record.dimensional_attribute_status == "active"
-                for record in entity_attributes
+            if entity.dimensional_entity_type == "dimension" and (
+                scd_type == "type_2"
+                or (
+                    scd_type is None
+                    and any(
+                        record.dimensional_attribute_change_behavior == "historize"
+                        and record.dimensional_attribute_role not in ("technical", "audit")
+                        and record.dimensional_attribute_status == "active"
+                        for record in entity_attributes
+                    )
+                )
             ):
                 specifications.extend(
                     (column, "technical", "none")

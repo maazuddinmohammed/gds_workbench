@@ -266,6 +266,7 @@ export type DimensionalApi = Pick<LogicalTransport, "listLogicalEntities"> & Dim
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"
+  | "cancelWorkflowRun"
     | "createWorkflowRun"
     | "executeDimensionalRun"
     | "listWorkflowRunEvents"

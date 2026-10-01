@@ -122,7 +122,11 @@ class MetadataEvidenceReader:
         sample_columns: dict[PhysicalRelation, set[str]] = defaultdict(set)
         for item, attribute in candidates:
             source = attribute.source
-            if attribute.is_masking_required or (source is not None and source.is_masking_required):
+            if (
+                attribute.is_pii is True
+                or attribute.is_masking_required
+                or (source is not None and source.is_masking_required)
+            ):
                 continue
             source_schema = self.source_schema(attribute)
             if source_schema and source_schema.data_type not in {None, "STRING"}:
@@ -218,8 +222,10 @@ class MetadataEvidenceReader:
         registered = self._registered_source_type(attribute)
         if source_schema is None and registered not in {None, "STRING"}:
             return TypeEvidence(registered, "registered_type")
-        allow_samples = not attribute.is_masking_required and not (
-            source and source.is_masking_required
+        allow_samples = (
+            attribute.is_pii is not True
+            and not attribute.is_masking_required
+            and not (source and source.is_masking_required)
         )
         if allow_samples and source and source.relation and source.relation_column:
             sampled = self._samples.get((source.relation, source.relation_column.casefold()))

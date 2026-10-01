@@ -11,6 +11,7 @@ from gds_etl_workbench.domain.modeling_records import normalize_model_key_value
 from gds_workbench_api.features.assertions.context import project_assertions
 
 from .context_contracts import WORKFLOW_INPUTS
+from .gold_policy import effective_gold_templates
 from .naming import effective_naming_instructions
 
 OBJECT_FIELDS = ("tenant_code", "system_code", "connection_code", "object_schema", "object_name")
@@ -131,7 +132,14 @@ def project_context_inputs(
                     }
                 )
             attributes.append(
-                {**{name: attr[name] for name in ATTRIBUTE_FIELDS}, "profile": profile}
+                {
+                    **{name: attr[name] for name in ATTRIBUTE_FIELDS},
+                    **{
+                        name: attr.get("enrichment", {}).get(name)
+                        for name in ("is_natural_key", "is_primary_key", "is_nullable", "is_pii")
+                    },
+                    "profile": profile,
+                }
             )
         values["object_attribute_context"].append(
             {
@@ -188,5 +196,9 @@ def project_context_inputs(
         if workflow == "logical":
             values["logical_entity_scd_type"] = details.get("logical_entity_scd_type")
         if workflow == "dimensional":
-            values["technical_columns"] = deepcopy(details["gold_model_technical_columns_template"])
+            values["dimensional_entity_scd_type"] = details.get("dimensional_entity_scd_type")
+            values["technical_columns"], values["audit_columns"] = effective_gold_templates(
+                details["gold_model_technical_columns_template"],
+                details["gold_model_audit_columns_template"],
+            )
     return {name: values[name] for name in WORKFLOW_INPUTS[workflow]}

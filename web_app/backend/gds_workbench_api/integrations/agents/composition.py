@@ -88,7 +88,16 @@ class LocalFakeAgentAdapter:
                 except ValueError:
                     name = ref
                 descriptions[ref] = f"Synthetic local description for {name}."
-            candidate = cast(JsonValue, {"descriptions": descriptions})
+            payload: dict[str, JsonValue] = {"descriptions": descriptions}
+            if isinstance(properties, dict) and "attributes" in properties:
+                payload["attributes"] = {
+                    ref: {
+                        name: None
+                        for name in ("is_natural_key", "is_primary_key", "is_nullable", "is_pii")
+                    }
+                    for ref in descriptions
+                }
+            candidate = cast(JsonValue, payload)
         elif request.workflow == "mapping":
             if request.stage == "mapping_authoring" and request.execution_mode == "tool_assisted":
                 mapping_context, tool_call_count = fake_mapping_context_from_tools(request)

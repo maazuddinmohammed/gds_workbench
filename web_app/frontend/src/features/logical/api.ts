@@ -299,6 +299,7 @@ export type LogicalApi = LogicalTransport & Pick<ModelTargetsTransport, "readTar
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"
+  | "cancelWorkflowRun"
     | "createWorkflowRun"
     | "executeLogicalRun"
     | "listWorkflowRunEvents"

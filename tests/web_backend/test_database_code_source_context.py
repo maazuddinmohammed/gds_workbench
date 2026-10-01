@@ -21,6 +21,7 @@ from gds_workbench_api.prompt_rendering import PromptVariableDefinition
 from jsonschema import Draft202012Validator
 
 from tests.mcp.conftest import DisposablePostgres
+from tests.mcp.enrichment_test_support import seed_model_enrichment
 from tests.web_backend.test_code_generation_context import _plan
 from tests.web_backend.test_database_mapping_source_context import (
     _load,
@@ -35,6 +36,8 @@ async def test_code_and_validation_track_entity_and_source_metadata(
     dimensional: bool,
 ) -> None:
     scope = _seed_mapping_scope(web_postgres_database, dimensional=dimensional)
+    with web_postgres_database.connect_owner() as connection:
+        seed_model_enrichment(connection, scope.plan.model_id)
     if dimensional:
         with web_postgres_database.connect_owner() as connection:
             mapping_id = _required_id(
@@ -95,16 +98,18 @@ async def test_code_and_validation_track_entity_and_source_metadata(
         initial = await current()
         assert await current() == initial
         source_context = initial["source_context"]
-        input_plan = _plan(selected_object_ids=(scope.plan.pair.modeled_entity_id,)).model_copy(
-            update={"modeled_entity_type": scope.plan.modeled_entity_type}
-        )
+        input_plan = _plan(
+            selected_object_ids=(scope.plan.pair.modeled_entity_id,)
+        ).model_copy(update={"modeled_entity_type": scope.plan.modeled_entity_type})
         agent_context = _assemble_context(
             plan=input_plan,
             rows=[
                 {
                     **initial,
                     "mapping_count": len(source_context["object_mappings"]),
-                    "attribute_mapping_count": len(source_context["attribute_mappings"]),
+                    "attribute_mapping_count": len(
+                        source_context["attribute_mappings"]
+                    ),
                     "applied_artifacts": [],
                 }
             ],
@@ -127,7 +132,9 @@ async def test_code_and_validation_track_entity_and_source_metadata(
             }
         )
         for mode in (None,):
-            runtime_plan = input_plan.model_copy(update={"workflow_execution_mode": mode})
+            runtime_plan = input_plan.model_copy(
+                update={"workflow_execution_mode": mode}
+            )
             values = project_prompt_input_values(
                 plan=runtime_plan,
                 stage=input_stage,
@@ -141,8 +148,11 @@ async def test_code_and_validation_track_entity_and_source_metadata(
             assert values[prefix + "source_metadata"] == projected["source_metadata"]
             assert values[prefix + "target_metadata"] == projected["target_metadata"]
             assert "object_id" not in projected["target_metadata"]
-            assert [row["object"]["object_name"] for row in projected["source_metadata"]] == [
-                row["object"]["object_name"] for row in source_context["physical_sources"]
+            assert [
+                row["object"]["object_name"] for row in projected["source_metadata"]
+            ] == [
+                row["object"]["object_name"]
+                for row in source_context["physical_sources"]
             ]
             for name in input_contracts:
                 contract = get_prompt_input_contract(
@@ -156,15 +166,18 @@ async def test_code_and_validation_track_entity_and_source_metadata(
                 assert validator.is_valid(contract.example)
                 assert validator.is_valid(values[prefix + name])
         source_id_field = "modeled_entity_id" if dimensional else "object_id"
-        assert [item["object"][source_id_field] for item in source_context["physical_sources"]] == (
+        assert [
+            item["object"][source_id_field]
+            for item in source_context["physical_sources"]
+        ] == (
             [scope.logical_entity_id]
             if dimensional
             else [scope.bronze_object_id, scope.source_object_id]
         )
         assert mapping_context.sources
-        assert [item["object"]["zone_code"] for item in source_context["physical_sources"]] == (
-            ["silver"] if dimensional else ["bronze", "source"]
-        )
+        assert [
+            item["object"]["zone_code"] for item in source_context["physical_sources"]
+        ] == (["silver"] if dimensional else ["bronze", "source"])
         target = source_context["target"]
         physical_source = source_context["physical_sources"][0]["object"]
         assert target["tenant_id"] == scope.placement_tenant_id != scope.tenant_id
@@ -267,17 +280,21 @@ async def test_code_and_validation_track_entity_and_source_metadata(
                     scope.bronze_object_id,
                 ),
                 (
-                    "UPDATE core.attribute SET attribute_inferred_data_type = 'decimal(18,2)' "
+                    "UPDATE workflow.attribute_enrichment SET attribute_inferred_data_type = 'decimal(18,2)' "
                     "WHERE object_id = %s",
                     scope.bronze_object_id,
                 ),
                 (
-                    "UPDATE core.attribute SET attribute_description = 'Changed source attribute.' "
+                    "UPDATE workflow.attribute_enrichment SET attribute_description = 'Changed source attribute.' "
                     "WHERE object_id = %s",
                     scope.bronze_object_id,
                 ),
                 (
-                    "UPDATE core.object SET object_description = 'Changed source.' "
+                    "UPDATE workflow.attribute_enrichment SET is_natural_key=TRUE, is_primary_key=TRUE, is_nullable=FALSE, is_pii=FALSE WHERE object_id=%s",
+                    scope.bronze_object_id,
+                ),
+                (
+                    "UPDATE workflow.object_enrichment SET object_description = 'Changed source.' "
                     "WHERE object_id = %s",
                     scope.bronze_object_id,
                 ),
@@ -295,8 +312,26 @@ async def test_code_and_validation_track_entity_and_source_metadata(
             assert changed["code_input_digest"] != prior["code_input_digest"]
             assert await current() == changed
             prior = changed
-        assert prior["source_context"]["target"]["object_description"] == "Changed target."
-        assert prior["source_context"]["target"]["attributes"][0]["attribute_data_type"] == "string"
+        if not dimensional:
+            findings = prior["source_context"]["physical_sources"][0]["object"][
+                "attributes"
+            ][0]
+            assert [
+                findings[flag]
+                for flag in (
+                    "is_natural_key",
+                    "is_primary_key",
+                    "is_nullable",
+                    "is_pii",
+                )
+            ] == [True, True, False, False]
+        assert (
+            prior["source_context"]["target"]["object_description"] == "Changed target."
+        )
+        assert (
+            prior["source_context"]["target"]["attributes"][0]["attribute_data_type"]
+            == "string"
+        )
         async with runtime.read_transaction() as transaction:
             validation_after = await transaction.fetch_all(
                 _CURRENT_CONTEXT_SQL, (scope.tenant_id, scope.plan.model_id)

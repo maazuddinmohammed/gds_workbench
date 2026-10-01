@@ -25,10 +25,11 @@
     }
     const details = rows(loaded, "model_details")[0] || context.model || {};
     const modelDetails = loaded.get("model_details");
-    if (modelDetails?.baseline?.length && modelDetails.pending?.length &&
-        (modelDetails.baseline[0].logical_entity_scd_type ?? null) !==
-        (modelDetails.pending[0].logical_entity_scd_type ?? null)) {
-      add("model_policy_read_only", "model_details", "logical_entity_scd_type", "Logical SCD type must be changed through Model settings.");
+    for (const field of ["logical_entity_scd_type", "dimensional_entity_scd_type"]) {
+      if (modelDetails?.baseline?.length && modelDetails.pending?.length &&
+          (modelDetails.baseline[0][field] ?? null) !== (modelDetails.pending[0][field] ?? null)) {
+        add("model_policy_read_only", "model_details", field, "SCD type must be changed through Model settings.");
+      }
     }
     for (const dataset of ["conceptual_object", "conceptual_relationship", "logical_submodel", "logical_entity", "logical_attribute", "logical_relationship", "dimensional_submodel", "dimensional_entity", "dimensional_attribute", "dimensional_relationship"]) {
       const override = dataset.startsWith("dimensional") ? details.gold_model_naming_instructions : details.silver_model_naming_instructions;
