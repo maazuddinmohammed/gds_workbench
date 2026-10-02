@@ -67,21 +67,42 @@ def build(output: Path | None = None) -> Path:
     if not isinstance(manifest["description"], str) or not manifest["description"].strip():
         raise ValueError("expected a nonempty description")
 
+    # The extracted atlas folder is also a local Codex marketplace. Its plugin
+    # path stays relative to that folder, so recipients need no source checkout.
+    marketplace = {
+        "name": "gds-workbench",
+        "interface": {"displayName": "GDS Workbench"},
+        "plugins": [
+            {
+                "name": "atlas",
+                "source": {"source": "local", "path": "./"},
+                "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                "category": "Productivity",
+            }
+        ],
+    }
+
     output = (output or DIST_ROOT / f"atlas-agent-plugin-{version}.zip").absolute()
     if output.resolve().is_relative_to(PLUGIN_ROOT.resolve()):
         raise ValueError("archive must be outside the plugin source")
     if output.exists() or output.is_symlink():
         raise FileExistsError(f"refusing to overwrite archive: {output}")
+    entries = {
+        f"atlas/{source.relative_to(PLUGIN_ROOT).as_posix()}": source.read_bytes()
+        for source in files
+    }
+    entries["atlas/.agents/plugins/marketplace.json"] = (
+        json.dumps(marketplace, indent=2) + "\n"
+    ).encode("utf-8")
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, "x", compression=zipfile.ZIP_DEFLATED) as archive:
-        for source in files:
-            relative = source.relative_to(PLUGIN_ROOT)
+        for name, content in entries.items():
             # Package identity is atlas; the requested source folder is atlas-plugin.
-            info = zipfile.ZipInfo(f"atlas/{relative.as_posix()}", (1980, 1, 1, 0, 0, 0))
+            info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
             info.create_system = 3
             info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = (stat.S_IFREG | (0o755 if source.suffix == ".sh" else 0o644)) << 16
-            archive.writestr(info, source.read_bytes(), compresslevel=9)
+            info.external_attr = (stat.S_IFREG | (0o755 if name.endswith(".sh") else 0o644)) << 16
+            archive.writestr(info, content, compresslevel=9)
     return output
 
 

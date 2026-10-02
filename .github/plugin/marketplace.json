@@ -11,7 +11,7 @@
     {
       "name": "atlas",
       "description": "Atlas metadata and modeling workflows.",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "source": "./atlas/atlas-plugin",
       "strict": true
     }

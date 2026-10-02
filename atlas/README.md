@@ -11,7 +11,25 @@ Use Node.js 20+ and Python 3.12+ for the main local runtime. A native Windows Po
 
 Install the ZIP through an Agent Plugins 1.0-compatible host. Install the companion VSIX in VS Code, configure its intended matching backend and run **Atlas: Check Stage Runner**. Plugin, extension and backend must support the current Entity-owned Model Snapshot and Mapping context contracts; see [architecture decisions](../docs/architecture/decisions.md). Backend setup follows the [MCP README](../mcp_server/README.md) and [fresh-install database sequence](../database/README.md).
 
-The current local artifacts are Atlas plugin 0.1.2 and Stage Runner 0.1.1. Rebuild both after their source changes; version labels alone do not prove source equality. Installing the plugin does not install the extension or update the deployed backend. Publication and deployment require separate approval.
+The current local artifacts are Atlas plugin 0.1.3 and Stage Runner 0.1.1. Rebuild both after their source changes; version labels alone do not prove source equality. Installing the plugin does not install the extension or update the deployed backend. Publication and deployment require separate approval.
+
+## Export for Windows users
+
+Distribute `dist/atlas-agent-plugin-0.1.3.zip`. The ZIP contains the portable plugin, helpers, Workbench, a Codex installation catalog and [Windows installation instructions](atlas-plugin/docs/windows-install.md). Recipients extract it on their VM and install from the resulting `atlas` directory; they need no source checkout or build tools.
+
+For example, after extracting to `C:\Tools\Atlas`, the folder containing `plugin.json` is `C:\Tools\Atlas\atlas`. In Windows PowerShell:
+
+```powershell
+codex plugin marketplace add "C:\Tools\Atlas\atlas"
+codex plugin add atlas@gds-workbench
+codex plugin list --marketplace gds-workbench
+```
+
+The builder generates `atlas/.agents/plugins/marketplace.json` with `source.path` set to `./`. All installed content comes from the exported folder. The existing [GitHub Copilot marketplace](../.github/plugin/marketplace.json) continues to use the same portable plugin source. Distribute `dist/atlas-stage-runner-0.1.1.vsix` alongside the ZIP for Copilot in VS Code.
+
+Codex package installation is tested independently from the source checkout with CLI 0.147.0. Full Windows runtime and authenticated GDS access still need verification. Codex Stage submission requires the pending adapter for the shared Stage engine; the VSIX tools are exposed through VS Code's language-model API. Until the adapter is available, complete submission through the supported VS Code workflow in the [Stage Runner guide](atlas-vs-code/README.md).
+
+## Build
 
 Build from the repository root:
 
@@ -21,7 +39,7 @@ npm --prefix atlas/atlas-vs-code run compile
 npm --prefix atlas/atlas-vs-code run package:vsix
 ```
 
-The plugin builder refuses an existing output, unsafe links or unreviewed file families. Archives have one `atlas/` root. The VSIX is distributed alongside the ZIP, not embedded as a portable plugin capability.
+The plugin builder refuses an existing output, unsafe links or unreviewed file families. Archives have one `atlas/` root, including the generated Codex catalog. The VSIX is distributed alongside the ZIP, not embedded as a portable plugin capability.
 
 ## Maintainer boundaries
 

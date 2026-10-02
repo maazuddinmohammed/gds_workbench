@@ -115,6 +115,8 @@ You do not need to copy digests or prepare evidence JSON. Changed content requir
 
 ## Setup and limits
 
+Windows recipients can install the exported ZIP using the bundled [Windows installation guide](windows-install.md). No source checkout or build is required.
+
 Install the Atlas plugin in a compatible agent host. For Stage, install the matching VSIX in VS Code and configure its backend connection; the MCP and extension connections are separate. **Atlas: Check Stage Runner** checks readiness without staging. Other hosts can prepare local work, then continue submission in a supported VS Code host.
 
 Local helpers use Node.js 20+; Snapshot installation also uses Python 3.12+. Windows PowerShell 5.1 is the native fallback. [Runtime guide](runtime-guide.md) covers commands and troubleshooting.
