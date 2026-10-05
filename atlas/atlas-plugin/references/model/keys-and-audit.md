@@ -44,9 +44,13 @@ After business Attributes and any selected Source audit fields, use this shared 
 | 9 | `CreatedBy` | Framework. |
 | 10 | `UpdatedBy` | Framework. |
 
-The other nine types and all missing nullability settings require the approved template or a user decision before affected definitions are finalized. Do not invent hash semantics, flag values, timestamps or identities. Multiple contributing Systems need a confirmed provenance rule; never choose one arbitrarily.
+Null templates use the documented [shared defaults](settings.md): BIGINT SourceSystemID/GDSBatchID, BOOLEAN IsDataValid/IsActive, TIMESTAMP CreatedDate/UpdatedDate, and STRING for the remaining fields; all audit fields default nullable. Explicit templates override these defaults. Do not invent hash semantics, flag values, timestamps or identities. Multiple contributing Systems need a confirmed provenance rule; never choose one arbitrarily.
 
 Mark the approved audit fields as audit columns using the layer's schema; being in the audit block does not make a field a surrogate or natural key. Preserve any evidenced source-namespace component of business identity. If its key/nullability requirements conflict with the configured audit projection, resolve that conflict rather than silently dropping part of the natural-key tuple.
+
+Reserve every effective template name for its framework meaning, comparing names without case/surrounding spaces. Do not create a business Attribute with the same name and later append another audit Attribute. Read pending `model_details` settings as well as the Snapshot. Use a distinct name with the original physical lineage for meaningful source fields.
+
+The web agent emits business candidates and backend projection adds framework fields. Plugin records describe the complete final Model, including exactly one correctly marked audit block. Do not confuse these two payload shapes or omit required final definitions.
 
 Optional Source audit fields precede that block, only where meaningful source values exist:
 

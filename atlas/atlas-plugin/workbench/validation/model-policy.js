@@ -25,10 +25,20 @@
     }
     const details = rows(loaded, "model_details")[0] || context.model || {};
     const modelDetails = loaded.get("model_details");
-    for (const field of ["logical_entity_scd_type", "dimensional_entity_scd_type"]) {
-      if (modelDetails?.baseline?.length && modelDetails.pending?.length &&
-          (modelDetails.baseline[0][field] ?? null) !== (modelDetails.pending[0][field] ?? null)) {
-        add("model_policy_read_only", "model_details", field, "SCD type must be changed through Model settings.");
+    if (modelDetails?.baseline?.length && modelDetails.pending?.length &&
+        modelDetails.baseline[0].model_name !== modelDetails.pending[0].model_name) {
+      add("model_identity_read_only", "model_details", "model_name", "Model name is immutable in Change Sets; preserve the Snapshot identity.");
+    }
+    const parentLocks = new Set((loaded.get("object_enrichment")?.baseline || []).filter(row => row.is_locked).map(physical));
+    for (const dataset of ["object_enrichment", "attribute_enrichment"]) {
+      const value = loaded.get(dataset);
+      if (!value) continue;
+      const originals = new Map((value.baseline || []).map(record => [core.stableStringify(core.key("model", value.definition, record)), record]));
+      for (const record of changed.get(dataset) || []) {
+        const original = originals.get(core.stableStringify(core.key("model", value.definition, record)));
+        if ((record.expected_revision ?? null) !== (original?.expected_revision ?? null)) add("enrichment_revision_conflict", dataset, "expected_revision", "Enrichment changed since this draft; refresh and reconcile the findings.");
+        if (record.is_locked !== (original?.is_locked ?? false)) add("enrichment_lock_read_only", dataset, "is_locked", "Preserve enrichment locks; Change Sets cannot toggle them.");
+        if (dataset === "attribute_enrichment" && parentLocks.has(physical(record))) add("enrichment_parent_locked", dataset, "object_name", "A locked Object enrichment also protects its Attribute findings.");
       }
     }
     for (const dataset of ["conceptual_object", "conceptual_relationship", "logical_submodel", "logical_entity", "logical_attribute", "logical_relationship", "dimensional_submodel", "dimensional_entity", "dimensional_attribute", "dimensional_relationship"]) {
@@ -81,7 +91,7 @@
         const naming = layer === "logical" ? details.silver_model_naming_instructions : details.gold_model_naming_instructions;
         if (surrogate && !naming && !surrogate[attributeField]?.endsWith(layer === "logical" ? "ID" : "Key")) add("model.key-suffix", attributeDataset, attributeField, `The own surrogate uses the ${layer === "logical" ? "ID" : "Key"} suffix under the default policy.`);
         const template = layer === "logical" ? details.silver_model_audit_columns_template : details.gold_model_audit_columns_template;
-        const configured = Array.isArray(template?.columns) ? template.columns : AUDIT.map(semantic_name => ({ semantic_name }));
+        const configured = Array.isArray(template?.columns) ? template.columns : AUDIT.map((semantic_name, index) => ({ semantic_name, data_type: ["BIGINT", "BOOLEAN", "STRING", "BOOLEAN", "BIGINT", "STRING", "TIMESTAMP", "TIMESTAMP", "STRING", "STRING"][index], nullable: true }));
         const expected = configured.map(column => column.semantic_name);
         const byName = new Map(columns.map(column => [norm(column[attributeField]), column]));
         const actualAudit = columns.filter(column => expected.some(item => norm(item) === norm(column[attributeField])));
@@ -93,7 +103,6 @@
           if (specification.data_type && norm(column[`${layer}_attribute_data_type`]) !== norm(specification.data_type) || specification.nullable !== undefined && column[`${layer}_attribute_is_nullable`] !== specification.nullable) add("model.audit-template", attributeDataset, attributeField, "Audit types and nullability must match the configured Model template.");
           if (norm(specification.semantic_name) !== "sourcesystemid" && column.sources?.length) add("model.framework-source", attributeDataset, "sources", "Framework-populated audit columns have no fabricated physical source lineage.");
         }
-        if (!template) add("model.audit-template-review", attributeDataset, attributeField, "The audit names are checked; exact types and nullability need the approved Model template.", "warning");
       }
       const byAttribute = new Map(attributes.map(attribute => [tuple([attribute[schemaField], attribute[entityField], attribute[attributeField]]), attribute]));
       for (const relation of changed.get(`${layer}_relationship`) || []) {

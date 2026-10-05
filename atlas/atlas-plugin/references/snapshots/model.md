@@ -76,3 +76,5 @@ Current implementation evidence, not runtime imports for this reference:
 - mcp_server/gds_etl_workbench/domain/snapshots/model.py
 - mcp_server/gds_etl_workbench/domain/modeling_records.py
 - mcp_server/gds_etl_workbench/application/change_sets/model.py
+
+Model-owned [enrichment](../model/enrichment.md) and [settings](../model/settings.md) use local proposals and the existing Change Set lifecycle.

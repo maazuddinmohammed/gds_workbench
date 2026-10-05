@@ -34,6 +34,7 @@ from gds_etl_workbench.infrastructure.snapshot_archive import (
 _SECTION_DESCRIPTIONS = {
     "model_input_scope": "Model header and selected Source or Bronze input Objects.",
     "profiling": "Applied Attribute profiles.",
+    "enrichment": "Model-owned Object and Attribute enrichment findings and read-only locks.",
     "analysis": "Applied relationship analysis evidence.",
     "assertion": "Applied source assertion documents and records.",
     "conceptual": "Applied conceptual Objects and Relationships.",

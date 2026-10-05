@@ -2097,8 +2097,10 @@ INPUT_SHAPES: dict[str, Any] = {
     "logical.audit_columns": {
         "description": "Exact configured Silver audit-column template: "
         "schema_version and columns with semantic_name, "
-        "data_type, nullable, definition. Null means no "
-        "configured template. Preserve the existing "
+        "data_type, nullable, definition. Null settings use shared defaults; "
+        "an explicit empty columns array disables audits. Reserve effective names "
+        "for framework Attributes; source/business fields need distinct names. Preserve "
+        "the existing"
         "deterministic backend projection and lock/conflict "
         "checks. The complete model includes required audit "
         "Attributes; do not invent physical sources for "
@@ -3141,8 +3143,10 @@ INPUT_SHAPES: dict[str, Any] = {
         "schema": {"maxLength": 32768, "minLength": 1, "pattern": "\\S", "type": "string"},
     },
     "dimensional.audit_columns": {
-        "description": "Effective Gold audit template; blank settings resolve to an empty "
-        "columns list. Same "
+        "description": "Effective Gold audit template; blank settings resolve to shared "
+        "audit defaults;"
+        "an explicit empty columns array disables audits. Reserve effective names "
+        "for framework Attributes; source/business fields need distinct names. Same "
         "schema_version/ordered columns layout as "
         "Logical audit settings. Each column has "
         "semantic_name, data_type, nullable, definition. "

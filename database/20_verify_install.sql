@@ -1067,9 +1067,7 @@ BEGIN
                       'default_reasoning_effort_code',
                       'default_max_turns',
                       'default_validation_retry_count',
-                      'default_mapping_source_system_id',
-                      'logical_entity_scd_type',
-                      'dimensional_entity_scd_type'
+                      'model_name'
                   ]) AS web_only_model_column(name)
             WHERE has_column_privilege(
                       'gds_app_write',
@@ -1270,7 +1268,9 @@ BEGIN
        OR EXISTS (
            SELECT 1
              FROM unnest(ARRAY[
-                      'model_name',
+                      'default_mapping_source_system_id',
+                      'logical_entity_scd_type',
+                      'dimensional_entity_scd_type',
                       'model_description',
                       'logical_schemas',
                       'dimensional_schemas',
@@ -1297,9 +1297,7 @@ BEGIN
                       'default_reasoning_effort_code',
                       'default_max_turns',
                       'default_validation_retry_count',
-                      'default_mapping_source_system_id',
-                      'logical_entity_scd_type',
-                      'dimensional_entity_scd_type'
+                      'model_name'
                   ]) AS web_only_model_column(name)
             WHERE has_column_privilege(
                       'gds_web_write', 'model.model',
@@ -1576,6 +1574,7 @@ BEGIN
            AND NOT EXISTS (
                    SELECT 1
                      FROM unnest(ARRAY[
+                              'mcp.apply_model_enrichment_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
                               'mcp.create_metadata_change_set(uuid,uuid,character varying,bigint,uuid,uuid)',
                               'mcp.stage_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,jsonb,uuid)',
                               'mcp.get_metadata_change_set(uuid,uuid,character varying,bigint,uuid)',
@@ -1601,6 +1600,7 @@ BEGIN
            AND NOT EXISTS (
                    SELECT 1
                      FROM unnest(ARRAY[
+                              'mcp.apply_model_enrichment_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
                               'mcp.create_metadata_change_set(uuid,uuid,character varying,bigint,uuid,uuid)',
                               'mcp.stage_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,jsonb,uuid)',
                               'mcp.begin_metadata_stage_batch(uuid,uuid,character varying,bigint,uuid,bigint,uuid,character varying,integer,integer,character,uuid)',

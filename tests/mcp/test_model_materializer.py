@@ -428,3 +428,33 @@ async def test_template_resolution_and_cache_are_scoped_to_mapping_layer() -> No
     )
     assert "output_template_modeled_entity_type = %s" in transaction.calls[0][1]
     transaction.assert_complete()
+
+
+@pytest.mark.asyncio
+async def test_model_settings_apply_resolves_system_and_preserves_identity() -> None:
+    from gds_etl_workbench.domain.modeling_records import ModelDetailsRecord
+
+    from tests.mcp.model_test_fixtures import model_details
+
+    transaction = ScriptedTransaction(
+        [
+            ExpectedCall("one", "SELECT system_id", {"system_id": 5}),
+            ExpectedCall("one", "UPDATE model.model", {"model_id": 7}),
+        ]
+    )
+    record = ModelDetailsRecord.model_validate_json(
+        json.dumps(
+            {
+                **model_details(),
+                "logical_entity_scd_type": "type_2",
+                "dimensional_entity_scd_type": "type_1",
+                "default_mapping_source_system_code": "ERP",
+            }
+        )
+    )
+    assert await _materializer(transaction).apply({"model_details": (record,)}) == 1
+    query, parameters = transaction.calls[-1][1:]
+    assert "SET model_name" not in query
+    assert "AND model_name = %s" in query
+    assert parameters[-5:] == ("type_2", "type_1", 5, 7, record.model_name)
+    transaction.assert_complete()

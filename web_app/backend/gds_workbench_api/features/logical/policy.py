@@ -3,63 +3,26 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Literal, cast
+from typing import Literal, cast
 
 from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.application.change_sets.model_validation import validate_staged_records
 from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_etl_workbench.domain.model_policy import (
+    GoldAuditPolicy as LogicalAuditPolicy,
+)
+from gds_etl_workbench.domain.model_policy import (
+    GoldPolicyColumn as LogicalAuditPolicyColumn,
+)
 from gds_etl_workbench.domain.modeling_records import (
     LogicalAttributeRecord,
     LogicalEntityRecord,
     normalize_model_key_value,
 )
 from gds_etl_workbench.domain.snapshots.model import LogicalSection
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    StringConstraints,
-    ValidationError,
-    model_validator,
-)
+from pydantic import BaseModel, ValidationError
 
 from gds_workbench_api.features.workflows.authoring.audit_policy import effective_audit_template
-
-type _Nonblank255 = Annotated[
-    str,
-    StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
-]
-type _Nonblank100 = Annotated[
-    str,
-    StringConstraints(min_length=1, max_length=100, pattern=r"\S"),
-]
-type _Nonblank2000 = Annotated[
-    str,
-    StringConstraints(min_length=1, max_length=2_000, pattern=r"\S"),
-]
-
-
-class LogicalAuditPolicyColumn(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    semantic_name: _Nonblank255
-    data_type: _Nonblank100
-    nullable: bool
-    definition: _Nonblank2000 | None
-
-
-class LogicalAuditPolicy(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    schema_version: Literal["1.0"] = "1.0"
-    columns: tuple[LogicalAuditPolicyColumn, ...] = Field(min_length=0, max_length=32)
-
-    @model_validator(mode="after")
-    def validate_names(self) -> LogicalAuditPolicy:
-        names = [normalize_model_key_value(column.semantic_name) for column in self.columns]
-        if len(names) != len(set(names)):
-            raise ValueError("Logical audit policy names must be unique")
-        return self
 
 
 def project_logical_audit_policy(

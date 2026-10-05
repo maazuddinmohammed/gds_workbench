@@ -503,6 +503,7 @@ BEGIN
                        ('workflow.validation_check', 'is_locked'),
                        ('workflow.validation_group', 'mapping_context_digest'),
                        ('workflow.validation_check', 'validation_query_sql'),
+                       ('mcp.model_change_set', 'enrichment_document'),
                        ('mcp.model_change_set', 'code_generation_document'),
                        ('mcp.model_change_set', 'validation_document'),
                        ('core.attribute', 'object_id'),
@@ -890,6 +891,7 @@ BEGIN
                    'mcp.get_mcp_profiling_status(uuid,uuid,character varying,bigint)',
                    'mcp.cancel_mcp_profiling_run(uuid,uuid,character varying,bigint)',
                    'mcp.mcp_profiling_worker(text,bigint,uuid,jsonb)',
+                   'mcp.apply_model_enrichment_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
                    'mcp.get_databricks_sql_connection_values(bigint,text)'
                ]) AS executable_function(signature)
          WHERE NOT has_function_privilege(
@@ -922,6 +924,7 @@ BEGIN
                               'mcp.get_mcp_profiling_status(uuid,uuid,character varying,bigint)',
                               'mcp.cancel_mcp_profiling_run(uuid,uuid,character varying,bigint)',
                               'mcp.mcp_profiling_worker(text,bigint,uuid,jsonb)',
+                              'mcp.apply_model_enrichment_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
                               'mcp.get_databricks_sql_connection_values(bigint,text)',
                               'mcp.runtime_readiness()'
                           ]) AS allowed_mcp_function(signature)
@@ -1026,9 +1029,7 @@ BEGIN
                    'default_reasoning_effort_code',
                    'default_max_turns',
                    'default_validation_retry_count',
-                   'default_mapping_source_system_id',
-                   'logical_entity_scd_type',
-                   'dimensional_entity_scd_type'
+                   'model_name'
                ]) AS web_only_model_column(name)
          WHERE has_column_privilege(
                    'gds_app_write',
@@ -1185,7 +1186,9 @@ GRANT INSERT, UPDATE ON
 TO gds_app_write;
 GRANT INSERT ON mcp.model_stage_chunk, mcp.model_stage_payload_chunk TO gds_app_write;
 GRANT UPDATE (
-    model_name,
+    default_mapping_source_system_id,
+    logical_entity_scd_type,
+    dimensional_entity_scd_type,
     model_description,
     logical_schemas,
     dimensional_schemas,
@@ -1206,9 +1209,7 @@ REVOKE UPDATE (
     default_reasoning_effort_code,
     default_max_turns,
     default_validation_retry_count,
-    default_mapping_source_system_id,
-    logical_entity_scd_type,
-    dimensional_entity_scd_type
+    model_name
 ) ON model.model FROM gds_app_write;
 GRANT INSERT ON
     mcp.model_change_set_event
@@ -1266,7 +1267,9 @@ GRANT INSERT ON
     mcp.model_change_set_event
 TO gds_web_write;
 GRANT UPDATE (
-    model_name,
+    default_mapping_source_system_id,
+    logical_entity_scd_type,
+    dimensional_entity_scd_type,
     model_description,
     logical_schemas,
     dimensional_schemas,
@@ -1287,9 +1290,7 @@ REVOKE UPDATE (
     default_reasoning_effort_code,
     default_max_turns,
     default_validation_retry_count,
-    default_mapping_source_system_id,
-    logical_entity_scd_type,
-    dimensional_entity_scd_type
+    model_name
 ) ON model.model FROM gds_web_write;
 REVOKE ALL ON ALL TABLES IN SCHEMA application
 FROM gds_app_write, gds_web_write;
@@ -1876,3 +1877,6 @@ GRANT EXECUTE ON FUNCTION mcp.start_mcp_profiling_run(
    mcp.cancel_mcp_profiling_run(UUID, UUID, VARCHAR, BIGINT),
    mcp.mcp_profiling_worker(TEXT, BIGINT, UUID, JSONB)
 TO gds_app_write;
+
+GRANT EXECUTE ON FUNCTION mcp.apply_model_enrichment_change_set(UUID, UUID, VARCHAR, BIGINT, UUID, BIGINT, VARCHAR)
+TO gds_app_write, gds_web_write;

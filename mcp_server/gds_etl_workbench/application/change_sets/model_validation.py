@@ -13,8 +13,12 @@ from pydantic import ValidationError
 
 from gds_etl_workbench.domain.databricks_sql import validate_databricks_sql
 from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_etl_workbench.domain.model_policy import GoldAuditPolicy, GoldTechnicalPolicy
 from gds_etl_workbench.domain.modeling_records import (
+    AttributeEnrichmentRecord,
+    ModelDetailsRecord,
     ModelingRecord,
+    ObjectEnrichmentRecord,
     has_mapping_transformation_content,
     normalize_model_key_value,
 )
@@ -99,6 +103,17 @@ def validate_staged_records(
         try:
             encoded = json.dumps(raw, ensure_ascii=False, separators=(",", ":"))
             record = definition.row_model.model_validate_json(encoded, strict=True)
+            if isinstance(record, ModelDetailsRecord):
+                for template in (
+                    record.silver_model_audit_columns_template,
+                    record.gold_model_audit_columns_template,
+                ):
+                    if template is not None:
+                        GoldAuditPolicy.model_validate_json(json.dumps(template), strict=True)
+                if record.gold_model_technical_columns_template is not None:
+                    GoldTechnicalPolicy.model_validate_json(
+                        json.dumps(record.gold_model_technical_columns_template), strict=True
+                    )
         except ValidationError as error:
             for detail in error.errors(include_url=False, include_input=False)[:20]:
                 issues.append(
@@ -187,6 +202,38 @@ def validate_future_graph(
                     definition.canonical_key,
                     "A locked applied record cannot be changed.",
                 )
+            if isinstance(record, (ObjectEnrichmentRecord, AttributeEnrichmentRecord)):
+                if record.expected_revision != getattr(existing, "expected_revision", None):
+                    _issue(
+                        lock_issues,
+                        "enrichment_revision_conflict",
+                        definition.name,
+                        ("expected_revision",),
+                        "Enrichment changed since this draft; refresh and reconcile the findings.",
+                    )
+                if record.is_locked != (
+                    _record_is_locked(existing) if existing is not None else False
+                ):
+                    _issue(
+                        lock_issues,
+                        "enrichment_lock_read_only",
+                        definition.name,
+                        ("is_locked",),
+                        "Preserve enrichment locks; Change Sets cannot toggle them.",
+                    )
+                if definition.name == "attribute_enrichment" and existing != record:
+                    parent_key = _physical_object_key(record)
+                    if any(
+                        _record_is_locked(item) and _physical_object_key(item) == parent_key
+                        for item in effective["object_enrichment"]
+                    ):
+                        _issue(
+                            lock_issues,
+                            "enrichment_parent_locked",
+                            definition.name,
+                            definition.canonical_key,
+                            "A locked Object enrichment also protects its Attribute findings.",
+                        )
             if existing is not None:
                 _validate_locked_nested_records(
                     dataset=definition.name,
@@ -234,19 +281,41 @@ def validate_future_graph(
 
     scope_issues: list[ModelValidationIssue] = []
     if staged.get("model_details") and effective["model_details"]:
-        previous = effective["model_details"][0]
-        changed = staged["model_details"][0]
-        for field in ("logical_entity_scd_type", "dimensional_entity_scd_type"):
-            if getattr(previous, field, None) != getattr(changed, field, None):
-                _issue(
-                    scope_issues,
-                    "model_policy_read_only",
-                    "model_details",
-                    (field,),
-                    "SCD type must be changed through Model settings.",
-                )
+        previous = cast(ModelDetailsRecord, effective["model_details"][0])
+        changed = cast(ModelDetailsRecord, staged["model_details"][0])
+        if previous.model_name != changed.model_name:
+            _issue(
+                scope_issues,
+                "model_identity_read_only",
+                "model_details",
+                ("model_name",),
+                "Model name is immutable in Change Sets; preserve the Snapshot identity.",
+            )
+        system_code = changed.default_mapping_source_system_code
+        if (
+            system_code is not None
+            and system_code != previous.default_mapping_source_system_code
+            and normalize_model_key_value(system_code) not in physical_scope.active_system_codes
+        ):
+            _issue(
+                scope_issues,
+                "default_mapping_source_system_unavailable",
+                "model_details",
+                ("default_mapping_source_system_code",),
+                "Default Mapping source must identify an active registered System code.",
+            )
     _validate_model_details(future, physical_scope, scope_issues)
-    _validate_physical_scope(future, physical_scope, scope_issues, retained_keys=retained_keys)
+    _validate_physical_scope(
+        future,
+        physical_scope,
+        scope_issues,
+        retained_keys=retained_keys,
+        applied_input_objects=frozenset(
+            _physical_object_key(record)
+            for record in effective["model_input_scope"]
+            if getattr(record, "is_active", False)
+        ),
+    )
     if scope_issues:
         return _failed(staged, "model_input_scope", candidate_digest, scope_issues)
     if uniqueness_issues:
@@ -456,6 +525,7 @@ def _validate_physical_scope(
     issues: list[ModelValidationIssue],
     *,
     retained_keys: Mapping[str, set[tuple[object, ...]]],
+    applied_input_objects: frozenset[PhysicalObjectNaturalKey],
 ) -> None:
     def retained(dataset: ModelChangeSetDataset, record: ModelingRecord) -> bool:
         key = _canonical_key(CHANGE_SET_DATASETS_BY_NAME[dataset], record)
@@ -482,6 +552,28 @@ def _validate_physical_scope(
             input_objects.add(key)
     input_attributes = {key for key in catalog.model_input_attributes if key[:5] in input_objects}
 
+    enrichment_objects = input_objects & applied_input_objects
+    enrichment_attributes = {key for key in input_attributes if key[:5] in enrichment_objects}
+    for record in future["object_enrichment"]:
+        _require_object(
+            record,
+            "object_enrichment",
+            "object_name",
+            catalog.objects if retained("object_enrichment", record) else enrichment_objects,
+            "Enrichment Object is not in active Model Input Scope.",
+            issues,
+        )
+    for record in future["attribute_enrichment"]:
+        _require_attribute(
+            record,
+            "attribute_enrichment",
+            "attribute_name",
+            catalog.attributes
+            if retained("attribute_enrichment", record)
+            else enrichment_attributes,
+            "Enrichment Attribute is not in active Model Input Scope.",
+            issues,
+        )
     for record in future["profiling_profile"]:
         _require_attribute(
             record,

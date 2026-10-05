@@ -127,7 +127,7 @@ def test_mapping_policy_rejects_unknown_scd_guidance(value: object) -> None:
 @pytest.mark.parametrize("field", ["logical_entity_scd_type", "dimensional_entity_scd_type"])
 @pytest.mark.parametrize("original", [None, "type_1", "type_2"])
 @pytest.mark.parametrize("proposed", [None, "type_1", "type_2"])
-def test_staged_model_details_cannot_override_governed_history_setting(
+def test_staged_model_details_can_propose_governed_history_setting(
     field: str,
     original: Literal["type_1", "type_2"] | None,
     proposed: Literal["type_1", "type_2"] | None,
@@ -139,8 +139,7 @@ def test_staged_model_details_cannot_override_governed_history_setting(
         staged_documents={"model_details": [{**details, field: proposed}]},
         physical_scope=complete_physical_scope(),
     )
-    codes = {issue.code for issue in result.issues}
-    assert ("model_policy_read_only" in codes) is (original != proposed)
+    assert result.valid
     assert getattr(snapshot.model_input_scope.details, field) == original
 
 

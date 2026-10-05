@@ -16,7 +16,7 @@ Use [artifact readiness](../../references/platform/readiness.md), not the last s
 | Requested outcome | Load |
 |---|---|
 | Explain Atlas, a model, lineage or why an entity exists | [Investigate](../atlas-investigate/SKILL.md) |
-| Profile/analyze source tables, grain, keys or relationships | [Source analysis](../atlas-source-analysis/SKILL.md) |
+| Profile/enrich/analyze source tables, grain, keys or relationships | [Source analysis](../atlas-source-analysis/SKILL.md) |
 | Define business concepts and relationships | [Conceptual model](../atlas-conceptual-model/SKILL.md) |
 | Build normalized Entities, Attributes and Submodels | [Logical model](../atlas-logical-model/SKILL.md) |
 | Design dimensions, facts, measures or history | [Dimensional model](../atlas-dimensional-model/SKILL.md) |
@@ -27,7 +27,7 @@ Use [artifact readiness](../../references/platform/readiness.md), not the last s
 | Correct physical Metadata, descriptions or ingestion settings | [Metadata](../atlas-metadata/SKILL.md) |
 | Register model targets or generated files for runtime handoff | [Registration](../atlas-registration/SKILL.md) |
 
-A source-to-logical request can use analysis → conceptual work when useful → logical design. An existing-model Mapping request can start at Mapping. A why-and-update request investigates rationale before impact/change. Reuse valid evidence and skip unnecessary stages; never skip an actual prerequisite. Stop at the requested outcome.
+A source-to-logical request prefers profiling → Model enrichment → analysis → conceptual → logical. Reuse valid results and the effective local view; later phases may consume pending earlier results. Backend profiling needs a Snapshot refresh; local authoring does not require Apply between phases. An existing-model Mapping request can start at Mapping. A why-and-update request investigates rationale before impact/change. Reuse valid evidence and skip unnecessary stages; never skip an actual prerequisite. Stop at the requested outcome.
 
 Guided explanation is the default; requested Grill Me uses the same skill with [interview guidance](../../references/modeling-interview.md#interaction-mode). Resolve consequential unknowns without forcing a mode menu. Delegation guidance loads only before authorized delegation.
 

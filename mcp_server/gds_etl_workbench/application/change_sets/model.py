@@ -58,6 +58,7 @@ ModelStagePayloadMode = Literal["records", "json_fragments"]
 READ_SECTION_COLUMNS = (
     "model_input_scope_document",
     "profiling_document",
+    "enrichment_document",
     "analysis_document",
     "assertion_document",
     "conceptual_document",

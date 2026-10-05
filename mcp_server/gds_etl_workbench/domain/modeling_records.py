@@ -142,6 +142,7 @@ class ModelDetailsRecord(ModelingRecord):
     dimensional_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
     logical_entity_scd_type: Literal["type_1", "type_2"] | None = None
     dimensional_entity_scd_type: Literal["type_1", "type_2"] | None = None
+    default_mapping_source_system_code: Code100 | None = None
 
     @model_validator(mode="after")
     def validate_policy_fields(self) -> ModelDetailsRecord:
@@ -175,6 +176,51 @@ class ModelInputScopeRecord(PhysicalObjectKey):
 
 class AssertionRecordKey(ModelingRecord):
     modeling_assertion_record_key: StableKey
+
+
+class ObjectEnrichmentRecord(PhysicalObjectKey):
+    expected_revision: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")] | None = None
+    object_description: (
+        Annotated[str, StringConstraints(min_length=1, max_length=2000, pattern=r"\S")] | None
+    )
+    is_locked: bool
+
+    @field_validator("object_description")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        if value is not None and (
+            len(value.encode("utf-8")) > 2000
+            or any((ord(c) < 32 and c not in "\t\n\r") or ord(c) == 127 for c in value)
+        ):
+            raise ValueError("Enrichment description must be safe text within 2,000 UTF-8 bytes.")
+        return value
+
+
+class AttributeEnrichmentRecord(PhysicalAttributeKey):
+    expected_revision: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")] | None = None
+    attribute_description: (
+        Annotated[str, StringConstraints(min_length=1, max_length=2000, pattern=r"\S")] | None
+    )
+    attribute_inferred_data_type: (
+        Annotated[str, StringConstraints(min_length=1, max_length=100, pattern=r"\S")] | None
+    )
+    is_natural_key: bool | None
+    is_primary_key: bool | None
+    is_nullable: bool | None
+    is_pii: bool | None
+    is_locked: bool
+
+    @field_validator("attribute_description")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        return ObjectEnrichmentRecord.validate_description(value)
+
+    @field_validator("attribute_inferred_data_type")
+    @classmethod
+    def validate_inferred_type(cls, value: str | None) -> str | None:
+        if value is not None and any(ord(c) < 32 or ord(c) == 127 for c in value):
+            raise ValueError("Inferred type cannot contain control characters.")
+        return value
 
 
 class ProfilingProfileRecord(PhysicalAttributeKey):

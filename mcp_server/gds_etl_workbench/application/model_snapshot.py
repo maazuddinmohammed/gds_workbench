@@ -13,6 +13,10 @@ from gds_etl_workbench.application.modeling.conceptual import (
     HISTORICAL_CONCEPTUAL_OBJECTS_SQL,
     HISTORICAL_CONCEPTUAL_RELATIONSHIPS_SQL,
 )
+from gds_etl_workbench.application.modeling.enrichment import (
+    ATTRIBUTE_ENRICHMENT_SQL,
+    OBJECT_ENRICHMENT_SQL,
+)
 from gds_etl_workbench.application.modeling.modeled_layer import (
     DIMENSIONAL,
     LOGICAL,
@@ -48,6 +52,9 @@ SELECT model_name,
        dimensional_schemas,
        logical_entity_scd_type,
        dimensional_entity_scd_type,
+       (SELECT system_code FROM core.system
+         WHERE system_id = target_model.default_mapping_source_system_id)
+           AS default_mapping_source_system_code,
        silver_model_naming_instructions,
        silver_model_audit_columns_template,
        gold_model_naming_instructions,
@@ -337,6 +344,17 @@ async def read_model_review_snapshot(
         HISTORICAL_PROFILING_SQL,
         (model.model_id, list(model.readable_source_tenant_ids), [], [], limit, 0),
     )
+    enrichment_queries: tuple[tuple[str, LiteralString], ...] = (
+        ("object_enrichment", OBJECT_ENRICHMENT_SQL),
+        ("attribute_enrichment", ATTRIBUTE_ENRICHMENT_SQL),
+    )
+    for dataset, query in enrichment_queries:
+        rows[dataset] = await fetch(
+            transaction,
+            dataset,
+            query,
+            (model.model_id, list(model.readable_source_tenant_ids), False, limit, 0),
+        )
     rows["analysis_result"] = await fetch(
         transaction,
         "analysis_result",
@@ -411,6 +429,10 @@ async def read_model_review_snapshot(
                 "objects": records["model_input_scope"],
             },
             "profiling": {"profiles": records["profiling_profile"]},
+            "enrichment": {
+                "objects": records["object_enrichment"],
+                "attributes": records["attribute_enrichment"],
+            },
             "analysis": {"relationships": records["analysis_result"]},
             "assertion": {
                 "documents": records["modeling_assertion_document"],

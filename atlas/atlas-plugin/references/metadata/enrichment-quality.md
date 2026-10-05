@@ -1,6 +1,6 @@
 # Enrichment quality
 
-This guide supplies physical-description correction methods for [Metadata authoring](../../skills/atlas-metadata/SKILL.md). Its three-field mutation boundary applies to physical Metadata only. Model-owned enrichment has different records and remains a [plugin capability gap](../platform/capabilities.md); never substitute one operation for the other.
+This guide supplies physical-description correction methods for [Metadata authoring](../../skills/atlas-metadata/SKILL.md). Its three-field mutation boundary applies to physical Metadata only. [Model-owned enrichment](../model/enrichment.md) has separate Snapshot/draft records and Model Change Sets; never substitute physical Metadata corrections for those findings.
 
 Reusable description and inferred-type guidance for enrichment and downstream workflows. Procedures are Atlas recommendations synthesized from the user's framework, inspected contracts and the primary sources cited below. They are not claims that those sources prescribe this exact workflow.
 

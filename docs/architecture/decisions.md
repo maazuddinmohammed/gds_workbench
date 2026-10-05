@@ -60,6 +60,24 @@ rather than one unchecked polymorphic ID. Requirements express desired behavior;
 they do not prove source availability. Analysis likewise separates inferred
 cardinality from measured validation instead of overwriting one with the other.
 
+## Plugin settings and enrichment
+
+Model identity is immutable through Change Sets. Model description and allowed
+schema/naming/SCD/template/default source-System settings use `model_details` in
+the existing reviewed draft; no direct MCP settings save or web-agent-default
+mutation is exposed. Source Systems use codes in portable records. Shared template
+types validate both web projection and Change Set authoring.
+
+Model-owned `object_enrichment` and `attribute_enrichment` use Snapshots, effective
+local records and the same governed Change Set lifecycle as Analysis and design.
+They require active applied Input Scope. Profiling remains backend-run; refresh its
+Snapshot evidence before enrichment. Enrichment locks are read-only to the plugin;
+a locked Object also protects its Attributes. The internal enrichment Apply
+function verifies the owned validated draft, revision/digest, Tenant authorization
+and locks. Saved-record witnesses also reject concurrent enrichment edits that do
+not advance the Model revision. Runtime roles retain no direct enrichment table mutation privileges.
+Later local phases can consume pending findings without per-phase Apply.
+
 ## Partial authoring and protected work
 
 Mapping operates on frozen Entity/System pairs. Supported partial documents are

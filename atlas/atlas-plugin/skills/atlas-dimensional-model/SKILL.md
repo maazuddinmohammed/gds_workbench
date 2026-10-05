@@ -7,6 +7,8 @@ description: Build or refine Atlas dimensional/Gold models from eligible applied
 
 Follow [Dimensional context](../../references/dimensional-build/context.md). Reuse applied eligible Silver inputs and existing analytical decisions; do not repeat the Logical profiling/conceptual chain. Use [Grill Me discussion](../../references/modeling-interview.md) only when requested or useful for unresolved decisions.
 
+Reserve effective audit-template names for framework fields. Give source/business fields distinct semantic names, such as `SourceCreatedDate`. Keep exactly one correctly marked framework block in complete final plugin records; see [keys and audit](../../references/model/keys-and-audit.md).
+
 1. **Purpose and grain.** Resolve the analytical questions and business process from evidence and the request. State what one row represents for each selected fact, dimension or bridge, including business identity. A dimension-only request needs its intended member/version grain, not an invented fact or unrelated process.
 2. **Dimensions.** Follow [dimensional design](../../references/dimensional-build/design.md): reuse compatible shared dimensions, distinguish roles and establish conformance across Systems/processes. Identify consequences for other stars before expanding an edit.
 3. **Facts when requested.** Select appropriate event/snapshot behavior and measures. Define additivity, valid aggregation axes, units and population. A structurally valid star can still double-count or give wrong totals.

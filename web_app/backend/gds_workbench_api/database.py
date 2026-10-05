@@ -209,6 +209,8 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND NOT EXISTS (
            SELECT 1
              FROM unnest(ARRAY[
+                      'mcp.apply_model_enrichment_change_set('
+                      || 'uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
                       'mcp.stage_metadata_change_set('
                       || 'uuid,uuid,character varying,bigint,uuid,bigint,jsonb,uuid)',
                       'mcp.get_metadata_change_set(uuid,uuid,character varying,bigint,uuid)',
@@ -260,7 +262,9 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
                         FROM unnest(ARRAY[
                                  'mcp.create_metadata_change_set('
                                  || 'uuid,uuid,character varying,bigint,uuid,uuid)',
-                                 'mcp.stage_metadata_change_set('
+                                 'mcp.apply_model_enrichment_change_set('
+                      || 'uuid,uuid,character varying,bigint,uuid,bigint,character varying)',
+                      'mcp.stage_metadata_change_set('
                                  || 'uuid,uuid,character varying,bigint,uuid,'
                                  || 'bigint,jsonb,uuid)',
                                  'mcp.get_metadata_change_set('

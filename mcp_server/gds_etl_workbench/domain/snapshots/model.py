@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
+    AttributeEnrichmentRecord,
     ConceptualObjectRecord,
     ConceptualRelationshipRecord,
     DimensionalAttributeRecord,
@@ -28,6 +29,7 @@ from gds_etl_workbench.domain.modeling_records import (
     ModelingAssertionRecordRecord,
     ModelingRecord,
     ModelInputScopeRecord,
+    ObjectEnrichmentRecord,
     ProfilingProfileRecord,
     ValidationCheckRecord,
     ValidationGroupRecord,
@@ -42,6 +44,7 @@ from .model_guidance import enrich_model_dataset_schema
 type ModelSection = Literal[
     "model_input_scope",
     "profiling",
+    "enrichment",
     "analysis",
     "assertion",
     "conceptual",
@@ -56,6 +59,8 @@ type ModelDataset = Literal[
     "model_details",
     "model_input_scope",
     "profiling_profile",
+    "object_enrichment",
+    "attribute_enrichment",
     "analysis_result",
     "modeling_assertion_document",
     "modeling_assertion_record",
@@ -81,6 +86,8 @@ type ModelChangeSetDataset = Literal[
     "model_details",
     "model_input_scope",
     "profiling_profile",
+    "object_enrichment",
+    "attribute_enrichment",
     "analysis_result",
     "modeling_assertion_document",
     "modeling_assertion_record",
@@ -105,6 +112,7 @@ type ModelChangeSetDataset = Literal[
 MODEL_SECTIONS: tuple[ModelSection, ...] = (
     "model_input_scope",
     "profiling",
+    "enrichment",
     "analysis",
     "assertion",
     "conceptual",
@@ -144,6 +152,11 @@ class ModelInputScopeSection(ContractModel):
 
 class ProfilingSection(ContractModel):
     profiles: tuple[ProfilingProfileRecord, ...]
+
+
+class EnrichmentSection(ContractModel):
+    objects: tuple[ObjectEnrichmentRecord, ...] = ()
+    attributes: tuple[AttributeEnrichmentRecord, ...] = ()
 
 
 class AnalysisSection(ContractModel):
@@ -198,6 +211,7 @@ class ModelSnapshot(ContractModel):
     model_tenant_code: str | None = None
     other_active_model_names: tuple[str, ...] = ()
     model_input_scope: ModelInputScopeSection
+    enrichment: EnrichmentSection = EnrichmentSection()
     profiling: ProfilingSection
     analysis: AnalysisSection
     assertion: AssertionSection
@@ -220,6 +234,8 @@ def model_snapshot_records(
         "model_details": (snapshot.model_input_scope.details,),
         "model_input_scope": snapshot.model_input_scope.objects,
         "profiling_profile": snapshot.profiling.profiles,
+        "object_enrichment": snapshot.enrichment.objects,
+        "attribute_enrichment": snapshot.enrichment.attributes,
         "analysis_result": snapshot.analysis.relationships,
         "modeling_assertion_document": snapshot.assertion.documents,
         "modeling_assertion_record": snapshot.assertion.records,
@@ -304,6 +320,31 @@ DATASETS = (
         name="profiling_profile",
         section="profiling",
         row_model=ProfilingProfileRecord,
+        canonical_key=(
+            "tenant_code",
+            "system_code",
+            "connection_code",
+            "object_schema",
+            "object_name",
+            "attribute_name",
+        ),
+    ),
+    ModelingDatasetDefinition(
+        name="object_enrichment",
+        section="enrichment",
+        row_model=ObjectEnrichmentRecord,
+        canonical_key=(
+            "tenant_code",
+            "system_code",
+            "connection_code",
+            "object_schema",
+            "object_name",
+        ),
+    ),
+    ModelingDatasetDefinition(
+        name="attribute_enrichment",
+        section="enrichment",
+        row_model=AttributeEnrichmentRecord,
         canonical_key=(
             "tenant_code",
             "system_code",

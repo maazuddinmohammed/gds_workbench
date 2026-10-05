@@ -53,7 +53,7 @@ def model_input_scope_records() -> list[dict[str, object]]:
     ]
 
 
-def complete_model_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]]]:
+def complete_model_graph(*, include_enrichment: bool = False) -> dict[ModelChangeSetDataset, list[dict[str, object]]]:
     source_order = physical_object(SOURCE_ORDERS)
     source_customer = physical_object(SOURCE_CUSTOMERS)
     source_order_id = physical_attribute(SOURCE_ORDERS, "order_id")
@@ -79,6 +79,21 @@ def complete_model_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]
                 "percent_null": 10,
                 "percent_blank": 0,
                 "percent_distinct": 55.5556,
+            }
+        ],
+        "object_enrichment": [
+            {**source_order, "object_description": "Customer orders.", "is_locked": False}
+        ],
+        "attribute_enrichment": [
+            {
+                **source_order_id,
+                "attribute_description": "Order business identifier.",
+                "attribute_inferred_data_type": "BIGINT",
+                "is_natural_key": True,
+                "is_primary_key": True,
+                "is_nullable": False,
+                "is_pii": None,
+                "is_locked": False,
             }
         ],
         "analysis_result": [
@@ -255,6 +270,9 @@ def complete_model_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]
         ],
         "validation_check": [validation_check()],
     }
+    if not include_enrichment:
+        graph.pop("object_enrichment")
+        graph.pop("attribute_enrichment")
     return graph
 
 
@@ -467,9 +485,7 @@ def dimensional_attribute(
         "dimensional_attribute_definition": f"{name} attribute.",
         "dimensional_attribute_data_type": "bigint",
         "dimensional_attribute_is_nullable": False,
-        "dimensional_attribute_ordinal_position": (
-            1 if name in {"SalesKey", "CustomerKey"} else 2
-        ),
+        "dimensional_attribute_ordinal_position": (1 if name in {"SalesKey", "CustomerKey"} else 2),
         "dimensional_attribute_role": "key",
         "dimensional_attribute_key_role": key_role,
         "dimensional_attribute_is_grain_component": True,
@@ -579,6 +595,10 @@ def snapshot_from_graph(
                 "objects": rows("model_input_scope"),
             },
             "profiling": {"profiles": rows("profiling_profile")},
+            "enrichment": {
+                "objects": rows("object_enrichment"),
+                "attributes": rows("attribute_enrichment"),
+            },
             "analysis": {"relationships": rows("analysis_result")},
             "assertion": {
                 "documents": rows("modeling_assertion_document"),
@@ -653,9 +673,7 @@ def complete_physical_scope() -> PhysicalModelCatalog:
         model_tenant_code="TENANT-A",
         active_system_codes=frozenset({"erp", "gds"}),
         objects=input_objects | target_objects,
-        attributes=input_attributes
-        | logical_target_attributes
-        | dimensional_target_attributes,
+        attributes=input_attributes | logical_target_attributes | dimensional_target_attributes,
         model_input_objects=input_objects,
         model_input_attributes=input_attributes,
     )

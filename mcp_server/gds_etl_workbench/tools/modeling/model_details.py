@@ -35,6 +35,9 @@ SELECT model.model_id,
        model.dimensional_schemas,
        model.logical_entity_scd_type,
        model.dimensional_entity_scd_type,
+       (SELECT system_code FROM core.system
+         WHERE system_id = model.default_mapping_source_system_id)
+           AS default_mapping_source_system_code,
        model.silver_model_naming_instructions,
        model.silver_model_audit_columns_template,
        model.gold_model_naming_instructions,
@@ -68,6 +71,7 @@ class ModelDetails(ContractModel):
     dimensional_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
     logical_entity_scd_type: Literal["type_1", "type_2"] | None = None
     dimensional_entity_scd_type: Literal["type_1", "type_2"] | None = None
+    default_mapping_source_system_code: str | None = None
     silver_model_naming_instructions: str | None = Field(default=None, max_length=32768)
     silver_model_audit_columns_template: dict[str, JsonValue] | None
     gold_model_naming_instructions: str | None = Field(default=None, max_length=32768)

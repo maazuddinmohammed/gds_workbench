@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
+from gds_etl_workbench.domain.model_policy import GoldAuditPolicy, GoldTechnicalPolicy
 from gds_etl_workbench.domain.snapshots.description import (
     DatasetColumnAcceptedValues,
     DatasetColumnDescription,
@@ -19,8 +20,9 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
     "model_details": (
         "Configure logical_schemas and dimensional_schemas before generating each layer.",
         "Treat Model policy as authoritative when it differs from default naming guidance.",
-        "Preserve logical_entity_scd_type and dimensional_entity_scd_type in staged Model details; "
-        "change them only in Model settings.",
+        "Preserve model_name exactly; Model identity cannot change through Change Sets.",
+        "Propose policy settings through model_details in the existing governed Change Set.",
+        "Use default_mapping_source_system_code for the registered System; never its database ID.",
         "Dimensional SCD is independent: type_1 overwrites mutable Dimension descriptors; "
         "type_2 historizes them. Stable identity stays fixed. Null leaves evidenced behavior. "
         "It applies to Dimensions, not Facts or Bridges; backend projects technical columns.",
@@ -44,6 +46,23 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
             "coordinates; missing coordinates are a blocking error."
         ),
         "For Bronze, query the physical Object schema, Object name, and Attribute name.",
+    ),
+    "object_enrichment": (
+        "Model-owned Object meaning; use applicable profiling and source context. "
+        "Preserve physical Metadata.",
+        "Preserve is_locked; locks cannot be changed by plugin Change Sets.",
+        "Copy expected_revision from saved findings; use null only for a new finding. "
+        "Refresh and reconcile stale drafts before submission.",
+    ),
+    "attribute_enrichment": (
+        "Model-owned descriptions, inferred types and key/nullability/PII findings. Null "
+        "means unknown; false is a negative finding.",
+        "Use applicable profiling evidence; a sample cannot establish full-population "
+        "uniqueness or nullability.",
+        "PII findings never weaken physical masking. Preserve locks, including the parent "
+        "Object lock.",
+        "Copy expected_revision from saved findings; use null only for a new finding. "
+        "Refresh and reconcile stale drafts before submission.",
     ),
     "analysis_result": (
         "Set inferred_cardinality from business evidence, or unknown; explain it in "
@@ -216,6 +235,16 @@ def enrich_model_dataset_schema(dataset: str, schema: dict[str, object]) -> None
     required = {value for value in cast(list[object], required_value) if isinstance(value, str)}
     rules = model_dataset_population_rules(dataset)
     columns: list[dict[str, object]] = []
+    if dataset == "model_details":
+        definitions = cast(dict[str, object], schema.setdefault("$defs", {}))
+        for field, model in (
+            ("silver_model_audit_columns_template", GoldAuditPolicy),
+            ("gold_model_audit_columns_template", GoldAuditPolicy),
+            ("gold_model_technical_columns_template", GoldTechnicalPolicy),
+        ):
+            template_schema = model.model_json_schema()
+            definitions.update(template_schema.pop("$defs", {}))
+            properties[field] = {"anyOf": [template_schema, {"type": "null"}]}
     for name, raw_property in cast(dict[str, object], properties).items():
         if not isinstance(raw_property, dict):
             raise ValueError("Model dataset property schema is invalid.")

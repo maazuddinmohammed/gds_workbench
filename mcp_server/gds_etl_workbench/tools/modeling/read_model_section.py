@@ -28,6 +28,10 @@ from gds_etl_workbench.application.modeling.conceptual import (
     CONCEPTUAL_OBJECTS_SQL,
     CONCEPTUAL_RELATIONSHIPS_SQL,
 )
+from gds_etl_workbench.application.modeling.enrichment import (
+    ATTRIBUTE_ENRICHMENT_SQL,
+    OBJECT_ENRICHMENT_SQL,
+)
 from gds_etl_workbench.application.modeling.modeled_layer import (
     DIMENSIONAL,
     LOGICAL,
@@ -46,6 +50,8 @@ from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation, R
 
 type ReadableModelDataset = Literal[
     "profiling_profile",
+    "object_enrichment",
+    "attribute_enrichment",
     "analysis_result",
     "modeling_assertion_document",
     "modeling_assertion_record",
@@ -101,7 +107,8 @@ def register_read_model_section_tool(
     @server.tool(
         name=_TOOL_NAME,
         description=(
-            "Read one bounded applied Model dataset from Profiling, Analysis, Assertions, "
+            "Read one bounded applied Model dataset from Profiling, Enrichment, Analysis, "
+            "Assertions, "
             "Conceptual, Logical, Dimensional, or Mapping. Generated Code and "
             "Validation are Snapshot-only; use a Model Snapshot when either is needed."
         ),
@@ -141,6 +148,7 @@ def register_read_model_section_tool(
                 rows = await _read_dataset(
                     transaction,
                     model_id=model.model_id,
+                    readable_source_tenant_ids=model.readable_source_tenant_ids,
                     dataset=dataset,
                     page_size=page_size,
                     offset=offset,
@@ -182,8 +190,16 @@ async def _read_dataset(
     dataset: ReadableModelDataset,
     page_size: int,
     offset: int,
+    readable_source_tenant_ids: tuple[int, ...] = (),
 ) -> list[dict[str, object]]:
     limit = page_size + 1
+    if dataset in {"object_enrichment", "attribute_enrichment"}:
+        query = (
+            OBJECT_ENRICHMENT_SQL if dataset == "object_enrichment" else ATTRIBUTE_ENRICHMENT_SQL
+        )
+        return await transaction.fetch_all(
+            query, (model_id, list(readable_source_tenant_ids), True, limit, offset)
+        )
     if dataset == "profiling_profile":
         return await transaction.fetch_all(
             PROFILING_SQL,

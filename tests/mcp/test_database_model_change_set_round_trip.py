@@ -1240,7 +1240,7 @@ async def test_model_stage_batch_runs_through_validate_and_apply(
             )
             assert validated.is_error is False
             assert validated.structured_content["valid"] is True, (
-                validated.structured_content
+                [(error["code"], error["fields"]) for error in validated.structured_content["errors"]]
             )
             applied = await client.call_tool(
                 "apply_model_change_set",
@@ -1934,6 +1934,8 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
         "model_details": 1,
         "model_input_scope": 3,
         "profiling_profile": 1,
+        "object_enrichment": 0,
+        "attribute_enrichment": 0,
         "analysis_result": 1,
         "modeling_assertion_document": 1,
         "modeling_assertion_record": 1,
@@ -2364,6 +2366,7 @@ def _replace_codes(
 
 def _replace_codes(value: object, *, code_prefix: str = "MODEL_TOOL") -> object:
     replacements = {
+        "SalesModel": "Model Tool Round Trip",
         "TENANT-A": f"{code_prefix}_TENANT",
         "ERP": f"{code_prefix}_ERP",
         "FC": f"{code_prefix}_FC",
@@ -2441,6 +2444,8 @@ async def _assert_focused_reads(client: Client, model_id: int) -> None:
     assert stale.is_error
     expected_counts = {
         "profiling_profile": 1,
+        "object_enrichment": 0,
+        "attribute_enrichment": 0,
         "analysis_result": 1,
         "modeling_assertion_document": 1,
         "modeling_assertion_record": 1,

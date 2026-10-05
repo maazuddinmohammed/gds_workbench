@@ -21,7 +21,7 @@ Pass that object to `describe_model_dataset`. Use `detail:"compact"` for the can
 
 1. Read the affected baseline records and existing pending records. Build the effective view by canonical-key overlay; a pending record takes precedence over its baseline version.
 2. Follow [record state](../record-state.md) before editing. For an existing key, edit that complete effective record and preserve unrelated fields, nested members and locks. For a new key, populate all required fields and explicit nulls where appropriate. Unknown, false and zero are different values.
-3. Save JSON arrays under `model-change-set/<dataset>.json`. Profiling and Analysis records are flat; other Model datasets may contain nested arrays. Do not add a section wrapper, Model ID, database row IDs or task evidence to a record.
+3. Save JSON arrays under `model-change-set/<dataset>.json`. Enrichment and Analysis records are flat; Profiling is backend-run and must not be staged; other Model datasets may contain nested arrays. Do not add a section wrapper, Model ID, database row IDs or task evidence to a record.
 4. Merge changes by the dataset's canonical key through the supported local upsert. Keep earlier pending edits and unrelated records. Changing a key creates different pending intent; it does not rename or remove the original record.
 5. Run [local validation](../local-validation.md) against the effective Model graph, including the workflow's semantic checks. Resolve failures before dependent work; structural validity does not prove a modeling conclusion.
 6. Continue related local work where prerequisites allow. At the completion/dependency boundary, follow the shared [Change Set lifecycle](../change-set-lifecycle.md).
@@ -50,3 +50,5 @@ Use safe argument passing for JSON. Do not hand-roll key normalization, guess di
 Current sources: `domain/modeling_records.py`, `domain/snapshots/model.py`, `application/change_sets/model.py`, `application/change_sets/model_validation.py` and `tools/snapshots/model/describe_model_dataset.py` under `mcp_server/gds_etl_workbench/`; `atlas/atlas-plugin/contracts/local-helper.json`.
 
 Known guidance corrections for later implementation: `domain/snapshots/model_guidance.py` still describes single-source-Tenant scope, while governed selection supports additionally authorized Source/Bronze source Tenants. It also describes Analysis findings too broadly for the exact endpoint record shape. Use authorized scope and the dataset contract; do not reproduce those stale descriptions as new restrictions or payload fields.
+
+Model settings use [settings](settings.md); Model-owned source findings use [enrichment](enrichment.md). Both share this authoring lifecycle.

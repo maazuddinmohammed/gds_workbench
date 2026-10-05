@@ -70,7 +70,7 @@ Field authoring belongs in [Model Change Sets](model/change-sets.md) and the Met
 |---|---|
 | Metadata | Owning Tenant and Metadata draft revision. No invented Tenant-wide metadata revision. |
 | Model | Model identity, applied Model revision and Model draft revision. Recheck the applied revision before handoff. |
-| Model-selected enrichment | Metadata only; also recheck the Model revision that selected scope. Reconcile changed selection before submission. |
+| Model-owned enrichment | Model Change Set; preserve the selected applied Input Scope and current Model revision. Reuse pending findings locally before submission. |
 | Mixed Metadata/Model work | Separate drafts and Applies ordered by dependencies; no combined atomic Apply. |
 | Several Metadata owners | Same workspace, [separate owner roots](workspace-contract.md#model-derived-metadata-owners), authorization, drafts and approval bindings. Resolve owner on each helper call. |
 

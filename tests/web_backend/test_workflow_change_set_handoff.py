@@ -74,6 +74,7 @@ def _change_set_row(*, status: str = "active") -> dict[str, Any]:
         "validation_outcome": {} if status == "validated" else None,
         "model_input_scope_document": {},
         "profiling_document": {},
+        "enrichment_document": {},
         "assertion_document": {},
         "analysis_document": {},
         "conceptual_document": {"conceptual_object": _change().records},

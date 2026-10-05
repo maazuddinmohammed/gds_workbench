@@ -303,6 +303,16 @@
       else if (record.is_active && catalog.inputObjects.has(key)) activeInputs.add(key);
     }
     const activeInputAttributes = attributesFor(catalog.inputAttributes, activeInputs);
+    const appliedInputs = new Set((model.get("model_input_scope")?.baseline || []).filter(row => row.is_active).map(row => physicalKey(row)));
+    const enrichmentInputs = new Set([...activeInputs].filter(key => appliedInputs.has(key)));
+    const enrichmentAttributes = attributesFor(catalog.inputAttributes, enrichmentInputs);
+    for (const dataset of ["object_enrichment", "attribute_enrichment"]) {
+      const attribute = dataset === "attribute_enrichment";
+      for (const record of records(model, dataset)) {
+        const allowed = retained(dataset, record) ? (attribute ? catalog.attributes : catalog.objects) : (attribute ? enrichmentAttributes : enrichmentInputs);
+        if (!allowed.has(physicalKey(record, attribute))) scopeIssue(issues, dataset, attribute ? "attribute_name" : "object_name", "Enrichment must reference active Model Input Scope.");
+      }
+    }
     for (const record of records(model, "profiling_profile"))
       if (!(retained("profiling_profile", record) ? catalog.attributes : activeInputAttributes)
         .has(physicalKey(record, true))) scopeIssue(issues,

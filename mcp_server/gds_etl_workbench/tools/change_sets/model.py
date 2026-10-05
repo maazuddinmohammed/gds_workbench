@@ -337,6 +337,7 @@ WITH operation_time AS MATERIALIZED (
 UPDATE mcp.model_change_set AS change_set
    SET model_input_scope_document = %s,
        profiling_document = %s,
+       enrichment_document = %s,
        analysis_document = %s,
        assertion_document = %s,
        conceptual_document = %s,
@@ -2025,6 +2026,10 @@ def register_model_change_set_tools(
                         model_id=model.model_id,
                         source_context_digest=row["base_source_context_digest"],
                         readable_source_tenant_ids=model.readable_source_tenant_ids,
+                        change_set_id=model_change_set_id,
+                        request_principal=request_principal,
+                        draft_revision=expected_draft_revision,
+                        candidate_digest=validation.candidate_digest,
                     )
                     action_count = await materializer.apply(validation.records)
                     revision = await transaction.fetch_one(

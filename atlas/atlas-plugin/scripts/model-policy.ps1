@@ -25,12 +25,24 @@ function Get-AtlasModelPolicy($States, $MetadataStates, $Model) {
         $changed[$name] = @($changeList); $added[$name] = @($addList); $rows[$name] = @($state.Effective); $originals[$name] = $baseline
     }
     $details = if ($rows.ContainsKey('model_details') -and $rows.model_details.Count -gt 0) { $rows.model_details[0] } else { $Model }
+    $parentLocks = @{}
     foreach ($state in $States) {
-        foreach ($field in @('logical_entity_scd_type', 'dimensional_entity_scd_type')) {
-            if ($state.Dataset.name -ceq 'model_details' -and @($state.Baseline).Count -gt 0 -and @($state.Pending).Count -gt 0 -and
-                (Get-Property $state.Baseline[0] $field) -cne (Get-Property $state.Pending[0] $field)) {
-                Add-PolicyIssue $issues 'model_policy_read_only' 'model_details' $field 'SCD type must be changed through Model settings.'
-            }
+        if ($state.Dataset.name -ceq 'model_details' -and @($state.Baseline).Count -gt 0 -and @($state.Pending).Count -gt 0 -and
+            (Get-Property $state.Baseline[0] 'model_name') -cne (Get-Property $state.Pending[0] 'model_name')) {
+            Add-PolicyIssue $issues 'model_identity_read_only' 'model_details' 'model_name' 'Model name is immutable in Change Sets; preserve the Snapshot identity.'
+        }
+        if ($state.Dataset.name -ceq 'object_enrichment') {
+            foreach ($record in @($state.Baseline)) { if ($record.is_locked) { $parentLocks[(Get-PolicyPhysical $record)] = $true } }
+        }
+    }
+    foreach ($state in $States) {
+        $dataset = [string]$state.Dataset.name
+        if (@('object_enrichment', 'attribute_enrichment') -cnotcontains $dataset) { continue }
+        foreach ($record in @($changed[$dataset])) {
+            $original = $originals[$dataset][(Get-CanonicalKey 'model' $state.Dataset $record)]
+            if ((Get-Property $record 'expected_revision') -cne (Get-Property $original 'expected_revision')) { Add-PolicyIssue $issues 'enrichment_revision_conflict' $dataset 'expected_revision' 'Enrichment changed since this draft; refresh and reconcile the findings.' }
+            if ([bool]$record.is_locked -ne [bool](Get-Property $original 'is_locked')) { Add-PolicyIssue $issues 'enrichment_lock_read_only' $dataset 'is_locked' 'Preserve enrichment locks; Change Sets cannot toggle them.' }
+            if ($dataset -ceq 'attribute_enrichment' -and $parentLocks.ContainsKey((Get-PolicyPhysical $record))) { Add-PolicyIssue $issues 'enrichment_parent_locked' $dataset 'object_name' 'A locked Object enrichment also protects its Attribute findings.' }
         }
     }
     foreach ($dataset in @('conceptual_object', 'conceptual_relationship', 'logical_submodel', 'logical_entity', 'logical_attribute', 'logical_relationship', 'dimensional_submodel', 'dimensional_entity', 'dimensional_attribute', 'dimensional_relationship')) {
@@ -99,7 +111,11 @@ function Get-AtlasModelPolicy($States, $MetadataStates, $Model) {
             $naming = Get-Property $details ($prefix + '_model_naming_instructions'); $suffix = if ($layer -ceq 'logical') {'ID'} else {'Key'}
             if ($surrogate -and -not $naming -and -not ([string](Get-Property $surrogate $attributeField)).EndsWith($suffix, [StringComparison]::Ordinal)) { Add-PolicyIssue $issues 'model.key-suffix' $attributeDataset $attributeField "The own surrogate uses the $suffix suffix under the default policy." }
             $template = Get-Property $details ($prefix + '_model_audit_columns_template'); $configured = Get-Property $template 'columns'
-            if ($configured -isnot [Array]) { $configured = @('SourceSystemID', 'IsDataValid', 'HashKey', 'IsActive', 'GDSBatchID', 'PipelineRunID', 'CreatedDate', 'UpdatedDate', 'CreatedBy', 'UpdatedBy') | ForEach-Object { [ordered]@{semantic_name = $_} } }
+            if ($configured -isnot [Array]) {
+                $names = @('SourceSystemID', 'IsDataValid', 'HashKey', 'IsActive', 'GDSBatchID', 'PipelineRunID', 'CreatedDate', 'UpdatedDate', 'CreatedBy', 'UpdatedBy')
+                $types = @('BIGINT', 'BOOLEAN', 'STRING', 'BOOLEAN', 'BIGINT', 'STRING', 'TIMESTAMP', 'TIMESTAMP', 'STRING', 'STRING')
+                $configured = @(for ($index = 0; $index -lt $names.Count; $index++) { [ordered]@{semantic_name = $names[$index]; data_type = $types[$index]; nullable = $true} })
+            }
             $expected = @($configured | ForEach-Object { Normalize-Value 'model' 'value' $_.semantic_name })
             $byName = @{}; $actual = New-Object Collections.ArrayList
             foreach ($column in $columns) { $columnName = Normalize-Value 'model' 'value' (Get-Property $column $attributeField); $byName[$columnName] = $column; if ($expected -ccontains $columnName) { [void]$actual.Add($columnName) } }
@@ -112,7 +128,6 @@ function Get-AtlasModelPolicy($States, $MetadataStates, $Model) {
                     ((Test-Property $specification 'nullable') -and (Get-Property $column ($attributeDataset + '_is_nullable')) -ne $specification.nullable)) { Add-PolicyIssue $issues 'model.audit-template' $attributeDataset $attributeField 'Audit types and nullability must match the configured Model template.' }
                 if ($semantic -cne 'sourcesystemid' -and @((Get-Property $column 'sources') | Where-Object { $null -ne $_ }).Count -gt 0) { Add-PolicyIssue $issues 'model.framework-source' $attributeDataset 'sources' 'Framework-populated audit columns have no fabricated physical source lineage.' }
             }
-            if (-not $template) { Add-PolicyIssue $issues 'model.audit-template-review' $attributeDataset $attributeField 'The audit names are checked; exact types and nullability need the approved Model template.' 'warning' }
         }
         $byAttribute = @{}
         foreach ($attribute in $attributes) { $byAttribute[(Get-PolicyTuple @((Get-Property $attribute $schemaField), (Get-Property $attribute $entityField), (Get-Property $attribute $attributeField)))] = $attribute }

@@ -36,9 +36,12 @@ not silently change installed or already-running prompts.
 | Code | Applied transformation documents, their exact saved template definitions, modeled target shape, eligible sources and frozen artifact requirements → SQL artifacts with exact source-System assignment. Partial Mapping requires explicit gaps and placeholders. |
 | Validation | Complete Mapping, relevant current Code, metadata and applicable requirements → deterministic Validation Groups/Checks. |
 
-Profiling precedes Model-owned Enrichment in the web workflow. Physical Metadata
-correction is a separate operation. The plugin currently lacks governed contracts
-for the web workflow's Model-owned enrichment; see its [capability boundaries](../atlas/atlas-plugin/references/platform/capabilities.md).
+Profiling precedes Model-owned Enrichment. The plugin prefers Profiling → Enrichment
+→ Analysis → Conceptual → Logical, reusing valid evidence and pending local records.
+Refresh the Snapshot after backend Profiling; related authored phases can remain in
+one local draft until reviewed submission. Actual applied downstream prerequisites
+still apply. [Plugin enrichment](../atlas/atlas-plugin/references/model/enrichment.md)
+uses Model Change Sets; physical Metadata correction remains separate.
 
 Only configured variables/readers enter an agent request; do not assume an earlier
 workflow's whole output is implicitly appended. One-shot and tool-assisted modes

@@ -7,6 +7,8 @@ description: Build or refine Atlas business concepts and conceptual relationship
 
 Produce concepts with clear business meaning and supported relationships. A conceptual model is not a renamed physical schema or a premature logical design.
 
+Use applicable profiling, [Model enrichment](../../references/model/enrichment.md) and analysis from the effective local view, including pending proposals. Reuse earlier local results without applying each phase.
+
 1. Follow [working context](../../references/working-method.md). For persisted work, resolve the Model, selected applied Input Scope, required [Metadata](../../references/snapshots/metadata.md) / [Model](../../references/snapshots/model.md) evidence and effective existing Conceptual records. Preserve bound drafts. Discussion-only work need not create records or a workspace.
 2. Read [business concepts](../../references/logical-build/business-concepts.md) and the [Conceptual record contract](../../references/model/conceptual.md). Inspect relevant source meanings, Analysis, profiles and attributable [Assertions](../../references/model/assertions.md). Use [domain rules](../../references/domains/index.md) only with verified applicability. Missing material evidence returns to [source analysis](../atlas-source-analysis/SKILL.md); profiling is not a mandatory ceremony.
 3. Identify the business subject, what one instance represents, lifecycle and meaningful distinctions. Reuse/consolidate equivalent concepts; separate genuinely different roles. Resolve consequential ambiguity with the shared [interview method](../../references/modeling-interview.md), reusing confirmed answers. Unknown facts remain unknown.

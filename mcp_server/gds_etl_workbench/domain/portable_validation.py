@@ -15,6 +15,8 @@ METADATA_RECORD_VALIDATIONS: Final[dict[str, tuple[str, ...]]] = {
 
 MODEL_RECORD_VALIDATIONS: Final[dict[str, tuple[str, ...]]] = {
     "model_details": ("model_details_policy",),
+    "object_enrichment": ("enrichment_text",),
+    "attribute_enrichment": ("enrichment_text",),
     "profiling_profile": ("profiling_profile",),
     "analysis_result": ("analysis_result",),
     "modeling_assertion_document": ("modeling_assertion_document",),

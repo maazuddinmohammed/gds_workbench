@@ -6,6 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from typing import Any, LiteralString, cast
+from uuid import UUID
 
 from psycopg.types.json import Jsonb
 
@@ -14,6 +15,7 @@ from gds_etl_workbench.application.modeling.modeled_layer import (
     LOGICAL,
     LayerConfig,
 )
+from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
@@ -47,8 +49,7 @@ from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 
 _UPDATE_MODEL_DETAILS_SQL: LiteralString = """
 UPDATE model.model
-   SET model_name = %s,
-       model_description = %s,
+   SET model_description = %s,
        logical_schemas = %s,
        dimensional_schemas = %s,
        silver_model_naming_instructions = %s,
@@ -56,9 +57,13 @@ UPDATE model.model
        gold_model_naming_instructions = %s,
        gold_model_technical_columns_template = %s,
        gold_model_audit_columns_template = %s,
+       logical_entity_scd_type = %s,
+       dimensional_entity_scd_type = %s,
+       default_mapping_source_system_id = %s,
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
  WHERE model_id = %s
+   AND model_name = %s
    AND is_active
 RETURNING model_id
 """
@@ -871,6 +876,10 @@ class ModelMaterializer:
     source_context_digest: str
     workflow_run_id: int | None = None
     readable_source_tenant_ids: tuple[int, ...] = ()
+    change_set_id: UUID | None = None
+    request_principal: RequestPrincipal | None = None
+    draft_revision: int | None = None
+    candidate_digest: str | None = None
     _model_workflow: str | None = None
     _mapping_policy: _MappingMaterializationPolicy | None = None
     _object_ids: dict[tuple[str, ...], tuple[int, int]] = field(
@@ -965,6 +974,34 @@ class ModelMaterializer:
     ) -> int:
         """Materialize in dependency order inside the caller's transaction."""
         action_count = 0
+        if records.get("object_enrichment") or records.get("attribute_enrichment"):
+            if (
+                self.change_set_id is None
+                or self.request_principal is None
+                or self.draft_revision is None
+                or self.candidate_digest is None
+            ):
+                raise InvalidRequestError(
+                    "Enrichment requires the owned validated Change Set Apply context."
+                )
+            result = await self.transaction.fetch_one(
+                "SELECT mcp.apply_model_enrichment_change_set(%s,%s,%s,%s,%s,%s,%s) "
+                "AS action_count",
+                (
+                    self.request_principal.entra_tenant_id,
+                    self.request_principal.entra_object_id,
+                    "service_principal"
+                    if self.request_principal.actor_kind == ActorKind.WORKLOAD
+                    else "user",
+                    self.model_id,
+                    self.change_set_id,
+                    self.draft_revision,
+                    self.candidate_digest,
+                ),
+            )
+            if result is None:
+                raise InvalidRequestError("Enrichment Change Set could not be applied.")
+            action_count += int(result["action_count"])
         action_count += await self._apply_model_details(records.get("model_details", ()))
         action_count += await self._apply_model_input_scope(records.get("model_input_scope", ()))
         action_count += await self._apply_assertion_documents(
@@ -996,7 +1033,6 @@ class ModelMaterializer:
             row = await self.transaction.fetch_one(
                 _UPDATE_MODEL_DETAILS_SQL,
                 (
-                    record.model_name,
                     record.model_description,
                     Jsonb([item.model_dump(mode="json") for item in record.logical_schemas]),
                     Jsonb([item.model_dump(mode="json") for item in record.dimensional_schemas]),
@@ -1017,7 +1053,15 @@ class ModelMaterializer:
                         if record.gold_model_audit_columns_template is None
                         else Jsonb(record.gold_model_audit_columns_template)
                     ),
+                    record.logical_entity_scd_type,
+                    record.dimensional_entity_scd_type,
+                    (
+                        None
+                        if record.default_mapping_source_system_code is None
+                        else await self.resolve_system(record.default_mapping_source_system_code)
+                    ),
                     self.model_id,
+                    record.model_name,
                 ),
             )
             if row is None:

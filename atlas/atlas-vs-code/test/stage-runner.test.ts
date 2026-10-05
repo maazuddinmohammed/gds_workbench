@@ -92,6 +92,7 @@ const METADATA_DATASETS = [
 ] as const;
 const MODEL_DATASETS = [
   "analysis_result",
+  "attribute_enrichment",
   "conceptual_object",
   "conceptual_relationship",
   "dimensional_attribute",
@@ -110,6 +111,7 @@ const MODEL_DATASETS = [
   "model_input_scope",
   "modeling_assertion_document",
   "modeling_assertion_record",
+  "object_enrichment",
   "profiling_profile",
   "validation_check",
   "validation_group",
@@ -1600,6 +1602,25 @@ describe("stageApprovedManifest", () => {
       workspaceRoots: [workspace], mcp: {async callTool() { calls++; return {}; }},
     })).rejects.toMatchObject({code: "SNAPSHOT_MISMATCH"});
     expect(calls).toBe(0);
+  });
+
+  test.each(["object_enrichment", "attribute_enrichment"])("stages %s through the existing approved manifest", async dataset => {
+    const object = { tenant_code: "T", system_code: "ERP", connection_code: "C", object_schema: "bronze", object_name: "Orders" };
+    const attribute = dataset === "attribute_enrichment";
+    const keys = [...Object.keys(object), ...(attribute ? ["attribute_name"] : [])];
+    const records = [attribute
+      ? { ...object, attribute_name: "OrderNumber", attribute_description: "Business identifier", attribute_inferred_data_type: "STRING", is_natural_key: true, is_primary_key: null, is_nullable: null, is_pii: null, is_locked: false }
+      : { ...object, object_description: "Customer orders", is_locked: false }];
+    const {workspace, manifestPath, acceptedDigest} = await modelRequest(dataset, keys, records);
+    const mcp: McpToolClient = { async callTool(name, input) {
+      if (name === "get_model_change_set") return changeSetResponse("model", 3, input.dataset);
+      if (name === "stage_model_change_set") return directStageResponse("model", 4, {[dataset]: records});
+      if (name === "get_model_change_set_fingerprint") return fingerprintResponse("model", 4, {[dataset]: records});
+      throw new Error(`Unexpected tool: ${name}`);
+    }};
+    const receipt = await stageApprovedManifest({manifestPath, expectedDigest: acceptedDigest}, {mcp, workspaceRoots: [workspace]});
+    expect(receipt.datasets).toEqual([{dataset, record_count: 1}]);
+    expect(receipt.fingerprint_verified).toBe(true);
   });
 
   test("stages the singleton model_details dataset with its empty canonical key", async () => {

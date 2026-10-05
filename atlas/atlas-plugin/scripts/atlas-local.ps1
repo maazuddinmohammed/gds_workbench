@@ -1313,6 +1313,14 @@ function Get-SchemaIssues {
                 if ($from -ceq $to) { [void]$issues.Add("$Location`: $layer Relationship endpoints must be different") }
             }
         }
+        if ($recordRules -ccontains 'enrichment_text') {
+            foreach ($field in @('object_description', 'attribute_description')) {
+                $text = Get-Property $Value $field
+                if ($null -ne $text -and ($script:Utf8NoBom.GetByteCount($text) -gt 2000 -or $text -match '[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')) { [void]$issues.Add("$Location`: Enrichment description must be safe text within 2,000 UTF-8 bytes.") }
+            }
+            $inferredType = Get-Property $Value 'attribute_inferred_data_type'
+            if ($null -ne $inferredType -and $inferredType -match '[\x00-\x1f\x7f]') { [void]$issues.Add("$Location`: Inferred type cannot contain control characters.") }
+        }
         if ($recordRules -ccontains 'model_details_policy') {
             foreach ($field in @('logical_schemas', 'dimensional_schemas')) {
                 $schemas = Get-Property $Value $field; if ($null -eq $schemas) { $schemas = @() }
@@ -1744,7 +1752,19 @@ function Add-ModelPhysicalScopeIssues([object[]]$States, [object[]]$ReferenceSta
         $type = [string]$state.RecordType
         foreach ($record in @($state.Effective)) {
             $retained = $state.RetainedKeys.Contains((Get-NormalizedValidationKey 'model' @($state.Dataset.canonical_key) $record))
-            if ($type -ceq 'profiling_profile') {
+            if (@('object_enrichment', 'attribute_enrichment') -ccontains $type) {
+                $attribute = $type -ceq 'attribute_enrichment'
+                $fields = if ($attribute) { $attributeFields } else { $objectFields }
+                $appliedParent = $false
+                $parentKey = Get-NormalizedValidationKey 'model' $objectFields $record
+                foreach ($scope in @($byType['model_input_scope'].Baseline)) {
+                    if ((Get-Property $scope 'is_active') -eq $true -and (Get-NormalizedValidationKey 'model' $objectFields $scope) -ceq $parentKey) { $appliedParent = $true; break }
+                }
+                if (-not $retained -and -not $appliedParent) { Add-LocalValidationIssue $Issues $state.Dataset.name $null 'model_input_reference_invalid' 'Enrichment requires applied Model Input Scope.' 'object_name' }
+                $eligible = if ($retained) { if ($attribute) { ,$sets.attributes } else { ,$sets.objects } } else { if ($attribute) { ,$sets.activeInputAttributes } else { ,$sets.activeInputs } }
+                & $requirePhysical $state $record $(if ($attribute) { 'attribute_name' } else { 'object_name' }) (Get-NormalizedValidationKey 'model' $fields $record) $eligible 'Enrichment must reference active Model Input Scope.'
+            }
+            elseif ($type -ceq 'profiling_profile') {
                 $eligible = if ($retained) { ,$sets.attributes } else { ,$sets.activeInputAttributes }
                 & $requirePhysical $state $record 'attribute_name' (Get-NormalizedValidationKey 'model' $attributeFields $record) $eligible 'Profile Attribute is not in active Model Input Scope.'
             }

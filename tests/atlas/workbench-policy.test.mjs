@@ -10,17 +10,17 @@ function graph(layer='logical'){
  const entity={[`${layer}_entity_schema_name`]:'silver',[`${layer}_entity_name`]:'Customer',[`${layer}_entity_status`]:'active',sources:[],submodels:[]};
  const column=(name,ordinal,audit=false)=>({[`${layer}_entity_schema_name`]:'silver',[`${layer}_entity_name`]:'Customer',[`${layer}_attribute_name`]:name,[`${layer}_attribute_status`]:'active',[`${layer}_attribute_data_type`]:'BIGINT',[`${layer}_attribute_ordinal_position`]:ordinal,[`${layer}_attribute_is_nullable`]:false,[`${layer}_attribute_is_audit_column`]:audit,sources:[]});
  const surrogate={...column(layer==='logical'?'CustomerID':'CustomerKey',1),...(layer==='logical'?{logical_attribute_is_surrogate_key:true,logical_attribute_is_natural_key:false}:{dimensional_attribute_key_role:'surrogate'})};
- const attributes=[surrogate,...AUDIT.map((name,index)=>column(name,index+2,true))];
+ const attributes=[surrogate,...AUDIT.map((name,index)=>({...column(name,index+2,true),[`${layer}_attribute_data_type`]:["BIGINT","BOOLEAN","STRING","BOOLEAN","BIGINT","STRING","TIMESTAMP","TIMESTAMP","STRING","STRING"][index],[`${layer}_attribute_is_nullable`]:true}))];
  return new Map([loaded(`${layer}_entity`,[`${layer}_entity_schema_name`,`${layer}_entity_name`],[entity]),loaded(`${layer}_attribute`,[`${layer}_entity_schema_name`,`${layer}_entity_name`,`${layer}_attribute_name`],attributes)]);
 }
 const codes=result=>result.filter(issue=>issue.severity!=='warning').map(issue=>issue.code);
-test('Model Change Sets preserve the web-owned Logical SCD setting', () => {
+test('Model Change Sets allow Logical SCD settings in the governed draft', () => {
   for (const original of [null, 'type_1', 'type_2']) {
     for (const proposed of [null, 'type_1', 'type_2']) {
       const baseline = {model_name: 'Sales', logical_entity_scd_type: original};
       const pending = {...baseline, model_purpose: 'Updated purpose', logical_entity_scd_type: proposed};
       const value = new Map([loaded('model_details', [], [pending], [baseline])]);
-      assert.equal(codes(validate(value)).includes('model_policy_read_only'), original !== proposed);
+      assert.deepEqual(codes(validate(value)), []);
     }
   }
   const baseline = {model_name: 'Sales'};
@@ -137,16 +137,49 @@ test('Dimensional Mapping resolves peer Dimensional key lookups without physical
   assert.ok(codes(validate(value)).includes('mapping.source-kind'));
 });
 
-test('Model Change Sets preserve the web-owned Dimensional SCD setting', () => {
+test('Model Change Sets allow Dimensional SCD settings in the governed draft', () => {
   for (const original of [null, 'type_1', 'type_2']) {
     for (const proposed of [null, 'type_1', 'type_2']) {
       const baseline = {model_name: 'Sales', dimensional_entity_scd_type: original};
       const pending = {...baseline, model_purpose: 'Updated purpose', dimensional_entity_scd_type: proposed};
       const value = new Map([loaded('model_details', [], [pending], [baseline])]);
-      assert.equal(codes(validate(value)).includes('model_policy_read_only'), original !== proposed);
+      assert.deepEqual(codes(validate(value)), []);
     }
   }
   const baseline = {model_name: 'Sales'};
   const value = new Map([loaded('model_details', [], [{...baseline, dimensional_entity_scd_type: null}], [baseline])]);
   assert.deepEqual(codes(validate(value)), []);
+});
+
+test('Model identity cannot be renamed in a local draft', () => {
+  const baseline = {model_name: 'Sales'};
+  const value = new Map([loaded('model_details', [], [{model_name: 'Other'}], [baseline])]);
+  assert.ok(codes(validate(value)).includes('model_identity_read_only'));
+});
+
+test('enrichment preserves lock ownership and parent protection', () => {
+  const object = {...phys, object_description:'Customer', is_locked:true};
+  const attribute = {...phys, attribute_name:'Name', attribute_description:'Name', is_locked:false};
+  const keys = Object.keys(phys);
+  const value = new Map([
+    loaded('object_enrichment', keys, [], [object]),
+    loaded('attribute_enrichment', [...keys,'attribute_name'], [{...attribute,attribute_description:'Updated name'}], [attribute]),
+  ]);
+  assert.ok(codes(validate(value)).includes('enrichment_parent_locked'));
+  value.get('object_enrichment').pending = [{...object,is_locked:false}];
+  assert.ok(codes(validate(value)).includes('enrichment_lock_read_only'));
+});
+test('business columns cannot claim a reserved custom audit name', () => {
+  const value = graph();
+  const details = {model_name:'Sales',silver_model_audit_columns_template:{schema_version:'1.0',columns:[{semantic_name:'LoadTime',data_type:'TIMESTAMP',nullable:true,definition:null}]}};
+  value.set(...loaded('model_details',[],[details]));
+  value.get('logical_attribute').effective.push({logical_entity_schema_name:'silver',logical_entity_name:'Customer',logical_attribute_name:'LoadTime',logical_attribute_data_type:'TIMESTAMP',logical_attribute_is_nullable:true,logical_attribute_ordinal_position:12,logical_attribute_status:'active',logical_attribute_is_audit_column:false,sources:[]});
+  assert.ok(codes(validate(value)).includes('model.audit-role'));
+});
+
+
+test('enrichment refuses a stale saved-record witness', () => {
+  const original = {...phys, object_description:'Customer', is_locked:false, expected_revision:'b'.repeat(64)};
+  const value = new Map([loaded('object_enrichment', Object.keys(phys), [{...original, expected_revision:'a'.repeat(64)}], [original])]);
+  assert.ok(codes(validate(value)).includes('enrichment_revision_conflict'));
 });

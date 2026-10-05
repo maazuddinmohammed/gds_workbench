@@ -1904,6 +1904,10 @@ class DatabaseModelChangeSetService:
                 model_id=model_id,
                 source_context_digest=row["base_source_context_digest"],
                 readable_source_tenant_ids=model.readable_source_tenant_ids,
+                change_set_id=change_set_id,
+                request_principal=principal,
+                draft_revision=command.expected_draft_revision,
+                candidate_digest=validation.candidate_digest,
             )
             action_count = await materializer.apply(validation.records)
             revision = await repository.advance_model_revision(

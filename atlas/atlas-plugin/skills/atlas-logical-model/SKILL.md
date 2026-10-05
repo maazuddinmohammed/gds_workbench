@@ -7,6 +7,10 @@ description: Build or refine Atlas logical Entities, Attributes, relationships a
 
 Produce the requested normalized design with explicit grain, complete identity and defensible lineage. Work through coherent parts and verify each before dependent work.
 
+Use applicable profiling, [Model enrichment](../../references/model/enrichment.md) and analysis from the effective local view, including pending proposals. Reuse earlier local results without applying each phase.
+
+Reserve effective audit-template names for framework fields. Give source/business fields distinct semantic names, such as `SourceCreatedDate`. Keep exactly one correctly marked framework block in complete final plugin records; see [keys and audit](../../references/model/keys-and-audit.md).
+
 ## Enter at the needed point
 
 Follow [Logical context](../../references/logical-build/context.md). Inspect selected source evidence and effective existing design. For a larger source-to-model request, use [source analysis](../atlas-source-analysis/SKILL.md) for material evidence gaps and [conceptual modeling](../atlas-conceptual-model/SKILL.md) for business concepts when needed; return here with their evidence. Reuse valid outputs instead of repeating a fixed phase chain.

@@ -109,6 +109,7 @@
     "ingestion_attribute_endpoints",
     "copy_record_limit",
     "model_details_policy",
+    "enrichment_text",
     "profiling_profile",
     "analysis_result",
     "modeling_assertion_document",
@@ -229,6 +230,12 @@
         if (!uniqueNormalized(schemas.map(item => item.schema_name))) add(`${field} schema names must be unique`);
         if (jsonBytes(schemas) > 262144) add(`${field} exceeds 262,144 JSON bytes`);
       }
+    } else if (rule === "enrichment_text") {
+      for (const field of ["object_description", "attribute_description"]) {
+        const text = value[field];
+        if (text != null && (utf8Bytes(text) > 2000 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(text))) add("Enrichment description must be safe text within 2,000 UTF-8 bytes.");
+      }
+      if (value.attribute_inferred_data_type != null && /[\x00-\x1f\x7f]/.test(value.attribute_inferred_data_type)) add("Inferred type cannot contain control characters.");
     } else if (rule === "profiling_profile") {
       if (value.non_null_count + value.null_count !== value.row_count) add("Profile non-null and null counts must equal row count");
       if (value.blank_count !== null && value.blank_count > value.non_null_count) add("Profile blank count cannot exceed non-null count");

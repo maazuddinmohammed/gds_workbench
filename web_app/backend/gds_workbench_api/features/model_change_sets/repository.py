@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, LiteralString
 from uuid import UUID
 
+from gds_etl_workbench.application.change_sets.model import READ_SECTION_COLUMNS
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from psycopg.types.json import Jsonb
 
@@ -392,6 +393,7 @@ _STAGE_SQL: LiteralString = """
 UPDATE mcp.model_change_set
    SET model_input_scope_document = %s,
        profiling_document = %s,
+       enrichment_document = %s,
        analysis_document = %s,
        assertion_document = %s,
        conceptual_document = %s,
@@ -797,19 +799,8 @@ class PostgresModelChangeSetRepository:
             _STAGE_SQL,
             (
                 *(
-                    Jsonb(dict(documents[section]))
-                    for section in (
-                        "model_input_scope",
-                        "profiling",
-                        "analysis",
-                        "assertion",
-                        "conceptual",
-                        "logical",
-                        "dimensional",
-                        "mapping",
-                        "code_generation",
-                        "validation",
-                    )
+                    Jsonb(dict(documents[column.removesuffix("_document")]))
+                    for column in READ_SECTION_COLUMNS
                 ),
                 change_set_id,
             ),

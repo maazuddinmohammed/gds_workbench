@@ -214,3 +214,5 @@ physical Metadata as a substitute. See [capability boundaries](../references/pla
 Do not put passwords, tokens, or raw source data in chat. The
 [technical runtime reference](../references/local-runtime.md) is for agents and
 maintainers; normal use does not require its commands.
+
+For Model-specific source meaning, follow [enrichment](../references/model/enrichment.md). For schemas, naming, SCD, templates or default source System, follow [settings](../references/model/settings.md). Both use local drafts and the existing Change Set lifecycle; Model names and web-agent defaults are not editable through the plugin.

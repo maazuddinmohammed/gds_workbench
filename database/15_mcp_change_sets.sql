@@ -16,6 +16,7 @@ CREATE TABLE mcp.model_change_set (
     validation_outcome JSONB,
     model_input_scope_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     profiling_document JSONB NOT NULL DEFAULT '{}'::JSONB,
+    enrichment_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     assertion_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     analysis_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     conceptual_document JSONB NOT NULL DEFAULT '{}'::JSONB,
@@ -64,6 +65,7 @@ CREATE TABLE mcp.model_change_set (
     CONSTRAINT ck_change_set_documents CHECK (
         jsonb_typeof(model_input_scope_document) = 'object'
         AND jsonb_typeof(profiling_document) = 'object'
+        AND jsonb_typeof(enrichment_document) = 'object'
         AND jsonb_typeof(assertion_document) = 'object'
         AND jsonb_typeof(analysis_document) = 'object'
         AND jsonb_typeof(conceptual_document) = 'object'
@@ -74,6 +76,7 @@ CREATE TABLE mcp.model_change_set (
         AND jsonb_typeof(validation_document) = 'object'
         AND octet_length(model_input_scope_document::TEXT) <= 16777216
         AND octet_length(profiling_document::TEXT) <= 16777216
+        AND octet_length(enrichment_document::TEXT) <= 16777216
         AND octet_length(assertion_document::TEXT) <= 16777216
         AND octet_length(analysis_document::TEXT) <= 16777216
         AND octet_length(conceptual_document::TEXT) <= 16777216
@@ -157,6 +160,7 @@ CREATE TABLE mcp.model_stage_batch (
     CONSTRAINT ck_model_stage_batch_dataset CHECK (
         dataset_name IN (
             'model_details', 'model_input_scope', 'profiling_profile',
+            'object_enrichment', 'attribute_enrichment',
             'analysis_result', 'modeling_assertion_document',
             'modeling_assertion_record', 'conceptual_object',
             'conceptual_relationship', 'logical_submodel', 'logical_entity',
@@ -306,7 +310,7 @@ CREATE TABLE mcp.model_change_set_event (
     CONSTRAINT ck_change_set_event_section CHECK (
         section_name IS NULL
         OR section_name IN (
-            'model_input_scope', 'profiling', 'assertion', 'analysis', 'conceptual',
+            'model_input_scope', 'profiling', 'enrichment', 'assertion', 'analysis', 'conceptual',
             'logical', 'dimensional', 'mapping',
             'code_generation', 'validation'
         )
@@ -2701,3 +2705,132 @@ BEGIN
 END;
 $mcp_profiling_worker$;
 REVOKE ALL ON FUNCTION mcp.mcp_profiling_worker(TEXT, BIGINT, UUID, JSONB) FROM PUBLIC;
+
+-- Internal materialization of an already validated, owned Change Set.
+-- Runtime roles retain no direct INSERT/UPDATE rights on enrichment tables.
+CREATE FUNCTION mcp.apply_model_enrichment_change_set(
+    p_entra_tenant_id UUID, p_entra_object_id UUID, p_principal_type VARCHAR,
+    p_model_id BIGINT, p_change_set_id UUID, p_draft_revision BIGINT, p_candidate_digest VARCHAR
+)
+RETURNS INTEGER LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
+AS $apply_model_enrichment_change_set$
+DECLARE
+    v_model RECORD;
+    v_change RECORD;
+    v_access RECORD;
+    v_source_access RECORD;
+    v_kind TEXT;
+    v_item JSONB;
+    v_object RECORD;
+    v_attribute_id BIGINT;
+    v_existing JSONB;
+    v_desired JSONB;
+    v_parent_locked BOOLEAN;
+    v_count INTEGER := 0;
+    v_preflight BOOLEAN;
+BEGIN
+    SELECT * INTO STRICT v_model FROM model.model WHERE model_id = p_model_id AND is_active FOR UPDATE;
+    IF v_model.is_locked THEN RAISE EXCEPTION 'model_locked'; END IF;
+    SELECT * INTO v_access FROM security.authorize_tenant_operation(
+        p_entra_tenant_id, p_entra_object_id, p_principal_type, v_model.tenant_id, 'tenant_model_write');
+    IF NOT coalesce(v_access.authorized, FALSE) THEN RAISE EXCEPTION 'enrichment_apply_denied'; END IF;
+    SELECT * INTO STRICT v_change FROM mcp.model_change_set
+     WHERE model_change_set_id = p_change_set_id AND model_id = p_model_id FOR UPDATE;
+    IF v_change.created_by_principal_id IS DISTINCT FROM v_access.principal_id
+       OR v_change.workflow_run_id IS NOT NULL OR v_change.model_change_set_status <> 'validated'
+       OR v_change.base_model_revision IS DISTINCT FROM v_model.model_revision
+       OR v_change.draft_revision IS DISTINCT FROM p_draft_revision
+       OR v_change.candidate_digest IS DISTINCT FROM p_candidate_digest
+       OR p_candidate_digest IS NULL OR v_change.expires_time <= clock_timestamp() THEN
+        RAISE EXCEPTION 'enrichment_apply_conflict';
+    END IF;
+    -- Check every witness before any write: an Object edit changes its Attribute witnesses.
+    FOREACH v_preflight IN ARRAY ARRAY[TRUE, FALSE] LOOP
+    FOREACH v_kind IN ARRAY ARRAY['object_enrichment', 'attribute_enrichment'] LOOP
+        FOR v_item IN SELECT value FROM jsonb_array_elements(coalesce(v_change.enrichment_document->v_kind, '[]'::JSONB)) LOOP
+            SELECT object.object_id, object.source_tenant_id INTO STRICT v_object
+              FROM model.model_input_scope AS scope
+              JOIN core.object AS object USING (object_id)
+              JOIN core.connection AS connection USING (connection_id)
+              JOIN core.tenant AS tenant ON tenant.tenant_id = connection.tenant_id
+              JOIN core.system AS system ON system.system_id = connection.system_id
+             WHERE scope.model_id = p_model_id AND scope.is_active AND object.is_active
+               AND connection.is_active AND tenant.is_active AND system.is_active
+               AND lower(btrim(tenant.tenant_code)) = lower(btrim(v_item->>'tenant_code'))
+               AND lower(btrim(system.system_code)) = lower(btrim(v_item->>'system_code'))
+               AND lower(btrim(connection.connection_code)) = lower(btrim(v_item->>'connection_code'))
+               AND lower(btrim(object.object_schema)) = lower(btrim(v_item->>'object_schema'))
+               AND lower(btrim(object.object_name)) = lower(btrim(v_item->>'object_name'))
+               AND EXISTS (SELECT 1 FROM reference.zone WHERE zone_id = object.zone_id
+                           AND lower(btrim(zone_code)) IN ('source', 'bronze'))
+             FOR UPDATE OF scope, object;
+            SELECT * INTO v_source_access FROM security.authorize_tenant_operation(
+                p_entra_tenant_id, p_entra_object_id, p_principal_type, v_object.source_tenant_id, 'tenant_read');
+            IF NOT coalesce(v_source_access.authorized, FALSE) THEN RAISE EXCEPTION 'enrichment_source_denied'; END IF;
+            SELECT is_locked INTO v_parent_locked FROM workflow.object_enrichment
+             WHERE model_id = p_model_id AND object_id = v_object.object_id FOR UPDATE;
+            IF v_kind = 'object_enrichment' THEN
+                SELECT jsonb_build_object('object_description', object_description, 'is_locked', is_locked)
+                  INTO v_existing FROM workflow.object_enrichment
+                 WHERE model_id = p_model_id AND object_id = v_object.object_id FOR UPDATE;
+                IF v_preflight THEN
+                    IF (CASE WHEN v_existing IS NOT NULL THEN workflow.enrichment_review_revision(p_model_id, v_object.object_id) END)
+                       IS DISTINCT FROM v_item->>'expected_revision' THEN
+                        RAISE EXCEPTION 'enrichment_revision_conflict';
+                    END IF;
+                    CONTINUE;
+                END IF;
+                v_desired := jsonb_build_object('object_description', v_item->'object_description', 'is_locked', v_item->'is_locked');
+                IF v_existing = v_desired THEN CONTINUE; END IF;
+                IF coalesce(v_parent_locked, FALSE) OR (v_item->>'is_locked')::BOOLEAN IS DISTINCT FROM FALSE THEN
+                    RAISE EXCEPTION 'enrichment_locked';
+                END IF;
+                INSERT INTO workflow.object_enrichment(model_id, object_id, object_description, created_by, updated_by)
+                VALUES(p_model_id, v_object.object_id, v_item->>'object_description', v_access.principal_id::TEXT, v_access.principal_id::TEXT)
+                ON CONFLICT (model_id, object_id) DO UPDATE SET
+                    object_description = EXCLUDED.object_description, workflow_run_id = NULL,
+                    updated_time = clock_timestamp(), updated_by = EXCLUDED.updated_by;
+            ELSE
+                SELECT attribute_id INTO STRICT v_attribute_id FROM core.attribute
+                 WHERE object_id = v_object.object_id AND is_active
+                   AND lower(btrim(attribute_name)) = lower(btrim(v_item->>'attribute_name')) FOR UPDATE;
+                SELECT jsonb_build_object('attribute_description', attribute_description,
+                    'attribute_inferred_data_type', attribute_inferred_data_type,
+                    'is_natural_key', is_natural_key, 'is_primary_key', is_primary_key,
+                    'is_nullable', is_nullable, 'is_pii', is_pii, 'is_locked', is_locked)
+                  INTO v_existing FROM workflow.attribute_enrichment
+                 WHERE model_id = p_model_id AND attribute_id = v_attribute_id FOR UPDATE;
+                IF v_preflight THEN
+                    IF (CASE WHEN v_existing IS NOT NULL THEN workflow.enrichment_review_revision(p_model_id, v_object.object_id, v_attribute_id) END)
+                       IS DISTINCT FROM v_item->>'expected_revision' THEN
+                        RAISE EXCEPTION 'enrichment_revision_conflict';
+                    END IF;
+                    CONTINUE;
+                END IF;
+                v_desired := v_item - ARRAY['tenant_code','system_code','connection_code','object_schema','object_name','attribute_name','expected_revision'];
+                IF v_existing = v_desired THEN CONTINUE; END IF;
+                IF coalesce(v_parent_locked, FALSE) OR coalesce((v_existing->>'is_locked')::BOOLEAN, FALSE)
+                   OR (v_item->>'is_locked')::BOOLEAN IS DISTINCT FROM FALSE THEN RAISE EXCEPTION 'enrichment_locked'; END IF;
+                INSERT INTO workflow.attribute_enrichment(model_id, object_id, attribute_id,
+                    attribute_description, attribute_inferred_data_type, is_natural_key, is_primary_key,
+                    is_nullable, is_pii, created_by, updated_by)
+                VALUES(p_model_id, v_object.object_id, v_attribute_id,
+                    v_item->>'attribute_description', v_item->>'attribute_inferred_data_type',
+                    (v_item->>'is_natural_key')::BOOLEAN, (v_item->>'is_primary_key')::BOOLEAN,
+                    (v_item->>'is_nullable')::BOOLEAN, (v_item->>'is_pii')::BOOLEAN,
+                    v_access.principal_id::TEXT, v_access.principal_id::TEXT)
+                ON CONFLICT (model_id, attribute_id) DO UPDATE SET
+                    attribute_description = EXCLUDED.attribute_description,
+                    attribute_inferred_data_type = EXCLUDED.attribute_inferred_data_type,
+                    is_natural_key = EXCLUDED.is_natural_key, is_primary_key = EXCLUDED.is_primary_key,
+                    is_nullable = EXCLUDED.is_nullable, is_pii = EXCLUDED.is_pii,
+                    workflow_run_id = NULL, updated_time = clock_timestamp(), updated_by = EXCLUDED.updated_by;
+            END IF;
+            v_count := v_count + 1;
+        END LOOP;
+    END LOOP;
+    END LOOP;
+    RETURN v_count;
+END;
+$apply_model_enrichment_change_set$;
+REVOKE ALL ON FUNCTION mcp.apply_model_enrichment_change_set(UUID, UUID, VARCHAR, BIGINT, UUID, BIGINT, VARCHAR) FROM PUBLIC;

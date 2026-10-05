@@ -43,11 +43,11 @@ from tests.mcp.model_test_fixtures import (
 )
 
 
-def test_complete_22_dataset_model_graph_validates() -> None:
-    graph = complete_model_graph()
+def test_complete_24_dataset_model_graph_validates() -> None:
+    graph = complete_model_graph(include_enrichment=True)
 
     result = validate_future_graph(
-        snapshot=empty_model_snapshot(),
+        snapshot=snapshot_from_graph({"model_input_scope": graph["model_input_scope"]}),
         staged_documents=graph,
         physical_scope=complete_physical_scope(),
     )
@@ -56,7 +56,7 @@ def test_complete_22_dataset_model_graph_validates() -> None:
     assert result.phase == "complete"
     assert result.issues == ()
     assert set(result.records) == set(CHANGE_SET_DATASETS_BY_NAME)
-    assert len(result.action_review) == 22
+    assert len(result.action_review) == 24
     assert all(
         summary.insert_count + summary.no_change_count > 0
         for summary in result.action_review
@@ -1188,3 +1188,29 @@ def test_model_stage_rejects_removed_mapping_dependency_dataset() -> None:
             "records": [{"source_system_code": "ERP", "source_system_dependency_order": 0}],
         })
     assert any(item["loc"] == ("dataset",) for item in error.value.errors())
+
+
+@pytest.mark.parametrize("name", ["Other", "sales", " Sales "])
+def test_model_identity_cannot_be_renamed(name: str) -> None:
+    details = {**model_details(), "model_name": "Sales"}
+    result = validate_future_graph(
+        snapshot=snapshot_from_graph({"model_details": [details]}),
+        staged_documents={"model_details": [{**details, "model_name": name}]},
+        physical_scope=complete_physical_scope(),
+    )
+    assert any(issue.code == "model_identity_read_only" for issue in result.issues)
+
+
+@pytest.mark.parametrize(
+    "code,valid", [("ERP", True), (" erp ", True), (None, True), ("UNKNOWN", False)]
+)
+def test_default_mapping_source_uses_registered_system_code(code: str | None, valid: bool) -> None:
+    details = model_details()
+    result = validate_future_graph(
+        snapshot=snapshot_from_graph({"model_details": [details]}),
+        staged_documents={
+            "model_details": [{**details, "default_mapping_source_system_code": code}]
+        },
+        physical_scope=complete_physical_scope(),
+    )
+    assert result.valid is valid

@@ -19126,6 +19126,8 @@ var ALLOWED_DATASETS = {
     "model_details",
     "model_input_scope",
     "profiling_profile",
+    "object_enrichment",
+    "attribute_enrichment",
     "analysis_result",
     "modeling_assertion_document",
     "modeling_assertion_record",

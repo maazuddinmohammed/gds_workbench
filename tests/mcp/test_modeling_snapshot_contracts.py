@@ -43,6 +43,8 @@ EXPECTED_DATASETS = (
     "model_details",
     "model_input_scope",
     "profiling_profile",
+    "object_enrichment",
+    "attribute_enrichment",
     "analysis_result",
     "modeling_assertion_document",
     "modeling_assertion_record",
@@ -65,13 +67,14 @@ EXPECTED_DATASETS = (
 )
 
 
-def test_model_snapshot_has_exact_22_dataset_registry() -> None:
+def test_model_snapshot_has_exact_24_dataset_registry() -> None:
     assert tuple(definition.name for definition in DATASETS) == EXPECTED_DATASETS
-    assert len(DATASETS_BY_NAME) == 22
+    assert len(DATASETS_BY_NAME) == 24
     assert CHANGE_SET_DATASETS == DATASETS
     assert MODEL_SECTIONS == (
         "model_input_scope",
         "profiling",
+        "enrichment",
         "analysis",
         "assertion",
         "conceptual",
@@ -390,10 +393,10 @@ def test_snapshot_archive_catalogs_all_sections_and_datasets(tmp_path: Path) -> 
         "Legacy Model",
         "Other Model",
     ]
-    assert manifest["counts"]["logical_dataset_count"] == 22
+    assert manifest["counts"]["logical_dataset_count"] == 24
     assert manifest["database_ids_included"] is False
-    assert len([name for name in names if name.endswith(".schema.json")]) == 22
-    assert len([name for name in names if name.endswith("rows.jsonl")]) == 22
+    assert len([name for name in names if name.endswith(".schema.json")]) == 24
+    assert len([name for name in names if name.endswith("rows.jsonl")]) == 24
     assert not any("qa" in name.casefold() or "model_scope" in name for name in names)
 
 

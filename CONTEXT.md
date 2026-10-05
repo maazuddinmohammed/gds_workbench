@@ -129,6 +129,9 @@ Plugin and web use the same persisted contracts and governed Change Sets, with
 independent orchestration. Plugin Profiling runs deterministically in the MCP
 backend: start, status, cancel, then refresh the Model Snapshot. The web
 application never calls MCP internally.
+Plugin Model enrichment and allowed settings use the existing reviewed Model Change Set.
+Model names and web-agent defaults are not plugin-editable. Pending enrichment and
+analysis may feed subsequent local design before one related submission.
 A stale Snapshot/revision requires refresh and reassessment. Model-owned authored
 state, physical metadata, and external deployment remain separate boundaries.
 
