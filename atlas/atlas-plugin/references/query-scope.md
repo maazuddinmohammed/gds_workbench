@@ -1,6 +1,6 @@
 # Query scope and Databricks execution
 
-Shared authority for every workflow using `execute_databricks_sql`, including enrichment, profiling, relationship analysis, modeling, Mapping, Code/Validation probes and Custom requests. Topic guides define the measurements. The deterministic Atlas Profiling and Analysis planners implement these coordinates and batch scope; the governed execution tool remains server-authoritative.
+Shared authority for every workflow using `execute_databricks_sql`, including enrichment, profiling, relationship analysis, modeling, Mapping, Code/Validation probes and Custom requests. Topic guides define the measurements. Analysis planning implements these coordinates and batch scope. Profiling uses the [backend run tools](logical-build/profiling.md), which enforce scope, protection, and batch filtering server-side; agents do not execute Profiling SQL.
 
 ## Resolve coordinates and access
 
@@ -85,4 +85,4 @@ Keep exact Object/Attribute keys, endpoint batch sets or unbatched state, actual
 
 Planning is not execution. A SQL failure, unavailable evidence or mismatch remains explicit. Different row counts across supposedly identical scopes require reconciliation; equal counts alone do not prove stable data. Reuse evidence only with its scope and limitations intact.
 
-Source contracts: `tools/databricks/execute_sql.py`, `domain/databricks_sql.py`, `infrastructure/databricks_sql.py`, `database/14_application_workflow_execution.sql` (Object owner catalog), current `scripts/profiling.js` and `scripts/analysis.js`. Atlas profiling accepts explicit batch-ID lists; Analysis reuses their exact endpoint filters. See the [runtime guide](../docs/runtime-guide.md) for planning inputs and output files.
+Source contracts: `tools/databricks/execute_sql.py`, `domain/databricks_sql.py`, `infrastructure/databricks_sql.py`, `database/14_application_workflow_execution.sql` (Object owner catalog), current `scripts/profiling.js` and `scripts/analysis.js`. Atlas profiling accepts explicit batch-ID lists; Analysis reuses their exact endpoint filters. See the [runtime reference](local-runtime.md) for planning inputs and output files.

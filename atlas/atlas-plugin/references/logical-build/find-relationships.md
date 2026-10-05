@@ -93,7 +93,7 @@ Analysis findings do not create Logical FKs. During Logical design, map relevant
 
 ## Analysis planner input
 
-Use `analysis-plan --session <directory> --plan-file <input.json>`. The wrapper is `{ "selections": { "batches": <profiling-selections>, "probes": [...] }, "execution_connections": [...] }`; execution Connection entries follow the [runtime guide](../../docs/runtime-guide.md#profiling-and-analysis-files). Supply one to 50 probes.
+Use `analysis-plan --session <directory> --plan-file <input.json>`. The wrapper is `{ "selections": { "batches": <profiling-selections>, "probes": [...] }, "execution_connections": [...] }`; execution Connection entries follow the [runtime reference](../local-runtime.md#profiling-runs-and-analysis-files). Supply one to 50 probes.
 
 | Kind | Exact probe fields |
 |---|---|

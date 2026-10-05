@@ -1,3 +1,4 @@
+import { DdlExportButton } from "../model_targets/DdlExportButton";
 import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
 import { ModelLayerActions } from "../model_record_review/ModelLayerActions";
 import { useState } from "react";
@@ -117,9 +118,10 @@ export function ConceptualScreen({
         </div>
         <div className="workflow-command-actions">
           <WorkflowCommandTools />
-          {canDelete ? <WorkflowMenu>
+          <WorkflowMenu>
           <ModelLayerActions api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="conceptual" onApplied={() => setSelectedIds(new Set())} />
-          </WorkflowMenu> : null}
+          <DdlExportButton api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} layer="conceptual" entityIds={view === "objects" && selectedIds.size ? [...selectedIds] : undefined} />
+          </WorkflowMenu>
           <button className="button button-secondary button-small" type="button" disabled={activeReviewQuery.isFetching} onClick={() => void refresh()}>
             {activeReviewQuery.isFetching ? "Refreshing…" : "Refresh"}
           </button>

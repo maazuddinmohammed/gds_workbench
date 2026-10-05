@@ -8,6 +8,7 @@ export interface TargetOptions {
   placement: { tenant_code: string; system_code: string; connection_code: string; source_tenant_code: string } | null;
 }
 export interface ModelTargetsTransport {
+  exportModelDdl: (tenantId: number, modelId: number, command: { layer: TargetLayer | "conceptual"; entity_ids?: number[]; expected_model_revision: number }) => Promise<{ blob: Blob; filename: string }>;
   readTargetOptions: (tenantId: number, modelId: number) => Promise<TargetOptions>;
   exportModelTargets: (tenantId: number, modelId: number, command: { layer: TargetLayer; entity_ids?: number[]; expected_model_revision: number; object_type_code?: string }) => Promise<{ blob: Blob; filename: string }>;
 }
@@ -15,6 +16,13 @@ export interface ModelTargetsTransport {
 export function createModelTargetsApi(request: HttpRequest): ModelTargetsTransport {
   const path = (tenantId: number, modelId: number) => `/api/v1/tenants/${tenantId}/models/${modelId}`;
   return {
+    exportModelDdl: (tenantId, modelId, command) => request(`${path(tenantId, modelId)}/model-targets/ddl`, {
+      method: "POST", headers: { "content-type": "application/json", accept: "application/sql" }, body: JSON.stringify(command),
+    }, async (response) => {
+      if (response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/sql") throw new ApiError(502, "invalid_response", null);
+      const filename = /filename="([A-Za-z0-9._-]{1,180}\.sql)"/.exec(response.headers.get("content-disposition") ?? "")?.[1];
+      return { blob: await response.blob(), filename: filename ?? `gds_${command.layer}.sql` };
+    }),
     readTargetOptions: (tenantId, modelId) => request(`${path(tenantId, modelId)}/model-targets/options`),
     exportModelTargets: (tenantId, modelId, command) => request(`${path(tenantId, modelId)}/model-targets/export`, {
       method: "POST", headers: { "content-type": "application/json", accept: METADATA_XLSX_MEDIA_TYPE }, body: JSON.stringify(command),

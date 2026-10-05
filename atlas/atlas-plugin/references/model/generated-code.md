@@ -77,7 +77,7 @@ Apply derives `code_input_digest` from current eligible Mapping/target context; 
 
 Changing Mapping or target context can make Code stale without changing artifact text. Regenerate/review only affected artifacts against all pages of one consistent Mapping view, retaining any partial-Mapping findings. Stamping unchanged SQL with refreshed input context is not evidence that it still implements the new Mapping.
 
-Resolve [existing work and update scope](../working-method.md#existing-work-and-update-scope) before authoring. A Snapshot includes saved content, not automatically synchronized source files; inspect pending/local edits as described in [saved Code](../snapshots/model.md#saved-code-and-local-files). A narrow selection still requires complete per-target System coverage and preservation of unselected valid artifacts.
+Resolve [existing work and update scope](../methods/change-impact.md) before authoring. A Snapshot includes saved content, not automatically synchronized source files; inspect pending/local edits as described in [saved Code](../snapshots/model.md#saved-code-and-local-files). A narrow selection still requires complete per-target System coverage and preservation of unselected valid artifacts.
 
 Use the shared [review/Stage/Validate/Apply lifecycle](../change-set-lifecycle.md), including generated-Code transport handling. Both datasets can accumulate in one local batch. Store complete artifact text in `generated_code_content`; any reviewable local `.sql` copy must match that exact content. Apply stores records; it does not create a deployed file, run SQL, register a Process or execute a pipeline. Refresh the Model Snapshot after verified Apply.
 

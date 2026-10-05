@@ -3,6 +3,8 @@
 from collections.abc import Mapping
 from copy import deepcopy
 
+from .audit_policy import effective_audit_template
+
 _DEFAULT_TECHNICAL: dict[str, object] = {
     "schema_version": "1.0",
     "dimension_surrogate_key": {
@@ -18,19 +20,19 @@ _DEFAULT_TECHNICAL: dict[str, object] = {
     },
     "type_2": {
         "effective_from": {
-            "semantic_name": "EffectiveFrom",
+            "semantic_name": "RecordStartTime",
             "data_type": "TIMESTAMP",
             "nullable": False,
             "definition": "Inclusive start of this dimension version.",
         },
         "effective_to": {
-            "semantic_name": "EffectiveTo",
+            "semantic_name": "RecordEndTime",
             "data_type": "TIMESTAMP",
             "nullable": True,
             "definition": "Exclusive end of this dimension version.",
         },
         "is_current": {
-            "semantic_name": "IsCurrent",
+            "semantic_name": "IsCurrentRecord",
             "data_type": "BOOLEAN",
             "nullable": False,
             "definition": "Whether this is the current dimension version.",
@@ -43,12 +45,12 @@ def effective_gold_templates(
     technical: Mapping[str, object] | None,
     audit: Mapping[str, object] | None,
 ) -> tuple[dict[str, object], dict[str, object]]:
-    """Blank settings use standard keys/history fields and no extra audit columns.
+    """Blank settings use shared keys, history fields and audit columns.
 
     Explicit templates remain authoritative, including an empty audit column list.
     Validation of supplied templates stays with the Gold policy projector.
     """
     return (
         deepcopy(dict(_DEFAULT_TECHNICAL if technical is None else technical)),
-        deepcopy(dict({"schema_version": "1.0", "columns": []} if audit is None else audit)),
+        effective_audit_template(audit),
     )

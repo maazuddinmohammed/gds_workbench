@@ -1,8 +1,8 @@
 {
   "name": "atlas-stage-runner",
   "displayName": "Atlas Stage Runner",
-  "description": "Deterministically stages approved Atlas Change Sets without placing payloads in model context.",
-  "version": "0.1.1",
+  "description": "Atlas Stage Runner and local Codex bridge using VS Code Microsoft sign-in.",
+  "version": "0.2.0",
   "publisher": "gds-workbench",
   "license": "UNLICENSED",
   "private": true,
@@ -30,7 +30,9 @@
   "activationEvents": [
     "onLanguageModelTool:atlas_checkStageRunner",
     "onLanguageModelTool:atlas_stageApprovedManifest",
-    "onCommand:atlasStageRunner.check"
+    "onCommand:atlasStageRunner.check",
+    "onCommand:atlasBridge.start",
+    "onCommand:atlasBridge.stop"
   ],
   "main": "./dist/extension.cjs",
   "contributes": {
@@ -38,6 +40,14 @@
       {
         "command": "atlasStageRunner.check",
         "title": "Atlas: Check Stage Runner"
+      },
+      {
+        "command": "atlasBridge.start",
+        "title": "Atlas: Start Codex Bridge"
+      },
+      {
+        "command": "atlasBridge.stop",
+        "title": "Atlas: Stop Codex Bridge"
       }
     ],
     "languageModelTools": [
@@ -119,12 +129,12 @@
     "test": "vitest run",
     "check": "tsc --noEmit",
     "compile": "npm run check && node esbuild.mjs",
-    "package:vsix": "npm run compile && vsce package --no-dependencies --skip-license --out ../dist/atlas-stage-runner-0.1.1.vsix",
+    "package:vsix": "npm run compile && vsce package --no-dependencies --skip-license --baseContentUrl https://github.com/maazuddinmohammed/gds_workbench/blob/HEAD/atlas/atlas-vs-code --out ../dist/atlas-stage-runner-0.2.0.vsix",
     "test:host": "node test/run-vscode-host.mjs"
   },
   "devDependencies": {
-    "@types/node": "24.10.0",
     "@types/express": "5.0.6",
+    "@types/node": "24.10.0",
     "@types/vscode": "1.136.0",
     "@vscode/vsce": "3.9.2",
     "esbuild": "0.28.2",

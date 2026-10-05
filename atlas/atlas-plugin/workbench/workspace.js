@@ -253,6 +253,7 @@
           (state.sql.environment !== undefined && !["dev", "qa", "stg", "prod"].includes(state.sql.environment))))) {
       throw new Error(".atlas/session.json has an invalid shape. Initialize this directory with Atlas.");
     }
+    if (Object.hasOwn(state, "subagent_policy")) core.validateSubagentPolicy(state.subagent_policy);
     if (state.metadata_owners !== undefined) {
       if (!object(state.metadata_owners)) throw new Error("Metadata owners must be a map of verified Tenant identities.");
       for (const [key, owner] of Object.entries(state.metadata_owners)) {

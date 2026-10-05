@@ -31,7 +31,6 @@
   background: var(--muted); border: 3px solid var(--soft); border-radius: var(--radius-small);
 }
 
-.mapping-scroll-hint { margin: 0 0 0.5rem; color: var(--muted); font-size: 0.72rem; }
 
 .mapping-table-scroll.mapping-spreadsheet > table {
   width: 100%;
@@ -253,3 +252,25 @@
   .mapping-object-attributes > header { align-items: start; flex-direction: column; gap: 0.65rem; }
   .mapping-logic-document .mapping-normalized-document > div { grid-template-columns: 1fr; gap: 0.3rem; }
 }
+
+.mapping-editor-entry { min-width: 0; }
+.mapping-edit-actions { margin-block: 1rem; }
+.mapping-edit-panel { margin: 0; padding: 1.25rem; display: grid; gap: 1rem; min-width: 0; }
+.mapping-edit-panel h2 { margin: 0; font-size: 1rem; }
+.mapping-edit-panel label { display: grid; gap: .4rem; font-size: .78rem; font-weight: 400; min-width: 0; }
+.mapping-edit-panel :is(input[type="search"], select, textarea) { width: 100%; min-width: 0; box-sizing: border-box; font-weight: 400; }
+.mapping-edit-panel textarea { resize: vertical; }
+.mapping-edit-panel .field-help { margin: .3rem 0 0; font-size: .78rem; color: var(--muted); }
+.mapping-edit-panel fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 1rem; min-width: 0; }
+.mapping-source-options { max-height: 18rem; overflow: auto; border: 1px solid var(--line); border-radius: .5rem; padding: .5rem; }
+.mapping-edit-panel .mapping-source-choice { display: flex; align-items: flex-start; gap: .6rem; padding: .5rem; font-weight: 400; overflow-wrap: anywhere; }
+.mapping-source-choice small { display: block; color: var(--muted); }
+.mapping-edit-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 20rem; overflow: auto; font-size: .8rem; }
+@media (max-width: 42rem) { .mapping-edit-panel { padding: .75rem; } .mapping-edit-panel footer { flex-wrap: wrap; } }
+
+.mapping-edit-dialog { width: min(48rem, calc(100vw - 2rem)); }
+.mapping-source-picker { padding-block: .25rem 1rem; border-bottom: 1px solid var(--line); }
+.mapping-source-picker > header, .mapping-selected-sources > li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; font-size: .78rem; }
+.mapping-selected-sources { display: grid; gap: .5rem; list-style: none; padding: 0; margin: .8rem 0; }
+.mapping-selected-sources > li > span { overflow-wrap: anywhere; }
+.mapping-source-picker > div:not([hidden]) { display: grid; gap: .75rem; margin-top: .85rem; }

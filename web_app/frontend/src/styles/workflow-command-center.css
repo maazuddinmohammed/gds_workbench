@@ -5,22 +5,11 @@
 .workflow-command-center .workflow-command-context { gap: .65rem; }
 .workflow-command-center .workflow-command-actions { gap: .5rem; flex-wrap: wrap; }
 .workflow-command-center .workflow-command-actions .button { min-height: 2.2rem; }
-.workflow-command-center .workflow-tabs,
-.workflow-command-center .target-layer-switch { display: inline-flex; flex: 0 1 auto; align-items: center; gap: .15rem; min-height: 0; padding: .2rem; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--soft); }
-.workflow-command-center .workflow-tabs button,
-.workflow-command-center .target-layer-switch a { display: inline-flex; align-items: center; gap: .55rem; min-height: 2rem; padding: .35rem .7rem; border: 1px solid transparent; border-radius: .35rem; color: var(--muted); background: transparent; font-size: .75rem; white-space: nowrap; }
-.workflow-command-center .workflow-tabs button.is-active,
-.workflow-command-center .target-layer-switch a.is-active { border-color: var(--line-strong); background: var(--surface); color: var(--blue-dark); }
-.workflow-command-center .workflow-tabs button::after { display: none; }
-.workflow-command-center .workflow-tabs button:hover,
-.workflow-command-center .target-layer-switch a:hover { background: var(--surface); }
 .command-count { display: inline-grid; place-items: center; min-width: 1.25rem; padding: .08rem .3rem; border-radius: .3rem; background: var(--blue-soft); font-size: .65rem; font-variant-numeric: tabular-nums; font-weight: 600; }
 .workflow-command-center .mapping-layer-header > span,
 .workflow-command-center .model-layer-tabs > span { display: none; }
 .workflow-command-center .workflow-surface { border-top: 0; }
 .workflow-filter-panel[hidden] { display: none; }
-.workflow-filter-panel { margin: 0 0 1rem; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: var(--radius-medium); background: var(--soft); }
-.workflow-filter-panel .workflow-filterbar { padding: 0; margin: 0; border: 0; background: transparent; }
 .workflow-filter-toggle svg,.workflow-activity-toggle svg,.workflow-command-menu summary svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .workflow-activity-slot { display: inline-flex; }
 .workflow-activity-slot:empty { display: none; }

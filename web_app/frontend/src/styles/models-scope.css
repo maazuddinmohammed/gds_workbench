@@ -38,12 +38,6 @@
   letter-spacing: -0.045em;
 }
 
-.models-context-note {
-  margin-bottom: 1.25rem;
-  color: var(--muted);
-  font-size: 0.72rem;
-}
-
 .models-commandbar h1 { margin-bottom: 0; }
 
 .mapping-workspace {
@@ -62,10 +56,6 @@
   align-items: center;
   gap: 1rem;
   margin-bottom: 1rem;
-}
-
-.mapping-model-actions .models-context-note {
-  margin: 0;
 }
 
 .mapping-filterbar {
@@ -121,7 +111,7 @@
   color: var(--muted);
   background: transparent;
   font-size: 0.8rem;
-  font-weight: 750;
+  font-weight: 400;
   cursor: pointer;
   transition: color 140ms ease, background-color 140ms ease;
 }
@@ -153,13 +143,19 @@
 }
 
 .models-table-scroll table {
-  min-width: 58rem;
+  min-width: 42rem;
 }
 
 .models-table-scroll th:first-child,
 .models-table-scroll td:first-child {
-  width: 22%;
+  width: 4rem;
 }
+
+.models-table-scroll th:nth-child(2),
+.models-table-scroll td:nth-child(2) { width: 40%; }
+
+.models-lock-action { min-width: 0; }
+.models-lock-action p { margin: .4rem 0 0; max-width: 24rem; color: var(--red); }
 
 .models-table-scroll th:last-child,
 .models-table-scroll td:last-child {
@@ -440,7 +436,7 @@
 
 .scope-filterbar {
   display: grid;
-  grid-template-columns: repeat(4, minmax(7.5rem, 1fr)) auto;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
   align-items: end;
   gap: 0.65rem;
   padding: 1rem 0;
@@ -476,6 +472,7 @@
 
 .scope-filter-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.45rem;
 }
 
@@ -733,15 +730,6 @@
 }
 
 @media (max-width: 88rem) {
-  .scope-filterbar {
-    grid-template-columns: repeat(2, minmax(9rem, 1fr)) auto;
-  }
-
-  .scope-filter-actions {
-    grid-column: 3;
-    grid-row: 1 / span 2;
-  }
-
   .scope-data-layout.has-inspector {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -805,15 +793,6 @@
 
   .section-bar {
     padding-top: 1.4rem;
-  }
-
-  .scope-filterbar {
-    grid-template-columns: 1fr;
-  }
-
-  .scope-filter-actions {
-    grid-column: auto;
-    grid-row: auto;
   }
 
   .scope-filter-actions .button {

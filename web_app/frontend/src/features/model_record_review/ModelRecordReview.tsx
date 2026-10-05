@@ -18,7 +18,7 @@ const deletionSections = [
 ] as const;
 
 export function ModelRecordReview({
-  api, tenantId, modelId, modelRevision, dataset, selectedIds, hasTenantLock, disabled, onApplied, actions = ["lock", "unlock", "deactivate", "reactivate"],
+  api, tenantId, modelId, modelRevision, dataset, selectedIds, hasTenantLock, disabled, onApplied, deleteIds, actions = ["lock", "unlock", "deactivate", "reactivate"],
 }: {
   api: ModelRecordReviewApi;
   tenantId: number;
@@ -30,6 +30,7 @@ export function ModelRecordReview({
   disabled: boolean;
   onApplied: () => Promise<void>;
   actions?: readonly ModelReviewCommand["action"][];
+  deleteIds?: ReadonlySet<number>;
 }) {
   const commandCenter = useContext(WorkflowCommandContext);
   const [command, setCommand] = useState<ModelReviewCommand | null>(null);
@@ -45,11 +46,11 @@ export function ModelRecordReview({
           {actions.map((action) => (
             <button
               key={action} className={`button button-secondary button-small${action === "delete" ? " model-delete-action" : ""}`} type="button"
-              disabled={selectedIds.size === 0 || Boolean(reason)} title={reason ?? (action === "lock" ? "Protect selected records from edits and regeneration" : action === "unlock" ? "Allow selected records to be edited or regenerated" : undefined)}
+              disabled={selectedIds.size === 0 || Boolean(reason) || (action === "delete" && deleteIds?.size === 0)} title={reason ?? (action === "delete" && deleteIds ? "Delete selected unlocked mappings; locked mappings are skipped" : action === "lock" ? "Protect selected records from edits and regeneration" : action === "unlock" ? "Allow selected records to be edited or regenerated" : undefined)}
               onClick={() => {
                 setNotice("");
                 setCommand({
-                  dataset, record_ids: [...selectedIds].sort((a, b) => a - b), action,
+                  dataset, record_ids: [...(action === "delete" && deleteIds ? deleteIds : selectedIds)].sort((a, b) => a - b), action,
                   expected_model_revision: modelRevision,
                 });
               }}
@@ -297,6 +298,7 @@ function failureMessage(error: Error, retryable: boolean): string {
   if (retryable) return "The review result could not be confirmed. Retry review to check the same request safely.";
   if (error instanceof ApiError) {
     if (error.status === 403) return "Review was not authorized. Check your role and owned Tenant Lock.";
+    if (error.code === "model_locked") return "The Model is locked. A human must unlock it before changing records.";
     if (error.code === "record_locked") return "Unlock the selected or required records before changing their status.";
     if (error.code === "tenant_workflow_conflict") return "A Workflow Run is active. Refresh after it finishes, then preview again.";
     if (error.status === 409 || error.code === "model_record_not_found") return "The records or review plan changed. Close this preview and refresh before reviewing again.";

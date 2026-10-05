@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { initials } from "../../shared/presentation";
 import {
@@ -40,34 +40,33 @@ export function TenantLockFocus({
     : lock.owned_by_current_principal
       ? "Locked by you"
       : "Locked by another Principal";
+  const refreshLock = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: tenantHomeQueryKey(tenantId) }),
+    queryClient.invalidateQueries({ queryKey: tenantLockHistoryQueryKey(tenantId) }),
+  ]);
   const acquireMutation = useMutation({
     mutationFn: (command: AcquireTenantLockCommand) => api.acquireTenantLock(tenantId, command),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: tenantHomeQueryKey(tenantId) }),
+    onSuccess: refreshLock,
   });
   const renewMutation = useMutation({
     mutationFn: (command: RenewTenantLockCommand) => api.renewTenantLock(tenantId, command),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: tenantHomeQueryKey(tenantId) }),
+    onSuccess: refreshLock,
   });
   const releaseMutation = useMutation({
     mutationFn: () => api.releaseTenantLock(tenantId),
     onSuccess: () => {
       setReleaseConfirmationOpen(false);
-      return queryClient.invalidateQueries({ queryKey: tenantHomeQueryKey(tenantId) });
+      return refreshLock();
     },
   });
   const overrideMutation = useMutation({
     mutationFn: (command: OverrideTenantLockCommand) => api.overrideTenantLock(tenantId, command),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: tenantHomeQueryKey(tenantId) }),
+    onSuccess: refreshLock,
   });
-  const historyQuery = useInfiniteQuery({
-    queryKey: tenantLockHistoryQueryKey(tenantId),
-    initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) => api.listTenantLockHistory(tenantId, pageParam ?? undefined),
+  const historyQuery = useQuery({
+    queryKey: [...tenantLockHistoryQueryKey(tenantId), "latest", 3],
+    queryFn: () => api.listTenantLockHistory(tenantId, undefined, 3),
     enabled: historyOpen,
-    getNextPageParam: (lastPage, _pages, _lastPageParam, pageParams) => {
-      const cursor = lastPage.next_cursor;
-      return cursor && !pageParams.includes(cursor) ? cursor : undefined;
-    },
   });
   const acquireForm = useForm({
     defaultValues: {
@@ -97,6 +96,7 @@ export function TenantLockFocus({
   });
   const renewDurationValue = useStore(renewForm.store, (state) => state.values.durationMinutes);
   const renewDuration = Number(renewDurationValue);
+  const acquireHelpId = `tenant-lock-acquire-help-${tenantId}`;
   const renewHelpId = `tenant-lock-renew-help-${tenantId}`;
   const renewFormIsValid = Number.isSafeInteger(renewDuration)
     && renewDuration >= 1
@@ -116,9 +116,8 @@ export function TenantLockFocus({
     <section className="tenant-lock-focus" aria-labelledby="tenant-lock-heading">
       <header className="lock-heading">
         <div>
-          <p className="eyebrow eyebrow-light">Governed write access</p>
           <h1 id="tenant-lock-heading">Tenant Lock</h1>
-          <p>Controls protected changes for {tenantName}.</p>
+          <p>{tenantName}</p>
         </div>
         <span className={`lock-status ${lock.is_locked ? "is-locked" : "is-open"}`}>
           {status}
@@ -142,7 +141,7 @@ export function TenantLockFocus({
         {actions.can_acquire ? (
           <>
             <form
-              className="tenant-lock-form"
+              className="tenant-lock-form tenant-lock-acquire-form"
               onSubmit={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -151,10 +150,11 @@ export function TenantLockFocus({
             >
               <acquireForm.Field name="durationMinutes">
                 {(field) => (
-                  <label>
+                  <label className="tenant-lock-duration-field">
                     <span>Duration (minutes)</span>
                     <input
                       aria-label="Duration (minutes)"
+                      aria-describedby={acquireHelpId}
                       type="number"
                       min="1"
                       max="240"
@@ -164,7 +164,6 @@ export function TenantLockFocus({
                       onBlur={field.handleBlur}
                       onChange={(event) => field.handleChange(event.target.value)}
                     />
-                    <small>1–240 whole minutes; the server checks this again.</small>
                   </label>
                 )}
               </acquireForm.Field>
@@ -180,10 +179,10 @@ export function TenantLockFocus({
                       onBlur={field.handleBlur}
                       onChange={(event) => field.handleChange(event.target.value)}
                     />
-                    <small>Up to 500 characters.</small>
                   </label>
                 )}
               </acquireForm.Field>
+              <small id={acquireHelpId} className="tenant-lock-acquire-help">1–240 minutes.</small>
               <button
                 className="button button-primary"
                 type="submit"
@@ -229,7 +228,7 @@ export function TenantLockFocus({
                 )}
               </renewForm.Field>
               <small id={renewHelpId} className="tenant-lock-renew-help">
-                1–240 whole minutes from server time; the server checks this again.
+                1–240 minutes from now.
               </small>
               <button
                 className="button button-primary"
@@ -333,7 +332,7 @@ export function TenantLockFocus({
                       onBlur={field.handleBlur}
                       onChange={(event) => field.handleChange(event.target.value)}
                     />
-                    <small>Required; up to 2,000 characters. The server checks this again.</small>
+                    <small>Required; up to 2,000 characters.</small>
                   </label>
                 )}
               </overrideForm.Field>
@@ -356,7 +355,7 @@ export function TenantLockFocus({
           && !actions.can_renew
           && !actions.can_release
           && !actions.can_override ? (
-          <p>No Tenant Lock action is available for the current server-owned state.</p>
+          <p>No Tenant Lock action is available.</p>
         ) : null}
       </div>
 
@@ -380,9 +379,9 @@ export function TenantLockFocus({
         >
           <header>
             <div>
-              <p className="eyebrow eyebrow-light">Audit trail</p>
               <h2 id="tenant-lock-history-heading">Tenant Lock history</h2>
             </div>
+            <span>Latest 3 events</span>
           </header>
 
           {historyQuery.isPending ? <p>Loading Tenant Lock history…</p> : null}
@@ -392,11 +391,11 @@ export function TenantLockFocus({
             </p>
           ) : null}
           {historyQuery.data ? (
-            historyQuery.data.pages.every((page) => page.items.length === 0) ? (
+            historyQuery.data.items.length === 0 ? (
               <p>No Tenant Lock history events are available.</p>
             ) : (
               <ol className="tenant-lock-history-list">
-                {historyQuery.data.pages.flatMap((page) => page.items).map((event) => (
+                {historyQuery.data.items.slice(0, 3).map((event) => (
                   <li key={event.event_id}>
                     <header>
                       <strong>{historyEventLabel(event.event_type)}</strong>
@@ -415,16 +414,6 @@ export function TenantLockFocus({
             )
           ) : null}
 
-          {historyQuery.hasNextPage ? (
-            <button
-              className="button button-secondary"
-              type="button"
-              disabled={historyQuery.isFetchingNextPage}
-              onClick={() => void historyQuery.fetchNextPage()}
-            >
-              {historyQuery.isFetchingNextPage ? "Loading…" : "Load more"}
-            </button>
-          ) : null}
         </section>
       ) : null}
     </section>

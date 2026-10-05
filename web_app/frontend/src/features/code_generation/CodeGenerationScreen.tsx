@@ -79,6 +79,7 @@ export function CodeGenerationScreen({
   const refresh = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["code-generation-targets", tenantId, model.model_id] }),
+      queryClient.invalidateQueries({ queryKey: ["model-record-history", tenantId, model.model_id, "generated_code"] }),
       queryClient.invalidateQueries({ queryKey: ["validation-systems", tenantId, model.model_id] }),
       queryClient.invalidateQueries({ queryKey: ["validation-ledger", tenantId, model.model_id] }),
       queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
@@ -116,8 +117,8 @@ export function CodeGenerationScreen({
           <ModelLayerTabs tenantId={tenantId} modelId={model.model_id} layer={layer} workflow="code-generation" title="Code generation" />
 
       <nav className="workflow-tabs" aria-label="Code views">
-        <button type="button" className={view === "targets" ? "is-active" : ""} aria-pressed={view === "targets"} onClick={() => setView("targets")}>Generation targets</button>
-        <button type="button" className={view === "artifacts" ? "is-active" : ""} aria-pressed={view === "artifacts"} onClick={() => setView("artifacts")}>Applied Code</button>
+        <button type="button" className={view === "targets" ? "is-active" : ""} aria-pressed={view === "targets"} onClick={() => setView("targets")}>Entities</button>
+        <button type="button" className={view === "artifacts" ? "is-active" : ""} aria-pressed={view === "artifacts"} onClick={() => setView("artifacts")}>SQL files</button>
       </nav>
         </div>
         <div className="workflow-command-actions code-generation-command-actions">
@@ -145,6 +146,7 @@ export function CodeGenerationScreen({
         </div>
       </header>
 
+      <p className="workspace-view-context">{view === "targets" ? "Entities available for SQL generation, with their saved files." : "Saved SQL files, including inactive versions. Lock or change availability here."}</p>
       {startedRunId ? (
         <p className="code-generation-run-notice" role="status">
           Code Generation run {startedRunId} started. Refresh runs to review the draft, then Apply the validated draft.
@@ -162,7 +164,7 @@ export function CodeGenerationScreen({
       />
       {view === "artifacts" ? <ModelRecordHistory
         api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
-        dataset="generated_code" label="Applied Code" hasTenantLock={canGenerate}
+        dataset="generated_code" label="SQL files" showHeader={false} hasTenantLock={canGenerate}
         entityType={entityType}
       /> : <CodeGenerationLedger
         tenantId={tenantId}

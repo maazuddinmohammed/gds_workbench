@@ -101,14 +101,7 @@ export function CodeGenerationLedger({
     {
       id: "target",
       header: "Entity name",
-      cell: ({ row }) => (
-        <span className="code-target-name">
-          <strong>{row.original.target.entity_name}</strong>
-          <span>
-            {row.original.entity_type === "logical_entity" ? "Logical Entity" : "Dimensional Entity"}
-          </span>
-        </span>
-      ),
+      cell: ({ row }) => row.original.target.entity_name,
     },
     {
       id: "source_systems",
@@ -125,7 +118,7 @@ export function CodeGenerationLedger({
     },
     {
       id: "mapping",
-      header: "Applied Mapping",
+      header: "Mappings",
       cell: ({ row }) => (
         <span className="code-mapping-count">
           <strong>{row.original.mapping_support_count}</strong>
@@ -135,7 +128,7 @@ export function CodeGenerationLedger({
     },
     {
       id: "artifact",
-      header: "Artifacts",
+      header: "SQL files",
       cell: ({ row }) => {
         const activeArtifacts = row.original.artifacts.filter(
           (artifact) => artifact.generated_code_status === "active",
@@ -228,7 +221,6 @@ export function CodeGenerationLedger({
       /></WorkflowFilters>
       <header className="code-generation-ledger-heading">
         <div>
-          <p className="eyebrow">Eligible delivery targets</p>
           <h2 id="code-generation-targets-heading">Target Entities</h2>
         </div>
         <span>{filteredItems.length} Entities · Page {state.pageNumber}</span>
@@ -254,7 +246,7 @@ export function CodeGenerationLedger({
           No Entities match these filters.
         </div>
       ) : (
-        <div className="workflow-table-scroll code-generation-table-scroll">
+        <div className="workflow-table-scroll code-generation-table-scroll ledger-grid" role="region" aria-label="SQL generation table" tabIndex={0}>
           <table aria-label="Code Generation target Entities">
             <thead>
               {table.getHeaderGroups().map((group) => (

@@ -1,5 +1,5 @@
 import {
-  metadataFieldLabel,
+  metadataColumnLabel,
   metadataValueText,
   type MetadataDatasetDescription,
   type MetadataRow,
@@ -15,42 +15,18 @@ export interface MetadataLedgerState {
 }
 
 export function MetadataLedger({
-  descriptor, items, state, canAdd, addDisabledReason,
-  onOpenRow, onAdd, onNext, onPrevious,
+  descriptor, items, state,
+  onNext, onPrevious,
 }: {
   descriptor: MetadataDatasetDescription;
   items: MetadataRow[];
   state: MetadataLedgerState;
-  canAdd: boolean;
-  addDisabledReason: string;
-  onOpenRow: (row: MetadataRow) => void;
-  onAdd: () => void;
   onNext: () => void;
   onPrevious: () => void;
 }) {
+  const columns = descriptor.columns;
   return (
-    <section className="metadata-catalog-browser" aria-labelledby="metadata-sheet-heading">
-      <header>
-        <div className="metadata-catalog-sheet-summary">
-          <p className="eyebrow">{descriptor.section} sheet</p>
-          <h2 id="metadata-sheet-heading">{descriptor.label}</h2>
-          <span>{descriptor.columns.length} columns · {items.length} rows on this page</span>
-        </div>
-        {descriptor.section === "operational" ? (
-          <button
-            className="button button-secondary button-small"
-            type="button"
-            disabled={!canAdd}
-            title={canAdd ? "Stage a complete normalized row" : addDisabledReason}
-            onClick={onAdd}
-          >
-            Add row
-          </button>
-        ) : (
-          <span className="metadata-readonly-badge">Read-only</span>
-        )}
-      </header>
-
+    <section className="metadata-catalog-browser" aria-label={descriptor.label}>
       {state.isLoading ? (
         <div className="surface-state" aria-busy="true">Loading {descriptor.label}…</div>
       ) : state.isDenied ? (
@@ -61,33 +37,25 @@ export function MetadataLedger({
         <div className="empty-state compact">No rows are available for this sheet.</div>
       ) : (
         <div className="metadata-catalog-table-frame">
-          <div className="metadata-catalog-table-guide">
-            <span>All {descriptor.columns.length} columns shown</span>
-            <span>Scroll horizontally for additional fields · first column and actions remain visible</span>
-          </div>
-          <div className="metadata-catalog-table" role="region" aria-label={`${descriptor.label} table scroll area`} tabIndex={0}>
+          <div className="metadata-catalog-table ledger-grid" role="region" aria-label={`${descriptor.label} table scroll area`} tabIndex={0}>
             <table aria-label={`${descriptor.label} normalized Metadata`}>
               <thead>
                 <tr>
-                  {descriptor.columns.map((field, index) => (
-                    <th key={field} scope="col" className={columnClass(field, index)}>{metadataFieldLabel(field)}</th>
+                  {columns.map((field, index) => (
+                    <th key={field} scope="col" className={columnClass(field, index)}>{metadataColumnLabel(field)}</th>
                   ))}
-                  <th scope="col" className="is-sticky-action">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((row, rowIndex) => (
                   <tr key={`${descriptor.dataset}-${rowIndex}`}>
-                    {descriptor.columns.map((field, index) => (
+                    {columns.map((field, index) => (
                       <td key={field} className={columnClass(field, index)}>
                         <span className={descriptor.natural_key.includes(field) ? "is-key" : undefined}>
                           {metadataValueText(row[field])}
                         </span>
                       </td>
                     ))}
-                    <td className="is-sticky-action">
-                      <button className="text-action" type="button" onClick={() => onOpenRow(row)}>Show details</button>
-                    </td>
                   </tr>
                 ))}
               </tbody>

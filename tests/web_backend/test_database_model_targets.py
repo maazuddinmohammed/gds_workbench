@@ -25,7 +25,10 @@ from gds_workbench_api.features.model_change_sets.contracts import (
 from gds_workbench_api.features.model_change_sets.service import (
     DatabaseModelChangeSetService,
 )
-from gds_workbench_api.features.model_targets.contracts import ExportModelTargetsRequest
+from gds_workbench_api.features.model_targets.contracts import (
+    ExportModelDdlRequest,
+    ExportModelTargetsRequest,
+)
 from gds_workbench_api.features.model_targets.service import DatabaseModelTargetsService
 from gds_workbench_api.features.models import ModelRevisionConflictError
 
@@ -115,6 +118,24 @@ async def test_both_layers_export_saved_schemas_and_register_independently(
                 idempotency_key=uuid4(),
             )
             revision = applied.model_revision
+            ddl = await targets.export_ddl(
+                principal,
+                tenant_id=tenant_id,
+                model_id=model_id,
+                command=ExportModelDdlRequest(
+                    layer=layer, expected_model_revision=revision
+                ),
+            )
+            assert "CREATE TABLE" in ddl and "USING DELTA" in ddl
+            with pytest.raises(ModelRevisionConflictError):
+                await targets.export_ddl(
+                    principal,
+                    tenant_id=tenant_id,
+                    model_id=model_id,
+                    command=ExportModelDdlRequest(
+                        layer=layer, expected_model_revision=revision - 1
+                    ),
+                )
             with fixture.connect_owner() as connection:
                 # Identifiers are a fixed two-layer fixture vocabulary, never request input.
                 entity = connection.execute(
@@ -128,7 +149,9 @@ async def test_both_layers_export_saved_schemas_and_register_independently(
                     f"ORDER BY {layer}_attribute_id",
                     (model_id,),
                 ).fetchall()
-            options = await targets.options(principal, tenant_id=tenant_id, model_id=model_id)
+            options = await targets.options(
+                principal, tenant_id=tenant_id, model_id=model_id
+            )
             assert options.placement is not None
             assert options.model_revision == revision
             command = ExportModelTargetsRequest(
@@ -141,10 +164,19 @@ async def test_both_layers_export_saved_schemas_and_register_independently(
             )
             sheets = parse_metadata_workbook(workbook.content, tenant_id=tenant_id)
             assert sheets[0].rows[0]["object_type_code"] == f"{prefix}_TABLE"
-            assert sheets[0].rows[0]["object_name"] == graph["logical_entity" if layer == "logical" else "dimensional_entity"][0][layer + "_entity_name"]
-            assert sheets[0].rows[0]["object_schema"] == ("silver" if layer == "logical" else "gold")
+            assert (
+                sheets[0].rows[0]["object_name"]
+                == graph[
+                    "logical_entity" if layer == "logical" else "dimensional_entity"
+                ][0][layer + "_entity_name"]
+            )
+            assert sheets[0].rows[0]["object_schema"] == (
+                "silver" if layer == "logical" else "gold"
+            )
             assert len(sheets[1].rows) == len(columns)
-            metadata = DatabaseMetadataChangeSetService(database=database, authorizer=authorizer)
+            metadata = DatabaseMetadataChangeSetService(
+                database=database, authorizer=authorizer
+            )
             draft = await metadata.create_or_resume(
                 principal,
                 tenant_id=tenant_id,
@@ -171,16 +203,27 @@ async def test_both_layers_export_saved_schemas_and_register_independently(
                 ),
                 idempotency_key=uuid4(),
             )
-            assert registered.applied, [(issue.dataset, issue.code) for issue in registered.errors]
+            assert registered.applied, [
+                (issue.dataset, issue.code) for issue in registered.errors
+            ]
             assert registered.action_count == 3
 
             # Export remains read-only and independent from registration.
             existing_export = await targets.export(
-                principal, tenant_id=tenant_id, model_id=model_id, command=command,
+                principal,
+                tenant_id=tenant_id,
+                model_id=model_id,
+                command=command,
             )
             assert existing_export.content
             with pytest.raises(ModelRevisionConflictError):
-                await targets.export(principal, tenant_id=tenant_id, model_id=model_id,
-                    command=command.model_copy(update={"expected_model_revision": revision - 1}))
+                await targets.export(
+                    principal,
+                    tenant_id=tenant_id,
+                    model_id=model_id,
+                    command=command.model_copy(
+                        update={"expected_model_revision": revision - 1}
+                    ),
+                )
     finally:
         await database.close()

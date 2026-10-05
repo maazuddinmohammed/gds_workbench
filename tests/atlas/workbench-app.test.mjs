@@ -21,11 +21,20 @@ function metadata(){const root=workspace();snapshot(root,'metadata',[dataset('so
 test('readable table opens a side comparison without losing table context',async()=>{
  const root=metadata();root.directory('metadata-change-set').file('source_object.json',JSON.stringify([{tenant_code:'T',object_name:'Customer',description:'Customer identity used for billing',empty:'',nothing:null,is_active:true}]));
  const {document,dom}=await app(root);
- assert.match(document.querySelector('.brand').textContent,/atlas/);assert.equal(document.querySelectorAll('.data-table tbody tr').length,1);
+ assert.equal(document.title,'Atlas Local Workbench');assert.equal(document.querySelector('.brand').textContent,'Atlas Local Workbench');assert.equal(document.querySelectorAll('.data-table tbody tr').length,1);
  document.querySelector('[data-row-action]').click();assert.equal(document.querySelectorAll('.data-table tbody tr').length,1);
  assert.match(document.querySelector('.comparison-panel').textContent,/Customer master/);assert.match(document.querySelector('.comparison-panel').textContent,/Customer identity used for billing/);
  assert.match(document.querySelector('.comparison-panel').textContent,/Empty string/);assert.match(document.querySelector('.comparison-panel').textContent,/null/);
  assert.ok(document.querySelector('.comparison-field.is-changed'));document.querySelector('[data-action="back-to-ledger"]').click();assert.equal(document.querySelector('.comparison-panel'),null);dom.window.close();
+});
+test('saved sub-agent policy is visible without changing the active data Model',async()=>{
+ const root=metadata();state(root,{model:{id:7,name:'Sales'},subagent_policy:{mode:'custom',model:'Provider <Model-A>'}});
+ const {document,dom}=await app(root);
+ assert.equal(document.querySelector('.subagent-policy').textContent,'Sub-agents: Specified model only · Provider <Model-A>');
+ assert.match(document.querySelector('.session-line').textContent,/Sales/);
+ assert.equal(document.querySelector('.subagent-policy model-a'),null);
+ dom.window.close();
+ const legacy=await app(metadata());assert.equal(legacy.document.querySelector('.subagent-policy').textContent,'Sub-agents: Not set');legacy.dom.window.close();
 });
 test('editor asks Save Discard Cancel and preserves an unsaved conflict',async()=>{
  const root=metadata();const pending=root.directory('metadata-change-set').file('source_object.json',JSON.stringify([{tenant_code:'T',object_name:'Customer',description:'Before',is_active:true}]));
@@ -89,4 +98,25 @@ test('DBML duplicate and locked edit findings stop export and open validation',a
  const root=workspace();state(root,{model:{id:7,name:'Sales'}});const row={conceptual_object_name:'Customer',conceptual_object_status:'active',conceptual_object_type:'party',conceptual_object_is_locked:true};snapshot(root,'model',[dataset('conceptual_object',['conceptual_object_name'],[row])]);
  root.directory('model-change-set').file('conceptual_object.json',JSON.stringify([{...row,conceptual_object_type:'event'},{...row,conceptual_object_type:'event'}]));
  const {api,document,dom}=await app(root);await api.generateDbml();assert.equal(api.state.screen,'validation');assert.match(document.querySelector('.issue-table').textContent,/duplicates a canonical key/);assert.equal(root.entries.has('model-dbml'),false);dom.window.close();
+});
+
+test('compact dataset navigation preserves groups and supports keyboard focus',async()=>{
+ const root=workspace();snapshot(root,'metadata',[
+  dataset('system_type',['system_type_code'],[{system_type_code:'CRM'}]),
+  dataset('source_object',['tenant_code','object_name'],[{tenant_code:'T',object_name:'Customer'}]),
+  dataset('source_attribute',['tenant_code','object_name','attribute_name'],[{tenant_code:'T',object_name:'Customer',attribute_name:'ID'}]),
+ ]);
+ const {api,document,win,dom}=await app(root);
+ const definitions=api.state.workspace.area('metadata').datasets;
+ definitions[0].section='Reference';definitions[1].section='Objects';definitions[2].section='Objects';
+ await api.switchArea('metadata','source_object');
+ assert.equal(document.querySelectorAll('.dataset-groups button').length,2);
+ const sheets=document.querySelectorAll('.dataset-list button');assert.equal(sheets.length,2);
+ assert.match(document.querySelector('.dataset-group.is-active').textContent,/Objects/);
+ sheets[0].focus();sheets[0].dispatchEvent(new win.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
+ assert.equal(document.activeElement,sheets[1]);
+ sheets[1].dispatchEvent(new win.KeyboardEvent('keydown',{key:'Home',bubbles:true}));assert.equal(document.activeElement,sheets[0]);
+ assert.equal(document.querySelector('h1').textContent,'Source Object');
+ assert.equal(document.querySelector('#workbench-root').getAttribute('aria-busy'),'false');
+ assert.ok(document.querySelector('.brand svg'));dom.window.close();
 });

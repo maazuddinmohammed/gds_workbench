@@ -31,7 +31,6 @@ from gds_workbench_api.features.metadata import (
     DatabaseMetadataService,
     PostgresMetadataRepository,
 )
-from gds_workbench_api.features.metadata.review import DatabaseMetadataReviewService
 from gds_workbench_api.features.metadata_change_sets import DatabaseMetadataChangeSetService
 from gds_workbench_api.features.metadata_enrichment.dictionary import (
     DatabaseEnrichmentDictionaryService,
@@ -183,7 +182,6 @@ def create_runtime_app(
             authorizer=authorizer,
             cursor_signing_key=runtime_settings.cursor_signing_key,
         ),
-        metadata_review_service=DatabaseMetadataReviewService(database=runtime_database),
         metadata_service=DatabaseMetadataService(
             database=runtime_database,
             repository=PostgresMetadataRepository(),

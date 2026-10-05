@@ -31,9 +31,7 @@ from gds_workbench_api.features.metadata_change_sets.contracts import (
     GetMetadataChangeSetResult,
     ImportMetadataWorkbookResult,
     MetadataChangeSetDatasetCount,
-    StageMetadataChangeSetRequest,
     StageMetadataChangeSetResult,
-    StageMetadataDatasetRequest,
     ValidateMetadataChangeSetResult,
 )
 from gds_workbench_api.features.metadata_change_sets.service import (
@@ -120,26 +118,6 @@ class RecordingMetadataChangeSetService:
             created_at=_NOW,
             expires_at=_NOW,
         )
-
-    async def stage(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        change_set_id: UUID,
-        command: StageMetadataChangeSetRequest,
-        idempotency_key: UUID,
-    ) -> StageMetadataChangeSetResult:
-        self._assert_principal(principal)
-        assert (tenant_id, change_set_id, command.expected_draft_revision) == (
-            7,
-            _CHANGE_SET_ID,
-            1,
-        )
-        assert command.changes[0].dataset == "copy_group"
-        assert idempotency_key == _IDEMPOTENCY_KEY
-        self.calls.append(("stage", command.changes[0].records))
-        return _staged()
 
     async def get(
         self,
@@ -320,9 +298,9 @@ def test_metadata_change_set_routes_derive_identity_and_expose_every_command() -
             content=b"bounded workbook",
         )
 
-    assert [response.status_code for response in (created, staged, fetched, validated)] == [
+    assert staged.status_code == 404
+    assert [response.status_code for response in (created, fetched, validated)] == [
         201,
-        200,
         200,
         200,
     ]
@@ -333,7 +311,6 @@ def test_metadata_change_set_routes_derive_identity_and_expose_every_command() -
     ]
     assert [name for name, _value in service.calls] == [
         "create",
-        "stage",
         "get",
         "validate",
         "apply",
@@ -425,90 +402,9 @@ def _copy_group_record() -> dict[str, object]:
         "copy_group_name": "CRM daily",
         "copy_group_description": "Daily customer load",
         "is_member_group_required": False,
+        "value": None,
         "is_active": True,
     }
-
-
-@pytest.mark.asyncio
-async def test_stage_service_uses_canonical_complete_dataset_function() -> None:
-    database = StageDatabase()
-    service = DatabaseMetadataChangeSetService(
-        database=database,
-        authorizer=AuthorizationService(),
-    )
-
-    result = await service.stage(
-        _principal(),
-        tenant_id=7,
-        change_set_id=_CHANGE_SET_ID,
-        command=StageMetadataChangeSetRequest(
-            expected_draft_revision=1,
-            changes=[
-                StageMetadataDatasetRequest(
-                    dataset="copy_group",
-                    records=[_copy_group_record()],
-                )
-            ],
-        ),
-        idempotency_key=_IDEMPOTENCY_KEY,
-    )
-
-    assert result.draft_revision == 2
-    assert database.entered == 1
-    query, parameters = database.transaction.calls[0]
-    assert "mcp.stage_metadata_change_set" in query
-    assert parameters[:6] == (
-        UUID("11111111-1111-1111-1111-111111111111"),
-        UUID("22222222-2222-2222-2222-222222222222"),
-        "user",
-        7,
-        _CHANGE_SET_ID,
-        1,
-    )
-    assert isinstance(parameters[6], Jsonb)
-    assert parameters[6].obj == {"copy_group": [_copy_group_record()]}
-    assert parameters[7] == _IDEMPOTENCY_KEY
-
-
-@pytest.mark.asyncio
-async def test_stage_service_accepts_iso_date_fields_from_a_json_request() -> None:
-    database = StageDatabase()
-    service = DatabaseMetadataChangeSetService(
-        database=database,
-        authorizer=AuthorizationService(),
-    )
-    record: dict[str, object] = {
-        "tenant_code": "NWA",
-        "system_code": "CRM",
-        "copy_group_name": "CRM daily",
-        "member_group_name": None,
-        "copy_group_control_initial_load_date": "2026-08-24",
-        "copy_group_control_last_run_time": "2026-08-24T10:42:00Z",
-        "copy_group_control_last_run_value": "1048",
-    }
-
-    result = await service.stage(
-        _principal(),
-        tenant_id=7,
-        change_set_id=_CHANGE_SET_ID,
-        command=StageMetadataChangeSetRequest(
-            expected_draft_revision=1,
-            changes=[
-                StageMetadataDatasetRequest(
-                    dataset="copy_group_control",
-                    records=[record],
-                )
-            ],
-        ),
-        idempotency_key=_IDEMPOTENCY_KEY,
-    )
-
-    assert result.datasets == (
-        MetadataChangeSetDatasetCount(dataset="copy_group_control", record_count=1),
-    )
-    staged = database.transaction.calls[0][1][6]
-    assert isinstance(staged, Jsonb)
-    assert staged.obj == {"copy_group_control": [record]}
 
 
 def _copy_group_workbook() -> bytes:

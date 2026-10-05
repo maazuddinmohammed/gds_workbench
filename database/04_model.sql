@@ -67,6 +67,7 @@ CREATE TABLE model.model (
     default_reasoning_effort_code VARCHAR(50),
     default_max_turns INTEGER,
     default_validation_retry_count INTEGER,
+    is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -141,6 +142,15 @@ CREATE TABLE model.model (
             OR default_reasoning_effort_code ~ '^[a-z][a-z0-9_-]{0,49}$'
         )
     )
+);
+
+CREATE TABLE model.model_lock_event (
+    model_lock_event_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    model_id BIGINT NOT NULL REFERENCES model.model (model_id),
+    is_locked BOOLEAN NOT NULL,
+    model_revision BIGINT NOT NULL,
+    changed_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    changed_by VARCHAR(255) NOT NULL
 );
 
 CREATE TABLE model.model_input_scope (

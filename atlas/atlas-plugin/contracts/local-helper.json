@@ -23,9 +23,10 @@
       "mutates": true
     },
     "status": {
-      "usage": "status --session <working-directory> [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "status --session <working-directory> [--task <UUID>] [--history true --limit <1..200> --cursor <next_cursor>] [--detail summary|full] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
-      "mutates": false
+      "mutates": false,
+      "notes": "Default returns a bounded summary of the active task, plus task_count. --task reads one task without changing selection. --history true pages task summaries in UUID order; keep detail/limit unchanged. Cursors reject session or task-list changes. Task content remains current per read; digests fence edits. --detail full returns selected task contents explicitly."
     },
     "owner-add": {
       "usage": "owner-add --session <working-directory> --tenant-id <verified-id> --tenant <verified-code> [--output-file <new-.atlas/temp-result.json>]",
@@ -57,6 +58,12 @@
       "session_required": true,
       "mutates": true
     },
+    "subagent-policy": {
+      "usage": "subagent-policy --session <working-directory> --mode current|auto|custom [--model <exact-model-name-or-id>] [--output-file <new-.atlas/temp-result.json>]",
+      "session_required": true,
+      "mutates": true,
+      "notes": "Save the user's sub-agent model choice in session.subagent_policy. Only custom requires and accepts --model (1-200 characters; no surrounding whitespace or control characters). An absent policy is unresolved; resolve only before useful authorized delegation. The host must support the selected model rule. This does not change the main chat model or authorize delegation."
+    },
     "inspect": {
       "usage": "inspect --session <working-directory> --area metadata|model [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
@@ -68,9 +75,10 @@
       "mutates": false
     },
     "select": {
-      "usage": "select --session <working-directory> --area metadata|model --dataset <name> --where <JSON-object> [--limit <1..200>] [--owner <tenant-id>] [--view snapshot|effective] [--output-file <new-.atlas/temp-result.json>]",
+      "usage": "select --session <working-directory> --area metadata|model --dataset <name> [--where <JSON-object>] [--limit <1..200>] [--cursor <next_cursor>] [--fields <JSON-string-array>] [--owner <tenant-id>] [--view snapshot|effective] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
-      "mutates": false
+      "mutates": false,
+      "notes": "Follow next_cursor until null with unchanged selection/limit. Cursor binds manifest, owner, dataset, normalized filter, view, projection and selected pending records. Changed inputs require restarting the traversal. --fields selects 1..100 schema fields and always includes complete canonical keys; projected rows are read-only context, not complete upsert records. A cursor is not authorization or evidence that previous pages were reviewed."
     },
     "copy": {
       "usage": "copy --session <working-directory> --area metadata|model --dataset <name> --where <JSON-object> --expected-digest <sha256|empty> [--owner <tenant-id>] [--output-file <new-.atlas/temp-result.json>]",
@@ -127,18 +135,8 @@
       "session_required": true,
       "mutates": true
     },
-    "profile-plan": {
-      "usage": "profile-plan --session <working-directory> --plan-file <planning-input-json> [--task <UUID>] [--output-file <new-.atlas/temp-result.json>]",
-      "session_required": true,
-      "mutates": true
-    },
     "analysis-plan": {
       "usage": "analysis-plan --session <working-directory> --plan-file <planning-input-json> [--task <UUID>] [--output-file <new-.atlas/temp-result.json>]",
-      "session_required": true,
-      "mutates": true
-    },
-    "profile-results": {
-      "usage": "profile-results --session <working-directory> --plan-file <generated-plan-json> --results-file <curated-aggregates-json> --expected-digest <sha256|empty> [--task <UUID>] [--output-file <new-.atlas/temp-result.json>]",
       "session_required": true,
       "mutates": true
     }

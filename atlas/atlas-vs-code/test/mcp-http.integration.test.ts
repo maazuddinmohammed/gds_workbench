@@ -1,4 +1,9 @@
 import type { AddressInfo } from "node:net";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -9,6 +14,9 @@ import { afterEach, describe, expect, test } from "vitest";
 import * as z from "zod/v4";
 
 import { createStageMcpClient } from "../src/mcp-client.js";
+import { startBridge } from "../src/connector/bridge.js";
+import { createConnectorServer } from "../src/connector/server.js";
+import { resolveStageProfile } from "../src/profile.js";
 
 const servers: Array<{ close(callback: (error?: Error) => void): void }> = [];
 
@@ -24,6 +32,46 @@ afterEach(async () => {
 });
 
 describe("MCP Streamable HTTP integration", () => {
+  test("the bundled Codex relay reaches the extension bridge from two working folders", async () => {
+    const app = createMcpExpressApp();
+    app.post("/mcp", async (request: Request, response: Response) => {
+      const server = new McpServer({ name: "fixture", version: "1" });
+      server.registerTool("list_tenants", { inputSchema: { page_size: z.number().optional() } }, async () => ({
+        content: [{ type: "text", text: "fixture-only remote text" }], structuredContent: { tenants: [] },
+      }));
+      const transport = new StreamableHTTPServerTransport({});
+      await server.connect(transport as unknown as Transport);
+      response.on("close", () => { void server.close(); });
+      await transport.handleRequest(request, response, request.body);
+    });
+    const http = app.listen(0, "127.0.0.1"); servers.push(http);
+    await new Promise<void>((resolve, reject) => { http.once("listening", resolve); http.once("error", reject); });
+    const fixture = await mkdtemp(join(tmpdir(), "Atlas stdio fixture "));
+    const outside = join(fixture, "outside.json");
+    const profile = resolveStageProfile("local", `http://127.0.0.1:${(http.address() as AddressInfo).port}/mcp`);
+    await writeFile(outside, "{}");
+    for (const name of ["first work folder", "second work folder"]) {
+      const cwd = join(fixture, name); await mkdir(cwd);
+      const upstream = await createStageMcpClient(profile);
+      const bridge = await startBridge(cwd, async transport => {
+        await createConnectorServer(upstream, profile, cwd).connect(transport);
+      });
+      const client = new Client({ name: "codex-stdio-fixture", version: "1" });
+      const transport = new StdioClientTransport({ command: process.execPath,
+        args: [resolve("../atlas-connector/atlas-connector.cjs"), "serve"], cwd, stderr: "pipe" });
+      let diagnostics = ""; transport.stderr?.on("data", data => { diagnostics += String(data); });
+      try {
+        await client.connect(transport);
+        expect((await client.listTools()).tools.map(tool => tool.name)).toEqual(["atlas_checkStageRunner", "atlas_stageApprovedManifest", "list_tenants"]);
+        const check = await client.callTool({ name: "atlas_checkStageRunner" });
+        expect(check.structuredContent).toMatchObject({ status: "ready" });
+        expect(JSON.stringify(check)).not.toContain("fixture-only remote text");
+        const rejected = await client.callTool({ name: "atlas_stageApprovedManifest", arguments: { manifestPath: outside } });
+        expect(rejected.structuredContent).toMatchObject({ code: "WORKSPACE_BOUNDARY" });
+        expect(diagnostics).toBe("");
+      } finally { await client.close(); await bridge.close(); await upstream.close(); }
+    }
+  });
   test("reports an HTTP rejection without exposing the response body", async () => {
     const app = createMcpExpressApp();
     app.post("/mcp", (_request: Request, response: Response) => {

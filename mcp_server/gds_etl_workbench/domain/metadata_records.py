@@ -2,10 +2,32 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    StringConstraints,
+    model_validator,
+)
+
+
+def _finite_json_details(value: JsonValue) -> JsonValue:
+    # PostgreSQL JSONB and JSON Schema numbers exclude NaN and infinity.
+    json.dumps(value, allow_nan=False)
+    return value
+
+
+MetadataValue = Annotated[
+    JsonValue,
+    AfterValidator(_finite_json_details),
+    Field(json_schema_extra={"type": ["object", "array", "string", "number", "boolean", "null"]}),
+]
 
 Code100 = Annotated[
     str,
@@ -50,6 +72,7 @@ class TenantRecord(MetadataRecord):
     gds_connection_system_code: Code100 | None
     gds_connection_code: Code100 | None
     tenant_visibility: Literal["global", "private"]
+    value: MetadataValue = None
     is_active: bool
 
     @model_validator(mode="after")
@@ -71,6 +94,7 @@ class SystemRecord(MetadataRecord):
     system_name: Name200
     system_description: str | None
     system_type_code: Code100
+    value: MetadataValue = None
     is_active: bool
 
 
@@ -84,7 +108,19 @@ class ConnectionRecord(MetadataRecord):
     has_foreign_catalog: bool
     foreign_catalog: OptionalText255
     is_global_data_store: bool
+    value: MetadataValue = None
     is_active: bool
+
+
+class ConnectionLocationRecord(MetadataRecord):
+    """Public location identity and optional details; never connection secrets."""
+
+    tenant_code: Code100
+    system_code: Code100
+    connection_code: Code100
+    location_type_name: Name200
+    environment_code: Code100
+    value: MetadataValue = None
 
 
 class SystemTypeRecord(MetadataRecord):
@@ -157,6 +193,7 @@ class ObjectRecord(MetadataRecord):
     object_type_code: Code100
     zone_code: Literal["source", "bronze", "silver", "gold"]
     is_locked: bool
+    value: MetadataValue = None
     is_active: bool
 
 
@@ -184,6 +221,7 @@ class AttributeRecord(MetadataRecord):
     is_mapped: bool
     is_purge: bool
     is_locked: bool
+    value: MetadataValue = None
     is_active: bool
 
 
@@ -269,6 +307,7 @@ class CopyGroupRecord(MetadataRecord):
     copy_group_name: Name200
     copy_group_description: str | None
     is_member_group_required: bool
+    value: MetadataValue = None
     is_active: bool
 
 
@@ -278,6 +317,19 @@ class MemberGroupRecord(MetadataRecord):
     member_group_name: Name200
     member_group_description: str | None
     member_group_initial_load_date: date | None
+    value: MetadataValue = None
+    is_active: bool
+
+
+class MemberRecord(MetadataRecord):
+    tenant_code: Code100
+    system_code: Code100
+    member_group_name: Name200
+    member_code: Code100
+    member_name: Name200
+    member_description: str | None
+    member_attribute_name: OptionalText400
+    value: MetadataValue = None
     is_active: bool
 
 
@@ -319,6 +371,7 @@ class CopyRecord(MetadataRecord):
     copy_source_order: Annotated[int, Field(gt=0, le=2_147_483_647)]
     source_data_operation_name: Name200
     target_data_operation_name: Name200
+    value: MetadataValue = None
     is_active: bool
 
     @model_validator(mode="after")
@@ -338,6 +391,7 @@ class ProcessGroupRecord(MetadataRecord):
     process_group_description: str | None
     process_group_dependency_order: Annotated[int, Field(gt=0, le=2_147_483_647)]
     copy_group_name: Name200
+    value: MetadataValue = None
     is_active: bool
 
 
@@ -361,4 +415,5 @@ class ProcessRecord(MetadataRecord):
     object_schema: Name400
     object_name: Name400
     process_type_name: Name200
+    value: MetadataValue = None
     is_active: bool

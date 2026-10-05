@@ -49,6 +49,8 @@ def test_code_creation_reports_safe_prerequisites_over_http(
             query: LiteralString,
             parameters: tuple[Any, ...] = (),
         ) -> dict[str, Any] | None:
+            if "model.assert_writable" in query:
+                return {"assert_writable": None}
             if "application.create_workflow_run" in query:
                 raise RuntimeError(database_message)
             return await super().fetch_one(query, parameters)

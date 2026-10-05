@@ -1,7 +1,7 @@
 import { ApiError, type HttpRequest } from "../../core/http";
 
 export type MetadataSection = "reference" | "foundational" | "operational";
-export type MetadataCellValue = string | number | boolean | null;
+export type MetadataCellValue = string | number | boolean | null | MetadataCellValue[] | { [key: string]: MetadataCellValue };
 export type MetadataRow = Record<string, MetadataCellValue>;
 export type MetadataFilters = Record<string, MetadataCellValue>;
 export type MetadataActiveState = "active" | "inactive" | "all";
@@ -12,8 +12,15 @@ export interface ObjectCatalogFilters {
   activeState?: MetadataActiveState;
 }
 export interface ObjectCatalogSummary {
+  value?: MetadataCellValue;
+  object_description?: string | null;
+  description_truncated?: boolean;
+  fc_object_schema?: string | null;
+  fc_object_name?: string | null;
+  object_transformation?: string | null;
+  transformation_truncated?: boolean;
   object_id: number;
-  review_revision: string;
+  tenant_code: string;
   object_schema: string;
   object_name: string;
   object_type_code: string;
@@ -32,11 +39,14 @@ export interface ObjectCatalogSummary {
   is_locked: boolean;
 }
 export interface ObjectAttribute {
+  value?: MetadataCellValue;
   enrichment?: { is_natural_key: boolean | null; is_primary_key: boolean | null; is_nullable: boolean | null; is_pii: boolean | null } | null;
   profile?: Record<string, number | string | null> | null;
   attribute_id: number;
-  review_revision: string;
   attribute_name: string;
+  fc_attribute_name?: string | null;
+  attribute_custom_code?: string | null;
+  custom_code_truncated?: boolean;
   attribute_ordinal_position: number;
   attribute_description: string | null;
   description_truncated?: boolean;
@@ -54,7 +64,6 @@ export interface ObjectAttribute {
 }
 export interface ObjectCatalogDetail extends ObjectCatalogSummary {
   object_type_name: string;
-  object_description: string | null;
   connection_name: string;
   attributes: ObjectAttribute[];
 }
@@ -63,21 +72,6 @@ export interface ObjectCatalogPage {
   tenant_id: number;
   items: ObjectCatalogSummary[];
   next_cursor: string | null;
-}
-export type MetadataReviewAction = "lock" | "unlock" | "deactivate" | "reactivate";
-export type ReviewMetadataRecordsCommand = {
-  record_type: "object" | "attribute";
-  action: MetadataReviewAction;
-  records: Array<{ record_id: number; expected_revision: string }>;
-} | {
-  record_type: "object" | "attribute";
-  action: "describe";
-  records: Array<{ record_id: number; expected_revision: string; description: string | null }>;
-};
-export interface ReviewMetadataRecordsResult {
-  review_event_id: number;
-  action_count: number;
-  records: Array<{ record_id: number; review_revision: string; is_active: boolean; is_locked: boolean }>;
 }
 export const METADATA_XLSX_MEDIA_TYPE =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -97,36 +91,6 @@ export interface MetadataDatasetRegistry {
   schema_version: "1.0";
   tenant_id: number;
   datasets: MetadataDatasetDescription[];
-}
-
-export interface MetadataJsonSchemaProperty {
-  title?: string;
-  type?: "string" | "integer" | "number" | "boolean" | "null";
-  format?: string;
-  enum?: MetadataCellValue[];
-  anyOf?: MetadataJsonSchemaProperty[];
-  minLength?: number;
-  maxLength?: number;
-  pattern?: string;
-  minimum?: number;
-  maximum?: number;
-  exclusiveMinimum?: number;
-  exclusiveMaximum?: number;
-}
-
-export interface MetadataRowSchema {
-  title?: string;
-  type?: "object";
-  additionalProperties?: boolean;
-  properties: Record<string, MetadataJsonSchemaProperty>;
-  required?: string[];
-}
-
-export interface MetadataDatasetDetail extends MetadataDatasetDescription {
-  schema_version: "1.0";
-  tenant_id: number;
-  row_schema: MetadataRowSchema;
-  fixed_values: MetadataRow;
 }
 
 export interface MetadataRowPage {
@@ -184,12 +148,6 @@ export interface MetadataChangeSetDetail {
   validated_at: string | null;
   applied_at: string | null;
   terminal_at: string | null;
-}
-
-export interface StageMetadataChangeSetCommand {
-  schema_version: "1.0";
-  expected_draft_revision: number;
-  changes: Array<{ dataset: string; records: MetadataRow[] }>;
 }
 
 export interface StageMetadataChangeSetResult {
@@ -282,12 +240,7 @@ export interface ImportMetadataWorkbookResult {
 export interface MetadataApi {
   listMetadataObjects: (tenantId: number, filters?: ObjectCatalogFilters, pageSize?: number, cursor?: string) => Promise<ObjectCatalogPage>;
   readMetadataObject: (tenantId: number, objectId: number) => Promise<ObjectCatalogDetail>;
-  reviewMetadataRecords: (tenantId: number, command: ReviewMetadataRecordsCommand, idempotencyKey: string) => Promise<ReviewMetadataRecordsResult>;
   listMetadataDatasets: (tenantId: number) => Promise<MetadataDatasetRegistry>;
-  describeMetadataDataset: (
-    tenantId: number,
-    dataset: string,
-  ) => Promise<MetadataDatasetDetail>;
   listMetadataRows: (
     tenantId: number,
     dataset: string,
@@ -308,12 +261,6 @@ export interface MetadataApi {
     changeSetId: string,
     dataset?: string,
   ) => Promise<MetadataChangeSetDetail>;
-  stageMetadataChangeSet: (
-    tenantId: number,
-    changeSetId: string,
-    command: StageMetadataChangeSetCommand,
-    idempotencyKey: string,
-  ) => Promise<StageMetadataChangeSetResult>;
   validateMetadataChangeSet: (
     tenantId: number,
     changeSetId: string,
@@ -353,16 +300,8 @@ export function createMetadataApi(request: HttpRequest): MetadataApi {
       return request<ObjectCatalogPage>(`/api/v1/tenants/${tenantId}/metadata/objects?${query}`);
     },
     readMetadataObject: (tenantId, objectId) => request<ObjectCatalogDetail>(`/api/v1/tenants/${tenantId}/metadata/objects/${objectId}`),
-    reviewMetadataRecords: (tenantId, command, idempotencyKey) => request<ReviewMetadataRecordsResult>(
-      `/api/v1/tenants/${tenantId}/metadata/review`,
-      { method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify(command) },
-    ),
     listMetadataDatasets: (tenantId) =>
       request<MetadataDatasetRegistry>(`/api/v1/tenants/${tenantId}/metadata/datasets`),
-    describeMetadataDataset: (tenantId, dataset) =>
-      request<MetadataDatasetDetail>(
-        `/api/v1/tenants/${tenantId}/metadata/datasets/${encodeURIComponent(dataset)}`,
-      ),
     listMetadataRows: (tenantId, dataset, filters = {}, pageSize = 50, cursor) => {
       const query = new URLSearchParams();
       const normalizedFilters = Object.fromEntries(
@@ -429,22 +368,6 @@ export function createMetadataApi(request: HttpRequest): MetadataApi {
         `/api/v1/tenants/${tenantId}/metadata-change-sets/${changeSetId}${suffix}`,
       );
     },
-    stageMetadataChangeSet: (
-      tenantId,
-      changeSetId,
-      command,
-      idempotencyKey,
-    ) => request<StageMetadataChangeSetResult>(
-      `/api/v1/tenants/${tenantId}/metadata-change-sets/${changeSetId}/stage`,
-      {
-        method: "PUT",
-        headers: {
-          "content-type": "application/json",
-          "Idempotency-Key": idempotencyKey,
-        },
-        body: JSON.stringify(command),
-      },
-    ),
     validateMetadataChangeSet: (tenantId, changeSetId, expectedDraftRevision) =>
       request<ValidateMetadataChangeSetResult>(
         `/api/v1/tenants/${tenantId}/metadata-change-sets/${changeSetId}/validate`,
@@ -521,9 +444,6 @@ export const metadataQueryKeys = {
   objects: (tenantId: number, filters: ObjectCatalogFilters, cursor: string | undefined) => ["metadata-objects", tenantId, filters, cursor] as const,
   object: (tenantId: number, objectId: number | null) => ["metadata-object", tenantId, objectId] as const,
   registry: (tenantId: number) => ["metadata-registry", tenantId] as const,
-  dataset: (tenantId: number, dataset: string) => (
-    ["metadata-dataset", tenantId, dataset] as const
-  ),
   rows: (
     tenantId: number,
     dataset: string,
@@ -534,6 +454,10 @@ export const metadataQueryKeys = {
     ["metadata-change-set", tenantId, changeSetId, dataset] as const
   ),
 };
+
+export function metadataColumnLabel(field: string): string {
+  return field.split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join("");
+}
 
 export function metadataFieldLabel(field: string): string {
   const domainLabels: Record<string, string> = {
@@ -551,37 +475,7 @@ export function metadataFieldLabel(field: string): string {
 export function metadataValueText(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
-  return String(value);
-}
-
-export function metadataRowKey(row: MetadataRow, naturalKey: string[]): string {
-  return JSON.stringify(naturalKey.map((field) => row[field] ?? null));
-}
-
-export function metadataPropertySchema(
-  property: MetadataJsonSchemaProperty,
-): MetadataJsonSchemaProperty {
-  return property.anyOf?.find((option) => option.type !== "null") ?? property;
-}
-
-export function metadataPropertyIsNullable(property: MetadataJsonSchemaProperty): boolean {
-  return property.type === "null" || Boolean(
-    property.anyOf?.some((option) => option.type === "null"),
-  );
-}
-
-export function mergeStagedRecord(
-  stagedRecords: MetadataRow[],
-  record: MetadataRow,
-  naturalKey: string[],
-  previousKey?: string,
-): MetadataRow[] {
-  const matchKey = previousKey ?? metadataRowKey(record, naturalKey);
-  const next = stagedRecords.filter((candidate) => (
-    metadataRowKey(candidate, naturalKey) !== matchKey
-  ));
-  next.push(record);
-  return next;
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
 export interface MetadataValidationReview {

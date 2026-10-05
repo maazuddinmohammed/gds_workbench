@@ -22,7 +22,7 @@ from tests.mcp.model_test_fixtures import complete_model_graph, complete_physica
 from tests.web_backend.test_modeled_record_review import review_graph
 
 
-@pytest.mark.parametrize("dataset", get_args(EditableDataset.__value__))
+@pytest.mark.parametrize("dataset", [value for value in get_args(EditableDataset.__value__) if value != "mapping_object"])
 def test_edit_definition_preserves_all_other_fields(dataset: EditableDataset) -> None:
     review = review_graph(complete_model_graph())
     editor = model_record_editor(

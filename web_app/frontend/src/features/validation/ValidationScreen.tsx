@@ -87,7 +87,7 @@ export function ValidationScreen({
   };
 
   return (
-    <WorkflowCommandCenter enabled={groupId === undefined} filterCount={Number(systemFilter.length > 0) + Number(Boolean(statusFilter)) + Number(Boolean(lockFilter))} className="mapping-workspace validation-workspace page-enter">
+    <WorkflowCommandCenter filterCount={Number(systemFilter.length > 0) + Number(Boolean(statusFilter)) + Number(Boolean(lockFilter))} className="mapping-workspace validation-workspace page-enter">
       <header className="workflow-commandbar validation-commandbar model-section-toolbar">
         <div className="workflow-command-context validation-command-context">
           <ModelLayerTabs tenantId={tenantId} modelId={model.model_id} layer={layer} workflow="validation" title="Validation" />
@@ -109,7 +109,7 @@ export function ValidationScreen({
           </span>
         </div>
         <div className="workflow-command-actions">
-          <WorkflowCommandTools />
+          <WorkflowCommandTools filters={groupId === undefined} />
           <button
             className="button button-secondary button-small"
             type="button"

@@ -79,7 +79,6 @@ export function CreatePromptDialog({
       >
         <header className="drawer-header">
           <div>
-            <small>Governed Prompt Library</small>
             <h2 id="create-prompt-heading">Create Prompt Template</h2>
           </div>
           <button
@@ -210,7 +209,6 @@ export function CreatePromptDialog({
             </p>
           ) : null}
           <footer className="dialog-actions">
-            <p>The backend rechecks Tenant Lock, ownership, and authoring permission.</p>
             <div>
               <button className="button button-secondary button-small" type="button" onClick={onClose}>
                 Cancel
@@ -297,7 +295,6 @@ export function PromptTransitionDialog({
           ) : null}
         </div>
         <footer className="dialog-actions">
-          <p>This action is explicit and server-validated.</p>
           <div>
             <button
               className="button button-secondary button-small"
@@ -456,7 +453,6 @@ export function EditPromptHeaderDialog({
             </p>
           ) : null}
           <footer className="dialog-actions">
-            <p>Timestamp fencing prevents an older editor from overwriting newer state.</p>
             <div>
               <button className="button button-secondary button-small" type="button" onClick={onClose}>
                 Cancel

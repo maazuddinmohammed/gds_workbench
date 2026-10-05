@@ -20,8 +20,6 @@ from .contracts import (
     ExpectedDraftRevisionRequest,
     GetMetadataChangeSetResult,
     ImportMetadataWorkbookResult,
-    StageMetadataChangeSetRequest,
-    StageMetadataChangeSetResult,
     ValidateMetadataChangeSetResult,
 )
 
@@ -39,16 +37,6 @@ class MetadataChangeSetService(Protocol):
         command: CreateMetadataChangeSetRequest,
         idempotency_key: UUID,
     ) -> CreateMetadataChangeSetResult: ...
-
-    async def stage(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        change_set_id: UUID,
-        command: StageMetadataChangeSetRequest,
-        idempotency_key: UUID,
-    ) -> StageMetadataChangeSetResult: ...
 
     async def get(
         self,
@@ -134,29 +122,6 @@ def create_metadata_change_sets_router(
         methods=["POST"],
         response_model=CreateMetadataChangeSetResult,
         status_code=status.HTTP_201_CREATED,
-    )
-
-    async def stage(
-        tenant_id: PositiveTenantId,
-        change_set_id: UUID,
-        command: StageMetadataChangeSetRequest,
-        idempotency_key: IdempotencyKey,
-        *,
-        principal: RequestPrincipal = Depends(authenticate),
-    ) -> StageMetadataChangeSetResult:
-        return await service.stage(
-            principal,
-            tenant_id=tenant_id,
-            change_set_id=change_set_id,
-            command=command,
-            idempotency_key=idempotency_key,
-        )
-
-    router.add_api_route(
-        "/{change_set_id}/stage",
-        stage,
-        methods=["PUT"],
-        response_model=StageMetadataChangeSetResult,
     )
 
     async def get_change_set(

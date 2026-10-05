@@ -57,6 +57,8 @@ class StageCatalogTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         assert "security.entra_principal_identity" in query
         assert parameters[-1] == 7
         return {
@@ -156,6 +158,8 @@ class TemplateListTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         assert "security.entra_principal_identity" in query
         return {
             "principal_id": 41,
@@ -288,6 +292,8 @@ class TemplateDetailTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "security.entra_principal_identity" in query:
             self.calls.append("authorize")
             assert parameters[-1] == 7
@@ -402,6 +408,8 @@ class CreateTemplateTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "security.authorize_tenant_operation" in query:
             self.calls.append("authorize_model_write")
             assert parameters[-2:] == (7, "tenant_model_write")
@@ -506,6 +514,8 @@ class GlobalCreateTransaction(CreateTemplateTransaction):
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "security.entra_principal_identity" in query:
             self.calls.append("authorize_read")
             return {
@@ -586,6 +596,8 @@ class UpdateTemplateTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "security.entra_principal_identity" in query:
             self.calls.append("authorize_read")
             assert parameters[-1] == 7
@@ -709,6 +721,8 @@ class SaveDraftTransaction(UpdateTemplateTransaction):
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "application.save_prompt_template_draft" not in query:
             return await super().fetch_one(query, parameters)
         self.calls.append("save_prompt_template_draft")
@@ -794,6 +808,8 @@ class TransitionVersionTransaction(UpdateTemplateTransaction):
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "application.transition_prompt_template_version" in query:
             self.calls.append("transition_prompt_template_version")
             assert "UPDATE application.prompt_template_version" not in query
@@ -896,6 +912,8 @@ class AssignmentListTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "security.entra_principal_identity" in query:
             self.calls.append("authorize_read")
             assert parameters[-1] == 7
@@ -1042,6 +1060,8 @@ class SetAssignmentTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "security.authorize_tenant_operation" in query:
             self.calls.append("authorize_model_write")
             assert parameters[-2:] == (7, "tenant_model_write")
@@ -1152,6 +1172,8 @@ class StaleDraftTransaction(SaveDraftTransaction):
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "application.save_prompt_template_draft" in query:
             raise _FakeDatabaseError
         return await super().fetch_one(query, parameters)

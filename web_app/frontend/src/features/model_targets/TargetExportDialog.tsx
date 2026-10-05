@@ -11,7 +11,7 @@ type ExportProps = {
 
 export function TargetExportButton(props: ExportProps) {
   const [open, setOpen] = useState(false);
-  return <><button className="button button-secondary button-small" type="button" onClick={() => setOpen(true)}>Export</button>
+  return <><button className="button button-secondary button-small" type="button" onClick={() => setOpen(true)}>Export Metadata</button>
     {open ? <TargetExportDialog {...props} onClose={() => setOpen(false)} /> : null}</>;
 }
 

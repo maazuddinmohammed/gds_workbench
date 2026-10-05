@@ -341,12 +341,6 @@ describe("Workbench API client", () => {
     const workbook = new Uint8Array([80, 75, 3, 4]);
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({ schema_version: "1.0", datasets: [] }))
-      .mockResolvedValueOnce(jsonResponse({
-        schema_version: "1.0",
-        dataset: "source_object",
-        fixed_values: { zone_code: "source" },
-        row_schema: { properties: { tenant_code: { type: "string" } } },
-      }))
       .mockResolvedValueOnce(jsonResponse({ schema_version: "1.0", items: [] }))
       .mockResolvedValueOnce(new Response(workbook, {
         status: 200,
@@ -359,7 +353,6 @@ describe("Workbench API client", () => {
     const api = createApiClient(fetcher);
 
     await api.listMetadataDatasets(7);
-    await api.describeMetadataDataset(7, "source_object");
     await api.listMetadataRows(7, "source_object", {
       is_active: true,
       tenant_code: "NWA",
@@ -368,11 +361,10 @@ describe("Workbench API client", () => {
 
     expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
       "/api/v1/tenants/7/metadata/datasets",
-      "/api/v1/tenants/7/metadata/datasets/source_object",
       "/api/v1/tenants/7/metadata/datasets/source_object/rows?filters=%7B%22is_active%22%3Atrue%2C%22tenant_code%22%3A%22NWA%22%7D&page_size=25&cursor=opaque-next",
       "/api/v1/tenants/7/metadata/exports/xlsx",
     ]);
-    expect(fetcher.mock.calls[3]?.[1]).toEqual(expect.objectContaining({
+    expect(fetcher.mock.calls[2]?.[1]).toEqual(expect.objectContaining({
       method: "POST",
       credentials: "same-origin",
       body: JSON.stringify({
@@ -390,15 +382,9 @@ describe("Workbench API client", () => {
     const api = createApiClient(fetcher);
     const changeSetId = "11111111-1111-1111-1111-111111111111";
     const idempotencyKey = "22222222-2222-2222-2222-222222222222";
-    const row = { tenant_code: "NWA", system_code: "CRM", is_active: true };
 
     await api.createMetadataChangeSet(7, idempotencyKey);
     await api.readMetadataChangeSet(7, changeSetId, "source_object");
-    await api.stageMetadataChangeSet(7, changeSetId, {
-      schema_version: "1.0",
-      expected_draft_revision: 3,
-      changes: [{ dataset: "source_object", records: [row] }],
-    }, idempotencyKey);
     await api.validateMetadataChangeSet(7, changeSetId, 4);
     await api.applyMetadataChangeSet(7, changeSetId, 4, idempotencyKey);
     await api.archiveMetadataChangeSet(7, changeSetId, 4, idempotencyKey);
@@ -408,22 +394,12 @@ describe("Workbench API client", () => {
     expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
       "/api/v1/tenants/7/metadata-change-sets",
       `/api/v1/tenants/7/metadata-change-sets/${changeSetId}?dataset=source_object`,
-      `/api/v1/tenants/7/metadata-change-sets/${changeSetId}/stage`,
       `/api/v1/tenants/7/metadata-change-sets/${changeSetId}/validate`,
       `/api/v1/tenants/7/metadata-change-sets/${changeSetId}/apply`,
       `/api/v1/tenants/7/metadata-change-sets/${changeSetId}/archive`,
       `/api/v1/tenants/7/metadata-change-sets/${changeSetId}/imports/xlsx`,
     ]);
-    expect(fetcher.mock.calls[2]?.[1]).toEqual(expect.objectContaining({
-      method: "PUT",
-      body: JSON.stringify({
-        schema_version: "1.0",
-        expected_draft_revision: 3,
-        changes: [{ dataset: "source_object", records: [row] }],
-      }),
-      headers: expect.objectContaining({ "Idempotency-Key": idempotencyKey }),
-    }));
-    expect(fetcher.mock.calls[6]?.[1]).toEqual(expect.objectContaining({
+    expect(fetcher.mock.calls[5]?.[1]).toEqual(expect.objectContaining({
       method: "POST",
       body: workbook,
       headers: expect.objectContaining({

@@ -33,6 +33,7 @@ def build(output: Path | None = None) -> Path:
         allowed = {
             "skills": {".md"},
             "references": {".md"},
+            "templates": {".md"},
             "docs": {".md", ".png"},
             "scripts": {".js", ".ps1", ".sh", ".py"},
             "contracts": {".json"},
@@ -67,21 +68,6 @@ def build(output: Path | None = None) -> Path:
     if not isinstance(manifest["description"], str) or not manifest["description"].strip():
         raise ValueError("expected a nonempty description")
 
-    # The extracted atlas folder is also a local Codex marketplace. Its plugin
-    # path stays relative to that folder, so recipients need no source checkout.
-    marketplace = {
-        "name": "gds-workbench",
-        "interface": {"displayName": "GDS Workbench"},
-        "plugins": [
-            {
-                "name": "atlas",
-                "source": {"source": "local", "path": "./"},
-                "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
-                "category": "Productivity",
-            }
-        ],
-    }
-
     output = (output or DIST_ROOT / f"atlas-agent-plugin-{version}.zip").absolute()
     if output.resolve().is_relative_to(PLUGIN_ROOT.resolve()):
         raise ValueError("archive must be outside the plugin source")
@@ -91,9 +77,6 @@ def build(output: Path | None = None) -> Path:
         f"atlas/{source.relative_to(PLUGIN_ROOT).as_posix()}": source.read_bytes()
         for source in files
     }
-    entries["atlas/.agents/plugins/marketplace.json"] = (
-        json.dumps(marketplace, indent=2) + "\n"
-    ).encode("utf-8")
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, "x", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, content in entries.items():

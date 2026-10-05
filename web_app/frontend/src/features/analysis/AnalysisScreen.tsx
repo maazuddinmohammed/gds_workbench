@@ -61,6 +61,15 @@ export function AnalysisScreen({
   });
   const revisionMismatch = findingsQuery.data !== undefined
     && findingsQuery.data.pages.some((page) => page.model_revision !== model.model_revision);
+  const download = useMutation({
+    mutationFn: () => api.exportAnalysis(tenantId, model.model_id, model.model_revision, filters),
+    onSuccess: ({ blob, filename }) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = filename; document.body.append(link); link.click(); link.remove();
+      URL.revokeObjectURL(url);
+    },
+  });
   const reviewMutation = useMutation({
     mutationFn: (request: NonNullable<typeof reviewRequest.current>) => api.reviewAnalysisFindings(
       tenantId,
@@ -121,6 +130,9 @@ export function AnalysisScreen({
         </div>
         <div className="workflow-command-actions">
           <WorkflowCommandTools />
+          <button className="button button-secondary button-small" type="button"
+            disabled={download.isPending || revisionMismatch || findingsQuery.isPending || findingsQuery.isError}
+            onClick={() => download.mutate()}>{download.isPending ? "Exporting…" : "Export"}</button>
           <button className="button button-secondary button-small" type="button" onClick={refresh}>
             Refresh
           </button>
@@ -148,6 +160,7 @@ export function AnalysisScreen({
       </header>
 
 
+        {download.isError ? <p role="alert">Export failed. Refresh the Model and retry.</p> : null}
         <AnalysisResults
           items={findingsQuery.data?.pages.flatMap((page) => page.items) ?? []}
           endpointOptions={endpointOptionsQuery.data?.items ?? []}

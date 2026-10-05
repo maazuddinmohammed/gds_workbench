@@ -10,7 +10,6 @@ from gds_workbench_api.features.metadata.contracts import (
     MetadataDatabase,
     MetadataDataset,
     MetadataDatasetDescription,
-    MetadataDatasetDetail,
     MetadataDatasetRegistry,
     MetadataFilter,
     MetadataObjectNotFoundError,
@@ -29,7 +28,6 @@ from gds_workbench_api.features.metadata.repository import PostgresMetadataRepos
 from gds_workbench_api.features.metadata.router import create_metadata_router
 from gds_workbench_api.features.metadata.service import (
     DatabaseMetadataService,
-    metadata_dataset_detail,
     metadata_dataset_registry,
 )
 
@@ -51,7 +49,6 @@ __all__ = [
     "MetadataDatabase",
     "MetadataDataset",
     "MetadataDatasetDescription",
-    "MetadataDatasetDetail",
     "MetadataDatasetRegistry",
     "MetadataFilter",
     "MetadataObjectNotFoundError",
@@ -60,6 +57,5 @@ __all__ = [
     "MetadataService",
     "MetadataWorkbookDownload",
     "create_metadata_router",
-    "metadata_dataset_detail",
     "metadata_dataset_registry",
 ]

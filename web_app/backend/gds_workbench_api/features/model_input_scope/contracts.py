@@ -113,6 +113,7 @@ class ModelAttributeEnrichment(BaseModel):
 
 
 class ModelInputScopeAttribute(ObjectAttribute):
+    review_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     enrichment: ModelAttributeEnrichment | None = None
     profile: dict[str, object] | None = Field(default=None, repr=False)
 

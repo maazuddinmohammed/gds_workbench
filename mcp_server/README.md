@@ -27,6 +27,16 @@ requirements, audit redaction and least privilege are in [security](../docs/secu
 objects, rejects persistent DDL/DML and returns bounded results. Its validator owns
 exact SQL limits; credentials and raw submitted SQL never enter audit logs.
 
+## Snapshot storage
+
+Snapshot ZIPs share one configured private container. New uploads use
+`metadata/<tenant_id>/YYYYMMDD/<snapshot_id>.zip` or
+`model/<tenant_id>/YYYYMMDD/<snapshot_id>.zip`. The date is the snapshot creation
+date in UTC; Model Tenant ownership comes from the authorized Model record.
+Model ID remains in the Blob metadata and download filename. Files inside the
+ZIP retain their existing structure. Existing Blobs and issued download URLs
+are unaffected; no archives are moved.
+
 ## Local verification and startup
 
 Use the disposable PostgreSQL fixture and commands in [AGENTS.md](../AGENTS.md) for
@@ -56,3 +66,19 @@ The builder emits runtime entrypoints, pinned requirements, a manifest and Pytho
 source only. SQL, tests, docs, environments and secrets are excluded. Rebuild after
 shared-source changes; use [Azure deployment](../docs/AZURE_FRESH_DEPLOYMENT.md) for
 approved external rollout. Building locally does not deploy anything.
+
+### Profiling runs
+
+`start_profiling_run(model_id, selected_object_ids, expected_model_revision, request_id,
+batch_ids?, environment_code="dev")` starts deterministic server profiling.
+`get_profiling_run_status(run_id)` reports progress and saved counts;
+`cancel_profiling_run(run_id)` revokes the claim and requests statement cancellation.
+Use a fresh UUID per request, preserving it for identical retries. Batch IDs are a
+shared string list, required for selected batched Objects. The server resolves
+Source/Bronze relations and GDS Connection values; no SQL or credentials travel
+through these tool arguments/results. Refresh the Model Snapshot after completion.
+
+Every MCP process runs a lease-based worker. PostgreSQL claims prevent duplicate
+execution across processes and separate MCP Profiling from web workers. Runs
+survive process restarts; expired claims can be recovered up to five times. Only
+complete, current, authorized results commit. Model and Tenant Lock rules apply.

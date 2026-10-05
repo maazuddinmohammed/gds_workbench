@@ -4,12 +4,12 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any, LiteralString
 
-from gds_etl_workbench.domain.errors import DependencyUnavailableError
 from gds_etl_workbench.infrastructure.postgres import (
     ReadinessRecord,
     ReadIsolation,
     ReadTransaction,
     WriteTransaction,
+    raise_postgres_error,
 )
 from psycopg import AsyncConnection
 from psycopg import Error as PsycopgError
@@ -120,12 +120,8 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        )
        AND NOT EXISTS (
            SELECT 1 FROM unnest(ARRAY[
-               'application.metadata_object_review_revision(core.object)',
-               'application.metadata_attribute_review_revision(core.attribute,core.object)',
                'application.authorize_model_record_review('
-               'uuid,uuid,character varying,bigint,bigint)',
-               'application.review_metadata_records(uuid,uuid,character varying,bigint,'
-               'character varying,character varying,jsonb,uuid)'
+               'uuid,uuid,character varying,bigint,bigint)'
            ]) AS required_review_function(signature)
            WHERE NOT coalesce(has_function_privilege(
                'gds_web_write', to_regprocedure(required_review_function.signature), 'EXECUTE'
@@ -473,7 +469,7 @@ class WebPostgresDatabase:
             ) as connection:
                 yield _WebTransaction(connection)
         except PsycopgError as exc:
-            raise DependencyUnavailableError() from exc
+            raise_postgres_error(exc)
 
     @asynccontextmanager
     async def write_transaction(
@@ -488,4 +484,4 @@ class WebPostgresDatabase:
             ) as connection:
                 yield _WebTransaction(connection)
         except PsycopgError as exc:
-            raise DependencyUnavailableError() from exc
+            raise_postgres_error(exc)

@@ -2,9 +2,10 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Response
 from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.authorization import RequestPrincipal
+from pydantic import BaseModel, ConfigDict, Field
 
 from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.mapping.read_contracts import (
@@ -20,6 +21,14 @@ from gds_workbench_api.features.mapping.read_contracts import (
     MappingObjectPage,
 )
 from gds_workbench_api.features.mapping.read_service import MappingReviewService
+from gds_workbench_api.features.metadata.workbook import XLSX_MEDIA_TYPE
+
+
+class MappingExportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    expected_model_revision: int = Field(gt=0)
+    entity_type: MappingEntityType
+    source_system_code: str = Field(min_length=1, max_length=100, pattern=r".*\S.*")
 
 
 def create_mapping_review_router(
@@ -33,6 +42,33 @@ def create_mapping_review_router(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/mapping",
         tags=["mapping"],
     )
+
+    async def export_workbook(
+        tenant_id: Annotated[int, Path(gt=0)],
+        model_id: Annotated[int, Path(gt=0)],
+        command: MappingExportRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
+    ) -> Response:
+        result = await service.export_workbook(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            entity_type=command.entity_type,
+            source_system_code=command.source_system_code,
+            expected_model_revision=command.expected_model_revision,
+        )
+        return Response(
+            content=result.content,
+            media_type=XLSX_MEDIA_TYPE,
+            headers={
+                "Content-Disposition": f'attachment; filename="{result.filename}"',
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    router.add_api_route("/export", export_workbook, methods=["POST"])
 
     async def list_generation_targets(
         tenant_id: Annotated[int, Path(gt=0)],

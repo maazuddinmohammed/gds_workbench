@@ -28,6 +28,7 @@ def build_zip(output: Path) -> Path:
         for path in sorted((source_root / _PACKAGE).rglob("*.py"))
         if "__pycache__" not in path.parts
     )
+    selected.append(source_root / _PACKAGE / "application/profiling/profiling.json")
     entries: list[tuple[str, bytes, int]] = []
     manifest_files: list[dict[str, Any]] = []
     for path in selected:

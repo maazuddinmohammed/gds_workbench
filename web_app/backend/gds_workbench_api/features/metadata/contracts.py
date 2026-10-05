@@ -41,6 +41,7 @@ type OperationalDataset = Literal[
     "ingestion_attribute_mapping",
     "copy_group",
     "member_group",
+    "member",
     "copy_group_control",
     "copy",
     "process_group",
@@ -60,6 +61,7 @@ OPERATIONAL_DATASETS: tuple[OperationalDataset, ...] = (
     "ingestion_attribute_mapping",
     "copy_group",
     "member_group",
+    "member",
     "copy_group_control",
     "copy",
     "process_group",
@@ -71,6 +73,7 @@ FOUNDATIONAL_DATASETS: tuple[MetadataDataset, ...] = (
     "tenant",
     "system",
     "connection",
+    "connection_location",
 )
 
 REFERENCE_DATASETS: tuple[MetadataDataset, ...] = (
@@ -118,13 +121,6 @@ class MetadataDatasetRegistry(ContractModel):
         min_length=len(METADATA_DATASETS),
         max_length=len(METADATA_DATASETS),
     )
-
-
-class MetadataDatasetDetail(MetadataDatasetDescription):
-    schema_version: Literal["1.0"] = "1.0"
-    tenant_id: int = Field(gt=0)
-    row_schema: dict[str, JsonValue]
-    fixed_values: dict[str, JsonValue]
 
 
 type MetadataFilterValue = str | bool | int | date | datetime | None
@@ -195,8 +191,15 @@ class ObjectCatalogFilters(ContractModel):
 
 
 class ObjectCatalogSummary(ContractModel):
+    value: JsonValue = None
     object_id: int = Field(gt=0)
-    review_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    object_description: str | None = Field(default=None, max_length=2000)
+    description_truncated: bool = False
+    fc_object_schema: str | None = Field(default=None, max_length=400)
+    fc_object_name: str | None = Field(default=None, max_length=400)
+    object_transformation: str | None = Field(default=None, max_length=2000)
+    transformation_truncated: bool = False
+    tenant_code: str = Field(min_length=1, max_length=100)
     object_schema: str = Field(min_length=1, max_length=400)
     object_name: str = Field(min_length=1, max_length=400)
     object_type_code: str = Field(min_length=1, max_length=100)
@@ -223,9 +226,12 @@ class ObjectCatalogPage(ContractModel):
 
 
 class ObjectAttribute(ContractModel):
+    value: JsonValue = None
     attribute_id: int = Field(gt=0)
-    review_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     attribute_name: str = Field(min_length=1, max_length=400)
+    fc_attribute_name: str | None = Field(default=None, max_length=400)
+    attribute_custom_code: str | None = Field(default=None, max_length=2000)
+    custom_code_truncated: bool = False
     attribute_ordinal_position: int = Field(gt=0)
     attribute_description: str | None = Field(default=None, max_length=2000)
     description_truncated: bool = False
@@ -244,7 +250,6 @@ class ObjectAttribute(ContractModel):
 
 class ObjectCatalogDetail(ObjectCatalogSummary):
     object_type_name: str = Field(min_length=1, max_length=200)
-    object_description: str | None = Field(default=None, max_length=2000)
     connection_name: str = Field(min_length=1, max_length=200)
     attributes: tuple[ObjectAttribute, ...] = Field(max_length=2000)
 
@@ -262,14 +267,6 @@ class MetadataService(Protocol):
         *,
         tenant_id: int,
     ) -> MetadataDatasetRegistry: ...
-
-    async def describe_dataset(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        dataset: MetadataDataset,
-    ) -> MetadataDatasetDetail: ...
 
     async def list_rows(
         self,

@@ -29,6 +29,7 @@ class FakeSnapshotStore:
         archive: SnapshotArchive,
         *,
         snapshot_kind: SnapshotKind,
+        tenant_id: int,
         scope_id: int,
         schema_version: str,
         snapshot_id: UUID,
@@ -41,18 +42,22 @@ class FakeSnapshotStore:
         self,
         *,
         snapshot_kind: SnapshotKind,
+        tenant_id: int,
         scope_id: int,
         schema_version: str,
         snapshot_id: UUID,
+        created_at: datetime,
         now: datetime,
         ttl_seconds: int,
     ) -> str | None:
         self.read_calls.append(
             {
                 "snapshot_kind": snapshot_kind,
+                "tenant_id": tenant_id,
                 "scope_id": scope_id,
                 "schema_version": schema_version,
                 "snapshot_id": snapshot_id,
+                "created_at": created_at,
                 "now": now,
                 "ttl_seconds": ttl_seconds,
             }
@@ -94,9 +99,11 @@ async def test_create_snapshot_download_caps_expiry_at_snapshot_retention() -> N
     download = await create_snapshot_download(
         store,
         snapshot_kind="model",
+        tenant_id=42,
         scope_id=42,
         schema_version="2.0",
         snapshot_id=snapshot_id,
+        created_at=now - timedelta(hours=1),
         available_until=now + timedelta(minutes=5),
         now=now,
         ttl_seconds=3600,
@@ -107,9 +114,11 @@ async def test_create_snapshot_download_caps_expiry_at_snapshot_retention() -> N
     assert store.read_calls == [
         {
             "snapshot_kind": "model",
+            "tenant_id": 42,
             "scope_id": 42,
             "schema_version": "2.0",
             "snapshot_id": snapshot_id,
+            "created_at": now - timedelta(hours=1),
             "now": now,
             "ttl_seconds": 3600,
         }
@@ -124,9 +133,11 @@ async def test_create_snapshot_download_rejects_missing_blob() -> None:
         await create_snapshot_download(
             FakeSnapshotStore(None),
             snapshot_kind="metadata",
+            tenant_id=42,
             scope_id=42,
             schema_version="2.0",
             snapshot_id=UUID("7d7cc8ad-62b5-44ef-aeb0-c09c770ff233"),
+            created_at=now - timedelta(hours=1),
             available_until=now + timedelta(hours=1),
             now=now,
             ttl_seconds=300,

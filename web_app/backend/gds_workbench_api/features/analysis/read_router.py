@@ -2,9 +2,10 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Response
 from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.authorization import RequestPrincipal
+from pydantic import BaseModel, ConfigDict, Field
 
 from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.analysis.read_contracts import (
@@ -13,6 +14,13 @@ from gds_workbench_api.features.analysis.read_contracts import (
     AnalysisFindingPage,
 )
 from gds_workbench_api.features.analysis.read_service import AnalysisReviewService
+from gds_workbench_api.features.metadata.workbook import XLSX_MEDIA_TYPE
+
+
+class AnalysisExportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    expected_model_revision: int = Field(gt=0)
+    filters: AnalysisFindingFilters = Field(default_factory=AnalysisFindingFilters)
 
 
 def create_analysis_review_router(
@@ -67,6 +75,32 @@ def create_analysis_review_router(
         methods=["GET"],
         response_model=AnalysisFindingPage,
     )
+
+    async def export_analysis_findings(
+        tenant_id: Annotated[int, Path(gt=0)],
+        model_id: Annotated[int, Path(gt=0)],
+        command: AnalysisExportRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
+    ) -> Response:
+        result = await service.export_analysis_findings(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            filters=command.filters,
+            expected_model_revision=command.expected_model_revision,
+        )
+        return Response(
+            content=result.content,
+            media_type=XLSX_MEDIA_TYPE,
+            headers={
+                "Content-Disposition": f'attachment; filename="{result.filename}"',
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    router.add_api_route("/analysis/export", export_analysis_findings, methods=["POST"])
 
     async def read_analysis_finding(
         tenant_id: Annotated[int, Path(gt=0)],

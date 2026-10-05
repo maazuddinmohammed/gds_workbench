@@ -175,7 +175,7 @@
       for (const record of value.effective || []) objects.set(key(OBJECT_KEY, record), record);
     }
     const ownerDatasets = new Set([
-      "copy_group", "member_group", "copy_group_control", "copy", "process_group", "process",
+      "copy_group", "member_group", "member", "copy_group_control", "copy", "process_group", "process",
     ]);
     const referencedObjects = (name, type, record) => {
       if (type === "object") return [[record, "object_name"]];

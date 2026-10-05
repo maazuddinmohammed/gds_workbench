@@ -147,6 +147,7 @@ def test_noneditable_mcp_dependency_rebuilds_when_its_source_changes() -> None:
     assert mcp_project["tool"]["uv"]["cache-keys"] == [
         {"file": "pyproject.toml"},
         {"file": "gds_etl_workbench/**/*.py"},
+        {"file": "gds_etl_workbench/**/*.json"},
     ]
 
 

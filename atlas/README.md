@@ -1,33 +1,44 @@
 # atlas
 
-Atlas is a portable Agent Plugins 1.0 plugin with 13 skills, shared domain references, workspace helpers, local Workbench and a companion VS Code Stage Runner.
+Atlas is a portable Agent Plugins 1.0 plugin with 12 task-oriented skills, shared domain references, workspace helpers, Atlas Local Workbench and a shared Stage Runner with VS Code and Codex hosts.
 
-- `atlas-plugin/`: plugin source, `plugin.json`, governed MCP configuration, skills, references, scripts and Workbench.
-- `atlas-vs-code/`: separately installable extension; plugin portability does not install a VS Code extension.
-- `build_plugin.py`: deterministic plugin ZIP builder.
-- `dist/`: local plugin ZIP and Stage Runner VSIX; rebuilding does not publish or install them.
+## User guides
 
-Use Node.js 20+ and Python 3.12+ for the main local runtime. A native Windows PowerShell 5.1 fallback is included. Workbench uses Chrome/Edge directory access. Read the [user guide](atlas-plugin/docs/user-guide.md) and [runtime guide](atlas-plugin/docs/runtime-guide.md).
+Complete the setup guide for your host. Then use the same usage guide.
 
-Install the ZIP through an Agent Plugins 1.0-compatible host. Install the companion VSIX in VS Code, configure its intended matching backend and run **Atlas: Check Stage Runner**. Plugin, extension and backend must support the current Entity-owned Model Snapshot and Mapping context contracts; see [architecture decisions](../docs/architecture/decisions.md). Backend setup follows the [MCP README](../mcp_server/README.md) and [fresh-install database sequence](../database/README.md).
+| Guide | When to use it |
+|---|---|
+| [Codex installation and setup](atlas-plugin/docs/codex-installation-and-setup.md) | Install the plugin, relay and VSIX; start the bridge in VS Code. |
+| [Copilot - VS Code installation and setup](atlas-plugin/docs/copilot-vs-code-installation-and-setup.md) | Register the plugin, install Stage Runner, and sign in to Atlas. |
+| [Shared install and updates](atlas-plugin/docs/install-and-update.md) | One permanent location; replace both ZIPs with the package updater. |
+| [Atlas usage](atlas-plugin/docs/usage-guide.md) | Start work, review local changes, Stage, Apply, and resume later. |
 
-The current local artifacts are Atlas plugin 0.1.3 and Stage Runner 0.1.1. Rebuild both after their source changes; version labels alone do not prove source equality. Installing the plugin does not install the extension or update the deployed backend. Publication and deployment require separate approval.
+The plugin ZIP includes these guides and shared install/update instructions in its `docs/` folder. Users do not
+need a source checkout or a local build.
 
-## Export for Windows users
+Before authorized delegation, Atlas saves a [sub-agent model policy](atlas-plugin/docs/usage-guide.md#choose-the-sub-agent-policy)
+per working folder: current model only, agent-selected model, or one specified
+model. A saved preference does not authorize delegation. Independent work needs
+no policy selection; unsupported model selection keeps work in the main agent.
 
-Distribute `dist/atlas-agent-plugin-0.1.3.zip`. The ZIP contains the portable plugin, helpers, Workbench, a Codex installation catalog and [Windows installation instructions](atlas-plugin/docs/windows-install.md). Recipients extract it on their VM and install from the resulting `atlas` directory; they need no source checkout or build tools.
+## Repository layout
 
-For example, after extracting to `C:\Tools\Atlas`, the folder containing `plugin.json` is `C:\Tools\Atlas\atlas`. In Windows PowerShell:
+- `atlas-plugin/`: plugin source, `plugin.json`, governed MCP configuration, skills, references, scripts and Atlas Local Workbench.
+- `atlas-vs-code/`: VS Code extension, shared Stage engine, and Codex connector source under `src/connector/`.
+- `atlas-connector/`: bundled local Codex relay, installation and ZIP update commands.
+- `build_plugin.py`, `build_connector.py`: deterministic ZIP builders.
+- `dist/`: current plugin ZIP, connector ZIP, and Stage Runner VSIX.
 
-```powershell
-codex plugin marketplace add "C:\Tools\Atlas\atlas"
-codex plugin add atlas@gds-workbench
-codex plugin list --marketplace gds-workbench
-```
+The [local runtime reference](atlas-plugin/references/local-runtime.md) covers
+technical helper commands and the Windows PowerShell fallback. The [bridge reference](atlas-connector/README.md) covers local Codex routing.
+VS Code supplies Microsoft authentication; users provide no connector client ID.
 
-The builder generates `atlas/.agents/plugins/marketplace.json` with `source.path` set to `./`. All installed content comes from the exported folder. The existing [GitHub Copilot marketplace](../.github/plugin/marketplace.json) continues to use the same portable plugin source. Distribute `dist/atlas-stage-runner-0.1.1.vsix` alongside the ZIP for Copilot in VS Code.
+Plugin, companion, and backend must support the current Snapshot and Mapping
+contracts; see [architecture decisions](../docs/architecture/decisions.md).
+Backend setup follows the [MCP README](../mcp_server/README.md) and
+[fresh-install database sequence](../database/README.md).
 
-Codex package installation is tested independently from the source checkout with CLI 0.147.0. Full Windows runtime and authenticated GDS access still need verification. Codex Stage submission requires the pending adapter for the shared Stage engine; the VSIX tools are exposed through VS Code's language-model API. Until the adapter is available, complete submission through the supported VS Code workflow in the [Stage Runner guide](atlas-vs-code/README.md).
+The current artifacts are Atlas plugin 0.3.0, VS Code Stage Runner 0.2.0 and Atlas Connector 0.2.0. Rebuild the matching artifacts after source changes; version labels alone do not prove source equality. Installing the plugin does not install the extension or update the deployed backend. Publication and deployment require separate approval.
 
 ## Build
 
@@ -37,11 +48,16 @@ Build from the repository root:
 python3 atlas/build_plugin.py --output /absolute/path/new-atlas.zip
 npm --prefix atlas/atlas-vs-code run compile
 npm --prefix atlas/atlas-vs-code run package:vsix
+python3 atlas/build_connector.py --output /absolute/path/new-connector.zip
 ```
 
-The plugin builder refuses an existing output, unsafe links or unreviewed file families. Archives have one `atlas/` root, including the generated Codex catalog. The VSIX is distributed alongside the ZIP, not embedded as a portable plugin capability.
+The plugin builder refuses an existing output, unsafe links or unreviewed file families. The portable archive has one `atlas/` root. Only Connector setup generates a Codex catalog; this avoids installing a remote-only plugin without Stage. The VSIX and connector are separate companions. Connector setup generates local Codex MCP wiring with absolute program paths. The shared layout keeps `atlas`, `atlas-connector`, and generated `codex-atlas` beside one another. `npm run setup` installs or refreshes the generated copy and Codex registration. The Python updater replaces both package folders while retaining backups. The Copilot MCP configuration is unchanged. Never include native node_modules, token caches or per-user setup output in either archive.
 
 ## Maintainer boundaries
+
+The [entry skill](atlas-plugin/skills/atlas/SKILL.md) routes outcomes across 12 task-oriented skills. Guided and Grill Me are interaction modes within one modeling workflow. Shared [architecture](atlas-plugin/references/platform/architecture.md), [readiness](atlas-plugin/references/platform/readiness.md) and [capabilities](atlas-plugin/references/platform/capabilities.md) explain platform knowledge, actual prerequisites and unsupported operations. Topic methods and record guides stay on demand; templates format existing evidence without another state store.
+
+Local `select` supports digest-bound continuation and field projection with canonical keys retained. `status` defaults to the active task summary; explicit task detail and paged history avoid loading unrelated evidence. Both Node and native PowerShell expose the same command contract. These are local read aids, not authorization or business-readiness verdicts.
 
 Code owns exact fields, limits and behavior. Distributed skills and references are runtime instructions; retain their links when changing the package.
 
@@ -51,14 +67,17 @@ Code owns exact fields, limits and behavior. Distributed skills and references a
 | `workbench/workspace.js` | Snapshot integrity, local persistence, conflicts and exports. |
 | `workbench/core.js` | Shared identity, overlay and Python-compatible serialization. |
 | `workbench/validation/`, `model-quality.js` | Shared browser/helper checks; server remains authoritative. |
-| `workbench/dbml.js` | Pure effective-Model rendering; export is a user-only Workbench action. |
+| `workbench/dbml.js` | Pure effective-Model rendering; export is a user-only Atlas Local Workbench action. |
 | `scripts/atlas-local.js`, `scripts/*.ps1` | Local command execution and Windows fallback. Exact flags live in `contracts/local-helper.json`. |
+| `atlas-vs-code/src/connector/` | Private local bridge, reviewed MCP proxy and install wiring for Codex. |
 | `atlas-vs-code/src/stage-runner.ts`, `stage-request.ts`, `stage-transport.ts` | Approval/input binding, revision checks, transport and uncertain-write recovery. |
 
-The extension consumes Workbench serialization. Preserve canonical bytes, owner isolation, locks, input hashes and Windows parity together. Local validation, Stage and Apply remain separate operations; [submission and recovery](atlas-plugin/references/change-set-lifecycle.md) owns the runtime procedure.
+Copilot and Codex execute the same Stage engine inside VS Code and use Atlas Local Workbench serialization. The connector only relays Codex requests; it does not implement a second Stage engine. Preserve canonical bytes, owner isolation, locks, input hashes and Windows parity together. Local validation, Stage and Apply remain separate operations; [submission and recovery](atlas-plugin/references/change-set-lifecycle.md) owns the runtime procedure.
 
 ## Verification
 
-Run repository checks in [AGENTS.md](../AGENTS.md), including Python Atlas tests, `node --test tests/atlas/*.test.mjs`, extension tests and compilation. `tests/atlas/test_packaging.py` checks deterministic source equality and every packaged Markdown link. Rebuild the corresponding package after source changes.
+Run repository checks in [AGENTS.md](../AGENTS.md), including Python Atlas tests, `node --test tests/atlas/*.test.mjs`, extension tests and compilation. `tests/atlas/test_packaging.py` checks deterministic source equality for both ZIPs, isolated Codex installation and every packaged Markdown link. Rebuild the corresponding package after source changes.
 
-`npm --prefix atlas/atlas-vs-code run test:host` checks the packaged VSIX in an installed VS Code using an isolated workspace and loopback fixture; it never downloads a host. Inspect Workbench folder access, keyboard/zoom behavior and DBML export in Chrome/Edge separately. Synthetic tests must preserve drafts and locked records, reject stale approval/revision evidence, and verify recovery without replaying uncertain writes. Use only fixture-created disposable PostgreSQL; local checks do not establish live provider or Databricks behavior.
+[Agent scenarios](../tests/atlas/agent_scenarios.md) cover intent, evidence and workflow boundaries for instruction walkthroughs or an explicitly authorized independent evaluation. Packaging/link checks and local helper tests do not establish live-agent or deployed-backend behavior.
+
+`npm --prefix atlas/atlas-vs-code run test:host` checks the packaged VSIX in an installed VS Code using an isolated workspace and loopback fixture; it never downloads a host. Inspect Atlas Local Workbench folder access, keyboard/zoom behavior and DBML export in Chrome/Edge separately. Synthetic tests must preserve drafts and locked records, reject stale approval/revision evidence, and verify recovery without replaying uncertain writes. Use only fixture-created disposable PostgreSQL; local checks do not establish live provider or Databricks behavior.

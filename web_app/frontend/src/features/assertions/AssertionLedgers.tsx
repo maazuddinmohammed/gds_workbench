@@ -16,6 +16,7 @@ import type {
 } from "./api";
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 import { SourceCodeFilter, SourceFilterNotice } from "../model_input_scope/scopeFilterChoices";
+import { WorkflowFilters } from "../workflows/WorkflowCommandCenter";
 
 interface LedgerState {
   isLoading: boolean;
@@ -334,7 +335,7 @@ function AssertionLedgerSurface<T>({
   const table = useReactTable({ data: items, columns, getCoreRowModel: getCoreRowModel() });
   return (
     <section className="workflow-surface" aria-label={tableLabel}>
-      {filters}
+      <WorkflowFilters>{filters}</WorkflowFilters>
       {state.isLoading ? (
         <div className="surface-state" aria-busy="true">{loadingLabel}</div>
       ) : state.isError ? (
@@ -344,7 +345,7 @@ function AssertionLedgerSurface<T>({
       ) : items.length === 0 ? (
         <div className="empty-state compact">{emptyLabel}</div>
       ) : (
-        <div className="workflow-table-scroll table-scroll">
+        <div className="workflow-table-scroll table-scroll ledger-grid" tabIndex={0} role="region" aria-label={`Scrollable ${tableLabel}`}>
           <table aria-label={tableLabel}>
             <thead>
               {table.getHeaderGroups().map((group) => (

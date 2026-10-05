@@ -19,6 +19,7 @@ from .archive import (
 from .projection import REFERENCE_ID_COLUMNS, project_id_free_rows
 from .sql import (
     ATTRIBUTE_ROWS_SQL,
+    CONNECTION_LOCATION_ROWS_SQL,
     COPY_GROUP_CONTROL_ROWS_SQL,
     COPY_GROUP_ROWS_SQL,
     COPY_ROWS_SQL,
@@ -29,6 +30,7 @@ from .sql import (
     INGESTION_ATTRIBUTE_MAPPING_ROWS_SQL,
     INGESTION_OBJECT_MAPPING_ROWS_SQL,
     MEMBER_GROUP_ROWS_SQL,
+    MEMBER_ROWS_SQL,
     OBJECT_CLOSURE_SQL,
     OBJECT_ROWS_SQL,
     PROCESS_GROUP_ROWS_SQL,
@@ -145,6 +147,7 @@ async def select_snapshot_datasets(
     )
     copy_group_rows = await transaction.fetch_all(COPY_GROUP_ROWS_SQL, (tenant_id,))
     member_group_rows = await transaction.fetch_all(MEMBER_GROUP_ROWS_SQL, (tenant_id,))
+    member_rows = await transaction.fetch_all(MEMBER_ROWS_SQL, (tenant_id,))
     copy_group_control_rows = await transaction.fetch_all(
         COPY_GROUP_CONTROL_ROWS_SQL,
         (tenant_id,),
@@ -161,6 +164,9 @@ async def select_snapshot_datasets(
     copy_group_by_id = {row["copy_group_id"]: row for row in copy_group_rows}
     member_group_by_id = {row["member_group_id"]: row for row in member_group_rows}
     process_group_by_id = {row["process_group_id"]: row for row in process_group_rows}
+
+    if any(row["member_group_id"] not in member_group_by_id for row in member_rows):
+        raise SnapshotContractError("selected Member has invalid Member Group ownership")
 
     for row in ingestion_object_mapping_rows:
         if (
@@ -326,6 +332,7 @@ async def select_snapshot_datasets(
         "ingestion_attribute_mapping": ingestion_attribute_mapping_rows,
         "copy_group": copy_group_rows,
         "member_group": member_group_rows,
+        "member": member_rows,
         "copy_group_control": copy_group_control_rows,
         "copy": copy_rows,
         "process_group": process_group_rows,
@@ -336,6 +343,9 @@ async def select_snapshot_datasets(
         "tenant": tenant_rows,
         "system": system_rows,
         "connection": connection_rows,
+        "connection_location": await transaction.fetch_all(
+            CONNECTION_LOCATION_ROWS_SQL, (sorted(connection_by_id),)
+        ),
         **reference_rows_by_dataset,
     }
     raw_rows_by_dataset = {

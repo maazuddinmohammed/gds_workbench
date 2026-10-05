@@ -8,6 +8,7 @@ from typing import Literal, LiteralString, Protocol
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.cursor import CursorCodec
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
+from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
 from pydantic import Field
 
@@ -22,7 +23,10 @@ from gds_workbench_api.features.analysis.read_contracts import (
     AnalysisWorkflowProvenance,
     ReviewContract,
 )
-from gds_workbench_api.features.models import ModelNotFoundError
+from gds_workbench_api.features.metadata.contracts import MetadataWorkbookDownload
+from gds_workbench_api.features.models import ModelNotFoundError, ModelRevisionConflictError
+
+from .workbook import MAX_ANALYSIS_FINDINGS, AnalysisWorkbookBuildError, build_analysis_workbook
 
 _MODEL_HEADER_SQL: LiteralString = """
 SELECT target_model.model_id,
@@ -350,6 +354,16 @@ class AnalysisReviewService(Protocol):
         cursor: str | None,
     ) -> AnalysisFindingPage: ...
 
+    async def export_analysis_findings(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        filters: AnalysisFindingFilters,
+        expected_model_revision: int,
+    ) -> MetadataWorkbookDownload: ...
+
     async def read_analysis_finding(
         self,
         principal: RequestPrincipal,
@@ -409,6 +423,38 @@ class DatabaseAnalysisReviewService:
         collection = f"web_analysis_findings:{filter_digest}:{page_size}"
         offset = self._cursors.decode(cursor, collection=collection)
 
+        header, rows = await self._load_findings(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            filters=filters,
+            limit=page_size + 1,
+            offset=offset,
+        )
+
+        next_cursor = None
+        if len(rows) > page_size:
+            next_cursor = self._cursors.encode(
+                collection=collection,
+                offset=offset + page_size,
+            )
+        return AnalysisFindingPage(
+            model_id=header.model_id,
+            model_revision=header.model_revision,
+            items=tuple(_normalize_analysis_summary(row) for row in rows[:page_size]),
+            next_cursor=next_cursor,
+        )
+
+    async def _load_findings(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        filters: AnalysisFindingFilters,
+        limit: int,
+        offset: int,
+    ):
         async with self._database.read_transaction(
             isolation=ReadIsolation.REPEATABLE_READ
         ) as transaction:
@@ -446,23 +492,42 @@ class DatabaseAnalysisReviewService:
                     filters.show_inactive,
                     filters.locked,
                     filters.locked,
-                    page_size + 1,
+                    limit,
                     offset,
                 ),
             )
 
-        header = _ModelHeader.model_validate(header_row)
-        next_cursor = None
-        if len(rows) > page_size:
-            next_cursor = self._cursors.encode(
-                collection=collection,
-                offset=offset + page_size,
+        return _ModelHeader.model_validate(header_row), rows
+
+    async def export_analysis_findings(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        filters: AnalysisFindingFilters,
+        expected_model_revision: int,
+    ) -> MetadataWorkbookDownload:
+        header, rows = await self._load_findings(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            filters=filters,
+            limit=MAX_ANALYSIS_FINDINGS + 1,
+            offset=0,
+        )
+        if header.model_revision != expected_model_revision:
+            raise ModelRevisionConflictError()
+        try:
+            content = build_analysis_workbook(
+                findings=tuple(_normalize_analysis_summary(row) for row in rows)
             )
-        return AnalysisFindingPage(
-            model_id=header.model_id,
-            model_revision=header.model_revision,
-            items=tuple(_normalize_analysis_summary(row) for row in rows[:page_size]),
-            next_cursor=next_cursor,
+        except AnalysisWorkbookBuildError as error:
+            raise InvalidRequestError(str(error)) from None
+        return MetadataWorkbookDownload(
+            content=content,
+            filename=f"gds_analysis__model_{model_id}__r{header.model_revision}.xlsx",
+            sheet_count=1,
         )
 
     async def read_analysis_finding(

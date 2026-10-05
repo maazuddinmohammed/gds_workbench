@@ -34,6 +34,7 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
             SOURCE_ROOT / "app.py",
             SOURCE_ROOT / "requirements.txt",
             SOURCE_ROOT / "startup.sh",
+            SOURCE_ROOT / "gds_etl_workbench/application/profiling/profiling.json",
             *sorted((SOURCE_ROOT / "gds_etl_workbench").rglob("*.py")),
         ]
         expected_names = sorted(

@@ -25,6 +25,7 @@ EXPECTED_DATASET_NAMES = (
     "tenant",
     "system",
     "connection",
+    "connection_location",
     "system_type",
     "connection_type",
     "object_type",
@@ -45,6 +46,7 @@ EXPECTED_DATASET_NAMES = (
     "ingestion_attribute_mapping",
     "copy_group",
     "member_group",
+    "member",
     "copy_group_control",
     "copy",
     "process_group",
@@ -168,8 +170,8 @@ def _columns_by_name(schema: dict[str, object]) -> dict[str, dict[str, object]]:
 
 def test_metadata_snapshot_registry_has_exact_dataset_contract() -> None:
     assert tuple(dataset.name for dataset in DATASETS) == EXPECTED_DATASET_NAMES
-    assert len({dataset.name for dataset in DATASETS}) == 28
-    assert PHYSICAL_TABLE_COUNT == 22
+    assert len({dataset.name for dataset in DATASETS}) == 30
+    assert PHYSICAL_TABLE_COUNT == 24
 
     foundational = tuple(
         dataset
@@ -184,9 +186,9 @@ def test_metadata_snapshot_registry_has_exact_dataset_contract() -> None:
         for dataset in DATASETS
         if dataset.section is SnapshotSection.OPERATIONAL
     )
-    assert len(foundational) == 4
+    assert len(foundational) == 5
     assert len(reference) == 8
-    assert len(operational) == 16
+    assert len(operational) == 17
     assert all(
         not dataset.change_set_eligible for dataset in (*foundational, *reference)
     )
@@ -200,8 +202,8 @@ def test_registry_uses_flat_rows_per_dataset_schemas_and_selective_lookups() -> 
         dataset.lookup_path for dataset in DATASETS if dataset.lookup_path is not None
     }
 
-    assert len(rows_paths) == 28
-    assert len(schema_paths) == 28
+    assert len(rows_paths) == 30
+    assert len(schema_paths) == 30
     assert len(lookup_paths) == 10
     assert next(
         dataset for dataset in DATASETS if dataset.name == "project"

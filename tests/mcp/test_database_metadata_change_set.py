@@ -29,6 +29,7 @@ DOCUMENT_COLUMNS = (
     "ingestion_attribute_mapping_document",
     "copy_group_document",
     "member_group_document",
+    "member_document",
     "copy_group_control_document",
     "copy_document",
     "process_group_document",
@@ -2702,7 +2703,7 @@ def test_archive_metadata_change_set_expires_stale_draft_instead_of_archiving(
     assert events == [{"event_type": "expired", "outcome": "expired"}]
 
 
-def test_apply_metadata_change_set_writes_all_sixteen_datasets(
+def test_apply_metadata_change_set_writes_all_seventeen_datasets(
     postgres_database: DisposablePostgres,
 ) -> None:
     entra_tenant_id = UUID("10000000-0000-0000-0000-000000000046")
@@ -2716,6 +2717,10 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
     tenant_code = "CHANGE_SET_TENANT_ALL_APPLY"
     gds_tenant_code = "GLOBAL_ALL_APPLY"
     documents = _all_apply_documents(tenant_code, gds_tenant_code)
+    for dataset, records in documents.items():
+        if dataset not in {"ingestion_object_mapping", "ingestion_attribute_mapping", "copy_group_control"}:
+            for record in records:
+                record["value"] = {"dataset": dataset, "details": [None, False, 0, "north", {"count": 2}]}
     # Two distinct source mappings in one Copy Group may share order 1.
     documents["source_object"].append(
         {**documents["source_object"][0], "object_name": "source_customers_again"}
@@ -2854,6 +2859,7 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
                    ingestion_attribute_mapping_document = %s::JSONB,
                    copy_group_document = %s::JSONB,
                    member_group_document = %s::JSONB,
+                   member_document = %s::JSONB,
                    copy_group_control_document = %s::JSONB,
                    copy_document = %s::JSONB,
                    process_group_document = %s::JSONB,
@@ -2880,6 +2886,7 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
                         "ingestion_attribute_mapping",
                         "copy_group",
                         "member_group",
+                        "member",
                         "copy_group_control",
                         "copy",
                         "process_group",
@@ -2975,9 +2982,22 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
                 tenant_id,
             ),
         ).fetchone()
+        values = connection.execute("""
+            SELECT 'member' AS dataset, member.value FROM core.member AS member
+            JOIN core.member_group AS parent USING(member_group_id) WHERE parent.tenant_id=%s
+            UNION ALL SELECT 'copy', copy.value FROM core.copy AS copy
+            JOIN core.copy_group AS parent USING(copy_group_id) WHERE parent.tenant_id=%s
+            UNION ALL SELECT 'process', process.value FROM core.process AS process
+            JOIN core.process_group AS parent USING(process_group_id) WHERE parent.tenant_id=%s
+            UNION ALL SELECT 'copy_group', value FROM core.copy_group WHERE tenant_id=%s
+            UNION ALL SELECT 'member_group', value FROM core.member_group WHERE tenant_id=%s
+            UNION ALL SELECT 'process_group', value FROM core.process_group WHERE tenant_id=%s
+        """, (tenant_id,) * 6).fetchall()
+        assert {row["dataset"] for row in values} == {"member", "copy", "process", "copy_group", "member_group", "process_group"}
+        assert all(row["value"] == documents[row["dataset"]][0]["value"] for row in values)
         connection.rollback()
 
-    assert applied == {"applied": True, "denial_code": None, "action_count": 19}
+    assert applied == {"applied": True, "denial_code": None, "action_count": 20}
     assert counts == {
         "objects": 5,
         "attributes": 4,
@@ -3264,6 +3284,12 @@ def _all_apply_documents(
                 "is_active": True,
             }
         ],
+        "member": [{
+            "tenant_code": tenant_code, "system_code": system_code,
+            "member_group_name": "DAILY", "member_code": "NORTH",
+            "member_name": "North", "member_description": "North region",
+            "member_attribute_name": "region", "is_active": True,
+        }],
         "copy_group_control": [
             {
                 "tenant_code": tenant_code,

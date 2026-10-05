@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -54,6 +54,10 @@ describe("receipt JSON export", () => {
       const nested = join(root, "nested/.atlas/temp/check.json");
       expect(await exportReceipt(receipt, nested, [root])).toEqual(receipt);
       expect(JSON.parse(await readFile(nested, "utf8"))).toEqual(receipt);
+      const alias = join(root, "alias");
+      await symlink(root, alias, "junction");
+      expect(await exportReceipt(receipt, join(await realpath(root), ".atlas/temp/canonical.json"), [alias])).toEqual(receipt);
+      expect(await exportReceipt(receipt, join(alias, ".atlas/temp/editor.json"), [alias])).toEqual(receipt);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import * as vscode from "vscode";
+import { registerCodexBridge } from "./vscode-bridge.js";
 
 import {
   acquireMicrosoftAccessToken,
@@ -169,6 +170,7 @@ class CheckStageRunnerTool implements vscode.LanguageModelTool<CheckInput> {
   }
 }
 
+let stopBridge: (() => Promise<void>) | undefined;
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.lm.registerTool(TOOL_NAME, new StageApprovedManifestTool()),
@@ -183,6 +185,7 @@ export function activate(context: vscode.ExtensionContext): void {
       return receipt;
     }),
   );
+  stopBridge = registerCodexBridge(context);
 }
 
-export function deactivate(): void {}
+export async function deactivate(): Promise<void> { await stopBridge?.(); }

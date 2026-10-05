@@ -239,7 +239,10 @@ def validate_future_graph(
         for field in ("logical_entity_scd_type", "dimensional_entity_scd_type"):
             if getattr(previous, field, None) != getattr(changed, field, None):
                 _issue(
-                    scope_issues, "model_policy_read_only", "model_details", (field,),
+                    scope_issues,
+                    "model_policy_read_only",
+                    "model_details",
+                    (field,),
                     "SCD type must be changed through Model settings.",
                 )
     _validate_model_details(future, physical_scope, scope_issues)

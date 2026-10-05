@@ -338,6 +338,7 @@ CREATE TABLE mcp.metadata_change_set (
     ingestion_attribute_mapping_document JSONB NOT NULL DEFAULT '[]'::JSONB,
     copy_group_document JSONB NOT NULL DEFAULT '[]'::JSONB,
     member_group_document JSONB NOT NULL DEFAULT '[]'::JSONB,
+    member_document JSONB NOT NULL DEFAULT '[]'::JSONB,
     copy_group_control_document JSONB NOT NULL DEFAULT '[]'::JSONB,
     copy_document JSONB NOT NULL DEFAULT '[]'::JSONB,
     process_group_document JSONB NOT NULL DEFAULT '[]'::JSONB,
@@ -386,6 +387,7 @@ CREATE TABLE mcp.metadata_change_set (
         AND jsonb_typeof(ingestion_attribute_mapping_document) = 'array'
         AND jsonb_typeof(copy_group_document) = 'array'
         AND jsonb_typeof(member_group_document) = 'array'
+        AND jsonb_typeof(member_document) = 'array'
         AND jsonb_typeof(copy_group_control_document) = 'array'
         AND jsonb_typeof(copy_document) = 'array'
         AND jsonb_typeof(process_group_document) = 'array'
@@ -402,6 +404,7 @@ CREATE TABLE mcp.metadata_change_set (
         AND octet_length(ingestion_attribute_mapping_document::TEXT) <= 16777216
         AND octet_length(copy_group_document::TEXT) <= 16777216
         AND octet_length(member_group_document::TEXT) <= 16777216
+        AND octet_length(member_document::TEXT) <= 16777216
         AND octet_length(copy_group_control_document::TEXT) <= 16777216
         AND octet_length(copy_document::TEXT) <= 16777216
         AND octet_length(process_group_document::TEXT) <= 16777216
@@ -469,7 +472,7 @@ CREATE TABLE mcp.metadata_stage_batch (
             'silver_object', 'silver_attribute',
             'gold_object', 'gold_attribute',
             'ingestion_object_mapping', 'ingestion_attribute_mapping',
-            'copy_group', 'member_group', 'copy_group_control', 'copy',
+            'copy_group', 'member_group', 'member', 'copy_group_control', 'copy',
             'process_group', 'process'
         )
     ),
@@ -574,7 +577,7 @@ CREATE TABLE mcp.metadata_change_set_event (
             'silver_object', 'silver_attribute',
             'gold_object', 'gold_attribute',
             'ingestion_object_mapping', 'ingestion_attribute_mapping',
-            'copy_group', 'member_group', 'copy_group_control', 'copy',
+            'copy_group', 'member_group', 'member', 'copy_group_control', 'copy',
             'process_group', 'process'
         )
     ),
@@ -830,7 +833,7 @@ BEGIN
                 'silver_object', 'silver_attribute',
                 'gold_object', 'gold_attribute',
                 'ingestion_object_mapping', 'ingestion_attribute_mapping',
-                'copy_group', 'member_group', 'copy_group_control', 'copy',
+                'copy_group', 'member_group', 'member', 'copy_group_control', 'copy',
                 'process_group', 'process'
             )
                OR jsonb_typeof(document.records) <> 'array'
@@ -944,6 +947,8 @@ BEGIN
                THEN p_documents -> 'copy_group' ELSE change_set.copy_group_document END,
            member_group_document = CASE WHEN p_documents ? 'member_group'
                THEN p_documents -> 'member_group' ELSE change_set.member_group_document END,
+           member_document = CASE WHEN p_documents ? 'member'
+               THEN p_documents -> 'member' ELSE change_set.member_document END,
            copy_group_control_document = CASE WHEN p_documents ? 'copy_group_control'
                THEN p_documents -> 'copy_group_control'
                ELSE change_set.copy_group_control_document END,
@@ -1039,7 +1044,7 @@ BEGIN
            'silver_object', 'silver_attribute',
            'gold_object', 'gold_attribute',
            'ingestion_object_mapping', 'ingestion_attribute_mapping',
-           'copy_group', 'member_group', 'copy_group_control', 'copy',
+           'copy_group', 'member_group', 'member', 'copy_group_control', 'copy',
            'process_group', 'process'
        )
        OR p_total_record_count IS NULL
@@ -1747,6 +1752,7 @@ RETURNS TABLE (
     ingestion_attribute_mapping_document JSONB,
     copy_group_document JSONB,
     member_group_document JSONB,
+    member_document JSONB,
     copy_group_control_document JSONB,
     copy_document JSONB,
     process_group_document JSONB,
@@ -1781,6 +1787,7 @@ BEGIN
             NULL::JSONB, NULL::JSONB, NULL::JSONB, NULL::JSONB,
             NULL::JSONB, NULL::JSONB, NULL::JSONB, NULL::JSONB,
             NULL::JSONB, NULL::JSONB, NULL::JSONB, NULL::JSONB,
+            NULL::JSONB,
             NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ,
             NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ;
         RETURN;
@@ -1807,6 +1814,7 @@ BEGIN
             NULL::JSONB, NULL::JSONB, NULL::JSONB, NULL::JSONB,
             NULL::JSONB, NULL::JSONB, NULL::JSONB, NULL::JSONB,
             NULL::JSONB, NULL::JSONB, NULL::JSONB, NULL::JSONB,
+            NULL::JSONB,
             NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ,
             NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ;
         RETURN;
@@ -1869,6 +1877,7 @@ BEGIN
            change_set.ingestion_attribute_mapping_document,
            change_set.copy_group_document,
            change_set.member_group_document,
+           change_set.member_document,
            change_set.copy_group_control_document,
            change_set.copy_document,
            change_set.process_group_document,
@@ -1895,6 +1904,7 @@ BEGIN
             NULL::JSONB, NULL::JSONB, NULL::JSONB, NULL::JSONB,
             NULL::JSONB, NULL::JSONB, NULL::JSONB, NULL::JSONB,
             NULL::JSONB, NULL::JSONB, NULL::JSONB, NULL::JSONB,
+            NULL::JSONB,
             NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ,
             NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ;
     END IF;
@@ -2414,3 +2424,280 @@ CREATE INDEX ix_metadata_stage_batch_expiry
 CREATE INDEX ix_metadata_change_set_expiry
     ON mcp.metadata_change_set (expires_time)
     WHERE metadata_change_set_status IN ('active', 'validated');
+
+-- MCP profiling uses the same governed Run lifecycle, with a separate worker owner.
+-- These helpers are internal SQL APIs, never arbitrary-SQL MCP tools.
+CREATE FUNCTION mcp.mcp_profiling_context(p_run_id BIGINT)
+RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
+AS $mcp_profiling_context$
+DECLARE
+    v_run RECORD;
+    v_context JSONB;
+    v_source BIGINT;
+    v_access RECORD;
+BEGIN
+    SELECT run.*, identity.entra_tenant_id, identity.entra_object_id, identity.principal_type
+      INTO STRICT v_run FROM application.workflow_run AS run
+      JOIN security.entra_principal_identity AS identity
+        ON identity.entra_principal_identity_id = run.actor_entra_principal_identity_id
+       AND identity.is_active
+     WHERE run.workflow_run_id = p_run_id AND run.execution_backend = 'mcp'
+       AND run.model_workflow = 'profiling';
+    PERFORM model.assert_writable(v_run.model_id);
+    FOR v_source IN SELECT DISTINCT object.source_tenant_id
+        FROM application.workflow_run_object_selection AS selection
+        JOIN core.object AS object ON object.object_id = selection.object_id
+        WHERE selection.workflow_run_id = p_run_id
+    LOOP
+        SELECT * INTO v_access FROM security.authorize_tenant_operation(
+            v_run.entra_tenant_id, v_run.entra_object_id, v_run.principal_type,
+            v_source, 'tenant_read');
+        IF NOT coalesce(v_access.authorized, FALSE) THEN
+            RAISE EXCEPTION 'profiling_source_access_denied';
+        END IF;
+    END LOOP;
+    -- Preserve conservative masking lineage protection from the plugin planner.
+    IF EXISTS (
+        SELECT 1 FROM application.workflow_run_object_selection AS selection
+        JOIN core.object AS object ON object.object_id = selection.object_id
+        JOIN reference.zone AS zone ON zone.zone_id = object.zone_id
+        WHERE selection.workflow_run_id = p_run_id AND (
+            EXISTS (SELECT 1 FROM core.attribute AS attribute
+                    WHERE attribute.object_id = object.object_id AND attribute.is_masking_required)
+            OR (lower(zone.zone_code) = 'bronze' AND EXISTS (
+                SELECT 1 FROM core.object AS source
+                JOIN reference.zone AS source_zone ON source_zone.zone_id = source.zone_id
+                JOIN core.attribute AS attribute ON attribute.object_id = source.object_id
+                  AND attribute.is_masking_required
+                WHERE lower(source_zone.zone_code) = 'source' AND (
+                    EXISTS (SELECT 1 FROM core.ingestion_object_mapping AS mapping
+                        WHERE mapping.source_object_id = source.object_id
+                          AND mapping.target_object_id = object.object_id)
+                    OR (source.source_tenant_id = object.source_tenant_id AND NOT EXISTS (
+                        SELECT 1 FROM core.ingestion_object_mapping AS mapping
+                        WHERE mapping.target_object_id = object.object_id))
+                  )
+            ))
+        )
+    ) THEN RAISE EXCEPTION 'profiling_protected_scope'; END IF;
+    SELECT jsonb_agg(to_jsonb(context) || jsonb_build_object(
+        'source_context_digest', encode(sha256(convert_to(
+            (to_jsonb(context) || jsonb_build_object('batch_ids', v_run.profiling_batch_ids,
+                'environment', v_run.profiling_environment_code))::TEXT, 'UTF8')), 'hex'))
+        ORDER BY context.selection_order, context.attribute_ordinal_position, context.attribute_id)
+      INTO v_context FROM application.get_profiling_execution_context(
+        v_run.entra_tenant_id, v_run.entra_object_id, v_run.principal_type,
+        p_run_id, v_run.model_revision) AS context;
+    IF v_context IS NULL OR jsonb_array_length(v_context) <> (
+        SELECT count(*) FROM application.workflow_run_object_selection AS selection
+        JOIN workflow.list_model_attribute_eligibility(v_run.model_id) AS attribute
+          ON attribute.object_id = selection.object_id AND attribute.is_model_input_eligible
+        WHERE selection.workflow_run_id = p_run_id
+    ) THEN RAISE EXCEPTION 'profiling_attributes_missing'; END IF;
+    IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_context) AS item
+        WHERE item->>'batch_attribute_name' IS NOT NULL AND (
+            coalesce(cardinality(v_run.profiling_batch_ids), 0) = 0
+            OR NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_context) AS batch
+                WHERE batch->>'object_id' = item->>'object_id'
+                  AND (batch->>'is_batch_attribute')::BOOLEAN))) THEN
+        RAISE EXCEPTION 'profiling_batch_ids_required';
+    END IF;
+    IF v_run.profiling_context_digest IS NOT NULL AND v_run.profiling_context_digest <>
+        encode(sha256(convert_to(v_context::TEXT, 'UTF8')), 'hex') THEN
+        RAISE EXCEPTION 'profiling_scope_changed';
+    END IF;
+    RETURN v_context;
+END;
+$mcp_profiling_context$;
+REVOKE ALL ON FUNCTION mcp.mcp_profiling_context(BIGINT) FROM PUBLIC;
+
+CREATE FUNCTION mcp.get_mcp_profiling_status(
+    p_entra_tenant_id UUID, p_entra_object_id UUID, p_principal_type VARCHAR,
+    p_run_id BIGINT
+) RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
+AS $mcp_profiling_status$
+DECLARE v_run RECORD; v_access RECORD;
+BEGIN
+    SELECT run.*, model.model_revision AS current_model_revision INTO v_run
+      FROM application.workflow_run AS run JOIN model.model AS model USING (model_id)
+     WHERE run.workflow_run_id = p_run_id AND run.execution_backend = 'mcp'
+       AND run.model_workflow = 'profiling';
+    IF NOT FOUND THEN RAISE EXCEPTION 'profiling_run_not_found'; END IF;
+    SELECT * INTO v_access FROM security.authorize_tenant_operation(
+        p_entra_tenant_id, p_entra_object_id, p_principal_type, v_run.tenant_id, 'tenant_read');
+    IF NOT coalesce(v_access.authorized, FALSE) THEN
+        RAISE EXCEPTION 'profiling_run_not_found';
+    END IF;
+    RETURN jsonb_build_object('run_id', p_run_id, 'model_id', v_run.model_id,
+        'state', v_run.workflow_run_state, 'model_revision', v_run.current_model_revision,
+        'selected_object_count', v_run.selected_scope_count,
+        'completed_object_count', v_run.profiling_completed_objects,
+        'saved_profile_count', v_run.profiling_saved_profiles,
+        'failure_code', v_run.failure_code, 'failure_message', v_run.failure_message,
+        'started_at', v_run.started_time, 'completed_at', v_run.completed_time);
+END;
+$mcp_profiling_status$;
+REVOKE ALL ON FUNCTION mcp.get_mcp_profiling_status(UUID, UUID, VARCHAR, BIGINT) FROM PUBLIC;
+
+CREATE FUNCTION mcp.start_mcp_profiling_run(
+    p_entra_tenant_id UUID, p_entra_object_id UUID, p_principal_type VARCHAR,
+    p_model_id BIGINT, p_revision BIGINT, p_object_ids BIGINT[], p_batch_ids TEXT[],
+    p_environment VARCHAR, p_request_id UUID
+) RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
+AS $start_mcp_profiling$
+DECLARE
+    v_model RECORD; v_access RECORD; v_existing RECORD; v_created RECORD; v_context JSONB;
+    v_request_digest TEXT;
+BEGIN
+    SELECT * INTO v_model FROM model.model WHERE model_id = p_model_id AND is_active FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'model_not_found'; END IF;
+    SELECT * INTO v_access FROM security.authorize_tenant_operation(
+        p_entra_tenant_id, p_entra_object_id, p_principal_type, v_model.tenant_id, 'tenant_model_write');
+    IF NOT coalesce(v_access.authorized, FALSE) THEN
+        RAISE EXCEPTION 'profiling_execution_denied: %', coalesce(v_access.denial_code, 'authorization_denied');
+    END IF;
+    PERFORM model.assert_writable(p_model_id);
+    IF p_request_id IS NULL OR p_object_ids IS NULL OR cardinality(p_object_ids) NOT BETWEEN 1 AND 500
+       OR p_revision IS NULL OR p_revision < 1
+       OR p_environment IS NULL OR length(p_environment) NOT BETWEEN 1 AND 100
+       OR EXISTS (SELECT 1 FROM unnest(p_object_ids) AS id WHERE id IS NULL OR id < 1)
+       OR cardinality(p_object_ids) <> (SELECT count(DISTINCT id) FROM unnest(p_object_ids) AS id)
+       OR (p_batch_ids IS NOT NULL AND (cardinality(p_batch_ids) NOT BETWEEN 1 AND 2000
+          OR octet_length(p_batch_ids::TEXT) > 1048576
+          OR EXISTS (SELECT 1 FROM unnest(p_batch_ids) AS id
+                     WHERE id IS NULL OR NOT reference.is_nonblank(id) OR length(id) > 4000))) THEN
+        RAISE EXCEPTION 'invalid_profiling_request';
+    END IF;
+    p_object_ids := ARRAY(SELECT id FROM unnest(p_object_ids) AS id ORDER BY id);
+    IF p_batch_ids IS NOT NULL THEN
+        p_batch_ids := ARRAY(SELECT id FROM (SELECT DISTINCT id COLLATE "C" AS id FROM unnest(p_batch_ids) AS id) AS batches ORDER BY id COLLATE "C");
+    END IF;
+    p_environment := lower(btrim(p_environment));
+    IF NOT EXISTS (SELECT 1 FROM reference.environment WHERE is_active
+        AND lower(btrim(environment_code)) = p_environment) THEN
+        RAISE EXCEPTION 'profiling_environment_unavailable';
+    END IF;
+    v_request_digest := encode(sha256(convert_to(jsonb_build_object(
+        'model', p_model_id, 'revision', p_revision, 'objects', p_object_ids,
+        'batches', p_batch_ids, 'environment', p_environment)::TEXT, 'UTF8')), 'hex');
+    SELECT * INTO v_existing FROM application.workflow_run WHERE correlation_id = p_request_id;
+    IF FOUND THEN
+        IF v_existing.actor_principal_id <> v_access.principal_id
+           OR v_existing.execution_backend <> 'mcp' OR v_existing.model_id <> p_model_id
+           OR v_existing.profiling_request_digest IS DISTINCT FROM v_request_digest THEN
+            RAISE EXCEPTION 'profiling_request_conflict';
+        END IF;
+        RETURN jsonb_build_object('status', mcp.get_mcp_profiling_status(
+            p_entra_tenant_id, p_entra_object_id, p_principal_type, v_existing.workflow_run_id),
+            'context', NULL, 'batch_ids', p_batch_ids);
+    END IF;
+    SELECT * INTO v_created FROM application.create_workflow_run(
+        p_entra_tenant_id, p_entra_object_id, p_principal_type, p_model_id, p_revision,
+        'profiling', NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        p_object_ids, ARRAY[]::VARCHAR[], NULL, NULL, p_request_id, '{}'::JSONB);
+    PERFORM application.start_workflow_run(p_entra_tenant_id, p_entra_object_id,
+        p_principal_type, v_created.workflow_run_id, p_revision);
+    UPDATE application.workflow_run SET execution_backend = 'mcp',
+        profiling_batch_ids = p_batch_ids, profiling_environment_code = p_environment,
+        profiling_request_digest = v_request_digest
+      WHERE workflow_run_id = v_created.workflow_run_id;
+    v_context := mcp.mcp_profiling_context(v_created.workflow_run_id);
+    UPDATE application.workflow_run SET profiling_context_digest =
+        encode(sha256(convert_to(v_context::TEXT, 'UTF8')), 'hex')
+      WHERE workflow_run_id = v_created.workflow_run_id;
+    -- Python validates physical batch conversions and query bounds before committing this transaction.
+    RETURN jsonb_build_object('status', mcp.get_mcp_profiling_status(
+        p_entra_tenant_id, p_entra_object_id, p_principal_type, v_created.workflow_run_id),
+        'context', v_context, 'batch_ids', p_batch_ids);
+END;
+$start_mcp_profiling$;
+REVOKE ALL ON FUNCTION mcp.start_mcp_profiling_run(UUID, UUID, VARCHAR, BIGINT, BIGINT, BIGINT[], TEXT[], VARCHAR, UUID) FROM PUBLIC;
+
+CREATE FUNCTION mcp.cancel_mcp_profiling_run(
+    p_entra_tenant_id UUID, p_entra_object_id UUID, p_principal_type VARCHAR, p_run_id BIGINT
+) RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
+AS $cancel_mcp_profiling$
+DECLARE v_status JSONB; v_tenant BIGINT;
+BEGIN
+    v_status := mcp.get_mcp_profiling_status(p_entra_tenant_id, p_entra_object_id, p_principal_type, p_run_id);
+    SELECT tenant_id INTO v_tenant FROM application.workflow_run WHERE workflow_run_id = p_run_id;
+    PERFORM model.assert_writable((v_status->>'model_id')::BIGINT);
+    PERFORM application.cancel_workflow_run(p_entra_tenant_id, p_entra_object_id,
+        p_principal_type, v_tenant, (v_status->>'model_id')::BIGINT, p_run_id);
+    RETURN mcp.get_mcp_profiling_status(p_entra_tenant_id, p_entra_object_id, p_principal_type, p_run_id);
+END;
+$cancel_mcp_profiling$;
+REVOKE ALL ON FUNCTION mcp.cancel_mcp_profiling_run(UUID, UUID, VARCHAR, BIGINT) FROM PUBLIC;
+
+-- The worker receives credentials only through this internal, claim-bound operation.
+CREATE FUNCTION mcp.mcp_profiling_worker(
+    p_operation TEXT, p_run_id BIGINT, p_claim UUID, p_payload JSONB
+) RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
+AS $mcp_profiling_worker$
+DECLARE v_run RECORD; v_claim RECORD; v_context JSONB; v_values JSONB; v_result RECORD; v_access RECORD;
+BEGIN
+    IF p_operation = 'claim' THEN
+        SELECT * INTO v_claim FROM application.claim_workflow_run(60, 'mcp');
+        IF NOT FOUND THEN RETURN NULL; END IF;
+        RETURN to_jsonb(v_claim);
+    END IF;
+    PERFORM application.assert_workflow_run_claim(p_run_id, p_claim);
+    SELECT run.*, identity.entra_tenant_id, identity.entra_object_id, identity.principal_type
+      INTO STRICT v_run FROM application.workflow_run AS run
+      JOIN security.entra_principal_identity AS identity
+        ON identity.entra_principal_identity_id = run.actor_entra_principal_identity_id
+       AND identity.is_active
+      WHERE run.workflow_run_id = p_run_id AND run.execution_backend = 'mcp'
+        AND run.model_workflow = 'profiling';
+    PERFORM model.assert_writable(v_run.model_id);
+    IF p_operation IN ('heartbeat', 'progress') THEN
+        SELECT * INTO v_access FROM security.authorize_tenant_operation(
+            v_run.entra_tenant_id, v_run.entra_object_id, v_run.principal_type,
+            v_run.tenant_id, 'tenant_model_write');
+        IF NOT coalesce(v_access.authorized, FALSE) THEN
+            RAISE EXCEPTION 'profiling_execution_denied';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM model.model WHERE model_id = v_run.model_id
+                       AND is_active AND model_revision = v_run.model_revision) THEN
+            RAISE EXCEPTION 'stale_model_revision';
+        END IF;
+    END IF;
+    IF p_operation = 'heartbeat' THEN
+        PERFORM application.renew_workflow_run_claim(p_run_id, p_claim, 60);
+    ELSIF p_operation = 'release' THEN
+        PERFORM application.release_workflow_run_claim(p_run_id, p_claim);
+    ELSIF p_operation = 'context' THEN
+        v_context := mcp.mcp_profiling_context(p_run_id);
+        SELECT jsonb_agg(to_jsonb(connection_values)) INTO v_values
+          FROM application.get_profiling_connection_values(v_run.entra_tenant_id,
+            v_run.entra_object_id, v_run.principal_type, p_run_id, v_run.model_revision,
+            v_run.profiling_environment_code) AS connection_values;
+        RETURN jsonb_build_object('context', v_context, 'connections', v_values,
+            'batch_ids', v_run.profiling_batch_ids);
+    ELSIF p_operation = 'progress' THEN
+        IF jsonb_typeof(p_payload) <> 'number' OR p_payload::TEXT !~ '^[0-9]+$'
+           OR p_payload::TEXT::INTEGER > v_run.selected_scope_count THEN
+            RAISE EXCEPTION 'invalid_profiling_progress';
+        END IF;
+        UPDATE application.workflow_run SET profiling_completed_objects = p_payload::TEXT::INTEGER
+          WHERE workflow_run_id = p_run_id;
+    ELSIF p_operation = 'complete' THEN
+        PERFORM mcp.mcp_profiling_context(p_run_id);
+        SELECT * INTO v_result FROM application.persist_profiling_results(
+            v_run.entra_tenant_id, v_run.entra_object_id, v_run.principal_type,
+            p_run_id, v_run.model_revision, p_payload);
+        UPDATE application.workflow_run SET profiling_saved_profiles = v_result.submitted_profile_count,
+            profiling_completed_objects = selected_scope_count WHERE workflow_run_id = p_run_id;
+        PERFORM application.complete_workflow_run(v_run.entra_tenant_id, v_run.entra_object_id,
+            v_run.principal_type, p_run_id, v_result.model_revision, v_result.submitted_profile_count);
+    ELSIF p_operation = 'fail' THEN
+        -- Failure details are deliberately bounded; connector errors can contain secrets.
+        PERFORM application.fail_workflow_run(v_run.entra_tenant_id, v_run.entra_object_id,
+            v_run.principal_type, p_run_id, v_run.model_revision,
+            'profiling_execution_failed', 'Profiling could not complete. Check scope, batch metadata, and GDS execution access.');
+    ELSE RAISE EXCEPTION 'invalid_profiling_operation';
+    END IF;
+    RETURN '{}'::JSONB;
+END;
+$mcp_profiling_worker$;
+REVOKE ALL ON FUNCTION mcp.mcp_profiling_worker(TEXT, BIGINT, UUID, JSONB) FROM PUBLIC;

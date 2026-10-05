@@ -31,12 +31,11 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-export async function acquireMicrosoftAccessToken(
+// Both hosts use the same bounded discovery and exact resource/tenant checks.
+export async function discoverMicrosoftResource(
   endpoint: URL,
-  getSession: MicrosoftSessionGetter,
   fetcher: typeof fetch = fetch,
-  forceNewSession = false,
-): Promise<string> {
+): Promise<{ scope: string; tenantId: string; authority: string }> {
   if (endpoint.protocol !== "https:" || endpoint.pathname !== "/mcp") {
     fail("ENDPOINT_MISMATCH", "Production MCP endpoint is invalid.");
   }
@@ -115,9 +114,20 @@ export async function acquireMicrosoftAccessToken(
   ) {
     fail("AUTHORITY_MISMATCH", "GDS authorization server is not an exact Entra tenant.");
   }
+  return { scope: expectedScope, tenantId: authorityParts[0]!,
+    authority: `https://login.microsoftonline.com/${authorityParts[0]}` };
+}
+
+export async function acquireMicrosoftAccessToken(
+  endpoint: URL,
+  getSession: MicrosoftSessionGetter,
+  fetcher: typeof fetch = fetch,
+  forceNewSession = false,
+): Promise<string> {
+  const resource = await discoverMicrosoftResource(endpoint, fetcher);
   // Microsoft's challenge flow requires actual claims and rejects a discovery-only
   // challenge before prompting. Use ordinary scopes with its tenant-routing marker.
-  const scopes = [expectedScope, `VSCODE_TENANT:${authorityParts[0]}`];
+  const scopes = [resource.scope, `VSCODE_TENANT:${resource.tenantId}`];
   let session: MicrosoftAuthenticationSession | undefined;
   try {
     session = await getSession(
@@ -127,12 +137,12 @@ export async function acquireMicrosoftAccessToken(
         ? {
             forceNewSession: {
               detail:
-                "GDS Workbench rejected the expired session. Sign in again to continue Stage.",
+                "Atlas Local Workbench rejected the expired session. Sign in again to continue Stage.",
             },
           }
         : {
             createIfNone: {
-              detail: "Sign in with the Microsoft account authorized for GDS Workbench.",
+              detail: "Sign in with the Microsoft account authorized for Atlas Local Workbench.",
             },
           },
     );

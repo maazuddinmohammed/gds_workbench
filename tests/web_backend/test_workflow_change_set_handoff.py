@@ -125,6 +125,8 @@ class HandoffTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         self.calls.append((query, parameters))
         if "application.assert_workflow_run_claim" in query:
             assert parameters == (1048, _CLAIM_TOKEN)

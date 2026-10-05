@@ -47,6 +47,21 @@ class TargetPlacement(TargetContract):
     source_tenant_code: str
 
 
+class ExportModelDdlRequest(TargetContract):
+    layer: Literal["conceptual", "logical", "dimensional"]
+    expected_model_revision: int = Field(gt=0)
+    entity_ids: list[Annotated[int, Field(gt=0)]] | None = Field(
+        default=None, min_length=1, max_length=200
+    )
+
+    @field_validator("entity_ids")
+    @classmethod
+    def unique_entities(cls, value: list[int] | None) -> list[int] | None:
+        if value is not None and len(value) != len(set(value)):
+            raise ValueError("Select each Entity once.")
+        return value
+
+
 class ModelTargetOptions(TargetContract):
     model_id: int
     model_revision: int

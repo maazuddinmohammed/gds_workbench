@@ -345,7 +345,9 @@ def test_validation_allows_tenant_object_on_its_configured_gds_connection() -> N
 def test_validation_allows_gds_object_references_owned_by_locked_tenant() -> None:
     current = _foundation_with_external_gds()
     current["source_object"] = [_source_object_record()]
-    current["bronze_object"] = [_object_record(object_schema="bronze", tenant_code="GLOBAL")]
+    current["bronze_object"] = [
+        _object_record(object_schema="bronze", tenant_code="GLOBAL")
+    ]
     current["ingestion_object_mapping"] = [_ingestion_object_mapping()]
     current["copy_group"] = [_copy_group()]
     current["process_group"] = [_process_group()]
@@ -446,7 +448,9 @@ def test_validation_rejects_attribute_change_under_locked_object() -> None:
 
 def test_validation_allows_attribute_change_under_unlocked_object() -> None:
     current = _foundation()
-    current["bronze_object"] = [_object_record(object_schema="public", tenant_code="DEMO")]
+    current["bronze_object"] = [
+        _object_record(object_schema="public", tenant_code="DEMO")
+    ]
 
     result = validate_metadata_documents(
         tenant_code="DEMO",
@@ -599,7 +603,9 @@ def _copy_group() -> dict[str, object]:
     }
 
 
-def _object_record(*, object_schema: str, tenant_code: str = "GLOBAL") -> dict[str, object]:
+def _object_record(
+    *, object_schema: str, tenant_code: str = "GLOBAL"
+) -> dict[str, object]:
     return {
         "tenant_code": tenant_code,
         "system_code": "CRM",
@@ -723,3 +729,92 @@ def _process_record() -> dict[str, object]:
         "process_type_name": "SQL",
         "is_active": True,
     }
+
+
+def test_member_keys_references_and_tenant_ownership_are_validated() -> None:
+    group = {
+        "tenant_code": "DEMO",
+        "system_code": "CRM",
+        "member_group_name": "Regions",
+        "member_group_description": None,
+        "member_group_initial_load_date": None,
+        "is_active": True,
+    }
+    member = {
+        "tenant_code": "DEMO",
+        "system_code": "CRM",
+        "member_group_name": "Regions",
+        "member_code": "NORTH",
+        "member_name": "North",
+        "member_description": None,
+        "member_attribute_name": "RegionCode",
+        "value": {"extra": [0, False, None]},
+        "is_active": True,
+    }
+    valid = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset=_foundation(),
+        staged_rows_by_dataset={"member_group": [group], "member": [member]},
+    )
+    assert valid.valid
+    duplicate = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset=_foundation(),
+        staged_rows_by_dataset={
+            "member_group": [group],
+            "member": [member, {**member, "member_code": " north "}],
+        },
+    )
+    assert not duplicate.valid and duplicate.issues[0].code == "duplicate_unique_key"
+    missing = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset=_foundation(),
+        staged_rows_by_dataset={"member": [member]},
+    )
+    assert not missing.valid and any(
+        issue.code == "reference_not_found" for issue in missing.issues
+    )
+    foreign = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset=_foundation(),
+        staged_rows_by_dataset={
+            "member_group": [group],
+            "member": [{**member, "tenant_code": "OTHER"}],
+        },
+    )
+    assert not foreign.valid
+    repeated = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset=_foundation(),
+        staged_rows_by_dataset={
+            "member_group": [group, {**group, "member_group_name": "Other"}],
+            "member": [member, {**member, "member_group_name": "Other"}],
+        },
+    )
+    assert repeated.valid
+
+
+def test_metadata_json_value_rejects_nonfinite_numbers_and_preserves_nested_types() -> (
+    None
+):
+    for value in [
+        None,
+        False,
+        0,
+        "north",
+        [None, 0, False],
+        {"nested": {"n": 1, "active": False}},
+    ]:
+        result = validate_metadata_documents(
+            tenant_code="DEMO",
+            current_rows_by_dataset=_foundation(),
+            staged_rows_by_dataset={"copy_group": [{**_copy_group(), "value": value}]},
+        )
+        assert result.valid
+    for value in [float("nan"), float("inf"), {"nested": [float("-inf")]}]:
+        result = validate_metadata_documents(
+            tenant_code="DEMO",
+            current_rows_by_dataset=_foundation(),
+            staged_rows_by_dataset={"copy_group": [{**_copy_group(), "value": value}]},
+        )
+        assert not result.valid

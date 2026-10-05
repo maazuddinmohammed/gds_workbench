@@ -58,6 +58,25 @@ class TenantLockedError(WorkbenchError):
         )
 
 
+class ModelLockedError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="model_locked",
+            message=(
+                "This Model is locked. A human must unlock it in the web application "
+                "before changes."
+            ),
+        )
+
+
+class ModelWorkflowConflictError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="model_workflow_conflict",
+            message="Cancel or finish queued and running workflows before locking this Model.",
+        )
+
+
 class TenantWorkflowConflictError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(

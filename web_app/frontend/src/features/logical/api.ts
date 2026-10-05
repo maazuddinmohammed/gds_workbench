@@ -295,7 +295,7 @@ export interface LogicalTransport {
   ) => Promise<LogicalSubmodelDetail>;
 }
 
-export type LogicalApi = LogicalTransport & Pick<ModelTargetsTransport, "readTargetOptions" | "exportModelTargets"> & ModelRecordReviewApi
+export type LogicalApi = LogicalTransport & Pick<ModelTargetsTransport, "readTargetOptions" | "exportModelTargets" | "exportModelDdl"> & ModelRecordReviewApi
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"

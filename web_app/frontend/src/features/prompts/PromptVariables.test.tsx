@@ -29,7 +29,7 @@ describe("Prompt input reference", () => {
     expect(within(table).getByText(input.source!)).toBeVisible();
     expect(within(table).getByText(input.availability!)).toBeVisible();
     expect(screen.queryByText(input.context_path!)).not.toBeInTheDocument();
-    expect(screen.getByText(/Only referenced variables/)).toBeVisible();
+    expect(screen.getByText(/Include variables to supply workflow context/)).toBeVisible();
     const disclosure = screen.getByText("Shape and example for description_requests");
     expect(screen.getByRole("heading", { name: "Value schema", hidden: true })).not.toBeVisible();
     await user.click(disclosure);

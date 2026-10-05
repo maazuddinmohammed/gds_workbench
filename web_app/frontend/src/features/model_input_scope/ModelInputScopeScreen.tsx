@@ -11,9 +11,10 @@ import {
 
 import { TenantWorkspace } from "../../app/TenantWorkspace";
 import { zoneLabel } from "../../shared/presentation";
-import { ErrorPage, LoadingPage } from "../../shared/ui";
+import { ErrorPage, LoadingPage, WorkspaceToolbar } from "../../shared/ui";
 import { validTenantModelIds } from "../models/ModelRouteFrame";
 import { ModelWorkspaceShell } from "../models/ModelWorkspaceShell";
+import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowFilters } from "../workflows/WorkflowCommandCenter";
 import type { ModelsApi } from "../models/api";
 import type { TenantsApi } from "../tenants/api";
 import type {
@@ -27,6 +28,7 @@ import { SourceCodeFilter, SourceFilterNotice, scopeFilterChoicesKey, useScopeFi
 
 type ModelInputScopeScreenApi = Pick<TenantsApi, "readTenantHome">
   & Pick<ModelsApi, "readModel" | "readModelOverview">
+  & Partial<Pick<ModelsApi, "setModelLock">>
   & ModelInputScopeApi;
 
 export function ModelInputScopeScreen({
@@ -89,7 +91,9 @@ export function ModelInputScopeScreen({
           modelInputScopeObjectCount={modelQuery.data.model_input_scope_object_count}
           objects={scopeQuery.data?.pages.flatMap((page) => page.items) ?? []}
           sourceChoices={sourceChoices}
+          filterCount={Object.values(filters).filter(Boolean).length}
           onAdd={() => setAddOpen(true)}
+          modelLocked={modelQuery.data.is_locked === true}
           onRefresh={() => void Promise.all([scopeQuery.refetch(), sourceChoices.refetch(), modelQuery.refetch(), homeQuery.refetch()])}
           isLoading={scopeQuery.isPending}
           isError={scopeQuery.isError}
@@ -109,7 +113,7 @@ export function ModelInputScopeScreen({
         />
         {scopeQuery.hasNextPage ? <button className="button button-secondary" type="button" disabled={scopeQuery.isFetching} onClick={() => void scopeQuery.fetchNextPage()}>Load more Objects</button> : null}
         {addOpen ? <AddScopeDialog api={api} tenantId={tenantId} modelId={modelId} modelRevision={modelQuery.data.model_revision}
-          hasTenantLock={Boolean(homeQuery.data.lock.is_locked && homeQuery.data.lock.owned_by_current_principal)} onClose={() => setAddOpen(false)}
+          hasTenantLock={Boolean(!modelQuery.data.is_locked && homeQuery.data.lock.is_locked && homeQuery.data.lock.owned_by_current_principal)} onClose={() => setAddOpen(false)}
           onAdded={async () => { await Promise.all([
             queryClient.invalidateQueries({ queryKey: ["model-input-scope", tenantId, modelId] }),
             queryClient.invalidateQueries({ queryKey: ["model", tenantId, modelId] }),
@@ -128,6 +132,7 @@ function ScopeView({
   modelInputScopeObjectCount,
   objects,
   sourceChoices,
+  filterCount,
   isLoading,
   isError,
   selectedObjectId,
@@ -138,12 +143,14 @@ function ScopeView({
   onCloseDetails,
   onFiltersChange,
   onAdd,
+  modelLocked,
   onRefresh,
 }: {
   tenantId: number;
   modelInputScopeObjectCount: number;
   objects: ModelInputScopeObject[];
   sourceChoices: ScopeFilterChoices;
+  filterCount: number;
   isLoading: boolean;
   isError: boolean;
   selectedObjectId: number | null;
@@ -154,6 +161,7 @@ function ScopeView({
   onCloseDetails: () => void;
   onFiltersChange: (filters: ModelInputScopeFilters) => void;
   onAdd: () => void;
+  modelLocked: boolean;
   onRefresh: () => void;
 }) {
   const columns = useMemo<ColumnDef<ModelInputScopeObject>[]>(() => [
@@ -217,16 +225,14 @@ function ScopeView({
   });
 
   return (
-    <div className="scope-page page-enter">
+    <WorkflowCommandCenter className="scope-page page-enter" filterCount={filterCount}>
       <h1 className="model-section-title sr-only">Input Scope</h1>
-      <header className="section-bar model-section-toolbar">
-        <span>{objects.length} of {modelInputScopeObjectCount} Objects</span>
-        <div className="workflow-command-actions">
+      <WorkspaceToolbar actions={<>
+          <WorkflowCommandTools />
           <button className="button button-secondary button-small" type="button" onClick={onRefresh}>Refresh</button>
-          <button className="button button-primary button-small" type="button" onClick={onAdd}>Add Objects</button>
-        </div>
-      </header>
-      <ScopeFilterForm sourceChoices={sourceChoices} onApply={onFiltersChange} />
+          <button className="button button-primary button-small" type="button" disabled={modelLocked} onClick={onAdd}>Add Objects</button>
+      </>}><span>{objects.length} of {modelInputScopeObjectCount} Objects</span></WorkspaceToolbar>
+      <WorkflowFilters><ScopeFilterForm sourceChoices={sourceChoices} onApply={onFiltersChange} /></WorkflowFilters>
       <div className={`scope-data-layout${selectedObjectId ? " has-inspector" : ""}`}>
         <section className="scope-ledger" aria-label="Active Model Input Scope ledger">
           {isLoading ? (
@@ -236,7 +242,7 @@ function ScopeView({
               Active Model Input Scope could not be loaded.
             </div>
           ) : (
-            <div className="workflow-table-scroll table-scroll">
+            <div className="workflow-table-scroll table-scroll ledger-grid" role="region" aria-label="Input Scope table" tabIndex={0}>
               <table aria-label="Active Model Input Scope">
                 <thead>
                   {table.getHeaderGroups().map((headerGroup) => (
@@ -283,7 +289,7 @@ function ScopeView({
           />
         ) : null}
       </div>
-    </div>
+    </WorkflowCommandCenter>
   );
 }
 
@@ -373,7 +379,7 @@ function ScopeDetailDrawer({
               <strong id="attributes-heading">Attributes</strong>
               <span>{detail.attributes.length}</span>
             </header>
-            <div className="attribute-scroll">
+            <div className="attribute-scroll ledger-grid" role="region" aria-label="Scope attribute table" tabIndex={0}>
               <table aria-label={`Attributes for ${detail.object_name}`}>
                 <thead>
                   <tr>

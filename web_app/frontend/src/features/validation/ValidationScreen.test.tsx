@@ -31,14 +31,15 @@ describe("Validation journey", () => {
     const history = createMemoryHistory({ initialEntries: ["/tenants/7/validation/models/18?layer=dimensional"] });
     render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(validationFetchStub()), history })} />);
     const groups = await screen.findByRole("table", { name: "Validation Groups" });
-    expect(within(groups).queryByRole("columnheader", { name: "Status" })).not.toBeInTheDocument();
+    expect(within(groups).getAllByRole("columnheader").slice(1, 5).map((cell) => cell.textContent)).toEqual(["System", "Group", "Group description", "Checks"]);
+    expect(within(groups).queryByText("Shared across layers")).not.toBeInTheDocument();
     const groupLink = within(groups).getByRole("link", { name: "Show details for Order reconciliation" });
     groupLink.focus();
     await user.keyboard("{Enter}");
     const checks = await screen.findByRole("table", { name: "Order reconciliation Validation Checks" });
     expect(history.location.pathname).toBe("/tenants/7/validation/models/18/groups/91");
     expect(screen.queryByRole("complementary", { name: "Validation details" })).not.toBeInTheDocument();
-    expect(within(checks).queryByRole("columnheader", { name: "Status" })).not.toBeInTheDocument();
+    expect(within(checks).getAllByRole("columnheader").slice(1, 3).map((cell) => cell.textContent)).toEqual(["Check", "Description"]);
     const trigger = within(checks).getByRole("button", { name: "Show details for Source and target counts match" });
     await user.click(trigger);
     const panel = screen.getByRole("complementary", { name: "Validation details" });
@@ -46,8 +47,15 @@ describe("Validation journey", () => {
     expect(history.location.pathname).toBe("/tenants/7/validation/models/18/groups/91");
     expect(history.location.search).toBe("?layer=dimensional");
     const detail = within(panel).getByRole("region", { name: "Source and target counts match details" });
+    expect(detail).toHaveTextContent("Pass whenQuery A’s result equals the result of Query B.");
+    expect(detail).toHaveTextContent("Fail whenQuery A’s result does not equal the result of Query B.");
     expect(detail).toHaveTextContent("SELECT COUNT(*) FROM bronze.orders");
     expect(detail).toHaveTextContent("SELECT COUNT(*) FROM silver.orders");
+    const system = within(detail).getByText("System", { selector: "dt" }).nextElementSibling;
+    expect(system).not.toBeVisible();
+    await user.click(within(detail).getByText("Definition details"));
+    expect(system).toBeVisible();
+    expect(system).toHaveTextContent("CRM");
     await user.click(within(panel).getByRole("button", { name: "Expand Validation details" }));
     expect(panel).toHaveClass("is-wide");
     await user.keyboard("{Escape}");
@@ -102,7 +110,7 @@ describe("Validation journey", () => {
     const user = userEvent.setup();
     for (const [name, field, expected] of [["Stale Code", "Code", "Stale"], ["Current Code", "Code", "Current"], ["Stale Mapping", "Mapping", "Stale"]]) {
       await user.click(screen.getByRole("link", { name: `Show details for ${name}` }));
-      await user.click(await screen.findByText("Definition context"));
+      await user.click(await screen.findByText("Group details"));
       expect(screen.getByText(field!, { selector: "dt" }).nextElementSibling).toHaveTextContent(expected!);
       await user.click(screen.getByRole("link", { name: "Back to Groups" }));
       await screen.findByRole("table", { name: "Validation Groups" });

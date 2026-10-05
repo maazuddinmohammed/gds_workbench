@@ -46,6 +46,7 @@ class ModelSnapshotToolError(Exception):
 @dataclass(frozen=True, slots=True)
 class ReadyModelSnapshot:
     snapshot_id: UUID
+    tenant_id: int
     model_id: int
     model_revision: int
     created_at: datetime
@@ -136,9 +137,11 @@ def register_create_model_snapshot_tool(
             download = await create_snapshot_download(
                 store,
                 snapshot_kind="model",
+                tenant_id=ready.tenant_id,
                 scope_id=ready.model_id,
                 schema_version="2.0",
                 snapshot_id=ready.snapshot_id,
+                created_at=ready.created_at,
                 available_until=ready.available_until,
                 now=download_created_at,
                 ttl_seconds=download_ttl_seconds,
@@ -192,7 +195,7 @@ async def create_model_snapshot(
         snapshot_id=snapshot_id,
     )
 
-    snapshot = await select_model_snapshot(
+    tenant_id, snapshot = await select_model_snapshot(
         database,
         model_id=model_id,
         request_principal=request_principal,
@@ -202,6 +205,7 @@ async def create_model_snapshot(
     return await build_and_upload_model_snapshot(
         snapshot,
         store,
+        tenant_id=tenant_id,
         snapshot_id=window.snapshot_id,
         created_at=window.created_at,
         available_until=window.available_until,
@@ -215,7 +219,7 @@ async def select_model_snapshot(
     model_id: int,
     request_principal: RequestPrincipal,
     authorizer: AuthorizationService,
-) -> ModelSnapshot:
+) -> tuple[int, ModelSnapshot]:
     """Authorize and select one Model Snapshot under repeatable read."""
     async with database.read_transaction(isolation=ReadIsolation.REPEATABLE_READ) as transaction:
         model = await authorize_model_read(
@@ -224,13 +228,14 @@ async def select_model_snapshot(
             principal=request_principal,
             model_id=model_id,
         )
-        return await build_model_snapshot(transaction, model)
+        return model.tenant_id, await build_model_snapshot(transaction, model)
 
 
 async def build_and_upload_model_snapshot(
     snapshot: ModelSnapshot,
     store: SnapshotStore,
     *,
+    tenant_id: int,
     snapshot_id: UUID,
     created_at: datetime,
     available_until: datetime,
@@ -251,6 +256,7 @@ async def build_and_upload_model_snapshot(
     ready = await build_and_upload_snapshot(
         store,
         snapshot_kind="model",
+        tenant_id=tenant_id,
         scope_id=snapshot.model_id,
         schema_version="2.0",
         snapshot_id=snapshot_id,
@@ -260,6 +266,7 @@ async def build_and_upload_model_snapshot(
     )
     return ReadyModelSnapshot(
         snapshot_id=ready.snapshot_id,
+        tenant_id=tenant_id,
         model_id=ready.scope_id,
         model_revision=snapshot.model_revision,
         created_at=ready.created_at,

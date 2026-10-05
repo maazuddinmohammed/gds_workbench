@@ -31,8 +31,8 @@ const home: TenantHomeRecord = {
 };
 const endpoint = "/api/v1/tenants/7/models/18";
 function response(value: unknown, status = 200) { return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } }); }
-function setup(options: { role?: TenantRole; ownedLock?: boolean; active?: boolean; failSave?: string; failSaveOnce?: boolean; failRefresh?: boolean; laterRevision?: number; layer?: "dimensional" } = {}) {
-  let current = { ...model, is_active: options.active ?? true };
+function setup(options: { role?: TenantRole; locked?: boolean; ownedLock?: boolean; active?: boolean; failSave?: string; failSaveOnce?: boolean; failRefresh?: boolean; laterRevision?: number; layer?: "dimensional" } = {}) {
+  let current = { ...model, is_locked: options.locked ?? false, is_active: options.active ?? true };
   let didSave = false;
   let saveAttempts = 0;
   let failRefresh = options.failRefresh ?? false;
@@ -40,6 +40,18 @@ function setup(options: { role?: TenantRole; ownedLock?: boolean; active?: boole
     const url = String(input);
     if (url === "/api/v1/session") return response({ display_name: "Architect", email: null, actor_kind: "human", is_super_admin: false, last_tenant_id: 7 });
     if (url.endsWith("/home")) return response({ ...home, tenant: { ...home.tenant, effective_role: options.role ?? "architect" }, lock: { ...home.lock, owned_by_current_principal: options.ownedLock ?? true } });
+    if (url.endsWith("/models/templates")) return response({
+      silver_model_naming_instructions: "Use PascalCase. Identifiers end with ID.",
+      gold_model_naming_instructions: "Use PascalCase. Keys end with Key.",
+      silver_model_audit_columns_template: { schema_version: "1.0", columns: [{ semantic_name: "SourceSystemID", data_type: "BIGINT", nullable: true, definition: "Source provenance." }] },
+      gold_model_audit_columns_template: { schema_version: "1.0", columns: [] },
+      gold_model_technical_columns_template: { schema_version: "1.0" },
+    });
+    if (url === `${endpoint}/lock` && init?.method === "PUT") {
+      const command = JSON.parse(String(init.body));
+      current = { ...current, is_locked: command.is_locked, model_revision: current.model_revision + 1 };
+      return response({ model_id: 18, tenant_id: 7, model_revision: current.model_revision, is_active: true, updated_at: current.updated_at });
+    }
     if (url === endpoint && init?.method === "PUT") {
       saveAttempts += 1;
       if (options.failSave && (!options.failSaveOnce || saveAttempts === 1)) return response({ error: { code: options.failSave, message: "sensitive untrusted detail" } }, 409);
@@ -62,6 +74,35 @@ function setup(options: { role?: TenantRole; ownedLock?: boolean; active?: boole
 }
 
 describe("Model Settings", () => {
+  it("keeps locked Models readable with lock actions on the Models page", async () => {
+    setup({ locked: true, role: "viewer" });
+    await screen.findByRole("heading", { name: "Definition" });
+    expect(screen.getByText(/Model locked. Model changes and workflows/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Unlock Model" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save settings" })).toBeDisabled();
+  });
+
+  it("shows defaults, supports customization, and saves reset as no override", async () => {
+    const { fetcher } = setup();
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "Definition" });
+    await user.click(screen.getByText("Silver settings", { exact: true }));
+    const section = within(screen.getByText("Silver settings", { exact: true }).closest("details")!);
+    await user.click(section.getAllByRole("button", { name: "Reset to defaults" })[0]!);
+    const naming = section.getByRole("textbox", { name: "Silver naming instructions" });
+    await waitFor(() => expect(naming).toHaveValue("Use PascalCase. Identifiers end with ID."));
+    expect(naming).toHaveAttribute("readonly");
+    await user.click(section.getByRole("button", { name: "Customize" }));
+    await user.clear(naming);
+    await user.type(naming, "Use custom naming.");
+    expect(naming).toHaveValue("Use custom naming.");
+    await user.click(section.getAllByRole("button", { name: "Reset to defaults" })[0]!);
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    await screen.findByText("Editing revision 9.");
+    const write = fetcher.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(String(write?.[1]?.body)).silver_model_naming_instructions).toBeNull();
+  });
+
   it.each(["type_1", "type_2", ""] as const)("saves the selected Logical SCD policy: %s", async (scdType) => {
     const { fetcher } = setup();
     const user = userEvent.setup();

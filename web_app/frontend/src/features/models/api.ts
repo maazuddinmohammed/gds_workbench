@@ -11,6 +11,7 @@ export interface ModelLedgerRecord {
   model_name: string;
   model_description: string | null;
   model_revision: number;
+  is_locked?: boolean;
   model_input_scope_object_count: number;
   latest_workflow: ModelWorkflow | null;
   latest_run_status: string | null;
@@ -31,6 +32,7 @@ export interface ModelDetail {
   model_name: string;
   model_description: string | null;
   model_revision: number;
+  is_locked?: boolean;
   model_input_scope_object_count: number;
   logical_schemas: ModelSchemaDefinition[];
   dimensional_schemas: ModelSchemaDefinition[];
@@ -138,6 +140,8 @@ export interface UpdateModelCommand extends CreateModelCommand {
 }
 
 export interface ModelsApi {
+  setModelLock: (tenantId: number, modelId: number, command: { expected_model_revision: number; is_locked: boolean }) => Promise<ModelCommandResult>;
+  readModelTemplates: (tenantId: number) => Promise<Record<string, string | JsonObject>>;
   createModel: (tenantId: number, command: CreateModelCommand) => Promise<ModelCommandResult>;
   updateModel: (tenantId: number, modelId: number, command: UpdateModelCommand) => Promise<ModelCommandResult>;
   listModels: (
@@ -155,6 +159,10 @@ export interface ModelsApi {
 
 export function createModelsApi(request: HttpRequest): ModelsApi {
   return {
+    setModelLock: (tenantId, modelId, command) => request(`/api/v1/tenants/${tenantId}/models/${modelId}/lock`, {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(command),
+    }),
+    readModelTemplates: (tenantId) => request(`/api/v1/tenants/${tenantId}/models/templates`),
     createModel: (tenantId, command) => request<ModelCommandResult>(`/api/v1/tenants/${tenantId}/models`, {
       method: "POST",
       headers: { "content-type": "application/json" },

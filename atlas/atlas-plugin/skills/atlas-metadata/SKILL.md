@@ -1,0 +1,21 @@
+---
+name: atlas-metadata
+description: Author or correct an existing Tenant's physical metadata, descriptions, ingestion mappings and focused Copy/Process settings. Use for physical Metadata changes; Model-owned enrichment and generated-output registration have different contracts.
+---
+
+# Author physical metadata
+
+Produce the requested Metadata changes. A focused correction does not require complete ingestion setup. Model-owned enrichment is a separate [capability boundary](../../references/platform/capabilities.md), even when a Model selects these physical records.
+
+1. Follow [working context](../../references/working-method.md). Resolve authorized Tenant and an absolute workspace. Fetch a fresh [Metadata Snapshot](../../references/snapshots/metadata.md) when starting new authoring; reuse its baseline through related local work. Preserve/reconcile unfinished drafts on resume. A Model is needed only for a Model-dependent selection or outcome.
+2. Use the [table index](../../references/metadata/index.md) to select affected datasets and [intake/examples](../../references/metadata/intake-and-examples.md) only for missing decisions. Read relevant table semantics and installed schemas; use `describe_metadata_dataset` only when a missing/mismatched contract requires it. Resolve mismatches before writing. Do not recursively load linked table guides.
+3. Follow [editing rules](../../references/metadata/editing.md) and [record state](../../references/record-state.md). Resolve complete normalized natural keys, true owner versus physical placement and registered dependencies. Read complete effective records so earlier pending edits and unrelated fields survive. Foundational Tenant/System/Connection and lookup records are read-only prerequisites.
+4. For physical description/type interpretation, use [enrichment quality](../../references/metadata/enrichment-quality.md). This bounded procedure changes only `object_description`, `attribute_description` and `attribute_inferred_data_type`; preserve physical types, keys, flags and all other fields. Fill missing values by default; replacing nonempty values needs the user's requested scope. Ground meaning and type findings in evidence; unknown grain is not a guessed fact.
+   Resolve Zones from exact requested Objects or applied Model scope; otherwise ask which Zones, rather than silently selecting Bronze or every Zone. Include active unlocked Attributes of the selected Objects unless the request narrows them; parent Object protection still applies.
+5. A Model-based physical selection uses its applied Input Scope and exact owner keys, without changing membership. Register separate owner roots and bind Model revision as evidence. Scope visibility does not authorize writes. Each owner retains an independent Metadata Change Set, lock and authorization boundary.
+6. Construct complete changed records from verified definitions, registered references and confirmed [framework conventions](../../references/metadata/editing.md#framework-dependent-values). Inspect consumer code or ask only when custom/ambiguous behavior affects the requested result. Do not invent lookup values or caller-supplied database IDs.
+7. Run [local validation](../../references/local-validation.md), [Metadata checks](../../references/metadata/validation.md) and relevant table checklists after each coherent batch. Resolve shape, identity, protection and reference failures; report semantic review and server-only checks separately.
+
+Existing natural-key changes, including Process order/location/file, follow the [manual-change rule](../../references/metadata/editing.md#manual-natural-key-changes). Never simulate a rename with replacement/deactivation. A locked Object protects its Attributes and proposed additions. Inactive history remains intact.
+
+Review the related batch in Workbench and use the shared [Change Set lifecycle](../../references/change-set-lifecycle.md). Report actual drafted/validated/applied state and unresolved evidence. Authoring does not execute DDL, ingestion, scheduling or deployment. Derived target or generated-artifact registration uses [registration](../atlas-registration/SKILL.md); broader source interpretation uses [source analysis](../atlas-source-analysis/SKILL.md).

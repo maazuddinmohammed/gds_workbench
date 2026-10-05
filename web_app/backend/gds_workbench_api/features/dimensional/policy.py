@@ -291,9 +291,9 @@ def project_dimensional_gold_policy(
                 specifications.extend(
                     (column, "technical", "none")
                     for column in (
+                        technical.type_2.is_current,
                         technical.type_2.effective_from,
                         technical.type_2.effective_to,
-                        technical.type_2.is_current,
                     )
                 )
         specifications.extend((column, "audit", "none") for column in audit.columns)

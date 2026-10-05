@@ -29,6 +29,8 @@ PHYSICAL_NATURAL_KEYS = {
         "source_attribute_id",
         "target_attribute_id",
     ),
+    "core.member": ("member_group_id", "member_code"),
+    "core.connection_location": ("connection_id", "location_type_id", "environment_id"),
     "core.copy_group": ("tenant_id", "system_id", "copy_group_name"),
     "core.member_group": ("tenant_id", "system_id", "member_group_name"),
     "core.copy_group_control": ("copy_group_id", "member_group_id"),

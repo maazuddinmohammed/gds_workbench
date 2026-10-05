@@ -35,4 +35,14 @@ Shared rules for every workflow. Apply them when reading inputs, authoring compl
 
 Local checks use the bound applied baseline as well as pending work. The server rechecks authoritative protection during governed submission/Apply; a stale Snapshot cannot override a current lock. Follow the [Change Set lifecycle](change-set-lifecycle.md) for that sequence.
 
-Current contracts: `application/change_sets/metadata_validation.py`, `application/change_sets/model_validation.py` and `domain/modeling_records.py` under `mcp_server/gds_etl_workbench/`; Atlas local mirrors under `workbench/validation/`; helpers and Workbench share those rules.
+Current contracts: `application/change_sets/metadata_validation.py`, `application/change_sets/model_validation.py` and `domain/modeling_records.py` under `mcp_server/gds_etl_workbench/`; Atlas local mirrors under `workbench/validation/`; helpers and Atlas Local Workbench share those rules.
+
+## Model lock
+
+A locked Model is read-only across every section and workflow. Individual record
+locks do not override it. Read operations and independent Metadata authoring remain
+available. Agents must never unlock a Model or propose its lock state in a Change
+Set. A human Architect or higher may use Lock/Unlock Model in the web UI while
+holding the Tenant Lock; engineering may use approved backend SQL. Finish or
+cancel queued/running workflows before locking. Refresh after a lock transition:
+it advances the Model revision and invalidates older write plans.

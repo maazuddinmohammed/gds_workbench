@@ -12,7 +12,10 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_workbench_api.features.metadata_enrichment.service import DescriptionValidator
 from gds_workbench_api.features.prompts.contracts import PromptStageVariable
-from gds_workbench_api.features.prompts.service import DatabasePromptService, PromptDatabase
+from gds_workbench_api.features.prompts.service import (
+    DatabasePromptService,
+    PromptDatabase,
+)
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
@@ -89,7 +92,10 @@ def plan(
 ) -> AgentRunPlan:
     variables = (
         PromptVariableDefinition(
-            name="stage_context", resolver_key=LEGACY, data_type="json", is_required=True
+            name="stage_context",
+            resolver_key=LEGACY,
+            data_type="json",
+            is_required=True,
         ),
         *(
             PromptVariableDefinition(
@@ -152,7 +158,9 @@ def project(
 
 
 @pytest.mark.parametrize("name", ["assigned_description_refs", "description_requests"])
-def test_named_contract_has_valid_schema_example_and_honest_availability(name: str) -> None:
+def test_named_contract_has_valid_schema_example_and_honest_availability(
+    name: str,
+) -> None:
     descriptor = contract(name)
     assert descriptor is not None
     assert descriptor.name == name
@@ -186,7 +194,9 @@ def test_description_schema_is_exact_current_request_union_and_bounds() -> None:
     large_rows = request_rows()
     object_attributes = cast(list[JsonValue], large_rows[0]["attributes"])
     large_rows[0]["attributes"] = object_attributes * 5001
-    assert validate(large_rows), "Complete Object evidence must not be capped by Attribute count."
+    assert validate(large_rows), (
+        "Complete Object evidence must not be capped by Attribute count."
+    )
     rows = request_rows()
     rows[1].update(
         inferred_type=None,
@@ -231,13 +241,22 @@ def test_assigned_refs_schema_has_exact_nonempty_unique_batch_refs() -> None:
     assert not validate(["attribute:201"] * 26)
 
 
-def test_projection_preserves_legacy_values_and_emits_only_named_current_batch() -> None:
+def test_projection_preserves_legacy_values_and_emits_only_named_current_batch() -> (
+    None
+):
     rows = request_rows()
     context = cast(
         JsonValue,
-        {"description_requests": rows, "private_full_snapshot": {"sentinel": "do-not-project"}},
+        {
+            "description_requests": rows,
+            "private_full_snapshot": {"sentinel": "do-not-project"},
+        },
     )
-    old = {LEGACY: context, "workflow.validation_failures": [], "custom.legacy": {"keep": True}}
+    old = {
+        LEGACY: context,
+        "workflow.validation_failures": [],
+        "custom.legacy": {"keep": True},
+    }
     baseline = deepcopy(old)
     result = project(context, legacy=old)
     assert result[REFS] == ["object:101", "attribute:201"]
@@ -251,13 +270,20 @@ def test_projection_preserves_legacy_values_and_emits_only_named_current_batch()
     assert project(context, legacy=result) == result
 
 
-def test_projection_uses_only_registered_inputs_and_leaves_legacy_only_context_alone() -> None:
+def test_projection_uses_only_registered_inputs_and_leaves_legacy_only_context_alone() -> (
+    None
+):
     context = cast(JsonValue, {"description_requests": request_rows()})
     result = project(context, selected_plan=plan(names=("assigned_description_refs",)))
     assert REFS in result and REQUESTS not in result
-    malformed_legacy_context = cast(JsonValue, {"old_shape": ["preserve-original-meaning"]})
+    malformed_legacy_context = cast(
+        JsonValue, {"old_shape": ["preserve-original-meaning"]}
+    )
     legacy = {LEGACY: malformed_legacy_context}
-    assert project(malformed_legacy_context, selected_plan=plan(names=()), legacy=legacy) == legacy
+    assert (
+        project(malformed_legacy_context, selected_plan=plan(names=()), legacy=legacy)
+        == legacy
+    )
 
 
 @pytest.mark.parametrize(
@@ -272,7 +298,9 @@ def test_projection_uses_only_registered_inputs_and_leaves_legacy_only_context_a
         "wrong_kind_ref",
     ],
 )
-def test_invalid_new_input_is_rejected_without_silent_empty_fallback(defect: str) -> None:
+def test_invalid_new_input_is_rejected_without_silent_empty_fallback(
+    defect: str,
+) -> None:
     rows = request_rows()
     context: dict[str, JsonValue] = {"description_requests": cast(JsonValue, rows)}
     if defect == "missing":
@@ -283,7 +311,8 @@ def test_invalid_new_input_is_rejected_without_silent_empty_fallback(defect: str
         rows.append(deepcopy(rows[1]))
     elif defect == "too_many":
         context["description_requests"] = [
-            {**rows[1], "target_ref": f"attribute:{position + 1}"} for position in range(26)
+            {**rows[1], "target_ref": f"attribute:{position + 1}"}
+            for position in range(26)
         ]
     elif defect == "missing_nullable_field":
         del rows[1]["source_description"]
@@ -338,7 +367,8 @@ def test_optional_new_definitions_preserve_old_frozen_template_bytes() -> None:
     context = cast(JsonValue, {"description_requests": request_rows()})
     current = plan()
     templates = PromptComponentTemplates(
-        system="Existing immutable instruction.", instruction="Original {{stage_context}}"
+        system="Existing immutable instruction.",
+        instruction="Original {{stage_context}}",
     )
     old_render = render_prompt(
         templates=templates,
@@ -346,10 +376,13 @@ def test_optional_new_definitions_preserve_old_frozen_template_bytes() -> None:
         resolver_values={LEGACY: context},
     )
     new_render = render_prompt(
-        templates=templates, variables=current.stages[0].variables, resolver_values=project(context)
+        templates=templates,
+        variables=current.stages[0].variables,
+        resolver_values=project(context),
     )
     assert (
-        old_render.system == new_render.system and old_render.instruction == new_render.instruction
+        old_render.system == new_render.system
+        and old_render.instruction == new_render.instruction
     )
     assert not new_render.warning_codes
 
@@ -405,7 +438,9 @@ async def test_both_prompt_reads_expose_fixed_help_and_preserve_stored_legacy_va
             "example": None,
             "order": position + 30,
         }
-        for position, name in enumerate(("assigned_description_refs", "description_requests"))
+        for position, name in enumerate(
+            ("assigned_description_refs", "description_requests")
+        )
     ]
     if surface == "catalog":
         original = StageCatalogTransaction.fetch_all
@@ -413,7 +448,8 @@ async def test_both_prompt_reads_expose_fixed_help_and_preserve_stored_legacy_va
         async def catalog_rows(self: Any, query: Any, parameters: Any = ()) -> Any:
             base = (await original(self, query, parameters))[0]
             base.update(
-                model_workflow="metadata_enrichment", workflow_stage_code="candidate_authoring"
+                model_workflow="metadata_enrichment",
+                workflow_stage_code="candidate_authoring",
             )
             return [
                 {**base, **{f"variable_{key}": value for key, value in row.items()}}
@@ -430,14 +466,17 @@ async def test_both_prompt_reads_expose_fixed_help_and_preserve_stored_legacy_va
             row = await original_one(self, query, parameters)
             if row and "prompt_template_id" in row:
                 row.update(
-                    model_workflow="metadata_enrichment", workflow_stage_code="candidate_authoring"
+                    model_workflow="metadata_enrichment",
+                    workflow_stage_code="candidate_authoring",
                 )
             return row
 
         async def detail_rows(self: Any, query: Any, parameters: Any = ()) -> Any:
             rows = await original_all(self, query, parameters)
             return (
-                [*rows, *variable_rows] if "application.workflow_stage_variable" in query else rows
+                [*rows, *variable_rows]
+                if "application.workflow_stage_variable" in query
+                else rows
             )
 
         monkeypatch.setattr(TemplateDetailTransaction, "fetch_one", detail_header)
@@ -453,13 +492,25 @@ async def test_both_prompt_reads_expose_fixed_help_and_preserve_stored_legacy_va
         response = await service.list_stages(PRINCIPAL, tenant_id=7)
         variables = response.items[0].allowed_variables
     else:
-        detail = await service.read_template(PRINCIPAL, tenant_id=7, prompt_template_id=101)
+        detail = await service.read_template(
+            PRINCIPAL, tenant_id=7, prompt_template_id=101
+        )
         variables = detail.allowed_variables
         legacy = variables[0]
-        assert legacy.description == "Governed source context" and legacy.example is None
+        assert (
+            legacy.description == "Governed source context" and legacy.example is None
+        )
         assert legacy.model_dump()["value_schema"] is None
-        assert detail.versions[0].system_prompt_template == "RAW_SYSTEM_SENTINEL {{stage_context}}"
-        assert database.transaction.calls == ["authorize", "header", "variables", "versions"]
+        assert (
+            detail.versions[0].system_prompt_template
+            == "RAW_SYSTEM_SENTINEL {{stage_context}}"
+        )
+        assert database.transaction.calls == [
+            "authorize",
+            "header",
+            "variables",
+            "versions",
+        ]
     for name in ("assigned_description_refs", "description_requests"):
         variable = next(item for item in variables if item.name == name)
         descriptor = contract(name)
@@ -493,7 +544,9 @@ class DescriptionOnlyExecutor:
 
 
 @pytest.mark.asyncio
-async def test_real_stage_runner_projects_custom_named_inputs_before_shared_repair() -> None:
+async def test_real_stage_runner_projects_custom_named_inputs_before_shared_repair() -> (
+    None
+):
     current = plan()
     executor = DescriptionOnlyExecutor()
     runner = AgentStageRunner(
@@ -506,7 +559,9 @@ async def test_real_stage_runner_projects_custom_named_inputs_before_shared_repa
         ),
     )
     context = cast(JsonValue, {"description_requests": request_rows()})
-    validator = DescriptionValidator({"object:101": "orders", "attribute:201": "order_id"})
+    validator = DescriptionValidator(
+        {"object:101": "orders", "attribute:201": "order_id"}
+    )
     result = await runner.run(
         plan=current,
         stage_code="candidate_authoring",

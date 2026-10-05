@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from typing import Any, cast
 
 from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from pydantic import JsonValue, ValidationError
 
+from gds_workbench_api.features.workflows.authoring.gold_policy import effective_gold_templates
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentValidationIssue,
@@ -40,9 +42,66 @@ class CompleteMappingCandidateValidator:
     def output_schema(self) -> dict[str, JsonValue]:
         return deepcopy(compile_mapping_output_schema(preparation=self._preparation))
 
+    def _parse(self, candidate: JsonValue) -> CompleteMappingCandidateV1:
+        parsed = CompleteMappingCandidateV1.model_validate(candidate, strict=True)
+        MappingCandidateReconciler(preparation=self._preparation).reconcile(candidate=parsed)
+        context = self._preparation.context
+        technical, _ = effective_gold_templates(context.authoring.technical_columns_template, None)
+        history = cast(dict[str, Any] | None, technical.get("type_2"))
+        history_names: set[str] = (
+            {
+                str(cast(dict[str, Any], column).get("semantic_name", "")).casefold()
+                for column in history.values()
+                if isinstance(column, dict)
+            }
+            if isinstance(history, dict) and context.modeled_entity_type == "dimensional_entity"
+            else set()
+        )
+        framework_names = {
+            item.attribute_name.casefold()
+            for item in context.target.attributes
+            if item.is_surrogate_key
+            or (item.is_audit_column and item.attribute_name.casefold() != "sourcesystemid")
+            or item.attribute_name.casefold() in history_names
+        }
+        documents = [
+            item
+            for item in parsed.attribute_mappings
+            if item.attribute_mapping_transformation_document is not None
+        ]
+        object_document = (
+            parsed.object_mapping.mapping_transformation_document if parsed.object_mapping else None
+        )
+        # Generated/framework population does not establish a source-System contribution.
+        # Keep opaque custom Object logic and valid partial business transformations.
+        only_framework = documents and all(
+            item.modeled_attribute_name.casefold() in framework_names for item in documents
+        )
+        no_source_rowset = object_document is None or (
+            object_document.get("source_tables") == []
+            and not context.source_system.is_default
+            and not any(
+                object_document.get(key)
+                for key in (
+                    "source_objects",
+                    "source_logical_entities",
+                    "source_dimensional_entities",
+                )
+            )
+        )
+        if only_framework and no_source_rowset:
+            return parsed.model_copy(
+                update={
+                    "outcome": "no_applicable_source",
+                    "object_mapping": None,
+                    "attribute_mappings": (),
+                }
+            )
+        return parsed
+
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
         try:
-            parsed = CompleteMappingCandidateV1.model_validate(candidate, strict=True)
+            parsed = self._parse(candidate)
             MappingCandidateReconciler(preparation=self._preparation).reconcile(candidate=parsed)
         except ValidationError as error:
             return AgentCandidateValidation(issues=pydantic_validation_issues(error))
@@ -60,7 +119,7 @@ class CompleteMappingCandidateValidator:
 
     def parse_validated(self, candidate: JsonValue) -> CompleteMappingCandidateResult:
         try:
-            parsed = CompleteMappingCandidateV1.model_validate(candidate, strict=True)
+            parsed = self._parse(candidate)
         except ValidationError:
             raise InvalidRequestError("The Mapping candidate is invalid.") from None
         changes = MappingCandidateReconciler(preparation=self._preparation).reconcile(

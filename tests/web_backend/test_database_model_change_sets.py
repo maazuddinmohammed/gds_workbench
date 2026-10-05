@@ -2689,9 +2689,9 @@ async def test_completed_logical_draft_applies_once_with_run_provenance(
     assert started.workflow_run_state == "running"
     assert draft.replayed is False
     assert draft.workflow_run_id == workflow_run_id
-    assert draft.staged_record_count == 2
+    assert draft.staged_record_count == 13
     assert applied.replayed is False
-    assert applied.action_count == 4
+    assert applied.action_count == 15
     assert applied.model_revision == 2
     assert replayed == applied.model_copy(update={"replayed": True})
     assert model == {"model_revision": 2}
@@ -2707,11 +2707,11 @@ async def test_completed_logical_draft_applies_once_with_run_provenance(
     logical_entities = cast(list[object], logical_entities_value)
     logical_attributes = cast(list[object], logical_attributes_value)
     assert len(logical_entities) == 1
-    assert len(logical_attributes) == 1
+    assert len(logical_attributes) == 12
     assert materialized == {
         "entity_count": 1,
         "entity_source_count": 1,
-        "attribute_count": 1,
+        "attribute_count": 12,
         "attribute_source_count": 1,
     }
 

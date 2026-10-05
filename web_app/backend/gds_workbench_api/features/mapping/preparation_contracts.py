@@ -215,6 +215,7 @@ class MappingOutputTemplateInventory(_FrozenModel):
 
 
 class MappingModeledAttribute(_FrozenModel):
+    is_surrogate_key: bool = False
     attribute_id: int = Field(gt=0)
     attribute_name: str = Field(min_length=1, max_length=255)
     attribute_definition: str = Field(min_length=1)

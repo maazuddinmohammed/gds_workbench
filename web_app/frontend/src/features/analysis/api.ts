@@ -1,4 +1,5 @@
-import type { HttpRequest } from "../../core/http";
+import { ApiError, type HttpRequest } from "../../core/http";
+import { METADATA_XLSX_MEDIA_TYPE } from "../metadata/api";
 import type { ReviewStatus } from "../../shared/contracts";
 import type { ModelInputScopeApi } from "../model_input_scope/api";
 import type { WorkflowsApi } from "../workflows/api";
@@ -100,6 +101,7 @@ export interface AnalysisFindingDetail extends AnalysisFinding {
 }
 
 export interface AnalysisTransport {
+  exportAnalysis: (tenantId: number, modelId: number, revision: number, filters: AnalysisFilters) => Promise<{ blob: Blob; filename: string }>;
   listAnalysisFindings: (
     tenantId: number,
     modelId: number,
@@ -138,6 +140,16 @@ export type AnalysisApi = AnalysisTransport
 
 export function createAnalysisApi(request: HttpRequest): AnalysisTransport {
   return {
+    exportAnalysis: (tenantId, modelId, revision, filters) => request(`/api/v1/tenants/${tenantId}/models/${modelId}/analysis/export`, {
+      method: "POST", headers: { "content-type": "application/json", accept: METADATA_XLSX_MEDIA_TYPE },
+      body: JSON.stringify({ expected_model_revision: revision, filters: {
+        object_id: filters.objectId, validation_state: filters.validationState, status: filters.status,
+        locked: filters.locked, show_inactive: filters.showInactive ?? false,
+      } }),
+    }, async (response) => {
+      if (response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== METADATA_XLSX_MEDIA_TYPE) throw new ApiError(502, "invalid_response", null);
+      return { blob: await response.blob(), filename: /filename="([A-Za-z0-9._-]{1,180}\.xlsx)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ?? "Analysis.xlsx" };
+    }),
     listAnalysisFindings: (tenantId, modelId, filters = {}, pageSize = 200, cursor) => {
       const query = new URLSearchParams();
       if (filters.objectId) query.set("object_id", String(filters.objectId));

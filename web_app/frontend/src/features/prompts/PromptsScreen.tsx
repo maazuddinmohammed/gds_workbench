@@ -3,6 +3,7 @@ import { useForm } from "@tanstack/react-form";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 
+import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowFilters } from "../workflows/WorkflowCommandCenter";
 import { ApiError } from "../../core/http";
 import type {
   WorkflowExecutionMode,
@@ -45,7 +46,6 @@ const EXECUTION_MODES: WorkflowExecutionMode[] = [
 export function PromptsScreen({
   api,
   tenantId,
-  tenantName,
   canAuthorPrompts,
   isSuperAdmin,
   hasTenantLock,
@@ -88,7 +88,6 @@ export function PromptsScreen({
       setFilters(next);
       setCursor(undefined);
       setCursorHistory([]);
-      setVisibility("");
     },
   });
   const stageCodes = useMemo(() => {
@@ -127,16 +126,15 @@ export function PromptsScreen({
 
   return (
     <main className="workspace prompts-workspace page-enter">
+      <WorkflowCommandCenter className="prompts-library" filterCount={Object.keys(filters).length + (visibility ? 1 : 0)}>
       <header className="prompts-commandbar">
         <div>
           <h1>Prompts</h1>
-          <p>
-            Templates for {tenantName} and shared workflow defaults.
-          </p>
         </div>
         <div className="prompts-command-actions">
+          <WorkflowCommandTools />
           <span className={hasTenantLock || isSuperAdmin ? "lock-context is-held" : "lock-context"}>
-            {authoringLabel}
+            {hasTenantLock ? "Lock held" : isSuperAdmin ? "Global authoring" : "Read-only"}
           </span>
           <button
             className="button button-secondary button-small"
@@ -160,7 +158,7 @@ export function PromptsScreen({
         </div>
       </header>
 
-      <section className="prompt-filter-band" aria-label="Prompt Template server filters">
+      <WorkflowFilters><section className="prompt-filter-band" aria-label="Prompt Template server filters">
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -236,6 +234,15 @@ export function PromptsScreen({
               </label>
             )}
           </filterForm.Field>
+          <label>
+            <span>Visibility on this page</span>
+            <select aria-label="Visibility on this page" value={visibility}
+              onChange={(event) => setVisibility(event.target.value as PromptVisibilityFilter)}>
+              <option value="">Global and Tenant</option>
+              <option value="global">Global only</option>
+              <option value="tenant">This Tenant only</option>
+            </select>
+          </label>
           <div className="scope-filter-actions">
             <button
               className="button button-secondary button-small"
@@ -251,14 +258,14 @@ export function PromptsScreen({
               Clear
             </button>
             <button className="button button-primary button-small" type="submit">
-              Apply server filters
+              Apply filters
             </button>
           </div>
         </form>
-      </section>
+      </section></WorkflowFilters>
 
       {stagesQuery.isPending || templatesQuery.isPending ? (
-        <div className="surface-state" aria-busy="true">Loading governed Prompt Library…</div>
+        <div className="surface-state" aria-busy="true">Loading Prompts…</div>
       ) : denied ? (
         <div className="surface-state is-error" role="alert">
           You do not have permission to view this Tenant Prompt Library.
@@ -277,7 +284,6 @@ export function PromptsScreen({
             hasPreviousPage={cursorHistory.length > 0}
             hasNextPage={Boolean(templatesQuery.data.next_cursor)}
             isPaging={templatesQuery.isFetching}
-            onVisibilityChange={setVisibility}
             onPreviousPage={() => {
               if (!cursorHistory.length) return;
               setCursor(cursorHistory.at(-1));
@@ -293,6 +299,7 @@ export function PromptsScreen({
         </>
       )}
 
+      </WorkflowCommandCenter>
       {createOpen && stagesQuery.data ? (
         <CreatePromptDialog
           api={api}
@@ -323,30 +330,30 @@ function AllowedVariableReference({ stages }: { stages: PromptStage[] }) {
     <details className="prompt-variable-reference">
       <summary>
         <span>
-          <strong>Allowed-variable reference</strong>
-          <small>{stages.length} filtered agentic stage{stages.length === 1 ? "" : "s"}</small>
+          <strong>Variable reference</strong>
+          <small>{stages.length} workflow stage{stages.length === 1 ? "" : "s"}</small>
         </span>
         <span aria-hidden="true">+</span>
       </summary>
       <div className="prompt-variable-reference-body">
         {stages.length === 0 ? (
-          <p>No agentic stages match the active server filters.</p>
+          <p>No agentic stages match the active filters.</p>
         ) : stages.map((stage) => (
-          <section key={stage.workflow_stage_id}>
-            <header>
-              <div>
+          <details className="prompt-stage-reference" key={stage.workflow_stage_id}>
+            <summary>
+              <span>
                 <strong>{stage.workflow_stage_name}</strong>
                 <small>
                   {humanize(stage.model_workflow)} · {modeLabel(stage.workflow_execution_mode)} · {stage.workflow_stage_code}
                 </small>
-              </div>
+              </span>
               <span>{stage.allowed_variables.length} variables</span>
-            </header>
+            </summary>
             <PromptVariables
               variables={stage.allowed_variables}
               label={`${stage.workflow_stage_name} inputs · ${stage.model_workflow} · ${modeLabel(stage.workflow_execution_mode)}`}
             />
-          </section>
+          </details>
         ))}
       </div>
     </details>

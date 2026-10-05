@@ -93,7 +93,6 @@ export function CodeGenerationRunDialog({ api, tenantId, model, entityType, cove
           <SelectField label="Model" value={modelCode} options={models.map((item) => [item.code, item.name])} onChange={setModelCode} />
           <SelectField label="Reasoning effort" value={reasoningCode} options={efforts.map((item) => [item.code, reasoningEffortDisplayName(item)])} onChange={setReasoningCode} />
         </fieldset>
-        <p className="field-help">Mode: <strong>Tool-assisted</strong>. Reads the selected Mapping documents and supporting context before generating SQL.</p>
         <fieldset disabled={mutation.isPending || pendingRunId !== null || unavailable}>
           <legend className="sr-only">SQL generation selection</legend>
           <div className="agent-run-grid agent-run-grid-two code-delivery-options">

@@ -1,21 +1,21 @@
 # First-release scope
 
-Implemented release boundary. The package supplies local runtime, Workbench and companion extension; installed backend compatibility is checked separately.
+Implemented release boundary. The package supplies local runtime, Atlas Local Workbench, VS Code extension and Codex connector; installed backend compatibility is checked separately.
 
 | Area | First release |
 |---|---|
-| Agent hosts | VS Code supports the complete workflow, including Stage through its extension. Other compatible hosts can prepare local work and hand off to VS Code for submission; no additional direct Stage adapter is included. |
+| Agent hosts | Copilot uses the VS Code extension. Codex CLI uses Atlas Connector as a local relay to the running VS Code extension. Both use the same Stage engine and separate governed Apply. Open the same trusted working folder in both clients, start the bridge in VS Code, and keep VS Code open. Microsoft sign-in stays in VS Code. |
 | Backend | Include database/MCP changes required by the agreed Atlas behavior, implemented and tested locally. Deployment and changes to populated installations remain separate operator actions. |
 | Code Generation | Generate SQL. New Python generation is deferred until its entrypoint, output, parameter, packaging and consumer contracts are established. |
-| Member support | New Member table/dataset support is deferred until its real schema and relationships are available. |
+| Member support | Member is editable through Metadata Change Sets, keyed by Member Group + Member Code. Member filtering is opt-in. |
 | Existing records | Preserve existing Python artifacts/assignments and Member Group records. Their presence is not an invalid Snapshot, and deferred generation does not authorize conversion, deletion or deactivation. |
-| Workbench/extension | Adapt the agreed workspace and improve the table/DBML experience. Modularize Stage Runner while preserving its existing behavior before Atlas-specific adaptation. |
+| Atlas Local Workbench/extension | Adapt the agreed workspace and improve the table/DBML experience. Modularize Stage Runner while preserving its existing behavior before Atlas-specific adaptation. |
 
 ## Applying the scope
 
 - A Python generation request gets a clear capability explanation. Preserve its existing files and assignments; do not silently regenerate them as SQL. Continue independently requested SQL work where possible.
 - Process metadata may describe an existing supported Python executable using its actual registered contract. Registering it does not generate or execute Python.
-- Member-based execution remains deferred. Preserve existing metadata and the agreed new-Copy-Group default `is_member_group_required=false`.
+- Member filters are configured only on explicit request; pipeline execution belongs to the external framework. Preserve the new-Copy-Group default `is_member_group_required=false`.
 - Missing host capability preserves local work. Follow [extension readiness](change-set-lifecycle.md#extension-readiness); a portable skill package does not supply the VS Code tool in another host.
 - Do not widen permissions while aligning backend contracts. Preserve server-owned authorization, locks, revision fencing, redaction and idempotency.
 
@@ -29,4 +29,4 @@ Model-derived Metadata work may keep several owner-specific Snapshot/draft roots
 
 This workspace arrangement does not broaden physical Metadata write or runtime access. Verify operational targets under their true owner; modeled Mapping and Code need no target registration.
 
-Workbench remains the local review/edit/validation surface. User acknowledgement occurs in the agent conversation; the agent invokes Stage Runner, presents server validation/action review and asks separately to Apply. No acknowledgement, Stage or Apply buttons are included in the first Workbench release.
+Atlas Local Workbench remains the local review/edit/validation surface. User acknowledgement occurs in the agent conversation; the agent invokes Stage Runner, presents server validation/action review and asks separately to Apply. No acknowledgement, Stage or Apply buttons are included in the first Atlas Local Workbench release.

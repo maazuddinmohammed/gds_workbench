@@ -395,6 +395,7 @@ def _tenant_owner_fields(dataset: str) -> tuple[str, ...]:
     if dataset in {
         "copy_group",
         "member_group",
+        "member",
         "copy_group_control",
         "process_group",
         "process",

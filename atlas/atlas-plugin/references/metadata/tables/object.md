@@ -48,6 +48,7 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 
 | Field | Accepted value / presence | Meaning and use |
 |---|---|---|
+| `value` | any valid JSON; optional; null allowed | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
 | `tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Tenant component of the physical Connection key; may differ from the Source Tenant owning the data. Reference: [tenant](../read-only/tenant.md). |
 | `system_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the System. Reference: [system](../read-only/system.md). |
 | `connection_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the Connection. |

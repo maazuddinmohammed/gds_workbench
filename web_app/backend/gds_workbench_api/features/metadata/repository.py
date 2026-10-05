@@ -190,6 +190,7 @@ SELECT tenant.tenant_code,
        gds_system.system_code AS gds_connection_system_code,
        gds_connection.connection_code AS gds_connection_code,
        tenant.tenant_visibility,
+       tenant.value,
        tenant.is_active
   FROM visible_tenant_ids
   JOIN core.tenant AS tenant
@@ -211,6 +212,7 @@ SELECT system.system_code,
        system.system_name,
        system.system_description,
        system_type.system_type_code,
+       system.value,
        system.is_active
   FROM visible_system_ids
   JOIN core.system AS system
@@ -230,6 +232,7 @@ SELECT tenant.tenant_code,
        connection.has_foreign_catalog,
        connection.foreign_catalog,
        connection.is_global_data_store,
+       connection.value,
        connection.is_active
   FROM visible_connection_ids
   JOIN core.connection AS connection
@@ -240,6 +243,20 @@ SELECT tenant.tenant_code,
     ON system.system_id = connection.system_id
   JOIN reference.connection_type AS connection_type
     ON connection_type.connection_type_id = connection.connection_type_id
+ WHERE TRUE
+"""
+
+_CONNECTION_LOCATION_ROWS_SQL: LiteralString = f"""
+{_FOUNDATIONAL_CLOSURE_CTE}
+SELECT tenant.tenant_code, system.system_code, connection.connection_code,
+       location_type.location_type_name, environment.environment_code, location.value
+  FROM visible_connection_ids
+  JOIN core.connection AS connection USING (connection_id)
+  JOIN core.tenant AS tenant ON tenant.tenant_id = connection.tenant_id
+  JOIN core.system AS system ON system.system_id = connection.system_id
+  JOIN core.connection_location AS location ON location.connection_id = connection.connection_id
+  JOIN reference.location_type AS location_type USING (location_type_id)
+  JOIN reference.environment AS environment USING (environment_id)
  WHERE TRUE
 """
 
@@ -259,6 +276,7 @@ SELECT placement_tenant.tenant_code,
        object_type.object_type_code,
        zone.zone_code,
        object.is_locked,
+       object.value,
        object.is_active
   FROM visible_objects
   JOIN core.object AS object
@@ -300,6 +318,7 @@ SELECT placement_tenant.tenant_code,
        attribute.is_mapped,
        attribute.is_purge,
        attribute.is_locked,
+       attribute.value,
        attribute.is_active
   FROM core.attribute AS attribute
   JOIN core.object AS object
@@ -405,6 +424,7 @@ SELECT tenant.tenant_code,
        copy_group.copy_group_name,
        copy_group.copy_group_description,
        copy_group.is_member_group_required,
+       copy_group.value,
        copy_group.is_active
   FROM core.copy_group AS copy_group
   JOIN core.tenant AS tenant
@@ -420,12 +440,25 @@ SELECT tenant.tenant_code,
        member_group.member_group_name,
        member_group.member_group_description,
        member_group.member_group_initial_load_date,
+       member_group.value,
        member_group.is_active
   FROM core.member_group AS member_group
   JOIN core.tenant AS tenant
     ON tenant.tenant_id = member_group.tenant_id
   JOIN core.system AS system
     ON system.system_id = member_group.system_id
+ WHERE member_group.tenant_id = %s
+"""
+
+_MEMBER_ROWS_SQL: LiteralString = """
+SELECT tenant.tenant_code, system.system_code, member_group.member_group_name,
+       member.member_code, member.member_name, member.member_description,
+       member.member_attribute_name, member.value,
+ member.is_active
+  FROM core.member AS member
+  JOIN core.member_group AS member_group USING (member_group_id)
+  JOIN core.tenant AS tenant ON tenant.tenant_id = member_group.tenant_id
+  JOIN core.system AS system ON system.system_id = member_group.system_id
  WHERE member_group.tenant_id = %s
 """
 
@@ -480,6 +513,7 @@ SELECT tenant.tenant_code,
        copy.copy_source_order,
        source_operation.data_operation_name AS source_data_operation_name,
        target_operation.data_operation_name AS target_data_operation_name,
+       copy.value,
        copy.is_active
   FROM core.copy AS copy
   JOIN core.copy_group AS copy_group
@@ -529,6 +563,7 @@ SELECT tenant.tenant_code,
        process_group.process_group_description,
        process_group.process_group_dependency_order,
        copy_group.copy_group_name,
+       process_group.value,
        process_group.is_active
   FROM core.process_group AS process_group
   JOIN core.tenant AS tenant
@@ -559,6 +594,7 @@ SELECT tenant.tenant_code,
        object.object_schema,
        object.object_name,
        process_type.process_type_name,
+       process.value,
        process.is_active
   FROM core.process AS process
   JOIN core.process_group AS process_group
@@ -588,7 +624,13 @@ SELECT tenant.tenant_code,
 _OBJECT_LIST_SQL: LiteralString = f"""
 {VISIBLE_OBJECTS_CTE}
 SELECT object.object_id,
-       application.metadata_object_review_revision(object) AS review_revision,
+       placement_tenant.tenant_code,
+       left(object.object_description, 2000) AS object_description,
+       coalesce(length(object.object_description) > 2000, FALSE) AS description_truncated,
+       object.fc_object_schema,
+       object.fc_object_name,
+       left(object.object_transformation, 2000) AS object_transformation,
+       coalesce(length(object.object_transformation) > 2000, FALSE) AS transformation_truncated,
        object.object_schema,
        object.object_name,
        object_type.object_type_code,
@@ -608,6 +650,7 @@ SELECT object.object_id,
        ) AS attribute_count,
        object.batch_attribute_name,
        object.is_locked,
+       object.value,
        object.is_active
   FROM visible_objects
   JOIN core.object AS object
@@ -618,6 +661,8 @@ SELECT object.object_id,
     ON zone.zone_id = object.zone_id
   JOIN core.connection AS connection
     ON connection.connection_id = object.connection_id
+  JOIN core.tenant AS placement_tenant
+    ON placement_tenant.tenant_id = connection.tenant_id
   JOIN core.system AS system
     ON system.system_id = connection.system_id
   JOIN core.tenant AS source_tenant
@@ -626,9 +671,10 @@ SELECT object.object_id,
    AND (%s::TEXT IS NULL OR lower(btrim(system.system_code)) = %s)
    AND (%s::TEXT IS NULL OR lower(btrim(source_tenant.tenant_code)) = %s)
    AND (%s = 'all' OR object.is_active = (%s = 'active'))
- ORDER BY lower(btrim(source_tenant.tenant_code)),
+ ORDER BY lower(btrim(placement_tenant.tenant_code)),
           lower(btrim(system.system_code)),
           lower(btrim(connection.connection_code)),
+          lower(btrim(zone.zone_code)),
           lower(btrim(object.object_schema)),
           lower(btrim(object.object_name)),
           object.object_id
@@ -638,12 +684,17 @@ LIMIT %s OFFSET %s
 _OBJECT_DETAIL_SQL: LiteralString = f"""
 {VISIBLE_OBJECTS_CTE}
 SELECT object.object_id,
-       application.metadata_object_review_revision(object) AS review_revision,
+       placement_tenant.tenant_code,
        object.object_schema,
        object.object_name,
        object_type.object_type_code,
        object_type.object_type_name,
        left(object.object_description, 2000) AS object_description,
+       coalesce(length(object.object_description) > 2000, FALSE) AS description_truncated,
+       object.fc_object_schema,
+       object.fc_object_name,
+       left(object.object_transformation, 2000) AS object_transformation,
+       coalesce(length(object.object_transformation) > 2000, FALSE) AS transformation_truncated,
        zone.zone_code,
        connection.connection_id,
        connection.connection_code,
@@ -661,6 +712,7 @@ SELECT object.object_id,
        ) AS attribute_count,
        object.batch_attribute_name,
        object.is_locked,
+       object.value,
        object.is_active
   FROM visible_objects
   JOIN core.object AS object
@@ -671,6 +723,8 @@ SELECT object.object_id,
     ON zone.zone_id = object.zone_id
   JOIN core.connection AS connection
     ON connection.connection_id = object.connection_id
+  JOIN core.tenant AS placement_tenant
+    ON placement_tenant.tenant_id = connection.tenant_id
   JOIN core.system AS system
     ON system.system_id = connection.system_id
   JOIN core.tenant AS source_tenant
@@ -681,8 +735,10 @@ SELECT object.object_id,
 _OBJECT_ATTRIBUTES_SQL: LiteralString = f"""
 {VISIBLE_OBJECTS_CTE}
 SELECT attribute.attribute_id,
-       application.metadata_attribute_review_revision(attribute, object) AS review_revision,
        attribute.attribute_name,
+       attribute.fc_attribute_name,
+       left(attribute.attribute_custom_code, 2000) AS attribute_custom_code,
+       coalesce(length(attribute.attribute_custom_code) > 2000, FALSE) AS custom_code_truncated,
        attribute.attribute_ordinal_position,
        left(attribute.attribute_description, 2000) AS attribute_description,
        coalesce(length(attribute.attribute_description) > 2000, FALSE) AS description_truncated,
@@ -696,6 +752,7 @@ SELECT attribute.attribute_id,
        attribute.is_mapped,
        attribute.is_purge,
        attribute.is_locked,
+       attribute.value,
        attribute.is_active
   FROM visible_objects
   JOIN core.attribute AS attribute
@@ -823,6 +880,17 @@ _DATASET_QUERIES: Mapping[MetadataDataset, _DatasetQuery] = MappingProxyType(
             },
             "connection.connection_id",
         ),
+        "connection_location": _DatasetQuery(
+            _CONNECTION_LOCATION_ROWS_SQL,
+            {
+                "tenant_code": "lower(btrim(tenant.tenant_code))",
+                "system_code": "lower(btrim(system.system_code))",
+                "connection_code": "lower(btrim(connection.connection_code))",
+                "location_type_name": "lower(btrim(location_type.location_type_name))",
+                "environment_code": "lower(btrim(environment.environment_code))",
+            },
+            "location.connection_location_id",
+        ),
         "system_type": _DatasetQuery(
             _SYSTEM_TYPE_ROWS_SQL,
             {"system_type_code": "lower(btrim(system_type.system_type_code))"},
@@ -939,6 +1007,11 @@ _DATASET_QUERIES: Mapping[MetadataDataset, _DatasetQuery] = MappingProxyType(
             _MEMBER_GROUP_FILTER_EXPRESSIONS,
             "member_group.member_group_id",
         ),
+        "member": _DatasetQuery(
+            _MEMBER_ROWS_SQL,
+            {**_MEMBER_GROUP_FILTER_EXPRESSIONS, "member_code": "lower(btrim(member.member_code))"},
+            "member.member_id",
+        ),
         "copy_group_control": _DatasetQuery(
             _COPY_GROUP_CONTROL_ROWS_SQL,
             _COPY_GROUP_CONTROL_FILTER_EXPRESSIONS,
@@ -967,7 +1040,7 @@ if tuple(_DATASET_QUERIES) != METADATA_DATASETS:
 
 
 class PostgresMetadataRepository:
-    """Read only from the closed 28-dataset Metadata query registry."""
+    """Read only from the closed Metadata query registry."""
 
     async def list_rows(
         self,

@@ -69,6 +69,7 @@ BEGIN
            run.model_workflow,
            run.workflow_run_state,
            run.requested_batch_id,
+           run.execution_backend,
            run.selected_scope_count,
            target_model.tenant_id,
            target_model.model_revision
@@ -125,7 +126,7 @@ BEGIN
       FROM application.workflow_run_object_selection AS selection
       JOIN core.object AS object_record
         ON object_record.object_id = selection.object_id
-       AND object_record.source_tenant_id = v_run.tenant_id
+       AND (object_record.source_tenant_id = v_run.tenant_id OR v_run.execution_backend = 'mcp')
        AND object_record.is_active
       JOIN core.connection AS source_connection
         ON source_connection.connection_id = object_record.connection_id
@@ -263,7 +264,7 @@ BEGIN
        AND attribute_record.is_active
       JOIN core.object AS object_record
         ON object_record.object_id = selection.object_id
-       AND object_record.source_tenant_id = v_run.tenant_id
+       AND (object_record.source_tenant_id = v_run.tenant_id OR v_run.execution_backend = 'mcp')
        AND object_record.is_active
       JOIN core.connection AS source_connection
         ON source_connection.connection_id = object_record.connection_id
@@ -2064,6 +2065,7 @@ BEGIN
            run.model_workflow,
            run.workflow_run_state,
            run.requested_batch_id,
+           run.execution_backend,
            run.selected_scope_count,
            target_model.tenant_id,
            target_model.model_revision
@@ -2123,7 +2125,7 @@ BEGIN
        AND scope.is_active
       JOIN core.object AS object_record
         ON object_record.object_id = selection.object_id
-       AND object_record.source_tenant_id = v_run.tenant_id
+       AND (object_record.source_tenant_id = v_run.tenant_id OR v_run.execution_backend = 'mcp')
        AND object_record.is_active
       JOIN core.connection AS connection
         ON connection.connection_id = object_record.connection_id
@@ -2137,7 +2139,8 @@ BEGIN
       JOIN reference.zone AS zone
         ON zone.zone_id = object_record.zone_id
        AND zone.is_active
-       AND lower(btrim(zone.zone_code)) = 'bronze'
+       AND (lower(btrim(zone.zone_code)) = 'bronze'
+            OR (v_run.execution_backend = 'mcp' AND lower(btrim(zone.zone_code)) = 'source'))
      WHERE selection.workflow_run_id = p_workflow_run_id
        AND selection.model_id = v_run.model_id
      ORDER BY object_record.object_id
@@ -2258,7 +2261,7 @@ BEGIN
        AND attribute.is_active
       JOIN core.object AS object_record
         ON object_record.object_id = selection.object_id
-       AND object_record.source_tenant_id = v_run.tenant_id
+       AND (object_record.source_tenant_id = v_run.tenant_id OR v_run.execution_backend = 'mcp')
        AND object_record.is_active
       JOIN core.connection AS connection
         ON connection.connection_id = object_record.connection_id
@@ -2268,6 +2271,12 @@ BEGIN
        AND source_tenant.is_active
      WHERE selection.workflow_run_id = p_workflow_run_id
        AND selection.model_id = v_run.model_id;
+
+    IF v_run.execution_backend = 'mcp' THEN
+        SELECT jsonb_object_agg(item->>'attribute_id', item->>'source_context_digest')
+          INTO v_expected_context_digests
+          FROM jsonb_array_elements(mcp.mcp_profiling_context(p_workflow_run_id)) AS item;
+    END IF;
 
     SELECT coalesce(
                jsonb_object_agg(
@@ -3242,37 +3251,7 @@ END;
 $complete_metadata_enrichment$;
 REVOKE ALL ON FUNCTION application.complete_metadata_enrichment(UUID, UUID, VARCHAR, BIGINT, BIGINT, UUID, CHAR, JSONB) FROM PUBLIC;
 
--- Opaque full-row witnesses shared by catalog reads and explicit physical review.
--- Epoch timestamps keep the digest independent of the database session timezone.
-CREATE FUNCTION application.metadata_object_review_revision(p_object core.object)
-RETURNS TEXT LANGUAGE SQL IMMUTABLE STRICT SECURITY INVOKER SET search_path = pg_catalog
-AS $metadata_object_review_revision$
-    SELECT encode(sha256(convert_to((
-        (to_jsonb(p_object) - 'created_time' - 'updated_time') || jsonb_build_object(
-            'created_time', extract(epoch FROM p_object.created_time),
-            'updated_time', extract(epoch FROM p_object.updated_time)
-        )
-    )::TEXT, 'UTF8')), 'hex')
-$metadata_object_review_revision$;
-REVOKE ALL ON FUNCTION application.metadata_object_review_revision(core.object) FROM PUBLIC;
-
-CREATE FUNCTION application.metadata_attribute_review_revision(
-    p_attribute core.attribute, p_object core.object
-)
-RETURNS TEXT LANGUAGE SQL IMMUTABLE STRICT SECURITY INVOKER SET search_path = pg_catalog
-AS $metadata_attribute_review_revision$
-    SELECT encode(sha256(convert_to(jsonb_build_object(
-        'attribute', (to_jsonb(p_attribute) - 'created_time' - 'updated_time') || jsonb_build_object(
-            'created_time', extract(epoch FROM p_attribute.created_time),
-            'updated_time', extract(epoch FROM p_attribute.updated_time)
-        ),
-        'parent', jsonb_build_object('object_id', p_object.object_id,
-            'source_tenant_id', p_object.source_tenant_id,
-            'is_active', p_object.is_active, 'is_locked', p_object.is_locked)
-    )::TEXT, 'UTF8')), 'hex')
-$metadata_attribute_review_revision$;
-REVOKE ALL ON FUNCTION application.metadata_attribute_review_revision(core.attribute, core.object) FROM PUBLIC;
-
+-- Private, append-only audit for human Model Enrichment reviews.
 CREATE TABLE application.metadata_review_event (
     metadata_review_event_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES core.tenant (tenant_id),
@@ -3437,220 +3416,6 @@ $add_model_input_scope_objects$;
 REVOKE ALL ON FUNCTION application.add_model_input_scope_objects(
     UUID, UUID, BIGINT, BIGINT, BIGINT, BIGINT[]) FROM PUBLIC;
 
-CREATE FUNCTION application.review_metadata_records(
-    p_entra_tenant_id UUID, p_entra_object_id UUID, p_expected_principal_type VARCHAR,
-    p_tenant_id BIGINT, p_record_type VARCHAR, p_action VARCHAR, p_records JSONB,
-    p_correlation_id UUID
-)
-RETURNS TABLE (denial_code VARCHAR(50), review_event_id BIGINT, action_count INTEGER, records JSONB)
-LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
-AS $review_metadata_records$
-DECLARE
-    v_decision RECORD;
-    v_existing application.metadata_review_event%ROWTYPE;
-    v_records JSONB;
-    v_before JSONB;
-    v_ids BIGINT[];
-    v_parent_ids BIGINT[];
-    v_request_digest CHAR(64);
-    v_now TIMESTAMPTZ;
-    v_actor VARCHAR(255);
-    v_count INTEGER;
-BEGIN
-    IF p_entra_tenant_id IS NULL OR p_entra_object_id IS NULL OR p_tenant_id IS NULL
-       OR p_tenant_id < 1 OR p_correlation_id IS NULL
-       OR p_record_type IS NULL OR p_record_type NOT IN ('object', 'attribute')
-       OR p_action IS NULL OR p_action NOT IN ('lock', 'unlock', 'deactivate', 'reactivate', 'describe')
-       OR p_records IS NULL OR jsonb_typeof(p_records) <> 'array' THEN
-        denial_code := 'invalid_request'; RETURN NEXT; RETURN;
-    END IF;
-    IF p_expected_principal_type IS DISTINCT FROM 'user' THEN
-        denial_code := 'authorization_denied'; RETURN NEXT; RETURN;
-    END IF;
-    IF jsonb_array_length(p_records) NOT BETWEEN 1 AND 200
-       OR octet_length(p_records::TEXT) > 32768 OR EXISTS (
-           SELECT 1 FROM jsonb_array_elements(p_records) AS item(value)
-            WHERE jsonb_typeof(item.value) <> 'object'
-               OR NOT item.value ?& ARRAY['record_id', 'expected_revision']
-               OR item.value - CASE WHEN p_action = 'describe'
-                    THEN ARRAY['record_id', 'expected_revision', 'description']
-                    ELSE ARRAY['record_id', 'expected_revision'] END <> '{}'::JSONB
-               OR (p_action = 'describe' AND (
-                    NOT item.value ? 'description'
-                    OR jsonb_typeof(item.value->'description') NOT IN ('string', 'null')
-                    OR octet_length(item.value->>'description') > 2000
-                    OR (item.value->>'description') ~ '[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]'
-               ))
-               OR jsonb_typeof(item.value->'record_id') IS DISTINCT FROM 'number'
-               OR (item.value->>'record_id') !~ '^[1-9][0-9]{0,18}$'
-               OR jsonb_typeof(item.value->'expected_revision') IS DISTINCT FROM 'string'
-               OR (item.value->>'expected_revision') !~ '^[0-9a-f]{64}$'
-       ) THEN
-        denial_code := 'invalid_request'; RETURN NEXT; RETURN;
-    END IF;
-    IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_records) AS item(value)
-               WHERE (item.value->>'record_id')::NUMERIC > 9223372036854775807)
-       OR (SELECT count(DISTINCT item.value->>'record_id')
-             FROM jsonb_array_elements(p_records) AS item(value)) <> jsonb_array_length(p_records) THEN
-        denial_code := 'invalid_request'; RETURN NEXT; RETURN;
-    END IF;
-    SELECT array_agg((item.value->>'record_id')::BIGINT ORDER BY (item.value->>'record_id')::BIGINT),
-           jsonb_agg(item.value ORDER BY (item.value->>'record_id')::BIGINT)
-      INTO v_ids, v_records FROM jsonb_array_elements(p_records) AS item(value);
-    v_request_digest := encode(sha256(convert_to(jsonb_build_object(
-        'record_type', p_record_type, 'action', p_action, 'records', v_records
-    )::TEXT, 'UTF8')), 'hex');
-
-    -- Do not upgrade a SHARE lock: simultaneous reviews would deadlock.
-    SELECT * INTO v_decision FROM security.authorize_tenant_operation(
-        p_entra_tenant_id, p_entra_object_id, p_expected_principal_type, p_tenant_id, 'tenant_read');
-    IF NOT FOUND OR NOT v_decision.authorized THEN
-        denial_code := coalesce(v_decision.denial_code, 'authorization_denied'); RETURN NEXT; RETURN;
-    END IF;
-    PERFORM 1 FROM security.tenant_lock WHERE tenant_id = p_tenant_id FOR UPDATE;
-    SELECT * INTO v_decision FROM security.authorize_tenant_operation(
-        p_entra_tenant_id, p_entra_object_id, p_expected_principal_type, p_tenant_id, 'tenant_metadata_write');
-    IF NOT FOUND OR NOT v_decision.authorized THEN
-        denial_code := coalesce(v_decision.denial_code, 'authorization_denied'); RETURN NEXT; RETURN;
-    END IF;
-    SELECT event.* INTO v_existing FROM application.metadata_review_event AS event
-     WHERE event.tenant_id = p_tenant_id AND event.actor_principal_id = v_decision.principal_id
-       AND event.correlation_id = p_correlation_id;
-    IF FOUND THEN
-        IF v_existing.request_digest <> v_request_digest THEN
-            denial_code := 'metadata_review_conflict'; RETURN NEXT; RETURN;
-        END IF;
-        review_event_id := v_existing.metadata_review_event_id;
-        action_count := v_existing.action_count;
-        records := v_existing.records;
-        RETURN NEXT; RETURN;
-    END IF;
-    -- Starts hold Model/Run before Tenant Lock SHARE. Never lock those rows here.
-    IF EXISTS (SELECT 1 FROM application.workflow_run
-               WHERE tenant_id = p_tenant_id AND workflow_run_state = 'running') THEN
-        denial_code := 'tenant_workflow_conflict'; RETURN NEXT; RETURN;
-    END IF;
-    IF p_record_type = 'object' THEN
-        PERFORM 1 FROM core.object WHERE object_id = ANY(v_ids) AND source_tenant_id = p_tenant_id
-         ORDER BY object_id FOR UPDATE;
-        SELECT count(*) INTO v_count FROM core.object
-         WHERE object_id = ANY(v_ids) AND source_tenant_id = p_tenant_id;
-        IF v_count <> cardinality(v_ids) THEN
-            denial_code := 'metadata_selection_conflict'; RETURN NEXT; RETURN;
-        END IF;
-        IF EXISTS (SELECT 1 FROM jsonb_to_recordset(v_records) AS item(record_id BIGINT, expected_revision TEXT)
-                   JOIN core.object AS object ON object.object_id = item.record_id
-                   WHERE application.metadata_object_review_revision(object) <> item.expected_revision) THEN
-            denial_code := 'metadata_revision_conflict'; RETURN NEXT; RETURN;
-        END IF;
-        IF p_action IN ('deactivate', 'reactivate', 'describe') AND EXISTS (
-            SELECT 1 FROM core.object WHERE object_id = ANY(v_ids) AND is_locked
-        ) THEN
-            denial_code := 'object_locked'; RETURN NEXT; RETURN;
-        END IF;
-        SELECT jsonb_agg(jsonb_build_object('record_id', object_id,
-            'is_active', is_active, 'is_locked', is_locked) || CASE WHEN p_action = 'describe'
-            THEN jsonb_build_object('description_digest', encode(sha256(convert_to(
-                jsonb_build_object('value', object_description)::TEXT, 'UTF8')), 'hex'))
-            ELSE '{}'::JSONB END ORDER BY object_id)
-          INTO v_before FROM core.object WHERE object_id = ANY(v_ids);
-    ELSE
-        SELECT array_agg(DISTINCT object.object_id ORDER BY object.object_id) INTO v_parent_ids
-          FROM core.attribute AS attribute JOIN core.object AS object USING (object_id)
-         WHERE attribute.attribute_id = ANY(v_ids) AND object.source_tenant_id = p_tenant_id;
-        PERFORM 1 FROM core.object WHERE object_id = ANY(v_parent_ids) AND source_tenant_id = p_tenant_id
-         ORDER BY object_id FOR UPDATE;
-        PERFORM 1 FROM core.attribute WHERE attribute_id = ANY(v_ids) AND object_id = ANY(v_parent_ids)
-         ORDER BY attribute_id FOR UPDATE;
-        SELECT count(*) INTO v_count FROM core.attribute AS attribute JOIN core.object AS object USING (object_id)
-         WHERE attribute.attribute_id = ANY(v_ids) AND object.object_id = ANY(v_parent_ids)
-           AND object.source_tenant_id = p_tenant_id;
-        IF v_count <> cardinality(v_ids) THEN
-            denial_code := 'metadata_selection_conflict'; RETURN NEXT; RETURN;
-        END IF;
-        IF EXISTS (SELECT 1 FROM jsonb_to_recordset(v_records) AS item(record_id BIGINT, expected_revision TEXT)
-                   JOIN core.attribute AS attribute ON attribute.attribute_id = item.record_id
-                   JOIN core.object AS object USING (object_id)
-                   WHERE application.metadata_attribute_review_revision(attribute, object) <> item.expected_revision) THEN
-            denial_code := 'metadata_revision_conflict'; RETURN NEXT; RETURN;
-        END IF;
-        IF EXISTS (SELECT 1 FROM core.object WHERE object_id = ANY(v_parent_ids) AND is_locked) THEN
-            denial_code := 'object_locked'; RETURN NEXT; RETURN;
-        END IF;
-        IF p_action IN ('deactivate', 'reactivate', 'describe') AND EXISTS (
-            SELECT 1 FROM core.attribute WHERE attribute_id = ANY(v_ids) AND is_locked
-        ) THEN
-            denial_code := 'attribute_locked'; RETURN NEXT; RETURN;
-        END IF;
-        SELECT jsonb_agg(jsonb_build_object('record_id', attribute_id,
-            'is_active', is_active, 'is_locked', is_locked) || CASE WHEN p_action = 'describe'
-            THEN jsonb_build_object('description_digest', encode(sha256(convert_to(
-                jsonb_build_object('value', attribute_description)::TEXT, 'UTF8')), 'hex'))
-            ELSE '{}'::JSONB END ORDER BY attribute_id)
-          INTO v_before FROM core.attribute WHERE attribute_id = ANY(v_ids);
-    END IF;
-    -- A lock can expire while waiting for selected rows; recheck before any write.
-    SELECT * INTO v_decision FROM security.authorize_tenant_operation(
-        p_entra_tenant_id, p_entra_object_id, p_expected_principal_type, p_tenant_id, 'tenant_metadata_write');
-    IF NOT FOUND OR NOT v_decision.authorized THEN
-        denial_code := coalesce(v_decision.denial_code, 'authorization_denied'); RETURN NEXT; RETURN;
-    END IF;
-    v_now := clock_timestamp();
-    v_actor := ('principal:' || v_decision.principal_id::TEXT)::VARCHAR(255);
-    IF p_action = 'describe' AND p_record_type = 'object' THEN
-        UPDATE core.object AS object SET object_description = item.description,
-            updated_time = v_now, updated_by = v_actor
-          FROM jsonb_to_recordset(v_records) AS item(record_id BIGINT, description TEXT)
-         WHERE object.object_id = item.record_id
-           AND object.object_description IS DISTINCT FROM item.description;
-        GET DIAGNOSTICS action_count = ROW_COUNT;
-    ELSIF p_action = 'describe' THEN
-        UPDATE core.attribute AS attribute SET attribute_description = item.description,
-            updated_time = v_now, updated_by = v_actor
-          FROM jsonb_to_recordset(v_records) AS item(record_id BIGINT, description TEXT)
-         WHERE attribute.attribute_id = item.record_id
-           AND attribute.attribute_description IS DISTINCT FROM item.description;
-        GET DIAGNOSTICS action_count = ROW_COUNT;
-    END IF;
-    IF p_record_type = 'object' THEN
-        UPDATE core.object SET
-            is_locked = CASE p_action WHEN 'lock' THEN TRUE WHEN 'unlock' THEN FALSE ELSE is_locked END,
-            is_active = CASE p_action WHEN 'reactivate' THEN TRUE WHEN 'deactivate' THEN FALSE ELSE is_active END,
-            updated_time = v_now, updated_by = v_actor
-         WHERE object_id = ANY(v_ids) AND CASE p_action
-            WHEN 'lock' THEN NOT is_locked WHEN 'unlock' THEN is_locked
-            WHEN 'deactivate' THEN is_active WHEN 'reactivate' THEN NOT is_active END;
-        IF p_action <> 'describe' THEN GET DIAGNOSTICS action_count = ROW_COUNT; END IF;
-        SELECT jsonb_agg(jsonb_build_object('record_id', object_id,
-            'is_active', is_active, 'is_locked', is_locked,
-            'review_revision', application.metadata_object_review_revision(object)) ORDER BY object_id)
-          INTO records FROM core.object AS object WHERE object_id = ANY(v_ids);
-    ELSE
-        UPDATE core.attribute SET
-            is_locked = CASE p_action WHEN 'lock' THEN TRUE WHEN 'unlock' THEN FALSE ELSE is_locked END,
-            is_active = CASE p_action WHEN 'reactivate' THEN TRUE WHEN 'deactivate' THEN FALSE ELSE is_active END,
-            updated_time = v_now, updated_by = v_actor
-         WHERE attribute_id = ANY(v_ids) AND CASE p_action
-            WHEN 'lock' THEN NOT is_locked WHEN 'unlock' THEN is_locked
-            WHEN 'deactivate' THEN is_active WHEN 'reactivate' THEN NOT is_active END;
-        IF p_action <> 'describe' THEN GET DIAGNOSTICS action_count = ROW_COUNT; END IF;
-        SELECT jsonb_agg(jsonb_build_object('record_id', attribute_id,
-            'is_active', attribute.is_active, 'is_locked', attribute.is_locked,
-            'review_revision', application.metadata_attribute_review_revision(attribute, object)) ORDER BY attribute_id)
-          INTO records FROM core.attribute AS attribute JOIN core.object AS object USING (object_id)
-         WHERE attribute_id = ANY(v_ids);
-    END IF;
-    INSERT INTO application.metadata_review_event AS event (
-        tenant_id, actor_principal_id, correlation_id, record_type, action,
-        request_digest, action_count, before_records, records
-    ) VALUES (
-        p_tenant_id, v_decision.principal_id, p_correlation_id, p_record_type, p_action,
-        v_request_digest, action_count, v_before, records
-    ) RETURNING event.metadata_review_event_id INTO review_event_id;
-    RETURN NEXT;
-END;
-$review_metadata_records$;
-REVOKE ALL ON FUNCTION application.review_metadata_records(UUID, UUID, VARCHAR, BIGINT, VARCHAR, VARCHAR, JSONB, UUID) FROM PUBLIC;
 
 -- Web-only permanent deletion. The server supplies an explicitly confirmed plan;
 -- this primitive rechecks identity, ownership, locks, revision, and the audit receipt.

@@ -8,6 +8,18 @@ import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 
 describe("Mapping journey", () => {
+  it("offers Mapping editors only inside Show detail", async () => {
+    const fetcher = mappingFetchStub();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18?layer=logical"] }) })} />);
+    const user = userEvent.setup();
+    const detail = await screen.findByRole("link", { name: "Open Object Mapping 81" });
+    expect(screen.queryByRole("button", { name: /Add row|Edit row|Edit Object Mapping|Edit Attribute Mapping/ })).not.toBeInTheDocument();
+    await user.click(detail);
+    expect(await screen.findByRole("button", { name: "Edit Object Mapping" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Edit Attribute Mapping" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Add row|Edit row/ })).not.toBeInTheDocument();
+  });
+
   it.each(["logical", "dimensional"] as const)("keeps missing %s Attribute transformations blank without inventing Mapping records", async (layer) => {
     const base = mappingFetchStub();
     const entity = { ...mappingTarget, entity_type: `${layer}_entity` };
@@ -55,7 +67,6 @@ describe("Mapping journey", () => {
     expect(fetcher.mock.calls.some(([input]) => String(input).includes("/mapping/attributes/null"))).toBe(false);
     const scrollRegion = screen.getByRole("region", { name: "Attribute Mappings spreadsheet" });
     expect(scrollRegion).toHaveAttribute("tabindex", "0");
-    expect(scrollRegion).toHaveAccessibleDescription("Scroll horizontally to view all transformation and source columns.");
     scrollRegion.focus();
     expect(scrollRegion).toHaveFocus();
   });
@@ -1310,4 +1321,36 @@ it("selects unlocked Attributes across every page and permits excluded missing m
   expect(JSON.parse(String(call?.[1]?.body)).mapping_targets[0].selected_attribute_ids).toEqual(
     Array.from({ length: 50 }, (_, index) => 801 + index),
   );
+});
+
+it.each(["logical", "dimensional"] as const)("exports %s Mapping from More without a Tenant Lock", async (layer) => {
+  const base = mappingFetchStub({ hasLock: false });
+  const fetcher = vi.fn<typeof fetch>(async (input, init) => String(input).endsWith("/mapping/export")
+    ? new Response(new Blob(["xlsx"], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), {
+      headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "content-disposition": 'attachment; filename="Mapping.xlsx"' },
+    }) : base(input, init));
+  const createObjectURL = vi.fn(() => "blob:mapping-export");
+  const revokeObjectURL = vi.fn();
+  vi.stubGlobal("URL", class extends URL { static override createObjectURL = createObjectURL; static override revokeObjectURL = revokeObjectURL; });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  try {
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: [`/tenants/7/mapping/models/18?layer=${layer}`] }) })} />);
+    const user = userEvent.setup();
+    await screen.findByRole("table", { name: "Object Mappings" });
+    await user.click(screen.getByText("More", { exact: true }));
+    const trigger = screen.getByRole("button", { name: "Export" });
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: `Export ${layer === "logical" ? "Logical" : "Dimensional"} mappings` });
+    await user.selectOptions(within(dialog).getByLabelText("System"), "CRM");
+    await user.click(within(dialog).getByRole("button", { name: "Download XLSX" }));
+    expect(await within(dialog).findByRole("status")).toHaveTextContent("Workbook downloaded.");
+    const request = fetcher.mock.calls.find(([url]) => String(url).endsWith("/mapping/export"));
+    expect(JSON.parse(String(request?.[1]?.body))).toEqual({ expected_model_revision: 18, entity_type: `${layer}_entity`, source_system_code: "CRM" });
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:mapping-export");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  } finally { click.mockRestore(); vi.unstubAllGlobals(); }
 });

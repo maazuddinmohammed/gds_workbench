@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { validateSubagentPolicy } = require("../workbench/core.js");
 const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const digest = /^[0-9a-f]{64}$/;
@@ -82,6 +83,7 @@ function session(root) {
       (state.sql.environment !== undefined && !["dev", "qa", "stg", "prod"].includes(state.sql.environment)))) {
     throw Error("Invalid SQL policy/environment.");
   }
+  if (Object.hasOwn(state, "subagent_policy")) validateSubagentPolicy(state.subagent_policy);
   if (state.metadata_owners !== undefined && !object(state.metadata_owners)) throw Error("Invalid Metadata owner registry.");
   for (const [id, owner] of Object.entries(state.metadata_owners ?? {})) {
     identity(owner, "Metadata owner");

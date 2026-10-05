@@ -29,6 +29,7 @@ vi.mock("vscode", () => ({
   LanguageModelTextPart: class { constructor(public value: string) {} },
   LanguageModelToolResult: class { constructor(public content: unknown[]) {} },
 }));
+vi.mock("../src/vscode-bridge.js", () => ({ registerCodexBridge: () => async () => undefined }));
 vi.mock("../src/mcp-client.js", async (original) => ({
   ...await original<typeof import("../src/mcp-client.js")>(),
   createStageMcpClient: mocks.createClient,
@@ -106,7 +107,7 @@ describe("VS Code tool boundary", () => {
     expect(mocks.getSession).toHaveBeenCalledWith(
       "microsoft",
       [`${PRODUCTION_MCP_URL}/workbench.access`, `VSCODE_TENANT:${tenant}`],
-      { createIfNone: { detail: "Sign in with the Microsoft account authorized for GDS Workbench." } },
+      { createIfNone: { detail: "Sign in with the Microsoft account authorized for Atlas Local Workbench." } },
     );
   });
 

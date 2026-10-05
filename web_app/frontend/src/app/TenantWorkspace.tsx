@@ -148,7 +148,6 @@ export function TenantWorkspace({
           <div className="open-model">
             <small>Open Model</small>
             <strong>{model.model_name}</strong>
-            <span>Owner · {home.tenant.tenant_name}</span>
             <Link
               to="/tenants/$tenantId/models/$modelId"
               params={{ tenantId, modelId: String(model.model_id) }}

@@ -342,6 +342,7 @@ async def test_stage_metadata_change_set_stages_multiple_datasets_with_one_revis
                     "copy_group_name": "CUSTOMERS",
                     "copy_group_description": None,
                     "is_member_group_required": False,
+                    "value": None,
                     "is_active": True,
                 }
             ],
@@ -465,6 +466,7 @@ async def test_stage_metadata_change_set_reports_safe_dynamic_schema_error() -> 
                                 "copy_group_name": "CUSTOMERS",
                                 "copy_group_description": "must-not-appear",
                                 "is_member_group_required": False,
+                    "value": None,
                             }
                         ],
                     }
@@ -514,6 +516,7 @@ async def test_metadata_stage_batch_tools_begin_put_and_commit_one_replacement()
         "copy_group_name": "CUSTOMERS",
         "copy_group_description": None,
         "is_member_group_required": False,
+                    "value": None,
         "is_active": True,
     }
     second: dict[str, object] = {**first, "copy_group_name": "ORDERS"}
@@ -613,6 +616,7 @@ async def test_metadata_stage_chunk_rejects_a_digest_mismatch_before_database_wr
         "copy_group_name": "CUSTOMERS",
         "copy_group_description": None,
         "is_member_group_required": False,
+                    "value": None,
         "is_active": True,
     }
     database = FakeDatabase()
@@ -658,6 +662,7 @@ async def test_get_metadata_change_set_returns_counts_or_one_dataset(
             "ingestion_attribute_mapping",
             "copy_group",
             "member_group",
+            "member",
             "copy_group_control",
             "copy",
             "process_group",
@@ -671,6 +676,7 @@ async def test_get_metadata_change_set_returns_counts_or_one_dataset(
             "copy_group_name": "CUSTOMERS",
             "copy_group_description": None,
             "is_member_group_required": False,
+                    "value": None,
             "is_active": True,
         }
     ]
@@ -712,7 +718,7 @@ async def test_get_metadata_change_set_returns_counts_or_one_dataset(
         for item in result.structured_content["dataset_counts"]
     }
     assert counts["copy_group"] == 1
-    assert len(counts) == 16
+    assert len(counts) == 17
     assert database.audit_records[0].input_metadata["dataset"] == (dataset or "summary")
     assert database.write_transaction_count == 1
 
@@ -734,6 +740,7 @@ async def test_get_metadata_change_set_fingerprint_verifies_the_draft_without_re
             "ingestion_attribute_mapping",
             "copy_group",
             "member_group",
+            "member",
             "copy_group_control",
             "copy",
             "process_group",
@@ -747,6 +754,7 @@ async def test_get_metadata_change_set_fingerprint_verifies_the_draft_without_re
             "copy_group_name": "CUSTOMERS",
             "copy_group_description": None,
             "is_member_group_required": False,
+                    "value": None,
             "is_active": True,
         }
     ]
@@ -782,10 +790,10 @@ async def test_get_metadata_change_set_fingerprint_verifies_the_draft_without_re
     output = result.structured_content
     assert output["status"] == "active"
     assert output["draft_revision"] == 2
-    assert output["dataset_count"] == 16
+    assert output["dataset_count"] == 17
     assert output["record_count"] == 1
     assert len(output["fingerprint"]) == 64
-    assert len(output["datasets"]) == 16
+    assert len(output["datasets"]) == 17
     copy_group = next(item for item in output["datasets"] if item["dataset"] == "copy_group")
     assert copy_group == {
         "dataset": "copy_group",
@@ -822,6 +830,7 @@ async def test_validate_metadata_change_set_persists_bounded_result(
             "ingestion_attribute_mapping",
             "copy_group",
             "member_group",
+            "member",
             "copy_group_control",
             "copy",
             "process_group",
@@ -835,6 +844,7 @@ async def test_validate_metadata_change_set_persists_bounded_result(
             "copy_group_name": "CUSTOMERS",
             "copy_group_description": None,
             "is_member_group_required": False,
+                    "value": None,
             "is_active": True,
         }
     ]
@@ -981,6 +991,7 @@ async def test_apply_metadata_change_set_revalidates_then_applies(
             "ingestion_attribute_mapping",
             "copy_group",
             "member_group",
+            "member",
             "copy_group_control",
             "copy",
             "process_group",
@@ -1061,6 +1072,7 @@ async def test_apply_metadata_change_set_returns_safe_locked_object_error(
             "ingestion_attribute_mapping",
             "copy_group",
             "member_group",
+            "member",
             "copy_group_control",
             "copy",
             "process_group",

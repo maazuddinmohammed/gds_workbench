@@ -52,7 +52,10 @@ export async function exportReceipt<T extends object>(
         !outputFile.endsWith(".json")) throw new Error("invalid output");
     // Resolve the trusted root, then reject symlinks in every destination component.
     let destination: string | undefined;
-    for (const root of roots) {
+    // The editor and terminal can spell the same trusted root differently (for
+    // example /var and /private/var on macOS). Interior symlinks remain forbidden.
+    const acceptedRoots = new Set([...roots, ...await Promise.all(roots.map(root => realpath(root)))]);
+    for (const root of acceptedRoots) {
       const lexical = relative(root, outputFile);
       if (isAbsolute(lexical) || lexical.split(sep).some(part => !part || part === ".." || part === ".")) continue;
       const parts = lexical.split(sep);

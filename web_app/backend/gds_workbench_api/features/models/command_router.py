@@ -11,6 +11,7 @@ from gds_workbench_api.features.models.command_contracts import (
     ArchiveModelRequest,
     CompleteModelRequest,
     ModelCommandResult,
+    SetModelLockRequest,
     UpdateModelRequest,
 )
 from gds_workbench_api.features.models.command_service import ModelCommandService
@@ -25,6 +26,21 @@ def create_model_commands_router(
 ) -> APIRouter:
     authenticate = principal_dependency(identity_provider)
     router = APIRouter(prefix="/api/v1/tenants/{tenant_id}/models", tags=["models"])
+
+    async def set_model_lock(
+        tenant_id: PositivePathId,
+        model_id: PositivePathId,
+        command: SetModelLockRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
+    ) -> ModelCommandResult:
+        return await service.set_model_lock(
+            principal, tenant_id=tenant_id, model_id=model_id, request=command
+        )
+
+    router.add_api_route(
+        "/{model_id}/lock", set_model_lock, methods=["PUT"], response_model=ModelCommandResult
+    )
 
     async def create_model(
         tenant_id: PositivePathId,

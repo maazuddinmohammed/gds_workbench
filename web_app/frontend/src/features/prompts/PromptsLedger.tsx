@@ -7,7 +7,6 @@ import {
   type ColumnDef,
 } from "@tanstack/react-table";
 
-import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 import type { PromptOwnershipScope, PromptTemplateSummary } from "./api";
 
 export type PromptVisibilityFilter = "" | PromptOwnershipScope;
@@ -20,7 +19,6 @@ export function PromptsLedger({
   hasPreviousPage,
   hasNextPage,
   isPaging,
-  onVisibilityChange,
   onPreviousPage,
   onNextPage,
 }: {
@@ -31,7 +29,6 @@ export function PromptsLedger({
   hasPreviousPage: boolean;
   hasNextPage: boolean;
   isPaging: boolean;
-  onVisibilityChange: (visibility: PromptVisibilityFilter) => void;
   onPreviousPage: () => void;
   onNextPage: () => void;
 }) {
@@ -95,16 +92,11 @@ export function PromptsLedger({
       ),
     },
     {
-      accessorKey: "updated_at",
-      header: "Updated",
-      cell: ({ getValue }) => formatDateTime(getValue<string>()),
-    },
-    {
       id: "action",
       header: "",
       cell: ({ row }) => (
         <Link
-          className="button button-secondary button-small"
+          className="text-action"
           aria-label={`Open ${row.original.prompt_template_name}`}
           to="/tenants/$tenantId/prompts/templates/$promptTemplateId"
           params={{
@@ -124,33 +116,15 @@ export function PromptsLedger({
   });
 
   return (
-    <section className="prompt-ledger" aria-labelledby="prompt-ledger-heading">
-      <header className="prompt-ledger-header">
-        <div>
-          <h2 id="prompt-ledger-heading">Prompt Templates</h2>
-        </div>
-        <label className="prompt-local-filter">
-          <span>Visibility on this page</span>
-          <select
-            aria-label="Visibility on this page"
-            value={visibility}
-            onChange={(event) => onVisibilityChange(event.target.value as PromptVisibilityFilter)}
-          >
-            <option value="">Global and Tenant</option>
-            <option value="global">Global only</option>
-            <option value="tenant">This Tenant only</option>
-          </select>
-          {visibility ? <small>Local view · no server filter available</small> : null}
-        </label>
-      </header>
+    <section className="prompt-ledger" aria-label="Prompt Templates">
       {visibleItems.length === 0 ? (
         <div className="empty-state compact">
           {items.length
-            ? "No Prompt Templates match this page-local visibility view."
-            : "No Prompt Templates match these server filters."}
+            ? "No Prompts match this page’s visibility filter."
+            : "No Prompts match these filters."}
         </div>
       ) : (
-        <div className="table-scroll prompt-table-scroll">
+        <div className="table-scroll prompt-table-scroll ledger-grid" role="region" aria-label="Prompt Templates table" tabIndex={0}>
           <table aria-label="Prompt Templates">
             <thead>
               {table.getHeaderGroups().map((group) => (
@@ -178,7 +152,7 @@ export function PromptsLedger({
         </div>
       )}
       <footer className="ledger-pagination prompt-pagination">
-        <span>Server page {pageNumber}</span>
+        <span>Page {pageNumber}</span>
         <div>
           <button
             className="button button-secondary button-small"

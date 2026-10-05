@@ -1,0 +1,69 @@
+/* Shared spreadsheet treatment for comparable records. Feature column widths
+   and sticky key/action columns remain owned by their existing styles. */
+.ledger-grid {
+  min-width: 0;
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  scrollbar-gutter: stable;
+}
+
+.ledger-grid:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.ledger-grid > table {
+  width: 100%;
+  min-width: 100%;
+  table-layout: auto;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.ledger-grid > table > :is(thead, tbody) > tr > :is(th, td) {
+  padding: var(--workspace-table-padding);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--workspace-text-size);
+  vertical-align: middle;
+}
+
+.ledger-grid > table > thead > tr > th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--soft);
+  font-weight: var(--workspace-font-weight);
+  line-height: 1.5;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: nowrap;
+}
+
+.ledger-grid > table > tbody > tr > :is(th, td) {
+  background: var(--surface);
+}
+
+.ledger-grid > table > :is(thead, tbody) > tr > :is(th, td):last-child {
+  border-right: 0;
+}
+
+.ledger-grid > table > tbody > tr:is(:hover, :focus-within) > :is(th, td) {
+  background: var(--soft);
+}
+
+.ledger-grid > table > tbody > tr:is(.is-active, :has(input:checked)) > :is(th, td) {
+  background: var(--blue-soft);
+}
+
+.ledger-grid > table > tbody > tr:is(.is-active, :has(input:checked)) > :is(th, td):first-child {
+  box-shadow: inset 3px 0 var(--blue);
+}
+
+/* Keep both sticky axes above ordinary headers and cells. */
+.ledger-grid > table > thead > tr > :is(.is-sticky-key, .is-sticky-action) {
+  z-index: 5;
+}

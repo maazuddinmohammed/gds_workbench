@@ -1,3 +1,4 @@
+import { DdlExportButton } from "../model_targets/DdlExportButton";
 import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
 import { ModelLayerActions } from "../model_record_review/ModelLayerActions";
 import { TargetExportButton } from "../model_targets/TargetExportDialog";
@@ -146,6 +147,7 @@ export function LogicalScreen({
           <WorkflowMenu>
           <ModelLayerActions api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="logical" onApplied={() => setSelectedIds(new Set())} />
           <TargetExportButton api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} layer="logical" entityIds={view === "entities" && selectedIds.size ? [...selectedIds] : undefined} />
+          <DdlExportButton api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} layer="logical" entityIds={view === "entities" && selectedIds.size ? [...selectedIds] : undefined} />
           </WorkflowMenu>
           <button className="button button-secondary button-small" type="button" disabled={activeReviewQuery.isFetching} onClick={() => void refresh()}>
             {activeReviewQuery.isFetching ? "Refreshing…" : "Refresh"}

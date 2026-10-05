@@ -23,6 +23,8 @@ from pydantic import (
     model_validator,
 )
 
+from gds_workbench_api.features.workflows.authoring.audit_policy import effective_audit_template
+
 type _Nonblank255 = Annotated[
     str,
     StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
@@ -50,7 +52,7 @@ class LogicalAuditPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     schema_version: Literal["1.0"] = "1.0"
-    columns: tuple[LogicalAuditPolicyColumn, ...] = Field(min_length=1, max_length=32)
+    columns: tuple[LogicalAuditPolicyColumn, ...] = Field(min_length=0, max_length=32)
 
     @model_validator(mode="after")
     def validate_names(self) -> LogicalAuditPolicy:
@@ -68,9 +70,7 @@ def project_logical_audit_policy(
 ) -> tuple[StageModelChange, ...]:
     """Add the configured audit columns to every effective active Logical Entity."""
 
-    if raw_template is None:
-        return changes
-    policy = _parse_policy(raw_template)
+    policy = _parse_policy(effective_audit_template(raw_template))
     baseline = applied or LogicalSection(submodels=(), entities=(), attributes=(), relationships=())
     changes_by_dataset = {change.dataset: change for change in changes}
     if len(changes_by_dataset) != len(changes) or any(
@@ -119,7 +119,7 @@ def project_logical_audit_policy(
                     )
             else:
                 name = f"{entity.logical_entity_name}ID"
-                if (entity_key, normalize_model_key_value(name)) in attributes:
+                if (*entity_key, normalize_model_key_value(name)) in attributes:
                     raise InvalidRequestError(
                         "The generated key name conflicts with a business Attribute."
                     )

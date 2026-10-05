@@ -50,6 +50,174 @@ def workspace(tmp_path: Path) -> Path:
     return root
 
 
+def test_selection_pages_cover_large_inventory_and_keep_canonical_keys(tmp_path: Path) -> None:
+    root = workspace(tmp_path)
+    snapshot = root / "metadata/metadata-snapshot"
+    rows_path = snapshot / "data/source_object.jsonl"
+    original = [json.loads(line) for line in rows_path.read_text().splitlines()]
+    records = [dict(original[0], object_name=f"Customer{index:03d}") for index in range(405)]
+    records.insert(205, original[1])  # Filtering must count matches, not source lines.
+    rows_path.write_text("\n".join(json.dumps(record) for record in records) + "\n\n")
+    catalog = json.loads((snapshot / "catalog.json").read_text())
+    dataset = catalog["sections"][0]["datasets"][0]
+    dataset["row_count"] = len(records)
+    (snapshot / "catalog.json").write_text(json.dumps(catalog))
+    fixtures.write_snapshot_manifest(snapshot, kind="metadata", snapshot_id=str(uuid4()))
+    before = rows_path.read_bytes()
+
+    for view in ("snapshot", "effective"):
+        args = (
+            "select",
+            "--session",
+            str(root),
+            "--area",
+            "metadata",
+            "--dataset",
+            "source_object",
+            "--where",
+            '{"system_code":"crm"}',
+            "--limit",
+            "200",
+            "--view",
+            view,
+            "--fields",
+            '["is_active"]',
+        )
+        cursor = None
+        names: list[str] = []
+        pages: list[int] = []
+        while True:
+            page = run(*args, *(("--cursor", cursor) if cursor else ()))
+            pages.append(page["count"])
+            for record in page["records"]:
+                assert set(record) == set(dataset["canonical_key"]) | {"is_active"}
+                names.append(record["object_name"])
+            cursor = page["next_cursor"]
+            assert page["truncated"] == (cursor is not None)
+            if cursor is None:
+                break
+        assert pages == [200, 200, 5]
+        assert names == [f"Customer{index:03d}" for index in range(405)]
+    assert rows_path.read_bytes() == before
+
+
+def test_selection_cursor_rejects_changed_query_draft_and_baseline(tmp_path: Path) -> None:
+    root = workspace(tmp_path)
+    args = ("select", "--session", str(root), "--area", "metadata", "--dataset", "source_object")
+    page = run(*args, "--view", "effective", "--limit", "1")
+    cursor = page["next_cursor"]
+    for changes in (
+        ("--view", "snapshot", "--limit", "1"),
+        ("--view", "effective", "--limit", "2"),
+        ("--view", "effective", "--limit", "1", "--where", '{"system_code":"CRM"}'),
+        ("--view", "effective", "--limit", "1", "--fields", '["is_active"]'),
+    ):
+        result = run(*args, *changes, "--cursor", cursor, success=False)
+        assert "Selection changed" in result["error"]
+
+    draft = root / "metadata-change-set/source_object.json"
+    draft.parent.mkdir(exist_ok=True)
+    changed = dict(page["records"][0], is_active=False)
+    draft.write_text(json.dumps([changed]))
+    saved = draft.read_bytes()
+    result = run(*args, "--view", "effective", "--limit", "1", "--cursor", cursor, success=False)
+    assert "Selection changed" in result["error"]
+    fresh = run(*args, "--view", "effective", "--limit", "1")
+    assert fresh["records"][0]["is_active"] is False
+    assert fresh["selection_digest"] != page["selection_digest"]
+
+    baseline = run(*args, "--limit", "1")
+    fixtures.write_snapshot_manifest(
+        root / "metadata/metadata-snapshot", kind="metadata", snapshot_id=str(uuid4())
+    )
+    result = run(*args, "--limit", "1", "--cursor", baseline["next_cursor"], success=False)
+    assert "Selection changed" in result["error"]
+    assert draft.read_bytes() == saved
+
+
+def test_invalid_projection_and_cursor_do_not_change_workspace(tmp_path: Path) -> None:
+    root = workspace(tmp_path)
+    before = {
+        path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()
+    }
+    args = ("select", "--session", str(root), "--area", "metadata", "--dataset", "source_object")
+    for fields in ('["made_up"]', "[]", "{}", "[true]", "null", "not json"):
+        run(*args, "--fields", fields, success=False)
+    for cursor in ("invalid", "v1." + "a" * 64 + ".-1", "v1." + "a" * 64 + ".9007199254740992"):
+        run(*args, "--cursor", cursor, success=False)
+    run(*args, "--limit", "1.5", success=False)
+    after = {
+        path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()
+    }
+    assert after == before
+
+
+def test_projection_rejects_a_record_without_complete_identity(tmp_path: Path) -> None:
+    root = workspace(tmp_path)
+    snapshot = root / "metadata/metadata-snapshot"
+    rows = snapshot / "data/source_object.jsonl"
+    records = [json.loads(line) for line in rows.read_text().splitlines()]
+    del records[0]["object_schema"]
+    rows.write_text("".join(json.dumps(record) + "\n" for record in records))
+    fixtures.write_snapshot_manifest(snapshot, kind="metadata", snapshot_id=str(uuid4()))
+    result = run(
+        "select",
+        "--session",
+        str(root),
+        "--area",
+        "metadata",
+        "--dataset",
+        "source_object",
+        "--fields",
+        '["is_active"]',
+        success=False,
+    )
+    assert "canonical key" in result["error"]
+
+
+def test_status_is_compact_and_history_is_explicitly_paged(tmp_path: Path) -> None:
+    root = workspace(tmp_path)
+    first = run("status", "--session", str(root))["tasks"][0]
+    ids = {first["id"]}
+    for index in range(3):
+        added = run("task-add", "--session", str(root), "--outcome", f"Synthetic task {index}")
+        ids.add(added["task"])
+    active = run("status", "--session", str(root))
+    assert active["task_count"] == 4
+    assert len(active["tasks"]) == 1
+    task = active["tasks"][0]
+    run(
+        "task-update",
+        "--session",
+        str(root),
+        "--task",
+        task["id"],
+        "--progress",
+        "x" * 3000,
+        "--expected-digest",
+        task["digest"],
+    )
+    compact = run("status", "--session", str(root))["tasks"][0]
+    assert len(compact["progress"]) == 2000 and compact["text_truncated"]
+    full = run("status", "--session", str(root), "--task", task["id"], "--detail", "full")
+    assert len(full["tasks"][0]["progress"]) == 3000
+    session_before = (root / ".atlas/session.json").read_bytes()
+    selected = run("status", "--session", str(root), "--task", first["id"], "--detail", "full")
+    assert selected["tasks"][0]["id"] == first["id"]
+    assert (root / ".atlas/session.json").read_bytes() == session_before
+
+    args = ("status", "--session", str(root), "--history", "true", "--limit", "2")
+    page = run(*args)
+    second = run(*args, "--cursor", page["next_cursor"])
+    assert {item["id"] for item in page["tasks"] + second["tasks"]} == ids
+    assert second["next_cursor"] is None
+    run("task-add", "--session", str(root), "--outcome", "New task invalidates traversal")
+    assert (
+        "Selection changed" in run(*args, "--cursor", page["next_cursor"], success=False)["error"]
+    )
+    run(*args, "--task", first["id"], success=False)
+
+
 def test_initialize_reuse_flexible_task_and_owner_roots(tmp_path: Path) -> None:
     root = workspace(tmp_path)
     state = run("status", "--session", str(root))
@@ -102,6 +270,98 @@ def test_initialize_reuse_flexible_task_and_owner_roots(tmp_path: Path) -> None:
         "2",
         success=False,
     )
+
+
+def test_subagent_policy_is_saved_and_survives_task_switch_and_resume(tmp_path: Path) -> None:
+    root = workspace(tmp_path)
+    session_file = root / ".atlas/session.json"
+    original = session_file.read_bytes()
+    initial = run("status", "--session", str(root))["session"]
+    assert "subagent_policy" not in initial
+    assert session_file.read_bytes() == original
+    run("sql-policy", "--session", str(root), "--policy", "never")
+    policy = {"mode": "custom", "model": "Provider/Model-A:1"}
+    receipt = root / ".atlas/temp/policy.json"
+    result = run(
+        "subagent-policy",
+        "--session",
+        str(root),
+        "--mode",
+        "custom",
+        "--model",
+        policy["model"],
+        "--output-file",
+        str(receipt),
+    )
+    assert result["subagent_policy"] == policy
+    assert json.loads(receipt.read_text())["subagent_policy"] == policy
+    run("task-add", "--session", str(root), "--outcome", "Another task")
+    run("task-select", "--session", str(root), "--task", initial["active_task"])
+    resumed = run("session-init", "--root", str(root), "--tenant", "TENANT_A", "--tenant-id", "1")[
+        "session"
+    ]
+    assert resumed["subagent_policy"] == policy
+    assert resumed["active_task"] == initial["active_task"]
+    assert resumed["model"] == initial["model"]
+    assert resumed["sql"] == {"policy": "never"}
+    for mode in ("auto", "current"):
+        run("subagent-policy", "--session", str(root), "--mode", mode)
+        saved = run("status", "--session", str(root))["session"]
+        assert saved["subagent_policy"] == {"mode": mode}
+        assert saved["model"] == initial["model"]
+
+
+def test_invalid_subagent_policy_command_preserves_saved_choice(tmp_path: Path) -> None:
+    root = workspace(tmp_path)
+    run("subagent-policy", "--session", str(root), "--mode", "current")
+    session_file = root / ".atlas/session.json"
+    before = session_file.read_bytes()
+    invalid_arguments = [
+        (),
+        ("--mode", "other"),
+        ("--mode", "Current"),
+        ("--mode", "custom"),
+        ("--mode", "auto", "--model", "Model-A"),
+        ("--mode", "current", "--model-id", "Model-A"),
+        *(
+            ("--mode", "custom", "--model", model)
+            for model in (
+                "",
+                " ",
+                " Model-A",
+                "Model-A ",
+                "Model\nA",
+                "\ufeffModel-A",
+                "A" * 201,
+            )
+        ),
+    ]
+    for arguments in invalid_arguments:
+        run("subagent-policy", "--session", str(root), *arguments, success=False)
+        assert session_file.read_bytes() == before
+
+
+def test_invalid_saved_subagent_policy_is_rejected_without_rewriting(tmp_path: Path) -> None:
+    root = workspace(tmp_path)
+    session_file = root / ".atlas/session.json"
+    initial = json.loads(session_file.read_text())
+    policies: tuple[object, ...] = (
+        None,
+        [],
+        "auto",
+        {},
+        {"mode": "other"},
+        {"mode": "current", "model": None},
+        {"mode": "custom"},
+        {"mode": "custom", "model": ["A", "B"]},
+        {"mode": "custom", "model": "A\nB"},
+        {"mode": "auto", "fallback": "current"},
+    )
+    for policy in policies:
+        session_file.write_text(json.dumps({**initial, "subagent_policy": policy}))
+        before = session_file.read_bytes()
+        run("status", "--session", str(root), success=False)
+        assert session_file.read_bytes() == before
 
 
 def test_review_accept_stage_request_uses_operation_evidence(tmp_path: Path) -> None:
@@ -215,10 +475,7 @@ def test_snapshot_install_checks_hash_and_archive_paths(tmp_path: Path) -> None:
         hashlib.sha256(content).hexdigest(),
     )
     assert result["snapshot_id"] == snapshot_id
-    assert (
-        run("inspect", "--session", str(root), "--area", "metadata")["id"]
-        == snapshot_id
-    )
+    assert run("inspect", "--session", str(root), "--area", "metadata")["id"] == snapshot_id
 
 
 def test_agent_runtime_does_not_expose_or_read_user_dbml(tmp_path: Path) -> None:
@@ -263,11 +520,7 @@ def test_missing_metadata_owner_blocks_model_edits_but_not_independent_metadata(
     run("owner-add", "--session", str(root), "--tenant-id", "2", "--tenant", "TENANT_B")
     context_only = run("validate", "--session", str(root), "--area", "model")
     assert context_only["valid"]
-    missing = [
-        i
-        for i in context_only["issues"]
-        if i["code"] == "metadata_owner_snapshot_missing"
-    ]
+    missing = [i for i in context_only["issues"] if i["code"] == "metadata_owner_snapshot_missing"]
     assert len(missing) == 1 and missing[0]["severity"] == "warning"
     pending = root / "model-change-set"
     pending.mkdir(exist_ok=True)
@@ -460,9 +713,7 @@ def test_schema_qualified_entities_remain_distinct_in_overlay(tmp_path: Path) ->
     catalog_path = snapshot / "catalog.json"
     catalog = json.loads(catalog_path.read_text())
     entity = next(
-        item
-        for item in catalog["sections"][0]["datasets"]
-        if item["name"] == "logical_entity"
+        item for item in catalog["sections"][0]["datasets"] if item["name"] == "logical_entity"
     )
     records = [
         {
@@ -523,9 +774,7 @@ def test_analysis_inferred_cardinality_uses_published_schema_and_preserves_measu
     metadata_catalog["sections"][0]["datasets"][1]["record_type"] = "attribute"
     metadata_catalog["sections"][0]["datasets"][1]["row_count"] = len(attributes)
     (metadata / "catalog.json").write_text(json.dumps(metadata_catalog))
-    fixtures.write_snapshot_manifest(
-        metadata, kind="metadata", snapshot_id="metadata-analysis"
-    )
+    fixtures.write_snapshot_manifest(metadata, kind="metadata", snapshot_id="metadata-analysis")
 
     snapshot = root / "model/model-snapshot"
     catalog = json.loads((snapshot / "catalog.json").read_text())
@@ -620,8 +869,7 @@ def test_analysis_inferred_cardinality_uses_published_schema_and_preserves_measu
     result = run("validate", "--session", str(root), "--area", "model")
     assert result["valid"], result["issues"]
     assert any(
-        issue["code"] == "analysis_inferred_cardinality_mismatch"
-        and issue["severity"] == "warning"
+        issue["code"] == "analysis_inferred_cardinality_mismatch" and issue["severity"] == "warning"
         for issue in result["issues"]
     )
     assert json.loads(path.read_text()) == [record]
@@ -639,9 +887,7 @@ def test_legacy_model_catalog_is_rejected_before_selection(tmp_path: Path) -> No
     catalog_path = snapshot / "catalog.json"
     catalog = json.loads(catalog_path.read_text())
     entity = next(
-        item
-        for item in catalog["sections"][0]["datasets"]
-        if item["name"] == "logical_entity"
+        item for item in catalog["sections"][0]["datasets"] if item["name"] == "logical_entity"
     )
     entity["canonical_key"] = ["logical_entity_name"]
     catalog_path.write_text(json.dumps(catalog))

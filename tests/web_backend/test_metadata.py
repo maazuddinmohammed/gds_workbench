@@ -12,12 +12,12 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import WorkbenchError
+from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
 from gds_workbench_api.errors import workbench_error_response
 from gds_workbench_api.features.metadata import (
     DatabaseMetadataService,
     MetadataDataset,
-    MetadataDatasetDetail,
     MetadataDatasetRegistry,
     MetadataFilter,
     MetadataRowPage,
@@ -28,9 +28,33 @@ from gds_workbench_api.features.metadata import (
     ObjectCatalogPage,
     ObjectCatalogSummary,
     create_metadata_router,
-    metadata_dataset_detail,
     metadata_dataset_registry,
 )
+
+
+def test_catalog_sheets_share_excel_fields_without_ids_or_audit_columns() -> None:
+    audit = {"created_time", "created_by", "updated_time", "updated_by"}
+    for definition in DATASETS_BY_NAME.values():
+        descriptor = next(
+            item
+            for item in metadata_dataset_registry(tenant_id=7).datasets
+            if item.dataset == definition.name
+        )
+        assert descriptor.columns == tuple(definition.row_model.model_fields)
+        assert not audit.intersection(descriptor.columns)
+        assert not any(field.endswith("_id") for field in descriptor.columns)
+        assert set(descriptor.natural_key) <= set(descriptor.columns)
+    row = {
+        "system_type_code": "DEMO",
+        "system_type_name": "Demo",
+        "system_type_description": None,
+        "is_active": True,
+    }
+    for field in (*audit, "system_type_id", "connection_value"):
+        with pytest.raises(ValueError):
+            MetadataRowPage(
+                tenant_id=7, dataset="system_type", items=({**row, field: "excluded"},)
+            )
 
 
 class StaticMetadataService:
@@ -49,16 +73,6 @@ class StaticMetadataService:
             entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
         )
         return metadata_dataset_registry(tenant_id=tenant_id)
-
-    async def describe_dataset(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        dataset: MetadataDataset,
-    ) -> MetadataDatasetDetail:
-        assert principal.actor_kind is ActorKind.HUMAN
-        return metadata_dataset_detail(tenant_id=tenant_id, dataset=dataset)
 
     async def list_rows(
         self,
@@ -119,8 +133,8 @@ class StaticMetadataService:
             tenant_id=tenant_id,
             items=(
                 ObjectCatalogSummary(
+                    tenant_code="nwa",
                     object_id=101,
-                    review_revision="a" * 64,
                     is_locked=False,
                     object_schema="sales",
                     object_name="CustomerSilver",
@@ -153,8 +167,8 @@ class StaticMetadataService:
         assert tenant_id == 7
         assert object_id == 101
         return ObjectCatalogDetail(
+            tenant_code="nwa",
             object_id=101,
-            review_revision="a" * 64,
             object_schema="sales",
             object_name="CustomerSilver",
             object_type_code="TABLE",
@@ -177,7 +191,6 @@ class StaticMetadataService:
             attributes=(
                 ObjectAttribute(
                     attribute_id=501,
-                    review_revision="b" * 64,
                     attribute_name="CustomerId",
                     attribute_ordinal_position=1,
                     attribute_description="Customer identifier",
@@ -206,7 +219,9 @@ class StaticMetadataService:
         raise AssertionError((principal, tenant_id, sheet_codes))
 
 
-def test_dataset_registry_uses_server_derived_identity_and_complete_v2_inventory() -> None:
+def test_dataset_registry_uses_server_derived_identity_and_complete_v2_inventory() -> (
+    None
+):
     app = FastAPI()
     app.include_router(
         create_metadata_router(
@@ -231,6 +246,7 @@ def test_dataset_registry_uses_server_derived_identity_and_complete_v2_inventory
         "tenant",
         "system",
         "connection",
+        "connection_location",
         "system_type",
         "connection_type",
         "object_type",
@@ -251,19 +267,24 @@ def test_dataset_registry_uses_server_derived_identity_and_complete_v2_inventory
         "ingestion_attribute_mapping",
         "copy_group",
         "member_group",
+        "member",
         "copy_group_control",
         "copy",
         "process_group",
         "process",
     ]
-    assert [item["section"] for item in document["datasets"][:4]] == ["foundational"] * 4
-    assert [item["section"] for item in document["datasets"][4:12]] == ["reference"] * 8
-    assert [item["section"] for item in document["datasets"][12:]] == ["operational"] * 16
-    assert all(item["read_only"] for item in document["datasets"][:12])
-    assert all(not item["change_set_eligible"] for item in document["datasets"][:12])
-    assert all(not item["read_only"] for item in document["datasets"][12:])
-    assert all(item["change_set_eligible"] for item in document["datasets"][12:])
-    source_object = document["datasets"][12]
+    assert [item["section"] for item in document["datasets"][:5]] == [
+        "foundational"
+    ] * 5
+    assert [item["section"] for item in document["datasets"][5:13]] == ["reference"] * 8
+    assert [item["section"] for item in document["datasets"][13:]] == [
+        "operational"
+    ] * 17
+    assert all(item["read_only"] for item in document["datasets"][:13])
+    assert all(not item["change_set_eligible"] for item in document["datasets"][:13])
+    assert all(not item["read_only"] for item in document["datasets"][13:])
+    assert all(item["change_set_eligible"] for item in document["datasets"][13:])
+    source_object = document["datasets"][13]
     assert source_object["natural_key"] == [
         "tenant_code",
         "system_code",
@@ -283,37 +304,6 @@ def test_dataset_registry_uses_server_derived_identity_and_complete_v2_inventory
         "is_locked",
         "is_active",
     ]
-    assert "connection_value" not in response.text
-
-
-def test_dataset_detail_exposes_canonical_ordered_field_schema() -> None:
-    app = FastAPI()
-    app.include_router(
-        create_metadata_router(
-            identity_provider=IdentityProvider(
-                AuthMode.DEV,
-                local_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
-                local_principal_object_id=UUID("22222222-2222-2222-2222-222222222222"),
-            ),
-            service=StaticMetadataService(),
-        )
-    )
-
-    with TestClient(app) as client:
-        response = client.get("/api/v1/tenants/7/metadata/datasets/source_object")
-
-    assert response.status_code == 200
-    document = response.json()
-    assert document["tenant_id"] == 7
-    assert document["dataset"] == "source_object"
-    assert list(document["row_schema"]["properties"]) == document["columns"]
-    assert document["row_schema"]["properties"]["tenant_code"]["type"] == "string"
-    assert document["row_schema"]["properties"]["object_description"]["anyOf"] == [
-        {"type": "string"},
-        {"type": "null"},
-    ]
-    assert "tenant_code" in document["row_schema"]["required"]
-    assert document["fixed_values"] == {"zone_code": "source"}
     assert "connection_value" not in response.text
 
 
@@ -576,8 +566,8 @@ class CatalogRepository:
         self.object_calls.append((limit, offset, filters))
         rows = (
             ObjectCatalogSummary(
+                tenant_code="nwa",
                 object_id=101,
-                review_revision="a" * 64,
                 is_locked=False,
                 object_schema="sales",
                 object_name="CustomerSilver",
@@ -608,8 +598,8 @@ class CatalogRepository:
         assert transaction is not None
         self.detail_calls.append((tenant_id, object_id))
         return ObjectCatalogDetail(
+            tenant_code="nwa",
             object_id=object_id,
-            review_revision="a" * 64,
             object_schema="sales",
             object_name="CustomerSilver",
             object_type_code="TABLE",
@@ -659,36 +649,6 @@ class ReferenceCatalogRepository(CatalogRepository):
 
 
 @pytest.mark.asyncio
-async def test_database_dataset_detail_requires_selected_tenant_authorization() -> None:
-    database = CatalogDatabase()
-    service = DatabaseMetadataService(
-        database=database,
-        repository=CatalogRepository(),
-        authorizer=AuthorizationService(),
-        cursor_signing_key=b"development-only-key-32-bytes-long",
-    )
-    principal = RequestPrincipal(
-        actor_kind=ActorKind.HUMAN,
-        entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
-        entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
-    )
-
-    result = await service.describe_dataset(
-        principal,
-        tenant_id=7,
-        dataset="source_object",
-    )
-
-    assert result.dataset == "source_object"
-    assert result.tenant_id == 7
-    properties = result.row_schema["properties"]
-    assert isinstance(properties, dict)
-    assert tuple(properties) == result.columns
-    assert database.transaction.authorization_calls == 1
-    assert database.isolations == [ReadIsolation.REPEATABLE_READ]
-
-
-@pytest.mark.asyncio
 async def test_database_reference_rows_require_selected_tenant_authorization() -> None:
     database = CatalogDatabase()
     repository = ReferenceCatalogRepository()
@@ -721,7 +681,9 @@ async def test_database_reference_rows_require_selected_tenant_authorization() -
 
 
 @pytest.mark.asyncio
-async def test_database_metadata_rows_reauthorize_and_use_query_bound_signed_paging() -> None:
+async def test_database_metadata_rows_reauthorize_and_use_query_bound_signed_paging() -> (
+    None
+):
     database = CatalogDatabase()
     repository = CatalogRepository()
     service = DatabaseMetadataService(
@@ -765,7 +727,9 @@ async def test_database_metadata_rows_reauthorize_and_use_query_bound_signed_pag
     ]
 
 
-def test_object_catalog_uses_only_normalized_zone_system_and_source_tenant_filters() -> None:
+def test_object_catalog_uses_only_normalized_zone_system_and_source_tenant_filters() -> (
+    None
+):
     service = StaticMetadataService()
     app = FastAPI()
     app.include_router(
@@ -799,8 +763,15 @@ def test_object_catalog_uses_only_normalized_zone_system_and_source_tenant_filte
     )
     assert response.json()["items"] == [
         {
+            "value": None,
             "object_id": 101,
-            "review_revision": "a" * 64,
+            "object_description": None,
+            "description_truncated": False,
+            "fc_object_schema": None,
+            "fc_object_name": None,
+            "object_transformation": None,
+            "transformation_truncated": False,
+            "tenant_code": "nwa",
             "is_locked": False,
             "object_schema": "sales",
             "object_name": "CustomerSilver",
@@ -823,7 +794,9 @@ def test_object_catalog_uses_only_normalized_zone_system_and_source_tenant_filte
 
 
 @pytest.mark.asyncio
-async def test_database_object_catalog_reauthorizes_and_bounds_repository_reads() -> None:
+async def test_database_object_catalog_reauthorizes_and_bounds_repository_reads() -> (
+    None
+):
     database = CatalogDatabase()
     repository = CatalogRepository()
     service = DatabaseMetadataService(
@@ -857,7 +830,9 @@ async def test_database_object_catalog_reauthorizes_and_bounds_repository_reads(
     assert database.isolations == [ReadIsolation.REPEATABLE_READ]
 
 
-def test_object_detail_returns_bounded_attributes_without_secret_or_raw_fields() -> None:
+def test_object_detail_returns_bounded_attributes_without_secret_or_raw_fields() -> (
+    None
+):
     app = FastAPI()
     app.include_router(
         create_metadata_router(
@@ -879,9 +854,12 @@ def test_object_detail_returns_bounded_attributes_without_secret_or_raw_fields()
     assert document["source_tenant_code"] == "GRDM"
     assert document["attributes"] == [
         {
+            "value": None,
             "attribute_id": 501,
-            "review_revision": "b" * 64,
             "attribute_name": "CustomerId",
+            "fc_attribute_name": None,
+            "attribute_custom_code": None,
+            "custom_code_truncated": False,
             "attribute_ordinal_position": 1,
             "attribute_description": "Customer identifier",
             "description_truncated": False,

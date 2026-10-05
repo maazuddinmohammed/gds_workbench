@@ -10,11 +10,12 @@ from gds_etl_workbench.application.change_sets.model_validation import (
 from gds_etl_workbench.application.model_snapshot import ModelReviewSnapshot
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.domain.snapshots.model import DATASETS_BY_NAME
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .review import review_lifecycle
 
 type EditableDataset = Literal[
+    "mapping_object",
     "conceptual_object",
     "conceptual_relationship",
     "logical_submodel",
@@ -28,11 +29,28 @@ type EditableDataset = Literal[
 ]
 
 
+class NewMappingTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    entity_type: Literal["logical_entity", "dimensional_entity"]
+    entity_id: int = Field(gt=0)
+    source_system_id: int = Field(gt=0)
+
+
 class ModelRecordEditorRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
     dataset: EditableDataset
-    record_id: int = Field(gt=0)
+    record_id: int = Field(default=0, ge=0)
+    mapping_target: NewMappingTarget | None = None
     expected_model_revision: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def require_record_or_mapping_target(self) -> ModelRecordEditorRequest:
+        if self.mapping_target is not None:
+            if self.dataset != "mapping_object" or self.record_id != 0:
+                raise ValueError("A new Mapping uses a target instead of a saved record ID")
+        elif self.record_id == 0:
+            raise ValueError("A saved record ID is required")
+        return self
 
 
 class SaveModelRecordRequest(ModelRecordEditorRequest):
@@ -55,6 +73,7 @@ class ModelRecordEditor(BaseModel):
     label: str
     fields: list[EditorField]
     is_locked: bool
+    mapping: dict[str, Any] | None = None
 
 
 def model_record_editor(

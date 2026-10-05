@@ -60,6 +60,9 @@ EXPECTED_PUBLIC_TOOLS = {
     "read_model_section",
     "read_mapping_context",
     "execute_databricks_sql",
+    "start_profiling_run",
+    "get_profiling_run_status",
+    "cancel_profiling_run",
     "describe_model_dataset",
     "create_model_snapshot",
     "describe_metadata_dataset",
@@ -129,11 +132,11 @@ def model_description_server() -> MCPServer[None]:
 
 
 @pytest.mark.asyncio
-async def test_public_surface_is_exactly_37_focused_tools() -> None:
+async def test_public_surface_is_exactly_40_focused_tools() -> None:
     names = {tool.name for tool in await list_tools()}
 
     assert names == EXPECTED_PUBLIC_TOOLS
-    assert len(names) == 37
+    assert len(names) == 40
     assert (
         not {
             "get_model",
@@ -150,6 +153,19 @@ async def test_public_surface_is_exactly_37_focused_tools() -> None:
         }
         & names
     )
+
+
+@pytest.mark.asyncio
+async def test_profiling_tools_accept_scope_but_no_sql_or_results() -> None:
+    tools = {tool.name: tool for tool in await list_tools()}
+    properties = tools["start_profiling_run"].input_schema["properties"]
+    assert set(properties) == {
+        "model_id", "selected_object_ids", "expected_model_revision", "request_id",
+        "batch_ids", "environment_code", "schema_version",
+    }
+    for name in ("get_profiling_run_status", "cancel_profiling_run"):
+        assert set(tools[name].input_schema["properties"]) == {"run_id", "schema_version"}
+    assert tools["get_profiling_run_status"].annotations.read_only_hint is True
 
 
 @pytest.mark.asyncio
@@ -354,7 +370,7 @@ def test_server_instructions_state_the_simple_authoring_boundary() -> None:
     assert "Model Binding" not in instructions
     assert "Model Input Scope must Apply before Profiling or model development" in text
     assert "Mapping must Apply before Code or Validation" in text
-    assert "Clients own interaction and workflow orchestration" in text
+    assert "Clients own interaction; Profiling SQL, execution, and persistence run on the server" in text
     assert "Tenant Lock ownership, revision fencing, idempotency" in text
     assert "Lock override and Apply are separate high-impact operations" in text
     assert "revision mismatch" in text

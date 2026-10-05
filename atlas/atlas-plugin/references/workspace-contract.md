@@ -1,6 +1,6 @@
 # Workspace file contract
 
-File contract for the [working method](working-method.md), enforced by shared workspace helpers and the extension. Model-derived Metadata work may use several owner-specific drafts inside the same working directory.
+File contract for the [working method](working-method.md), enforced by shared workspace helpers and the runner. Model-derived Metadata work may use several owner-specific drafts inside the same working directory.
 
 ## Minimal layout
 
@@ -32,7 +32,7 @@ Keep the primary Tenant and single active Model fixed. When Model-derived work c
 - Both roots contain the same `metadata/metadata-snapshot` and `metadata-change-set` structure. Snapshot internals remain unchanged. Primary examples elsewhere use root `.`; helpers resolve the selected owner root before accessing Metadata.
 - Ownership comes from `source_tenant_code` and verified Tenant identity. Physical GDS Connection placement is not ownership and does not alone create another subtree.
 - Fetch/install the appropriate owner's Snapshot before authoring its draft. Read-only context may include other owners, but each effective Metadata write graph, local digest, validation report and Stage manifest contains one owning Tenant's permitted changes.
-- Keep server Change Sets, locks, revisions, approvals and receipts independent per owner. Workbench can navigate owners; it must never combine their files into one Stage request or imply atomic Apply.
+- Keep server Change Sets, locks, revisions, approvals and receipts independent per owner. Atlas Local Workbench can navigate owners; it must never combine their files into one Stage request or imply atomic Apply.
 - If owner Snapshots disagree about a shared physical record, resolve its authoritative ownership/version before using it. Never select a winner by folder or overlay order.
 - The same task can reference several owner batches. Approval may be collected together if each reviewed owner/digest is explicit, but partial success stays visible. Dependent work waits for every required upstream Apply.
 - Model-derived selection does not grant another Tenant's write access or runtime authorization. Missing authorization leaves that owner unresolved while independent work can continue.
@@ -46,11 +46,19 @@ Keep the primary Tenant and single active Model fixed. When Model-derived work c
 | `model` | Verified `{id, name}` or `null`; at most one active Model. |
 | `metadata_owners` | Optional map keyed by verified Tenant ID as a string. Each value is `{id, code, root}` with optional display `name`; include the primary owner with root `.` when Metadata is used. Additional owners use the subtree above. |
 | `sql` | Optional `{policy, environment}`. Policy is `never`, `essential` or `proactive`; environment is `dev`, `qa`, `stg` or `prod` when relevant. Stores resolved choices, not authorization. |
+| `subagent_policy` | Optional `{mode}` for `current` or `auto`, or `{mode:"custom", model:"exact-model-name-or-id"}`. No other keys. The custom model is 1–200 characters, without surrounding whitespace or control characters. Omission means unresolved, not permission to choose any model. Applies across tasks and nested sub-agents; see [sub-agent policy](tools/delegation.md). |
 | `active_task` | Task ID or `null`; navigation and resumption only. |
 | `refresh_required` | Optional list of `{area, owner_tenant_id, reason, evidence}`. Helper-maintained known invalidations; for Model the owner is its Tenant. Absence does not prove remote freshness. |
 | `operations` | Optional object: `metadata` maps owner Tenant IDs to current operation-evidence paths; `model` points to the current Model operation. Starting another task or selecting an owner must not hide a staged, failed or uncertain operation. |
 
 Session does not duplicate Snapshot versions, server revisions, approval flags or task status lists. The selected filesystem root is the working directory; do not persist an authoritative absolute path that breaks when the directory moves. Display names never replace identity checks.
+
+Use the `subagent-policy` helper to save a user choice with the normal session
+write-conflict checks. `status` returns the saved policy. Reading or resuming an
+older workspace does not add a default or rewrite it. Task changes preserve the
+policy; changing it does not alter the data Model, SQL policy, or existing drafts.
+Helpers validate the policy shape. The agent must enforce model selection through
+the host; the helper cannot control a host's sub-agent launcher.
 
 ## Task
 
@@ -84,7 +92,7 @@ Common bindings: format version, operation/task IDs, Metadata/Model area, actual
 | Apply approval | Separate acknowledgement bound to the complete server action review and validated revision/content. |
 | Apply | Actual bounded result/receipt, including resulting revision when returned. Unknown remains unknown until checked. |
 
-Retain actual supported result fields; do not manufacture identifiers or compare local digests, server fingerprints and validation candidate digests as interchangeable values. Helpers/extension maintain these checkpoints. Editable progress and `approved:true` flags cannot grant permission or replace missing proof.
+Retain actual supported result fields; do not manufacture identifiers or compare local digests, server fingerprints and validation candidate digests as interchangeable values. Helpers/runner maintain these checkpoints. Editable progress and `approved:true` flags cannot grant permission or replace missing proof.
 
 ## Consistency rules
 

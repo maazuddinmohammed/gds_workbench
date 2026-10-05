@@ -349,6 +349,22 @@ BEGIN
     );
 
     schema_shape_ok := EXISTS (
+        SELECT 1 FROM information_schema.columns WHERE table_schema='model' AND table_name='model'
+          AND column_name='is_locked' AND data_type='boolean' AND is_nullable='NO'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM unnest(ARRAY['object','attribute','copy','process','copy_group','process_group',
+            'member_group','member','tenant','system','connection','connection_location']) AS required(name)
+        WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='core'
+            AND table_name=required.name AND column_name='value' AND data_type='jsonb' AND is_nullable='YES')
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_class AS relation JOIN pg_namespace AS namespace ON namespace.oid=relation.relnamespace
+        JOIN pg_attribute AS column_record ON column_record.attrelid=relation.oid
+        WHERE namespace.nspname IN ('model','workflow','application','mcp') AND relation.relkind='r'
+          AND NOT column_record.attisdropped AND column_record.attname IN ('model_id','workflow_run_id')
+          AND (namespace.nspname, relation.relname) <> ('model','model_lock_event')
+          AND NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=relation.oid
+              AND tgname='aa_model_write_fence' AND tgenabled='O')
+    ) AND EXISTS (
         SELECT 1 FROM information_schema.columns
          WHERE table_schema = 'core' AND table_name = 'process_group'
            AND column_name = 'process_group_dependency_order'
@@ -378,6 +394,7 @@ BEGIN
                    'core.ingestion_attribute_mapping',
                    'core.copy_group',
                    'core.member_group',
+                   'core.member',
                    'core.copy_group_control',
                    'core.copy',
                    'core.process_group',
@@ -505,6 +522,7 @@ BEGIN
                        ('mcp.metadata_change_set', 'ingestion_attribute_mapping_document'),
                        ('mcp.metadata_change_set', 'copy_group_document'),
                        ('mcp.metadata_change_set', 'member_group_document'),
+                       ('mcp.metadata_change_set', 'member_document'),
                        ('mcp.metadata_change_set', 'copy_group_control_document'),
                        ('mcp.metadata_change_set', 'copy_document'),
                        ('mcp.metadata_change_set', 'process_group_document'),
@@ -738,6 +756,7 @@ BEGIN
                    'core.ingestion_attribute_mapping',
                    'core.copy_group',
                    'core.member_group',
+                   'core.member',
                    'core.copy_group_control',
                    'core.copy',
                    'core.process_group',
@@ -867,6 +886,10 @@ BEGIN
                    'workflow.is_assertion_only_mapping_target(bigint,bigint,character varying)',
                    'workflow.list_mapping_source_objects(bigint,bigint,character varying,bigint)',
                    'workflow.list_code_generation_target_context(bigint,character varying,character varying)',
+                   'mcp.start_mcp_profiling_run(uuid,uuid,character varying,bigint,bigint,bigint[],text[],character varying,uuid)',
+                   'mcp.get_mcp_profiling_status(uuid,uuid,character varying,bigint)',
+                   'mcp.cancel_mcp_profiling_run(uuid,uuid,character varying,bigint)',
+                   'mcp.mcp_profiling_worker(text,bigint,uuid,jsonb)',
                    'mcp.get_databricks_sql_connection_values(bigint,text)'
                ]) AS executable_function(signature)
          WHERE NOT has_function_privilege(
@@ -895,6 +918,10 @@ BEGIN
                               'mcp.record_metadata_change_set_validation(uuid,uuid,character varying,bigint,uuid,bigint,boolean,character,jsonb,uuid,uuid)',
                               'mcp.apply_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character,uuid)',
                               'mcp.archive_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,uuid)',
+                              'mcp.start_mcp_profiling_run(uuid,uuid,character varying,bigint,bigint,bigint[],text[],character varying,uuid)',
+                              'mcp.get_mcp_profiling_status(uuid,uuid,character varying,bigint)',
+                              'mcp.cancel_mcp_profiling_run(uuid,uuid,character varying,bigint)',
+                              'mcp.mcp_profiling_worker(text,bigint,uuid,jsonb)',
                               'mcp.get_databricks_sql_connection_values(bigint,text)',
                               'mcp.runtime_readiness()'
                           ]) AS allowed_mcp_function(signature)
@@ -965,6 +992,7 @@ BEGIN
                    'core.ingestion_attribute_mapping',
                    'core.copy_group',
                    'core.member_group',
+                   'core.member',
                    'core.copy_group_control',
                    'core.copy',
                    'core.process_group',
@@ -991,6 +1019,7 @@ BEGIN
     ) AND NOT EXISTS (
         SELECT 1
           FROM unnest(ARRAY[
+                   'is_locked',
                    'default_agent_sdk_code',
                    'default_agent_provider_code',
                    'default_agent_model_code',
@@ -1270,8 +1299,6 @@ REVOKE SELECT ON application.metadata_enrichment_result FROM gds_web_write;
 REVOKE SELECT ON application.metadata_review_event FROM gds_web_write;
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA application
 FROM PUBLIC, gds_app_write, gds_web_write;
-GRANT EXECUTE ON FUNCTION application.metadata_object_review_revision(core.object) TO gds_web_write;
-GRANT EXECUTE ON FUNCTION application.metadata_attribute_review_revision(core.attribute, core.object) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.add_model_input_scope_objects(
     UUID, UUID, BIGINT, BIGINT, BIGINT, BIGINT[]) TO gds_web_write;
 
@@ -1280,9 +1307,6 @@ GRANT EXECUTE ON FUNCTION application.delete_model_records(
 
 GRANT EXECUTE ON FUNCTION application.authorize_model_record_review(
     UUID, UUID, VARCHAR, BIGINT, BIGINT
-) TO gds_web_write;
-GRANT EXECUTE ON FUNCTION application.review_metadata_records(
-    UUID, UUID, VARCHAR, BIGINT, VARCHAR, VARCHAR, JSONB, UUID
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.set_principal_last_tenant(
     UUID,
@@ -1705,3 +1729,150 @@ GRANT EXECUTE ON FUNCTION workflow.enrichment_review_revision(BIGINT, BIGINT, BI
 TO gds_app_write, gds_web_write;
 
 GRANT EXECUTE ON FUNCTION application.review_model_enrichment(UUID, UUID, BIGINT, BIGINT, BIGINT, VARCHAR, VARCHAR, JSONB, UUID) TO gds_web_write;
+-- Model-wide write fence. Metadata has independent Tenant governance.
+CREATE OR REPLACE FUNCTION model.assert_writable(p_model_id BIGINT)
+RETURNS VOID LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+SET search_path = pg_catalog
+AS $assert_model_writable$
+DECLARE v_locked BOOLEAN;
+BEGIN
+    IF current_setting('transaction_read_only') = 'on' THEN
+        SELECT is_locked INTO v_locked FROM model.model WHERE model_id = p_model_id;
+    ELSE
+        SELECT is_locked INTO v_locked FROM model.model WHERE model_id = p_model_id FOR SHARE;
+    END IF;
+    IF v_locked THEN
+        RAISE EXCEPTION 'model_locked' USING ERRCODE = '55000';
+    END IF;
+END;
+$assert_model_writable$;
+REVOKE ALL ON FUNCTION model.assert_writable(BIGINT) FROM PUBLIC;
+
+CREATE OR REPLACE FUNCTION model.guard_model_write()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog
+AS $guard_model_write$
+DECLARE
+    v_row JSONB;
+    v_model_id BIGINT;
+BEGIN
+    IF TG_TABLE_SCHEMA = 'model' AND TG_TABLE_NAME = 'model' THEN
+        IF TG_OP = 'UPDATE' AND NEW.is_locked IS DISTINCT FROM OLD.is_locked THEN
+            IF (to_jsonb(NEW) - ARRAY['is_locked','model_revision','updated_time','updated_by'])
+                IS DISTINCT FROM
+               (to_jsonb(OLD) - ARRAY['is_locked','model_revision','updated_time','updated_by']) THEN
+                RAISE EXCEPTION 'model_locked' USING ERRCODE = '55000';
+            END IF;
+            IF NEW.is_locked AND EXISTS (
+                SELECT 1 FROM application.workflow_run
+                 WHERE model_id = OLD.model_id AND workflow_run_state IN ('queued','running')
+            ) THEN
+                RAISE EXCEPTION 'model_workflow_conflict' USING ERRCODE = '55000';
+            END IF;
+            NEW.model_revision := OLD.model_revision + 1;
+            NEW.updated_time := clock_timestamp();
+            INSERT INTO model.model_lock_event(model_id, is_locked, model_revision, changed_by)
+            VALUES (NEW.model_id, NEW.is_locked, NEW.model_revision, NEW.updated_by);
+            RETURN NEW;
+        END IF;
+        IF TG_OP <> 'INSERT' AND OLD.is_locked THEN
+            RAISE EXCEPTION 'model_locked' USING ERRCODE = '55000';
+        END IF;
+    ELSE
+        -- Check both owners on updates, so re-parenting cannot escape a lock.
+        FOR v_row IN SELECT value FROM jsonb_array_elements(
+            CASE TG_OP WHEN 'INSERT' THEN jsonb_build_array(to_jsonb(NEW))
+                       WHEN 'DELETE' THEN jsonb_build_array(to_jsonb(OLD))
+                       ELSE jsonb_build_array(to_jsonb(OLD), to_jsonb(NEW)) END
+        ) LOOP
+            v_model_id := (v_row ->> 'model_id')::BIGINT;
+            IF v_model_id IS NULL THEN
+                IF TG_TABLE_SCHEMA = 'workflow' AND TG_TABLE_NAME = 'generated_code_source_system' THEN
+                    SELECT model_id INTO v_model_id FROM workflow.generated_code
+                     WHERE generated_code_id = (v_row ->> 'generated_code_id')::BIGINT;
+                ELSIF TG_TABLE_SCHEMA = 'workflow' AND TG_TABLE_NAME = 'validation_check' THEN
+                    SELECT model_id INTO v_model_id FROM workflow.validation_group
+                     WHERE validation_group_id = (v_row ->> 'validation_group_id')::BIGINT;
+                ELSIF TG_TABLE_SCHEMA = 'mcp' AND TG_TABLE_NAME IN ('model_stage_chunk','model_stage_payload_chunk') THEN
+                    SELECT model_id INTO v_model_id FROM mcp.model_stage_batch
+                     WHERE stage_batch_id = (v_row ->> 'stage_batch_id')::UUID;
+                ELSIF v_row ? 'workflow_run_id' THEN
+                    SELECT model_id INTO v_model_id FROM application.workflow_run
+                     WHERE workflow_run_id = (v_row ->> 'workflow_run_id')::BIGINT;
+                END IF;
+            END IF;
+            IF v_model_id IS NOT NULL THEN PERFORM model.assert_writable(v_model_id); END IF;
+        END LOOP;
+    END IF;
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+END;
+$guard_model_write$;
+REVOKE ALL ON FUNCTION model.guard_model_write() FROM PUBLIC;
+
+DO $install_model_write_fences$
+DECLARE v_table RECORD;
+BEGIN
+    FOR v_table IN
+        SELECT DISTINCT namespace.nspname, relation.relname
+          FROM pg_class AS relation
+          JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+          JOIN pg_attribute AS column_record ON column_record.attrelid = relation.oid
+         WHERE namespace.nspname IN ('model','workflow','application','mcp')
+           AND relation.relkind = 'r' AND NOT column_record.attisdropped
+           AND (column_record.attname IN ('model_id','workflow_run_id')
+                OR (namespace.nspname, relation.relname) IN (
+                    ('workflow','validation_check'), ('mcp','model_stage_chunk'),
+                    ('mcp','model_stage_payload_chunk')))
+           AND (namespace.nspname, relation.relname) <> ('model','model_lock_event')
+    LOOP
+        EXECUTE format('CREATE OR REPLACE TRIGGER aa_model_write_fence BEFORE INSERT OR UPDATE OR DELETE ON %I.%I '
+                       'FOR EACH ROW EXECUTE FUNCTION model.guard_model_write()',
+                       v_table.nspname, v_table.relname);
+    END LOOP;
+END;
+$install_model_write_fences$;
+
+CREATE OR REPLACE FUNCTION application.set_model_lock(
+    p_entra_tenant_id UUID, p_entra_object_id UUID, p_tenant_id BIGINT,
+    p_model_id BIGINT, p_expected_model_revision BIGINT, p_is_locked BOOLEAN
+)
+RETURNS SETOF model.model LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+SET search_path = pg_catalog
+AS $set_model_lock$
+DECLARE v_model model.model%ROWTYPE; v_decision RECORD;
+BEGIN
+    IF p_expected_model_revision IS NULL OR p_is_locked IS NULL THEN
+        RAISE EXCEPTION 'stale_model_revision';
+    END IF;
+    SELECT * INTO v_model FROM model.model
+     WHERE model_id = p_model_id AND tenant_id = p_tenant_id AND is_active FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Model is unavailable'; END IF;
+    SELECT * INTO v_decision FROM security.authorize_tenant_operation(
+        p_entra_tenant_id, p_entra_object_id, 'user', p_tenant_id, 'tenant_model_write');
+    IF NOT FOUND OR NOT v_decision.authorized THEN
+        RAISE EXCEPTION 'Model lock denied: %', coalesce(v_decision.denial_code, 'authorization_denied');
+    END IF;
+    IF v_model.model_revision <> p_expected_model_revision THEN
+        RAISE EXCEPTION 'stale_model_revision';
+    END IF;
+    IF v_model.is_locked = p_is_locked THEN RETURN NEXT v_model; RETURN; END IF;
+    RETURN QUERY UPDATE model.model SET is_locked = p_is_locked,
+        updated_by = 'principal:' || v_decision.principal_id::TEXT
+     WHERE model_id = p_model_id RETURNING *;
+END;
+$set_model_lock$;
+REVOKE ALL ON FUNCTION application.set_model_lock(UUID, UUID, BIGINT, BIGINT, BIGINT, BOOLEAN) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION application.set_model_lock(UUID, UUID, BIGINT, BIGINT, BIGINT, BOOLEAN) TO gds_web_write;
+GRANT EXECUTE ON FUNCTION model.assert_writable(BIGINT) TO gds_app_write, gds_web_write;
+
+GRANT EXECUTE ON FUNCTION model.assert_writable(BIGINT), model.guard_model_write(),
+    application.set_model_lock(UUID, UUID, BIGINT, BIGINT, BIGINT, BOOLEAN) TO gds_migration;
+
+-- Narrow MCP profiling commands; generic web workflow functions stay web-only.
+GRANT EXECUTE ON FUNCTION mcp.start_mcp_profiling_run(
+    UUID, UUID, VARCHAR, BIGINT, BIGINT, BIGINT[], TEXT[], VARCHAR, UUID
+), mcp.get_mcp_profiling_status(UUID, UUID, VARCHAR, BIGINT),
+   mcp.cancel_mcp_profiling_run(UUID, UUID, VARCHAR, BIGINT),
+   mcp.mcp_profiling_worker(TEXT, BIGINT, UUID, JSONB)
+TO gds_app_write;

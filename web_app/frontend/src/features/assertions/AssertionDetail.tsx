@@ -9,6 +9,7 @@ import { AssertionRecordsLedger } from "./AssertionLedgers";
 import { AssertionEditor } from "./AssertionEditor";
 import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
 import { NormalizedJson } from "./NormalizedJson";
+import { WorkflowCommandCenter, WorkflowCommandTools } from "../workflows/WorkflowCommandCenter";
 
 export function AssertionDocumentDetailPage({ api, tenantId, modelId, documentId, modelRevision, hasTenantLock }: {
   api: AssertionsApi; tenantId: number; modelId: number; documentId: number; modelRevision: number; hasTenantLock: boolean;
@@ -41,10 +42,12 @@ export function AssertionDocumentDetailPage({ api, tenantId, modelId, documentId
   if (query.isError) return <DetailState label="Assertion Document details could not be loaded." error />;
   const document = query.data;
   return <article className="assertions-page page-enter">
+    <WorkflowCommandCenter className="assertion-records-workspace" filterCount={Object.values(filters).filter((value) => value !== undefined && value !== "").length}>
     <DetailHeader tenantId={tenantId} modelId={modelId} eyebrow="Assertion document" title={document.modeling_assertion_document_name} active={document.is_active} />
     <header className="workflow-commandbar">
       <h2>Records</h2>
       <div className="workflow-command-actions">
+        <WorkflowCommandTools />
         <button className="button button-primary button-small" type="button" disabled={!hasTenantLock || !document.is_active} title={!hasTenantLock ? "Tenant Lock required" : !document.is_active ? "Document is inactive" : undefined} onClick={() => setEditing(true)}>Add Assertion</button>
         <button className="button button-secondary button-small" type="button" onClick={async () => { await Promise.all([query.refetch(), records.refetch(), queryClient.invalidateQueries({ queryKey: ["model", tenantId, modelId] }), queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] })]); }}>Refresh</button>
       </div>
@@ -64,6 +67,7 @@ export function AssertionDocumentDetailPage({ api, tenantId, modelId, documentId
       </dl>
       <NormalizedJson value={document.modeling_assertion_document_metadata} />
     </details>
+    </WorkflowCommandCenter>
   </article>;
 }
 

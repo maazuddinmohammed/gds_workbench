@@ -209,8 +209,8 @@ async def test_shared_executor_completes_physical_enrichment(
     context = seed_workflow_context(database)
     attributes = _seed_attributes(database, context)
     first_object, first_attribute = attributes[0]
-    regeneration = None
-    regenerations = None
+    regeneration = behavior.startswith("regenerate_")
+    targets: list[tuple[int, int | None]] = []
     before_objects: dict[int, dict[str, Any]] = {}
     before_attributes: dict[int, dict[str, Any]] = {}
     with database.connect_owner() as connection:
@@ -241,13 +241,10 @@ async def test_shared_executor_completes_physical_enrichment(
                 "WHERE object_id=%s",
                 (first_object,),
             )
-            row = require_row(
-                connection.execute(
-                    "UPDATE core.attribute SET "
-                    "attribute_description='Original Attribute description.' "
-                    "WHERE attribute_id=%s RETURNING attribute_id",
-                    (first_attribute,),
-                ).fetchone()
+            connection.execute(
+                "UPDATE core.attribute SET attribute_description='Original Attribute description.' "
+                "WHERE attribute_id=%s",
+                (first_attribute,),
             )
             if behavior == "regenerate_existing_type":
                 connection.execute(
@@ -255,30 +252,12 @@ async def test_shared_executor_completes_physical_enrichment(
                     "WHERE attribute_id=%s",
                     (first_attribute,),
                 )
-            revisions = require_row(
-                connection.execute(
-                    "SELECT application.metadata_object_review_revision(object) "
-                    "AS object_revision, "
-                    "application.metadata_attribute_review_revision(attribute,object) "
-                    "AS attribute_revision "
-                    "FROM core.attribute AS attribute JOIN core.object AS object USING(object_id) "
-                    "WHERE attribute.attribute_id=%s",
-                    (row["attribute_id"],),
-                ).fetchone()
-            )
-            regeneration = EnrichmentDescriptionTarget(
-                object_id=first_object,
-                attribute_id=None
-                if behavior == "regenerate_object"
-                else first_attribute,
-                expected_revision=revisions[
-                    "object_revision"
-                    if behavior == "regenerate_object"
-                    else "attribute_revision"
-                ],
-            )
-        if regeneration:
-            regenerations = [regeneration]
+            targets = [
+                (
+                    first_object,
+                    None if behavior == "regenerate_object" else first_attribute,
+                )
+            ]
         if behavior in {"regenerate_objects", "regenerate_attributes"}:
             if behavior == "regenerate_attributes":
                 connection.execute(
@@ -289,27 +268,18 @@ async def test_shared_executor_completes_physical_enrichment(
                     (first_object,),
                 )
                 selected = connection.execute(
-                    "SELECT attribute.attribute_id, object.object_id, "
-                    "application.metadata_attribute_review_revision(attribute,object) AS revision "
+                    "SELECT attribute.attribute_id, object.object_id "
                     "FROM core.attribute AS attribute JOIN core.object AS object USING(object_id) "
                     "WHERE object.object_id=%s ORDER BY attribute.attribute_id",
                     (first_object,),
                 ).fetchall()
             else:
                 selected = connection.execute(
-                    "SELECT object_id, NULL::BIGINT AS attribute_id, "
-                    "application.metadata_object_review_revision(object) AS revision "
+                    "SELECT object_id, NULL::BIGINT AS attribute_id "
                     "FROM core.object AS object WHERE object_id=ANY(%s) ORDER BY object_id",
                     (list(context.selected_object_ids),),
                 ).fetchall()
-            regenerations = [
-                EnrichmentDescriptionTarget(
-                    object_id=row["object_id"],
-                    attribute_id=row["attribute_id"],
-                    expected_revision=row["revision"],
-                )
-                for row in selected
-            ]
+            targets = [(row["object_id"], row["attribute_id"]) for row in selected]
         if behavior == "regenerate_bulk_attributes":
             selected_objects = list(context.selected_object_ids[:2])
             assert len(selected_objects) == 2
@@ -338,22 +308,14 @@ async def test_shared_executor_completes_physical_enrichment(
                 (first_attribute, list(context.selected_object_ids)),
             )
             selected = connection.execute(
-                "SELECT attribute.attribute_id,object.object_id, "
-                "application.metadata_attribute_review_revision(attribute,object) AS revision "
+                "SELECT attribute.attribute_id,object.object_id "
                 "FROM core.attribute AS attribute JOIN core.object AS object USING(object_id) "
                 "WHERE object.object_id=ANY(%s) AND attribute.is_active "
                 "AND NOT attribute.is_locked AND attribute.attribute_name <> 'bulk_excluded' "
                 "ORDER BY object.object_id,attribute.attribute_id",
                 (selected_objects,),
             ).fetchall()
-            regenerations = [
-                EnrichmentDescriptionTarget(
-                    object_id=row["object_id"],
-                    attribute_id=row["attribute_id"],
-                    expected_revision=row["revision"],
-                )
-                for row in selected
-            ]
+            targets = [(row["object_id"], row["attribute_id"]) for row in selected]
             before_objects = {
                 row["object_id"]: row["record"]
                 for row in connection.execute(
@@ -378,24 +340,19 @@ async def test_shared_executor_completes_physical_enrichment(
             )
     with database.connect_owner() as connection:
         seed_model_enrichment(connection, context.model_id)
-        if regenerations:
-            regenerations = [
-                target.model_copy(
-                    update={
-                        "expected_revision": require_row(
-                            connection.execute(
-                                "SELECT workflow.enrichment_review_revision(%s,%s,%s) AS revision",
-                                (
-                                    context.model_id,
-                                    target.object_id,
-                                    target.attribute_id,
-                                ),
-                            ).fetchone()
-                        )["revision"]
-                    }
-                )
-                for target in regenerations
-            ]
+        regenerations = [
+            EnrichmentDescriptionTarget(
+                object_id=object_id,
+                attribute_id=attribute_id,
+                expected_revision=require_row(
+                    connection.execute(
+                        "SELECT workflow.enrichment_review_revision(%s,%s,%s) AS revision",
+                        (context.model_id, object_id, attribute_id),
+                    ).fetchone()
+                )["revision"],
+            )
+            for object_id, attribute_id in targets
+        ] or None
     principal = RequestPrincipal(
         actor_kind=ActorKind.HUMAN,
         entra_tenant_id=context.entra_tenant_id,

@@ -79,7 +79,7 @@ from gds_etl_workbench.domain.errors import (
     TenantWorkflowConflictError,
     WorkbenchError,
 )
-from gds_etl_workbench.domain.modeling_records import AnalysisResultRecord
+from gds_etl_workbench.domain.modeling_records import AnalysisResultRecord, MappingObjectRecord
 from gds_etl_workbench.domain.snapshots.model import (
     DATASETS_BY_NAME,
     ModelChangeSetDataset,
@@ -90,6 +90,13 @@ from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from psycopg.types.json import Jsonb
 
 from gds_workbench_api.features.assertions.authoring import SaveAssertionRequest, prepare_assertion
+from gds_workbench_api.features.mapping.editor import (
+    MAPPING_INPUT_SCOPE_SQL,
+    NEW_MAPPING_TARGET_SQL,
+    mapping_record_editor,
+    prepare_mapping_edit,
+)
+from gds_workbench_api.features.mapping.preparation_repository import MAPPING_SOURCE_CONTEXT_SQL
 from gds_workbench_api.features.model_change_sets.input_scope import (
     AddInputScopeRequest,
     prepare_input_scope_addition,
@@ -393,13 +400,81 @@ class DatabaseModelChangeSetService:
             review = await read_model_review_snapshot(
                 transaction, context, enforce_row_limits=False
             )
-            if not isinstance(command, SaveModelRecordRequest):
-                return model_record_editor(review, command)
-            validation = prepare_model_record_edit(
-                review,
-                command,
-                await load_model_physical_scope(transaction, context),
-            )
+            if command.dataset == "mapping_object":
+                if command.mapping_target is not None:
+                    target = command.mapping_target
+                    selected = await transaction.fetch_one(
+                        NEW_MAPPING_TARGET_SQL,
+                        (
+                            target.source_system_id,
+                            model_id,
+                            target.entity_id,
+                            target.entity_type,
+                        ),
+                    )
+                    if selected is None:
+                        raise InvalidRequestError("Choose an eligible unmapped Entity and System.")
+                    # Draft-only identity. The materializer generates the persisted ID.
+                    review.records_by_id.setdefault("mapping_object", {})[0] = MappingObjectRecord(
+                        modeled_entity_type=target.entity_type,
+                        modeled_entity_schema_name=selected["modeled_entity_schema_name"],
+                        modeled_entity_name=selected["modeled_entity_name"],
+                        source_system_code=selected["system_code"],
+                        object_dependency_order=selected["dependency_order"],
+                        mapping_transformation_document=None,
+                        output_template_code=None,
+                        object_mapping_status="active",
+                        object_mapping_is_locked=False,
+                    )
+                    anchor = {
+                        "entity_id": target.entity_id,
+                        "modeled_entity_type": target.entity_type,
+                        "source_system_id": target.source_system_id,
+                    }
+                else:
+                    anchor = await transaction.fetch_one(
+                        "SELECT source_system_id, modeled_entity_type, "
+                        "coalesce(logical_entity_id, dimensional_entity_id) AS entity_id "
+                        "FROM workflow.mapping_object WHERE model_id = %s "
+                        "AND mapping_object_id = %s",
+                        (model_id, command.record_id),
+                    )
+                    if anchor is None:
+                        raise WorkbenchError(
+                            "model_record_not_found", "This Mapping is unavailable."
+                        )
+                sources = await transaction.fetch_all(
+                    MAPPING_INPUT_SCOPE_SQL
+                    if anchor["modeled_entity_type"] == "logical_entity"
+                    else MAPPING_SOURCE_CONTEXT_SQL,
+                    (model_id, anchor["source_system_id"])
+                    if anchor["modeled_entity_type"] == "logical_entity"
+                    else (
+                        model_id,
+                        anchor["entity_id"],
+                        anchor["modeled_entity_type"],
+                        anchor["source_system_id"],
+                    ),
+                )
+                if (
+                    len(sources) > 200
+                    or sum(len(row["source"]["object"]["attributes"]) for row in sources) > 5000
+                ):
+                    raise InvalidRequestError(
+                        "Mapping editing supports up to 200 source tables and 5,000 source columns."
+                    )
+                editor = mapping_record_editor(review, command, sources)
+                if not isinstance(command, SaveModelRecordRequest):
+                    return editor
+                validation = prepare_mapping_edit(
+                    review, command, editor, await load_model_physical_scope(transaction, context)
+                )
+            else:
+                if not isinstance(command, SaveModelRecordRequest):
+                    return model_record_editor(review, command)
+                validation = prepare_model_record_edit(
+                    review, command, await load_model_physical_scope(transaction, context)
+                )
             await self._authorizer.authorize_tenant(
                 transaction,
                 principal,

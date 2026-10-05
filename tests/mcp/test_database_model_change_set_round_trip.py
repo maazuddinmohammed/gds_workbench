@@ -89,8 +89,11 @@ class StaticIdentityProvider(IdentityProvider):
 
 
 class RecordingSnapshotStore:
-    def __init__(self) -> None:
+    def __init__(self, *, tenant_id: int, model_id: int) -> None:
         self.archive_content: dict[SnapshotKind, bytes] = {}
+        self.tenant_id = tenant_id
+        self.model_id = model_id
+        self.uploaded_identity: tuple[UUID, datetime] | None = None
 
     async def close(self) -> None:
         return None
@@ -100,6 +103,7 @@ class RecordingSnapshotStore:
         archive: SnapshotArchive,
         *,
         snapshot_kind: SnapshotKind,
+        tenant_id: int,
         scope_id: int,
         schema_version: str,
         snapshot_id: UUID,
@@ -107,22 +111,30 @@ class RecordingSnapshotStore:
         available_until: datetime,
     ) -> None:
         assert snapshot_kind == "model"
-        assert scope_id > 0
+        assert tenant_id == self.tenant_id
+        assert scope_id == self.model_id
         assert schema_version == "2.0"
         assert snapshot_id.version == 4
         assert available_until > created_at
+        self.uploaded_identity = (snapshot_id, created_at)
         self.archive_content[snapshot_kind] = archive.path.read_bytes()
 
     async def create_read_url(
         self,
         *,
         snapshot_kind: SnapshotKind,
+        tenant_id: int,
         scope_id: int,
         schema_version: str,
         snapshot_id: UUID,
+        created_at: datetime,
         now: datetime,
         ttl_seconds: int,
     ) -> str | None:
+        assert tenant_id == self.tenant_id
+        assert scope_id == self.model_id
+        assert (snapshot_id, created_at) == self.uploaded_identity
+        assert created_at <= now
         del scope_id, snapshot_id, now, ttl_seconds
         assert snapshot_kind == "model"
         assert schema_version == "2.0"
@@ -1561,7 +1573,7 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
         identity_provider=identity_provider,
         authorizer=authorizer,
     )
-    snapshot_store = RecordingSnapshotStore()
+    snapshot_store = RecordingSnapshotStore(tenant_id=tenant_id, model_id=model_id)
     server = MCPServer[None](name="model-change-set-test", middleware=[audit])
     register_model_change_set_tools(
         server,

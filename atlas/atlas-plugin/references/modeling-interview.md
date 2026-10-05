@@ -1,6 +1,6 @@
 # Modeling interview
 
-Use for Atlas Grill Me modeling workflows. Adapt the interview and domain-awareness techniques of grill-me/grill-with-docs to the actual Model scope. This reference owns questioning and decision capture; the selected skill owns entry, layer-specific methods and the outer workflow. Personal GrillMe skills are not plugin dependencies.
+Use for requested Atlas Grill Me discussion or consequential unresolved modeling decisions. Adapt the interview and domain-awareness techniques of grill-me/grill-with-docs to the actual Model scope. This reference owns questioning and decision capture; the selected skill owns entry, layer-specific methods and the outer workflow. Personal GrillMe skills are not plugin dependencies.
 
 ## Understand before asking
 
@@ -37,4 +37,9 @@ Use the existing task and Model artifacts for continuity. Do not create a parall
 - Check both local correctness and whole-request coherence. Partial progress remains partial; working group by group must not lose cross-group relationships or overall coverage.
 - Discussion answers authorize the associated local design work only within the request. They are not substitutes for the shared Change Set review/Stage/Apply process.
 
-Guided skills do not load this interview method. Changing questions or conversational pacing here must not change their phase sequence or the shared modeling rules.
+Changing conversational pacing does not change shared modeling rules, applied prerequisites or the requested outcome.
+## Interaction mode
+
+Guided explanation is the default. Load this interview procedure when the user asks for Grill Me (including “drill me”) or a consequential unresolved modeling choice needs discussion. Do not require a mode question before a clear request. Guided and interview modes use the same skill, records, evidence and prerequisites.
+
+Switching modes changes the interaction, not the task identity, snapshot bindings, pending work or authorization. Reuse confirmed answers. Do not restart stages or create artifacts merely to match a mode.

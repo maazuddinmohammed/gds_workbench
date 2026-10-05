@@ -1,4 +1,4 @@
-import { WorkflowCommandCenter, WorkflowCommandTools } from "../workflows/WorkflowCommandCenter";
+import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
 import { Link } from "@tanstack/react-router";
 import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
 import { useRef, useState } from "react";
@@ -12,6 +12,7 @@ import {
   MappingObjectsLedger,
   type MappingLedgerState,
 } from "./MappingLedgers";
+import { MappingExportDialog } from "./MappingExportDialog";
 import { MappingRunDialog } from "./MappingRunDialog";
 
 export function MappingScreen({
@@ -34,6 +35,7 @@ export function MappingScreen({
   const refreshButton = useRef<HTMLButtonElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [runDialogOpen, setRunDialogOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [recentRunId, setRecentRunId] = useState<number | null>(null);
   const [filters, setFilters] = useState<MappingFilters>({});
   const entityType: MappingEntityType = layer === "logical" ? "logical_entity" : "dimensional_entity";
@@ -54,7 +56,7 @@ export function MappingScreen({
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
-  const permissionLabel = !hasAppPermission
+  const permissionLabel = model.is_locked ? "Model locked. Unlock it before making changes." : !hasAppPermission
     ? "Architect permission required to run"
     : !hasTenantLock
       ? "Tenant Lock required to run"
@@ -115,6 +117,8 @@ export function MappingScreen({
         </div>
         <div className="workflow-command-actions">
           <WorkflowCommandTools />
+          <WorkflowMenu><button type="button" className="button button-secondary button-small"
+            onClick={() => setExportOpen(true)}>Export</button></WorkflowMenu>
           <button ref={refreshButton} className="button button-secondary button-small" type="button" onClick={() => void refresh()}>
             Refresh
           </button>
@@ -143,6 +147,10 @@ export function MappingScreen({
       <ModelRecordReview
         api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
         dataset="mapping_object"
+        actions={["lock", "unlock", "deactivate", "reactivate", "delete"]}
+        deleteIds={new Set(objects.data?.pages.flatMap((page) => page.items)
+          .filter((item) => selectedIds.has(item.mapping_object_id) && !item.is_locked)
+          .map((item) => item.mapping_object_id) ?? [])}
         selectedIds={selectedIds} hasTenantLock={hasTenantLock && hasAppPermission}
         disabled={objects.isPending || objects.isError || objects.data?.pages.some((page) => page.model_revision !== model.model_revision) === true}
         onApplied={async () => {
@@ -163,6 +171,10 @@ export function MappingScreen({
         onApplyFilters={applyFilters}
         onLoadMore={() => void objects.fetchNextPage()}
       />
+      {exportOpen ? <MappingExportDialog api={api} tenantId={tenantId} model={model} entityType={entityType}
+        systemCodes={sourceChoices.data?.codes ?? []} loading={sourceChoices.isPending}
+        unavailable={sourceChoices.isError || sourceChoices.data?.modelRevision !== model.model_revision}
+        initialSystem={filters.sourceSystemCode} onClose={() => setExportOpen(false)} /> : null}
       {runDialogOpen ? (
         <MappingRunDialog
           entityType={entityType}

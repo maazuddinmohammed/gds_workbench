@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 
 import { TenantWorkspace } from "../../app/TenantWorkspace";
 import { formatDateTime } from "../../shared/presentation";
-import { ErrorPage, LoadingPage } from "../../shared/ui";
+import { ErrorPage, LoadingPage, WorkspaceToolbar } from "../../shared/ui";
 import type { TenantsApi } from "../tenants/api";
 import { validTenantModelIds } from "./ModelRouteFrame";
 import { ModelWorkspaceShell } from "./ModelWorkspaceShell";
@@ -56,6 +56,8 @@ export function ModelOverviewScreen({
           model={modelQuery.data}
           overview={overviewQuery.data}
           tenantId={tenantId}
+          refreshing={homeQuery.isFetching || modelQuery.isFetching || overviewQuery.isFetching}
+          onRefresh={() => void Promise.all([homeQuery.refetch(), modelQuery.refetch(), overviewQuery.refetch()])}
         />
       </ModelWorkspaceShell>
     </TenantWorkspace>
@@ -66,14 +68,21 @@ function ModelOverviewView({
   model,
   overview,
   tenantId,
+  refreshing,
+  onRefresh,
 }: {
   model: ModelDetail;
   overview: ModelWorkflowOverview;
   tenantId: number;
+  refreshing: boolean;
+  onRefresh: () => void;
 }) {
   return (
     <div className="model-overview page-enter">
       <h1 className="model-section-title sr-only">Overview</h1>
+      <WorkspaceToolbar actions={<button className="button button-secondary button-small" type="button" disabled={refreshing} onClick={onRefresh}>
+        {refreshing ? "Refreshing…" : "Refresh"}
+      </button>}><span>Workflow coverage</span></WorkspaceToolbar>
       <header className="model-overview-header" aria-label="Model summary">
         <dl className="model-overview-schemas">
           {[
@@ -101,15 +110,13 @@ function ModelOverviewView({
       </header>
 
       <section className="workflow-ledger" aria-labelledby="workflow-ledger-heading">
-        <header>
-          <h2 id="workflow-ledger-heading">Workflow ledger</h2>
-        </header>
+        <h2 id="workflow-ledger-heading" className="sr-only">Workflow ledger</h2>
         {overview.model_revision !== model.model_revision ? (
           <div className="surface-state is-error" role="alert">
             The Model changed while its workflow ledger was loading. Refresh to reconcile revisions.
           </div>
         ) : (
-          <div className="table-scroll">
+          <div className="table-scroll ledger-grid" role="region" aria-label="Workflow coverage table" tabIndex={0}>
             <table aria-label="Model workflow ledger">
               <thead>
                 <tr>

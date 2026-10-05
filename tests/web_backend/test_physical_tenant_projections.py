@@ -3,7 +3,7 @@
 from gds_etl_workbench.tools.catalog.get_objects import _OBJECTS_SQL
 from gds_etl_workbench.tools.catalog.list_objects import _LIST_OBJECTS_SQL
 from gds_workbench_api.features.mapping.preparation_repository import (
-    _MAPPING_SOURCE_CONTEXT_SQL,
+    MAPPING_SOURCE_CONTEXT_SQL,
     _MAPPING_ENTITY_CONTEXT_SQL,
 )
 from gds_workbench_api.features.metadata.repository import (
@@ -66,7 +66,7 @@ def test_authoring_context_separates_physical_and_source_tenants() -> None:
 
 def test_mapping_authoring_context_uses_connection_tenant_for_physical_keys() -> None:
     target = _compact(_MAPPING_ENTITY_CONTEXT_SQL)
-    source = _compact(_MAPPING_SOURCE_CONTEXT_SQL)
+    source = _compact(MAPPING_SOURCE_CONTEXT_SQL)
 
     assert "workflow.modeled_entity" in target
     assert "core.object" not in target

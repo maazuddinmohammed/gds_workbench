@@ -15,6 +15,7 @@ fixes domain vocabulary; it does not duplicate field contracts or prompt bodies.
 | Tenant Role | Viewer, Developer, Architect or Tenant Admin; roles are cumulative. |
 | Super Admin | Explicit Principal capability across active Tenants; never bypasses locks, revisions or audit. |
 | Tenant Lock | Database-time lease for one exact Principal. Ordinary writes require its ownership; override is explicit and audited. |
+| Model Lock | Persistent read-only fence for all Model-owned records and workflows; only a human through the web UI or engineering SQL may toggle it. Metadata is independent. |
 | Model | Tenant-owned aggregate: input scope, schema/policy settings, authored sections and current revision. |
 | Model Input Scope | Saved eligible physical Source/Bronze Objects; it may span readable Source Tenants. |
 | Selected Scope | Exact Objects or modeled Entities selected for one workflow; does not change Model Input Scope. |
@@ -52,8 +53,15 @@ Logical and Dimensional SCD policies are independent Model settings (`type_1`,
 Type 2 preserves Dimension versions. Stable identity stays fixed; Fact/Bridge
 behavior is unchanged. Runs freeze both policies and Mapping receives both.
 Blank Gold technical settings use standard surrogate/foreign keys and
-EffectiveFrom/EffectiveTo/IsCurrent columns; blank audit settings add no audit
-columns. Explicit templates remain authoritative.
+IsCurrentRecord/RecordStartTime/RecordEndTime columns for Type 2 Dimensions.
+Blank audit settings use the shared PascalCase template: SourceSystemID BIGINT,
+IsDataValid BOOLEAN, HashKey STRING, IsActive BOOLEAN, GDSBatchID BIGINT,
+PipelineRunID STRING, CreatedDate/UpdatedDate TIMESTAMP, CreatedBy/UpdatedBy STRING.
+These audit fields default nullable; history current/start fields are required and
+end time nullable. History fields precede the common audit fields. The orchestrator
+projects these columns; agents cannot omit them. Settings display effective defaults
+and allow per-Model overrides or reset; explicit empty audit columns disable audits.
+Existing saved Models change only through reviewed authoring, never a backfill.
 
 Missing information, measured zero, failed validation and contradictory evidence
 are different states. Preserve each. An Assertion can explain required behavior;
@@ -72,6 +80,9 @@ Partial Mapping is valid authoring progress. Regeneration clears omitted selecte
 unlocked transformations. Locked/unselected records remain intact. Protect existing
 Object logic when any child Attribute is protected. Missing transformations are
 blank, never fabricated to satisfy a coverage count.
+Generated-key/framework-only notes do not establish a contributing source System.
+Manual Mapping editing selects eligible Object sources before Attribute sources,
+preserves custom JSON, and uses the same locks and revision-fenced review writes.
 
 **Code Artifact** is an Entity-owned named file plus explicit source-System
 assignments. Code consumes applied Mapping and its template definitions. Partial
@@ -91,6 +102,12 @@ to Silver/Gold metadata, followed by Metadata Change Set review and Apply. It is
 not a prerequisite for Mapping or Code. **Code Handoff** is manual file placement
 and external orchestration, requiring separate authorization.
 
+Analysis Excel export includes all findings matching the active filters, fenced to
+the current Model revision. Databricks DDL downloads use applied active Logical or
+Dimensional fields; Conceptual downloads use one export-only ConceptID per concept.
+Downloads do not execute SQL or change physical metadata. Agent call/transport
+timeout defaults to 60 minutes (previously 15); an explicit configured override wins.
+
 ## Governed work
 
 | Term | Meaning |
@@ -109,9 +126,28 @@ and external orchestration, requiring separate authorization.
 | DBML Export | Local display of the effective Model graph, not executable database deployment. |
 
 Plugin and web use the same persisted contracts and governed Change Sets, with
-independent agent orchestration. The web application never calls MCP internally.
+independent orchestration. Plugin Profiling runs deterministically in the MCP
+backend: start, status, cancel, then refresh the Model Snapshot. The web
+application never calls MCP internally.
 A stale Snapshot/revision requires refresh and reassessment. Model-owned authored
 state, physical metadata, and external deployment remain separate boundaries.
 
 See [architecture](docs/architecture/overview.md), [decisions](docs/architecture/decisions.md),
 [workflows](docs/workflows.md), and [security](docs/security.md).
+
+## Orchestration metadata
+
+A pipeline trigger selects one Tenant and a comma-separated list of Systems.
+Omitting Copy Groups selects all applicable groups within each selected System;
+supplied groups restrict that selection. A Member Group is an optional filter for
+a Copy Group, associated through Copy Group Control in the same Tenant/System.
+Use Member Groups only when explicitly requested; keep ordinary controls' Member
+Group null. Member rows supply the code and attribute name for that filter.
+Their natural key is Member Group + Member Code. This metadata describes inputs
+to the external orchestration framework; authoring it does not run a pipeline.
+
+Nullable JSONB `value` stores optional additional details on Object, Attribute,
+Copy, Process, Copy Group, Process Group, Member Group, Member, Tenant, System,
+Connection and Connection Location. It has no implicit execution semantics.
+Preserve existing details; populate only when requested. Never store credentials
+or secret references there. Foundational records remain read-only in authoring.

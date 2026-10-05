@@ -65,10 +65,6 @@ from gds_workbench_api.features.mapping.router import (
     create_mapping_workflow_router,
 )
 from gds_workbench_api.features.metadata import MetadataService, create_metadata_router
-from gds_workbench_api.features.metadata.review import (
-    MetadataReviewService,
-    create_metadata_review_router,
-)
 from gds_workbench_api.features.metadata_change_sets import (
     MetadataChangeSetService,
     create_metadata_change_sets_router,
@@ -170,7 +166,6 @@ def create_app(
     agent_capability_registry: AgentCapabilityRegistry | None = None,
     tenant_lock_service: TenantLockService | None = None,
     metadata_service: MetadataService | None = None,
-    metadata_review_service: MetadataReviewService | None = None,
     metadata_enrichment_read_service: MetadataEnrichmentReadService | None = None,
     metadata_enrichment_workflow_service: MetadataEnrichmentWorkflowService | None = None,
     metadata_change_set_service: MetadataChangeSetService | None = None,
@@ -301,13 +296,6 @@ def create_app(
             create_tenant_lock_router(
                 identity_provider=identity_provider,
                 service=tenant_lock_service,
-            )
-        )
-    if metadata_review_service is not None:
-        app.include_router(
-            create_metadata_review_router(
-                identity_provider=identity_provider,
-                service=metadata_review_service,
             )
         )
     if metadata_service is not None:

@@ -58,9 +58,13 @@ import(pathToFileURL(process.argv[3]).href);
     cases = json.loads(captured.read_text())
     assert len(cases) >= 35
     source = (SCRIPTS / "atlas-local.ps1").read_text()
-    prefix = source[: source.rindex("\ntry {\n    $options = Parse-Options $RemainingArguments")]
+    prefix = source[
+        : source.rindex("\ntry {\n    $options = Parse-Options $RemainingArguments")
+    ]
     library = tmp_path / "library.ps1"
-    library.write_text(prefix.replace("$PSScriptRoot", "'" + str(SCRIPTS).replace("'", "''") + "'"))
+    library.write_text(
+        prefix.replace("$PSScriptRoot", "'" + str(SCRIPTS).replace("'", "''") + "'")
+    )
     runner = tmp_path / "run.ps1"
     runner.write_text("""
 param([string]$Library, [string]$Planner, [string]$CasesPath, [string]$Output)
@@ -104,7 +108,9 @@ foreach ($case in (ConvertFrom-GdsJson ([IO.File]::ReadAllText($CasesPath)))) {
     for index, (case, value) in enumerate(zip(cases, actual, strict=True)):
         assert value.get("error", False) == case.get("error", False), (index, value)
         if not case.get("error"):
-            assert value["value"] == case["value"], f"Native planning parity case {index}"
+            assert value["value"] == case["value"], (
+                f"Native planning parity case {index}"
+            )
 
 
 def test_native_aggregate_manifest_matches_node_in_never_policy(tmp_path: Path) -> None:
@@ -138,7 +144,9 @@ def test_native_aggregate_manifest_matches_node_in_never_policy(tmp_path: Path) 
             }
             for i, name in enumerate(["Batch", "CustomerID"])
         ],
-        "tenant": [{"tenant_code": "TENANT_A", "tenant_catalog": "owner", "is_active": True}],
+        "tenant": [
+            {"tenant_code": "TENANT_A", "tenant_catalog": "owner", "is_active": True}
+        ],
         "connection": [
             {
                 "tenant_code": "TENANT_A",
@@ -179,14 +187,22 @@ def test_native_aggregate_manifest_matches_node_in_never_policy(tmp_path: Path) 
                 "schema_file": f"schemas/{name}.schema.json",
             }
         )
-        (snapshot / f"data/{name}.jsonl").write_text("\n".join(map(json.dumps, records)) + "\n")
-        (snapshot / f"schemas/{name}.schema.json").write_text(json.dumps({"type": "object"}))
+        (snapshot / f"data/{name}.jsonl").write_text(
+            "\n".join(map(json.dumps, records)) + "\n"
+        )
+        (snapshot / f"schemas/{name}.schema.json").write_text(
+            json.dumps({"type": "object"})
+        )
     catalog["sections"][0]["datasets"] = datasets
     (snapshot / "catalog.json").write_text(json.dumps(catalog))
-    fixtures.write_snapshot_manifest(snapshot, kind="metadata", snapshot_id="metadata-1")
+    fixtures.write_snapshot_manifest(
+        snapshot, kind="metadata", snapshot_id="metadata-1"
+    )
     model = root / "model/model-snapshot"
     (model / "data/model_input_scope.jsonl").write_text(json.dumps(obj) + "\n")
-    (model / "schemas/model_input_scope.schema.json").write_text(json.dumps({"type": "object"}))
+    (model / "schemas/model_input_scope.schema.json").write_text(
+        json.dumps({"type": "object"})
+    )
     model_catalog = json.loads((model / "catalog.json").read_text())
     model_catalog["sections"][0]["datasets"].append(
         {
@@ -199,7 +215,9 @@ def test_native_aggregate_manifest_matches_node_in_never_policy(tmp_path: Path) 
         }
     )
     (model / "catalog.json").write_text(json.dumps(model_catalog))
-    fixtures.write_snapshot_manifest(model, kind="model", snapshot_id="model-1", model_revision=8)
+    fixtures.write_snapshot_manifest(
+        model, kind="model", snapshot_id="model-1", model_revision=8
+    )
     selections = {
         "systems": [
             {
@@ -213,7 +231,12 @@ def test_native_aggregate_manifest_matches_node_in_never_policy(tmp_path: Path) 
     plan.write_text(
         json.dumps(
             {
-                "selections": selections,
+                "selections": {
+                    "batches": selections,
+                    "probes": [
+                        {"kind": "key", "object": obj, "columns": ["CustomerID"]}
+                    ],
+                },
                 "execution_connections": [
                     {
                         "connection_id": 13,
@@ -224,14 +247,14 @@ def test_native_aggregate_manifest_matches_node_in_never_policy(tmp_path: Path) 
             }
         )
     )
-    expected = run("profile-plan", "--session", str(root), "--plan-file", str(plan))
+    expected = run("analysis-plan", "--session", str(root), "--plan-file", str(plan))
     result = subprocess.run(
         [
             powershell,
             "-NoProfile",
             "-File",
             str(SCRIPTS / "atlas-local.ps1"),
-            "profile-plan",
+            "analysis-plan",
             "--session",
             str(root),
             "--plan-file",

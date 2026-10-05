@@ -30,6 +30,7 @@ SELECT model.model_id,
        model.model_name,
        left(model.model_description, 2000) AS model_description,
        model.model_revision,
+       model.is_locked,
        model.logical_schemas,
        model.dimensional_schemas,
        model.logical_entity_scd_type,
@@ -62,6 +63,7 @@ class ModelDetails(ContractModel):
     model_name: str = Field(min_length=1, max_length=255)
     model_description: str | None = Field(default=None, max_length=2000)
     model_revision: int = Field(gt=0)
+    is_locked: bool = False
     logical_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
     dimensional_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
     logical_entity_scd_type: Literal["type_1", "type_2"] | None = None
@@ -102,7 +104,8 @@ def register_list_models_tool(
         name=_TOOL_NAME,
         description=(
             "List active Models for one authorized Tenant. Returns paginated Model IDs, "
-            "names, revisions, naming policies, column templates, and active Input Scope "
+            "names, revisions, lock state, naming policies, column templates, "
+            "and active Input Scope "
             "counts; use the returned model_id with Model-scoped tools."
         ),
         annotations=ToolAnnotations(

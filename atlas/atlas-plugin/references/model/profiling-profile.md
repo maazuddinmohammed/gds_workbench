@@ -1,6 +1,6 @@
 # Profiling Profile record
 
-Owns `profiling_profile` field meanings and calculations. Use [Model Change Set authoring](change-sets.md) to read/write records and [query scope](../query-scope.md) to bind measurements. The workflow's profiling reference owns SQL generation, execution and retries.
+Owns `profiling_profile` field meanings and calculations. Read these records from the Model Snapshot. New measurements are saved only by the [backend Profiling run](../logical-build/profiling.md); do not author or stage them in plugin Change Sets.
 
 ## Identity and fields
 
@@ -48,7 +48,7 @@ For equivalent SQL, return Attribute indexes and counts as BIGINT, minimum/maxim
 
 ## Complete synthetic example
 
-Illustrates `model-change-set/profiling_profile.json`; keys are fictitious and must resolve to actual eligible Metadata before submission.
+Illustrates a `profiling_profile` Snapshot record. Keys are fictitious. New measurements come from the backend run; do not stage this example.
 
 ```json
 [
@@ -78,4 +78,4 @@ Illustrates `model-change-set/profiling_profile.json`; keys are fictitious and m
 
 ## Source pointers
 
-Current contract: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`ProfilingProfileRecord`), `domain/snapshots/model.py` dataset key and `application/change_sets/model_validation.py` scope checks. Current SQL generation is in `web_app/backend/gds_workbench_api/features/profiling/execution.py`; Atlas planning is in `atlas/atlas-plugin/scripts/profiling.js`.
+Current contract: `mcp_server/gds_etl_workbench/domain/modeling_records.py` (`ProfilingProfileRecord`), `domain/snapshots/model.py` dataset key and `application/change_sets/model_validation.py` scope checks. Current SQL generation is in `mcp_server/gds_etl_workbench/application/profiling/execution.py`; MCP owns run execution and persistence.

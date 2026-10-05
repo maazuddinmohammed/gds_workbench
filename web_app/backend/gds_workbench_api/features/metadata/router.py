@@ -26,7 +26,6 @@ from pydantic import (
 from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.metadata.contracts import (
     ActiveState,
-    MetadataDatasetDetail,
     MetadataDatasetRegistry,
     MetadataFilter,
     MetadataRowPage,
@@ -142,25 +141,6 @@ def create_metadata_router(
         list_datasets,
         methods=["GET"],
         response_model=MetadataDatasetRegistry,
-    )
-
-    async def describe_dataset(
-        tenant_id: Annotated[int, Path(gt=0)],
-        dataset: MetadataDataset,
-        *,
-        principal: RequestPrincipal = Depends(authenticate),
-    ) -> MetadataDatasetDetail:
-        return await service.describe_dataset(
-            principal,
-            tenant_id=tenant_id,
-            dataset=dataset,
-        )
-
-    router.add_api_route(
-        "/datasets/{dataset}",
-        describe_dataset,
-        methods=["GET"],
-        response_model=MetadataDatasetDetail,
     )
 
     async def list_rows(

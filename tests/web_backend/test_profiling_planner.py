@@ -256,6 +256,9 @@ class _FakeCursor:
         self.executions.append((operation, tuple(str(value) for value in parameters)))
         return object()
 
+    def cancel(self) -> None:
+        pass
+
     def fetchmany(self, size: int) -> list[tuple[object, ...]]:
         return self.rows[:size]
 

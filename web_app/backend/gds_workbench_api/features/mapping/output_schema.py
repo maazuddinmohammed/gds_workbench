@@ -25,7 +25,12 @@ def compile_mapping_output_schema(
         "return supported Object and Attribute transformations and leave unsupported "
         "documents null or omit them. Missing selected transformations are cleared; "
         "locked and unselected mappings are preserved. Return no transformations "
-        "when nothing is supported. Never invent rules to fill blanks."
+        "when nothing is supported. Never invent rules to fill blanks. "
+        "A System contributes only when it supplies a supported business rowset or "
+        "business Attribute transformation. Generated surrogate keys, audit/history "
+        "population, and 'omit from load select' notes alone are not a contribution. "
+        "For such a pair return outcome no_applicable_source, object_mapping null "
+        "and attribute_mappings []."
     )
     guidance: dict[str, JsonValue] = {}
     object_template = _selected_template(preparation, "mapping_object")

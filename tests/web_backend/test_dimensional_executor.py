@@ -1025,8 +1025,8 @@ async def test_dimensional_runs_with_optional_gold_templates_unset(
     ]
     names = {row["dimensional_attribute_name"] for row in dimension}
     assert "Customer DimensionKey" in names
-    assert {"EffectiveFrom", "EffectiveTo", "IsCurrent"}.issubset(names) is (scd_type == "type_2")
-    assert not any(row["dimensional_attribute_is_audit_column"] for row in attributes)
+    assert {"RecordStartTime", "RecordEndTime", "IsCurrentRecord"}.issubset(names) is (scd_type == "type_2")
+    assert sum(bool(row["dimensional_attribute_is_audit_column"]) for row in dimension) == 10
 
 
 @pytest.mark.asyncio

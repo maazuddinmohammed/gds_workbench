@@ -24,6 +24,7 @@ SELECT target_model.model_id,
        tenant.tenant_code,
        target_model.model_name,
        target_model.model_revision,
+       target_model.is_locked,
        ARRAY(
            SELECT other_model.model_name
              FROM model.model AS other_model
@@ -51,6 +52,7 @@ class ModelReadContext:
     tenant_id: int
     model_name: str
     model_revision: int
+    is_locked: bool = False
     tenant_code: str | None = None
     other_active_model_names: tuple[str, ...] = ()
     readable_source_tenant_ids: tuple[int, ...] = ()
@@ -79,6 +81,7 @@ async def authorize_model_read(
         tenant_id=row["tenant_id"],
         model_name=row["model_name"],
         model_revision=row["model_revision"],
+        is_locked=bool(row.get("is_locked", False)),
         tenant_code=row.get("tenant_code"),
         readable_source_tenant_ids=readable,
         other_active_model_names=tuple(row.get("other_active_model_names") or ()),

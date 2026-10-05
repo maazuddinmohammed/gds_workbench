@@ -30,6 +30,8 @@ describe("governed Prompts experience", () => {
     await user.click(promptsLink);
 
     const ledger = await screen.findByRole("table", { name: "Prompt Templates" });
+    expect(screen.getByLabelText("Workflow")).not.toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Filters" }));
     expect(within(screen.getByLabelText("Workflow")).getByRole("option", { name: "Validation" })).toBeInTheDocument();
     expect(within(ledger).getByText("Tenant entity review")).toBeVisible();
     expect(within(ledger).getByText("Global entity review")).toBeVisible();
@@ -38,7 +40,7 @@ describe("governed Prompts experience", () => {
     await user.selectOptions(screen.getByLabelText("Execution mode"), "tool_assisted");
     await user.selectOptions(screen.getByLabelText("Workflow stage filter"), "entity_review");
     await user.selectOptions(screen.getByLabelText("Latest version status"), "published");
-    await user.click(screen.getByRole("button", { name: "Apply server filters" }));
+    await user.click(screen.getByRole("button", { name: "Apply filters" }));
 
     expect(fetcher).toHaveBeenCalledWith(
       "/api/v1/tenants/7/prompts/templates?workflow=logical&mode=tool_assisted&stage_code=entity_review&status=published&page_size=50",
@@ -47,12 +49,13 @@ describe("governed Prompts experience", () => {
     await screen.findByRole("table", { name: "Prompt Templates" });
     const callsBeforeVisibility = templateListCalls(fetcher).length;
     await user.selectOptions(screen.getByLabelText("Visibility on this page"), "tenant");
-    expect(screen.getByText("Local view · no server filter available")).toBeVisible();
     expect(screen.getByText("Tenant entity review")).toBeVisible();
     expect(screen.queryByText("Global entity review")).not.toBeInTheDocument();
     expect(templateListCalls(fetcher)).toHaveLength(callsBeforeVisibility);
 
-    await user.click(screen.getByText("Allowed-variable reference"));
+    await user.click(screen.getByText("Variable reference"));
+    expect(screen.getByText("{{entity_name}}")).not.toBeVisible();
+    await user.click(screen.getByText("Entity review", { selector: ".prompt-stage-reference summary strong" }));
     expect(screen.getByText("{{entity_name}}")).toBeVisible();
     expect(screen.getByText(/Canonical Entity name/)).toBeVisible();
   });
@@ -91,7 +94,9 @@ describe("governed Prompts experience", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "Start first draft" }));
+    await user.click(screen.getByRole("button", { name: "System" }));
     await user.type(screen.getByLabelText("System Prompt"), "New governed system body");
+    await user.click(screen.getByRole("button", { name: "Instructions" }));
     await user.type(screen.getByLabelText("Instruction Prompt"), "New governed instruction body");
     await user.click(screen.getByRole("button", { name: "Save new draft" }));
     const newDraftCall = await waitForCall(fetcher, (input, init) => (
@@ -139,10 +144,12 @@ describe("governed Prompts experience", () => {
     expect(screen.queryByRole("button", { name: "Usage list unavailable" })).toBeNull();
     expect(container.querySelector("script")).toBeNull();
 
+    await user.click(screen.getByRole("button", { name: "System" }));
     const systemEditor = screen.getByLabelText("System Prompt");
     expect(systemEditor).toHaveValue("Treat <script> as literal Prompt text.");
     await user.clear(systemEditor);
     await user.type(systemEditor, "Updated governed system body");
+    await user.click(screen.getByText(/^Enabled tools/, { selector: "summary" }));
     const datasetTool = screen.getByRole("checkbox", { name: /get_agent_context_dataset/ });
     expect(datasetTool).toBeChecked();
     expect(datasetTool).toBeEnabled();
@@ -182,7 +189,7 @@ describe("governed Prompts experience", () => {
       "/api/v1/tenants/7/prompts/templates/31/versions/91/retire",
       expect.objectContaining({ method: "POST" }),
     );
-    expect((await screen.findAllByText("Retired"))[0]).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Version 2" }).parentElement?.parentElement).toHaveTextContent("Retired");
   });
 
   it("inserts at the active selection, previews only on request, and keeps stale previews separate", async () => {
@@ -190,6 +197,7 @@ describe("governed Prompts experience", () => {
     const user = userEvent.setup();
     const { container } = render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
     const system = await screen.findByLabelText("System Prompt");
+    await user.click(screen.getByRole("button", { name: "System" }));
     await user.clear(system);
     await user.type(system, "Before selected after");
     (system as HTMLTextAreaElement).setSelectionRange(7, 15);
@@ -212,16 +220,21 @@ describe("governed Prompts experience", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
     const system = await screen.findByLabelText("System Prompt");
+    await user.click(screen.getByRole("button", { name: "System" }));
     await user.type(system, " Unsaved");
+    if (!(screen.getByText(/^Enabled tools/, { selector: "summary" }).parentElement as HTMLDetailsElement).open) await user.click(screen.getByText(/^Enabled tools/, { selector: "summary" }));
     await user.click(screen.getByRole("button", { name: "Clear tools" }));
     expect(screen.getByText("0 of 2 enabled")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Reset edits" }));
     expect(system).toHaveValue(promptDraft.system_prompt_template);
     expect(screen.getByText("2 of 2 enabled")).toBeVisible();
+    if (!(screen.getByText(/^Enabled tools/, { selector: "summary" }).parentElement as HTMLDetailsElement).open) await user.click(screen.getByText(/^Enabled tools/, { selector: "summary" }));
     await user.click(screen.getByRole("button", { name: "Clear tools" }));
     await user.click(screen.getByRole("button", { name: "Save draft" }));
     const call = await waitForCall(fetcher, (input, init) => input.endsWith("/31/draft") && init?.method === "PUT");
     expect(JSON.parse(String(call[1]?.body)).agent_tool_names).toEqual([]);
+    await screen.findByText("Draft v2 saved");
+    await user.click(screen.getByText(/^Enabled tools/, { selector: "summary" }));
     await screen.findByText("No tools enabled. Include the context needed through variables in your prompts.");
   });
 
@@ -233,6 +246,7 @@ describe("governed Prompts experience", () => {
       history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }),
     })} />);
     const system = await screen.findByLabelText("System Prompt");
+    await user.click(screen.getByRole("button", { name: "System" }));
     const content = "é".repeat(262_145) + "complete suffix";
     fireEvent.change(system, { target: { value: content } });
     fireEvent.change(screen.getByLabelText("Instruction Prompt"), { target: { value: content } });
@@ -253,8 +267,10 @@ describe("governed Prompts experience", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
     const system = await screen.findByLabelText("System Prompt");
+    await user.click(screen.getByRole("button", { name: "System" }));
     await user.clear(system);
     await user.type(system, "Retain these edits");
+    if (!(screen.getByText(/^Enabled tools/, { selector: "summary" }).parentElement as HTMLDetailsElement).open) await user.click(screen.getByText(/^Enabled tools/, { selector: "summary" }));
     await user.click(screen.getByRole("button", { name: "Clear tools" }));
     await user.click(screen.getByRole("button", { name: "Preview prompts" }));
     expect(await screen.findByText(/Preview could not be rendered/)).toBeVisible();
@@ -269,9 +285,84 @@ describe("governed Prompts experience", () => {
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(promptFetchStub({ promptWorkflow: "code_generation" })), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
     await screen.findByLabelText("System Prompt");
+    await user.click(screen.getByText(/^Version history/, { selector: "summary" }));
     await user.click(screen.getByRole("button", { name: /Version 1.*Published/ }));
     await user.click(screen.getByText("Enabled tools"));
     expect(screen.getByText("get_agent_context_dataset")).toBeVisible();
+  });
+
+  it("expands editing with trapped focus and retains edits across content switches", async () => {
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(promptFetchStub()), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
+    const instruction = await screen.findByLabelText("Instruction Prompt");
+    const expand = screen.getByRole("button", { name: "Expand Instruction Prompt" });
+    await user.click(expand);
+    const editor = screen.getByRole("dialog", { name: "Expanded Instruction Prompt" });
+    expect(instruction).toHaveFocus();
+    expect(document.body.style.overflow).toBe("hidden");
+    await user.clear(instruction);
+    await user.type(instruction, "Working instructions");
+    await user.tab();
+    expect(within(editor).getByRole("button", { name: "Collapse Instruction Prompt" })).toHaveFocus();
+    await user.tab();
+    expect(instruction).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(expand).toHaveFocus();
+    expect(document.body.style.overflow).not.toBe("hidden");
+    await user.click(screen.getByRole("button", { name: "System" }));
+    expect(instruction).not.toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Instructions" }));
+    expect(instruction).toBeVisible();
+    expect(instruction).toHaveValue("Working instructions");
+    expect(screen.getByRole("button", { name: "Publish version" })).toBeDisabled();
+  });
+
+  it("requires discard before refreshing, switching versions, or leaving dirty content", async () => {
+    const fetcher = promptFetchStub();
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
+    const instruction = await screen.findByLabelText("Instruction Prompt");
+    await user.type(instruction, " working");
+    const reads = () => fetcher.mock.calls.filter(([input]) => String(input) === "/api/v1/tenants/7/prompts/templates/31").length;
+    const initialReads = reads();
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Discard unsaved prompt edits?");
+    expect(reads()).toBe(initialReads);
+    await user.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(instruction).toHaveValue(`${promptDraft.instruction_prompt_template} working`);
+    await user.click(screen.getByText(/^Version history/, { selector: "summary" }));
+    await user.click(screen.getByRole("button", { name: /Version 1.*Published/ }));
+    expect(screen.getByRole("alert")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Keep editing" }));
+    await user.click(screen.getByRole("link", { name: "Back to Prompts" }));
+    await screen.findByRole("button", { name: "Keep editing" });
+    expect(screen.getByLabelText("Instruction Prompt")).toHaveValue(`${promptDraft.instruction_prompt_template} working`);
+    await user.click(screen.getByRole("button", { name: "Keep editing" }));
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await user.click(screen.getByRole("button", { name: "Discard edits" }));
+    await vi.waitFor(() => expect(reads()).toBeGreaterThan(initialReads));
+    expect(screen.getByLabelText("Instruction Prompt")).toHaveValue(promptDraft.instruction_prompt_template);
+    await user.type(screen.getByLabelText("Instruction Prompt"), " changed");
+    await user.click(screen.getByRole("link", { name: "Back to Prompts" }));
+    await user.click(await screen.findByRole("button", { name: "Discard edits" }));
+    expect(await screen.findByRole("table", { name: "Prompt Templates" })).toBeVisible();
+  });
+
+  it("expands published content without making it editable", async () => {
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(promptFetchStub()), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
+    await screen.findByLabelText("Instruction Prompt");
+    await user.click(screen.getByText(/^Version history/, { selector: "summary" }));
+    await user.click(screen.getByRole("button", { name: /Version 1.*Published/ }));
+    await user.click(screen.getByRole("button", { name: "Expand Instruction Prompt" }));
+    const editor = screen.getByRole("dialog", { name: "Expanded Instruction Prompt" });
+    const body = within(editor).getByLabelText("Instruction Prompt immutable");
+    expect(body).toHaveAttribute("readonly");
+    await user.type(body, " no change");
+    expect(body).toHaveValue(promptPublished.instruction_prompt_template);
+    await user.click(within(editor).getByRole("button", { name: "Collapse Instruction Prompt" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("shows effective Model provenance and changes only a lock-gated Model override", async () => {
@@ -325,14 +416,14 @@ describe("governed Prompts experience", () => {
       api: createApiClient(promptFetchStub({ pendingLibrary: true })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts"] }),
     })} />);
-    expect(await screen.findByText("Loading governed Prompt Library…")).toBeVisible();
+    expect(await screen.findByText("Loading Prompts…")).toBeVisible();
     loading.unmount();
 
     const empty = render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(promptFetchStub({ emptyLibrary: true })),
       history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts"] }),
     })} />);
-    expect(await screen.findByText("No Prompt Templates match these server filters.")).toBeVisible();
+    expect(await screen.findByText("No Prompts match these filters.")).toBeVisible();
     empty.unmount();
 
     const denied = render(<WorkbenchApp router={createWorkbenchRouter({

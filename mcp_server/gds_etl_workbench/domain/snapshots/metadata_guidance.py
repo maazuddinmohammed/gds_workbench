@@ -37,6 +37,25 @@ class ColumnGuidance:
 
 
 _EXACT_GUIDANCE = {
+    "value": ColumnGuidance(
+        "Optional additional details stored as JSONB.",
+        "Use only when the user explicitly requests extra details. Leave null otherwise. "
+        "Preserve existing JSON; it does not change orchestration behavior by itself.",
+    ),
+    "member_group_name": ColumnGuidance(
+        "Optional execution filter for a Copy Group within the same Tenant and System.",
+        "Use only when explicitly requested and supported by the System. Copy Group Control "
+        "links the Copy Group to a Member Group; null means no Member Group filter.",
+    ),
+    "member_code": ColumnGuidance(
+        "Member business code, unique within its Member Group.",
+        "Use the requested filter member code. Tenant/System/Member Group identify its parent.",
+    ),
+    "member_attribute_name": ColumnGuidance(
+        "Attribute name used by the orchestration framework for this Member filter.",
+        "Use the exact requested source Attribute name; use null when unspecified. "
+        "Metadata registration does not execute or invent a filter.",
+    ),
     "attribute_custom_code": ColumnGuidance(
         "Replacement SELECT expression for SQL-based Source or Bronze ingestion.",
         "Blank leaves the column unchanged. Populated code replaces the column completely; "
@@ -202,8 +221,9 @@ _EXACT_GUIDANCE = {
         (False,),
     ),
     "is_member_group_required": ColumnGuidance(
-        "Whether each Copy Group control record must identify a Member Group.",
-        "Use true when execution is partitioned by Member Group; otherwise use false.",
+        "Whether this Copy Group uses Member Group filtering during orchestration.",
+        "Use true only when explicitly requested for a System supporting Member Group filters. "
+        "Otherwise use false and a null Member Group on Copy Group Control.",
         (False,),
     ),
     "is_meta_data": ColumnGuidance(
@@ -382,6 +402,15 @@ def metadata_population_rules(definition: DatasetDefinition) -> tuple[str, ...]:
             f"Reference columns ({', '.join(reference.columns)}) {nullable} and, when "
             f"populated, must match ({', '.join(reference.target_columns)}) in one of: "
             f"{', '.join(candidates)}."
+        )
+    if definition.name in {"copy_group", "member_group", "member", "copy_group_control", "copy"}:
+        rules.append(
+            "Pipeline triggers take one Tenant and a comma-separated System list. Omitted Copy "
+            "Groups select all Copy Groups in each selected System; provided groups "
+            "restrict execution "
+            "to those groups. Member Groups are optional Copy Group filters for "
+            "supporting Systems. "
+            "Create or apply member filtering only when the user explicitly requests it."
         )
     if definition.name == "tenant":
         rules.append(

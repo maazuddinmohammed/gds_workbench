@@ -16,7 +16,6 @@ export function PromptTools({ tools, selected, disabled, onChange }: {
   return (
     <fieldset className="prompt-tool-catalog" disabled={disabled}>
       <legend>Enabled tools</legend>
-      <p className="prompt-editor-note">Select the tools available to this Template. The agent chooses whether to call them. Tool choices are saved with this version.</p>
       {unavailable.length ? <p className="prompt-validation-note" role="status">Previously selected tools are unavailable for this workflow: {unavailable.join(", ")}. Clear tools and select from the current list before saving.</p> : null}
       <div className="prompt-reference-filters">
         <label htmlFor={searchId}><span>Search tools</span><input id={searchId} type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name or purpose" /></label>

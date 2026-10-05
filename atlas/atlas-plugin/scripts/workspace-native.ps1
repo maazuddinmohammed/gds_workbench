@@ -68,6 +68,22 @@ function Assert-AtlasIdentity($Value, [string]$Label) {
     }
 }
 
+function Assert-SubagentPolicy($Value) {
+    if (-not (Test-AtlasObject $Value) -or @('current', 'auto', 'custom') -cnotcontains (Get-Property $Value 'mode')) {
+        Fail 'Invalid sub-agent policy. Choose current, auto or custom.'
+    }
+    foreach ($key in @(Get-PropertyNames $Value)) {
+        if (@('mode', 'model') -cnotcontains $key) { Fail 'Invalid sub-agent policy. Choose current, auto or custom.' }
+    }
+    if ($Value.mode -ceq 'custom') {
+        $model = Get-Property $Value 'model'
+        if ($model -isnot [string] -or $model.Length -eq 0 -or $model.Length -gt 200 -or
+            $model -match '^[\s\uFEFF]|[\s\uFEFF]$|[\u0000-\u001f\u007f-\u009f]') {
+            Fail 'Custom sub-agent policy requires one model name or ID, at most 200 characters, without surrounding whitespace or control characters.'
+        }
+    } elseif (Test-Property $Value 'model') { Fail 'Only the custom sub-agent policy accepts a model.' }
+}
+
 function Read-SessionDocument([string]$Root) {
     $document = Read-WorkspaceJson $Root '.atlas/session.json'
     $state = $document.value
@@ -83,6 +99,7 @@ function Read-SessionDocument([string]$Root) {
         if (-not (Test-AtlasObject $sql) -or @('never', 'essential', 'proactive') -cnotcontains (Get-Property $sql 'policy') -or
             ((Test-Property $sql 'environment') -and @('dev', 'qa', 'stg', 'prod') -cnotcontains $sql.environment)) { Fail 'Invalid SQL policy/environment.' }
     }
+    if (Test-Property $state 'subagent_policy') { Assert-SubagentPolicy $state.subagent_policy }
     $owners = Get-Property $state 'metadata_owners'
     if ($null -ne $owners -and -not (Test-AtlasObject $owners)) { Fail 'Invalid Metadata owner registry.' }
     foreach ($id in @(Get-PropertyNames $owners)) {
@@ -233,15 +250,59 @@ function Update-Task([hashtable]$Options) {
 }
 function Get-SessionStatus([hashtable]$Options) {
     $root = Resolve-Session $Options; $document = Read-SessionDocument $root
-    $tasks = New-Object Collections.ArrayList
+    $detail = if ($Options.ContainsKey('detail')) { $Options.detail } else { 'summary' }
+    $history = $Options.ContainsKey('history') -and $Options.history -ceq 'true'
+    if (@('summary', 'full') -cnotcontains $detail) { Fail '--detail must be summary or full.' }
+    if ($Options.ContainsKey('history') -and -not $history) { Fail '--history accepts true only.' }
+    if (($history -and $Options.ContainsKey('task')) -or (-not $history -and $Options.ContainsKey('cursor'))) { Fail 'Use --task or paged --history true, not both.' }
+    [double]$limitValue = 50
+    if ($Options.ContainsKey('limit') -and -not [double]::TryParse($Options.limit, [ref]$limitValue)) { Fail '--limit must be between 1 and 200.' }
+    if (-not (Test-SafeJsonInteger $limitValue $false) -or $limitValue -gt 200) { Fail '--limit must be between 1 and 200.' }
+    $limit = [int]$limitValue
+    $names = New-Object 'System.Collections.Generic.List[string]'
     foreach ($file in @(Get-ChildItem -LiteralPath (Resolve-WorkspacePath $root '.atlas/tasks') -Filter '*.json' -Force)) {
-        $id = [IO.Path]::GetFileNameWithoutExtension($file.Name); $task = Read-AtlasTask $root $id
-        $entry = [ordered]@{ id = $id }
-        foreach ($key in @(Get-PropertyNames $task.value)) { $entry[$key] = Get-Property $task.value $key }
-        $entry.digest = $task.digest; [void]$tasks.Add($entry)
+        if ($file.PSIsContainer -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -or [IO.Path]::GetFileNameWithoutExtension($file.Name) -cnotmatch $script:AtlasUuid) {
+            Fail 'Task entries must be regular UUID-named JSON files.'
+        }
+        [void]$names.Add($file.Name)
     }
-    return [ordered]@{ workspace = $root; session = $document.value; session_digest = $document.digest; tasks = @($tasks) }
+    $names.Sort([StringComparer]::Ordinal)
+    $bindingValue = [ordered]@{names = @($names); session = $document.digest; detail = $detail; limit = $limit}
+    $binding = Get-ByteDigest ($script:Utf8NoBom.GetBytes((ConvertTo-StableJson $bindingValue)))
+    $offset = Get-PageOffset $Options $binding
+    $selected = if ($Options.ContainsKey('task')) { $Options.task } else { Get-Property $document.value 'active_task' }
+    $ids = New-Object Collections.ArrayList
+    if ($history) {
+        for ($i = $offset; $i -lt [Math]::Min($names.Count, $offset + $limit); $i++) { [void]$ids.Add([IO.Path]::GetFileNameWithoutExtension($names[$i])) }
+    } elseif ($selected) { [void]$ids.Add($selected) }
+    if ($offset -gt 0 -and $ids.Count -eq 0) { Fail 'Cursor is outside the task history; restart without --cursor.' }
+    $tasks = New-Object Collections.ArrayList
+    foreach ($id in $ids) {
+        $task = Read-AtlasTask $root $id; $value = $task.value; $entry = [ordered]@{}
+        if ($detail -ceq 'full') {
+            foreach ($key in @(Get-PropertyNames $value)) { $entry[$key] = Get-Property $value $key }
+        } else {
+            $clipped = $false
+            foreach ($field in @('outcome', 'workflow', 'progress')) {
+                $valueText = Get-Property $value $field
+                if ($valueText -isnot [string]) { continue }
+                $length = if ($field -ceq 'outcome') { 1000 } elseif ($field -ceq 'workflow') { 200 } else { 2000 }
+                $entry[$field] = $valueText.Substring(0, [Math]::Min($valueText.Length, $length))
+                if ($valueText.Length -gt $length) { $clipped = $true }
+            }
+            $entry.text_truncated = $clipped; $entry.has_inputs = Test-Property $value 'inputs'
+            $work = Get-Property $value 'work'; $evidence = Get-Property $value 'evidence'
+            $entry.work_count = if ($null -eq $work) { 0 } else { @($work).Count }
+            $entry.evidence_count = if ($null -eq $evidence) { 0 } else { @($evidence).Count }
+        }
+        $entry.id = $id; $entry.digest = $task.digest; [void]$tasks.Add($entry)
+    }
+    $truncated = $history -and $offset + $tasks.Count -lt $names.Count
+    return [ordered]@{ workspace = $root; session = $document.value; session_digest = $document.digest; detail = $detail
+        task_count = $names.Count; tasks = @($tasks); truncated = $truncated
+        next_cursor = if ($truncated) { 'v1.' + $binding + '.' + ($offset + $tasks.Count).ToString([Globalization.CultureInfo]::InvariantCulture) } else { $null } }
 }
+
 function Set-SqlPolicy([hashtable]$Options) {
     $root = Resolve-Session $Options; $document = Read-SessionDocument $root
     if (@('never', 'essential', 'proactive') -cnotcontains $Options.policy) { Fail 'Invalid SQL policy.' }
@@ -253,6 +314,21 @@ function Set-SqlPolicy([hashtable]$Options) {
     Set-Property $document.value 'sql' $sql
     [void](Write-WorkspaceJson $root '.atlas/session.json' $document.value $document.digest)
     return [ordered]@{ sql = $sql }
+}
+
+function Set-SubagentPolicy([hashtable]$Options) {
+    foreach ($key in $Options.Keys) {
+        if (@('session', 'mode', 'model', 'output-file') -cnotcontains $key) {
+            Fail 'Sub-agent policy accepts only --session, --mode, --model and --output-file.'
+        }
+    }
+    $root = Resolve-Session $Options; $document = Read-SessionDocument $root
+    $policy = [ordered]@{ mode = Require-Option $Options 'mode' }
+    if ($Options.ContainsKey('model')) { $policy.model = $Options.model }
+    Assert-SubagentPolicy $policy
+    Set-Property $document.value 'subagent_policy' $policy
+    [void](Write-WorkspaceJson $root '.atlas/session.json' $document.value $document.digest)
+    return [ordered]@{ subagent_policy = $policy }
 }
 
 function Find-Snapshot([hashtable]$Options) {
@@ -958,162 +1034,4 @@ function Select-AtlasModel([hashtable]$Options) {
     Set-Property $document.value 'model' $model
     [void](Write-WorkspaceJson $root '.atlas/session.json' $document.value $document.digest)
     return [ordered]@{model = $model}
-}
-
-function Import-ProfileResults([hashtable]$Options) {
-    . (Join-Path $PSScriptRoot 'profiling.ps1')
-    $modelOptions = $Options.Clone(); $modelOptions.area = 'model'
-    $context = Get-ChangeContext $modelOptions; Assert-Digest $Options $context
-    $planPath = [IO.Path]::GetFullPath((Require-Option $Options 'plan-file'))
-    $prefix = $context.Session.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
-    if (-not $planPath.StartsWith($prefix, [StringComparison]::Ordinal)) { Fail 'Profiling plan must be inside this workspace.' }
-    $plan = (Read-WorkspaceJson $context.Session ($planPath.Substring($prefix.Length).Replace('\', '/'))).value
-    if ((Get-Property $plan 'schema_version') -cne '1.0' -or $plan.kind -cne 'profiling' -or $plan.task -cne $context.TaskId -or
-        $plan.queries -isnot [Array] -or (Get-Property $plan 'inputs') -isnot [Array]) { Fail 'Profiling plan/task mismatch.' }
-    $physicalAttributes = @{}
-    $currentInputs = New-Object Collections.ArrayList
-    [void]$currentInputs.Add((Get-SnapshotBinding $context))
-    $owners = @{}; $owners[[string]$context.State.tenant.id] = Get-AtlasOwner $context.State 'metadata'
-    foreach ($id in @(Get-PropertyNames (Get-Property $context.State 'metadata_owners'))) { $owners[$id] = Get-AtlasOwner $context.State 'metadata' $id }
-    foreach ($owner in $owners.Values) {
-        if (@((Get-Property $context.State 'refresh_required') | Where-Object { $null -ne $_ -and $_.area -ceq 'metadata' -and $_.owner_tenant_id -eq $owner.id }).Count -gt 0) { Fail 'Profiling inputs are known stale.' }
-        $metadata = Find-Snapshot @{session = $context.Session; area = 'metadata'; owner = [string]$owner.id}
-        [void]$currentInputs.Add((Get-SnapshotBinding $metadata))
-        foreach ($datasetName in @('source_attribute', 'bronze_attribute')) {
-            if (-not $metadata.ByName.ContainsKey($datasetName)) { continue }
-            foreach ($attribute in @(Read-SnapshotRecords $metadata $metadata.ByName[$datasetName])) {
-                if ((Get-Property $attribute 'is_active') -ne $false) { $physicalAttributes[(Get-ProfileKey $attribute '' ($script:ProfileFields + @('attribute_name')))] = $attribute }
-            }
-        }
-    }
-    if ($plan.inputs.Count -ne $currentInputs.Count) { Fail 'Profiling plan must bind the complete current Snapshot inputs.' }
-    foreach ($inputBinding in $currentInputs) {
-        $key = ConvertTo-StableJson $inputBinding
-        if (@($plan.inputs | Where-Object { (ConvertTo-StableJson $_) -ceq $key }).Count -ne 1) { Fail 'Profiling plan must bind the complete current Snapshot inputs.' }
-    }
-    $scopedObjects = @{}
-    if ($context.ByName.ContainsKey('model_input_scope')) {
-        foreach ($object in @(Read-SnapshotRecords $context $context.ByName['model_input_scope'])) {
-            if ((Get-Property $object 'is_active') -ne $false) { $scopedObjects[(Get-ProfileKey $object)] = $true }
-        }
-    }
-    $indexesByObject = @{}
-    foreach ($query in $plan.queries) {
-        if (-not (Test-AtlasObject $query) -or [string](Get-Property $query 'file') -cnotmatch '^[0-9]{4,}\.sql$' -or
-            [string](Get-Property $query 'sha256') -cnotmatch $script:AtlasDigest -or (Get-Property $query 'attributes') -isnot [Array] -or
-            $query.attributes.Count -lt 1 -or $query.attributes.Count -gt 50 -or (Get-Property $query 'expected_row_count') -ne $query.attributes.Count -or
-            -not (Test-SafeJsonInteger (Get-Property $query 'connection_id') $false) -or (Get-Property $query 'environment') -cne (Get-Property $plan 'environment') -or
-            @('dev', 'qa', 'stg', 'prod') -cnotcontains $query.environment) { Fail 'Invalid profiling query manifest.' }
-        $objectKey = ConvertTo-StableJson (Get-Property $query 'object')
-        if (-not $indexesByObject.ContainsKey($objectKey)) { $indexesByObject[$objectKey] = @{} }
-        foreach ($attribute in $query.attributes) {
-            $index = Get-Property $attribute 'attribute_index'
-            if (-not (Test-SafeJsonInteger $index $false) -or $indexesByObject[$objectKey].ContainsKey([string]$index)) { Fail 'Profiling Attribute identity/coverage mismatch.' }
-            foreach ($field in @(Get-PropertyNames (Get-Property $query 'object'))) {
-                if ((ConvertTo-StableJson (Get-Property $attribute $field)) -cne (ConvertTo-StableJson (Get-Property $query.object $field))) { Fail 'Profiling Attribute identity/coverage mismatch.' }
-            }
-            $indexesByObject[$objectKey][[string]$index] = $true
-        }
-    }
-    foreach ($inputBinding in (Get-Property $plan 'inputs')) {
-        if ((Get-FileDigest (Resolve-WorkspacePath $context.Session $inputBinding.manifest_path)) -cne $inputBinding.manifest_sha256) { Fail 'Profiling inputs changed.' }
-    }
-    $resultsPath = [IO.Path]::GetFullPath((Require-Option $Options 'results-file'))
-    [void](Get-FileDigest $resultsPath) # Enforce regular-file input before parsing aggregate results.
-    $results = ConvertFrom-GdsJson ([IO.File]::ReadAllText($resultsPath, [Text.Encoding]::UTF8))
-    if ($results -isnot [Array] -or $results.Count -ne $plan.queries.Count) { Fail 'Every planned query needs one complete aggregate result.' }
-    if (-not $context.ByName.ContainsKey('profiling_profile')) { Fail 'Snapshot has no Profiling Profile dataset.' }
-    $definition = $context.ByName.profiling_profile; $schema = Get-DatasetSchema $context $definition
-    $metricNames = @('row_count', 'non_null_count', 'null_count', 'blank_count', 'distinct_count', 'min_data_length', 'max_data_length', 'avg_data_length', 'percent_populated', 'percent_duplicates', 'percent_null', 'percent_blank', 'percent_distinct')
-    $rows = New-Object Collections.ArrayList; $counts = @{}; $seenFiles = @{}; $evidence = New-Object Collections.ArrayList
-    foreach ($query in $plan.queries) {
-        $matches = @($results | Where-Object { (Get-Property $_ 'file') -ceq $query.file })
-        if ($matches.Count -ne 1) { Fail 'Profiling execution binding/coverage mismatch.' }
-        $result = $matches[0]; $executed = [DateTimeOffset]::MinValue
-        if (Test-Property $result 'result') {
-            $payload = Get-Property $result 'result'; $columns = @('attribute_index') + $metricNames
-            $fields = @('schema_version', 'connection_id', 'environment_code', 'statement_count', 'row_limit', 'columns', 'rows', 'row_count', 'rows_truncated', 'cells_truncated')
-            if (@(Get-PropertyNames $result).Count -ne 3 -or @(Get-PropertyNames $result | Where-Object { @('file', 'executed_at', 'result') -cnotcontains $_ }).Count -gt 0 -or
-                -not (Test-AtlasObject $payload) -or @(Get-PropertyNames $payload).Count -ne $fields.Count -or @($fields | Where-Object { -not (Test-Property $payload $_) }).Count -gt 0 -or
-                (Get-Property $payload 'schema_version') -isnot [string] -or $payload.schema_version -cne '1.0' -or -not (Test-SafeJsonInteger (Get-Property $payload 'statement_count') $false) -or $payload.statement_count -ne 1 -or
-                -not (Test-SafeJsonInteger (Get-Property $payload 'connection_id') $false) -or $payload.connection_id -ne $query.connection_id -or
-                (Get-Property $payload 'environment_code') -isnot [string] -or $payload.environment_code.Trim().ToLowerInvariant() -cne $query.environment -or
-                -not (Test-SafeJsonInteger (Get-Property $payload 'row_limit') $false) -or $payload.row_limit -lt $query.expected_row_count -or $payload.row_limit -gt 50 -or
-                -not (Test-SafeJsonInteger (Get-Property $payload 'row_count')) -or $payload.row_count -ne $query.expected_row_count -or
-                $payload.rows_truncated -isnot [bool] -or $payload.rows_truncated -ne $false -or $payload.cells_truncated -isnot [bool] -or $payload.cells_truncated -ne $false -or
-                $payload.rows -isnot [Array] -or $payload.rows.Count -ne $payload.row_count) { Fail 'Profiling SQL result contract/binding mismatch or truncated result.' }
-            if ($payload.columns -isnot [Array] -or $payload.columns.Count -ne $columns.Count -or
-                @($payload.columns | Where-Object { $_ -isnot [string] -or $columns -cnotcontains $_ }).Count -gt 0) { Fail 'Profiling SQL result columns/rows must match the fixed aggregate contract.' }
-            foreach ($column in $columns) {
-                if (@($payload.columns | Where-Object { $_ -ceq $column }).Count -ne 1) { Fail 'Profiling SQL result columns/rows must match the fixed aggregate contract.' }
-            }
-            $mappedRows = New-Object Collections.ArrayList
-            foreach ($row in $payload.rows) {
-                if ($row -isnot [Array] -or $row.Count -ne $columns.Count) { Fail 'Profiling SQL result columns/rows must match the fixed aggregate contract.' }
-                $mapped = [ordered]@{}
-                for ($index = 0; $index -lt $columns.Count; $index++) { $mapped[[string]$payload.columns[$index]] = $row[$index] }
-                [void]$mappedRows.Add($mapped)
-            }
-            $result = [ordered]@{file = $result.file; executed_at = $result.executed_at; connection_id = $payload.connection_id;
-                environment = $query.environment; truncated = $false; rows = @($mappedRows)}
-        }
-        if ($seenFiles.ContainsKey($query.file) -or (Get-Property $result 'truncated') -eq $true -or $result.rows -isnot [Array] -or
-            $result.rows.Count -ne $query.attributes.Count -or $result.connection_id -ne $query.connection_id -or $result.environment -cne $query.environment -or
-            (Get-Property $result 'executed_at') -isnot [string] -or -not [DateTimeOffset]::TryParse($result.executed_at, [ref]$executed)) { Fail 'Profiling execution binding/coverage mismatch.' }
-        $seenFiles[$query.file] = $true
-        $sqlRelative = ((Split-Path -Parent $planPath).Substring($prefix.Length).Replace('\', '/') + '/' + $query.file)
-        if ((Get-FileDigest (Resolve-WorkspacePath $context.Session $sqlRelative)) -cne $query.sha256) { Fail 'Profiling SQL changed after planning.' }
-        $indexes = @{}
-        foreach ($row in $result.rows) {
-            if (-not (Test-AtlasObject $row) -or @(Get-PropertyNames $row | Where-Object { @('attribute_index') + $metricNames -cnotcontains $_ }).Count -gt 0 -or
-                @($metricNames | Where-Object { -not (Test-Property $row $_) }).Count -gt 0) { Fail 'Profiling result columns must match the fixed aggregate contract.' }
-            $attributeIndex = Get-Property $row 'attribute_index'
-            if (-not (Test-SafeJsonInteger $attributeIndex $false)) { Fail 'Profiling result has an unknown or duplicate Attribute index.' }
-            $keys = @($query.attributes | Where-Object { $_.attribute_index -eq $attributeIndex })
-            if ($keys.Count -ne 1 -or $indexes.ContainsKey([string]$attributeIndex)) { Fail 'Profiling result has an unknown or duplicate Attribute index.' }
-            $indexes[[string]$row.attribute_index] = $true; $record = [ordered]@{}
-            foreach ($name in @(Get-PropertyNames $keys[0])) { if ($name -cne 'attribute_index') { $record[$name] = Get-Property $keys[0] $name } }
-            foreach ($name in $metricNames) { $record[$name] = Get-Property $row $name }
-            $schemaIssues = @(Get-SchemaIssues $record $schema)
-            if ($schemaIssues.Count -gt 0) { Fail 'Profiling metrics fail the record schema.' }
-            $physicalAttribute = $physicalAttributes[(Get-ProfileKey $record '' ($script:ProfileFields + @('attribute_name')))]
-            if ($null -eq $physicalAttribute -or -not $scopedObjects.ContainsKey((Get-ProfileKey $record))) { Fail 'Profile Attribute must exist in active applied Model Input Scope.' }
-            $type = ([string]$physicalAttribute.attribute_data_type).ToUpperInvariant() -replace '\s+', ''
-            $stringMetric = $type -cmatch $script:ProfileStringType; $distinctMetric = $stringMetric -or $type -cmatch $script:ProfileScalarType
-            foreach ($field in @('row_count', 'non_null_count', 'null_count', 'blank_count', 'distinct_count')) {
-                if ($null -ne $record[$field] -and -not (Test-SafeJsonInteger $record[$field])) { Fail 'Profile counts exceed exact local integer precision.' }
-            }
-            if ((-not $stringMetric -and @(@('blank_count', 'min_data_length', 'max_data_length', 'avg_data_length', 'percent_blank') | Where-Object { $null -ne $record[$_] }).Count -gt 0) -or
-                (-not $distinctMetric -and @(@('distinct_count', 'percent_duplicates', 'percent_distinct') | Where-Object { $null -ne $record[$_] }).Count -gt 0)) { Fail 'Profile metrics do not match the registered physical type.' }
-            $ratios = @(
-                @('percent_populated', $record.non_null_count, $record.row_count, $true),
-                @('percent_null', $record.null_count, $record.row_count, $true),
-                @('percent_blank', $record.blank_count, $record.non_null_count, $stringMetric),
-                @('percent_distinct', $record.distinct_count, $record.non_null_count, $distinctMetric),
-                @('percent_duplicates', ($record.non_null_count - $record.distinct_count), $record.non_null_count, $distinctMetric)
-            )
-            foreach ($ratio in $ratios) {
-                if (-not $ratio[3]) { continue }
-                $expectedRatio = if ($ratio[2] -eq 0) { 0 } else { [Math]::Floor(1000000 * [double]$ratio[1] / [double]$ratio[2] + 0.5) / 10000 }
-                if ($null -eq $record[$ratio[0]] -or $null -eq $ratio[1] -or [Math]::Abs([double]$record[$ratio[0]] - $expectedRatio) -gt 0.000001) { Fail 'Profile percentages do not reconcile with their counts.' }
-            }
-            if ($record.row_count -ne ($record.non_null_count + $record.null_count) -or
-                ($null -ne $record.distinct_count -and $record.distinct_count -gt $record.non_null_count) -or
-                ($null -ne $record.blank_count -and $record.blank_count -gt $record.non_null_count)) { Fail 'Profiling metric counts are inconsistent.' }
-            $objectKey = ConvertTo-StableJson $query.object
-            if ($counts.ContainsKey($objectKey) -and $counts[$objectKey] -ne $record.row_count) { Fail 'Attribute groups observed different Object row counts; rerun instead of combining.' }
-            $counts[$objectKey] = $record.row_count; [void]$rows.Add($record)
-        }
-        [void]$evidence.Add([ordered]@{object = $query.object; sql_sha256 = $query.sha256; connection_id = $query.connection_id; environment = $query.environment;
-            executed_at = $result.executed_at; batch_ids = $query.batch_ids; attribute_count = $query.attributes.Count})
-    }
-    $expected = $Options['expected-digest']
-    for ($index = 0; $index -lt $rows.Count; $index += 200) {
-        $batch = @($rows | Select-Object -Skip $index -First 200)
-        $batchOptions = $modelOptions.Clone(); $batchOptions.changes = ConvertTo-GdsJson ([ordered]@{profiling_profile = $batch}); $batchOptions['expected-digest'] = $expected
-        $expected = (Upsert-RecordsBatch $batchOptions).digest
-    }
-    $relative = '.atlas/tasks/' + $context.TaskId + '.evidence/profiling-' + [Guid]::NewGuid().ToString() + '.json'
-    [void](Write-WorkspaceJson $context.Session $relative ([ordered]@{schema_version = '1.0'; inputs = $plan.inputs; coverage = @($evidence)}))
-    return [ordered]@{profiles = $rows.Count; digest = $expected; evidence = $relative}
 }

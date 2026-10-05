@@ -1,8 +1,8 @@
 # Metadata Snapshot
 
-Shared format and editing guide for workflows using physical metadata. Read [working method](../working-method.md#snapshot-use) for freshness, batching and recovery; [table references](../metadata/index.md) explain field meanings.
+Shared format and editing guide for workflows using physical metadata. Read [working method](../platform/state.md#snapshot-use) for freshness, batching and recovery; [table references](../metadata/index.md) explain field meanings.
 
-Atlas preserves the verified Snapshot format. Use the [runtime guide](../../docs/runtime-guide.md) for installation and bounded reads/writes.
+Atlas preserves the verified Snapshot format. Use the [runtime reference](../local-runtime.md) for installation and bounded reads/writes.
 
 ## Files and purpose
 
@@ -53,11 +53,11 @@ Atlas `copy` imports baseline records while preserving matching pending proposal
 
 ## Runtime reuse and refresh
 
-- Atlas helpers share normalization, canonical-key overlay, serialization and validation with Workbench. Do not recreate them in a workflow.
+- Atlas helpers share normalization, canonical-key overlay, serialization and validation with Atlas Local Workbench. Do not recreate them in a workflow.
 - Use `select --view effective` for current intent and `--view snapshot` for applied prerequisites.
 - Use create_metadata_snapshot and a verified archive installer for a fresh baseline. The installer checks returned archive identity/size/digest and scope; retain the snapshot identity in task inputs.
 - Metadata has no Tenant-wide revision counter. Entry freshness, known invalidation, Tenant Lock and authoritative validation still apply to a locally accumulated batch.
-- Preserve unapplied drafts on refresh. After verified Apply, install fresh applied context and retire only confirmed applied intent. Atlas `snapshot-install` performs verified installation/retirement; Workbench Reload only rereads local files.
+- Preserve unapplied drafts on refresh. After verified Apply, install fresh applied context and retire only confirmed applied intent. Atlas `snapshot-install` performs verified installation/retirement; Atlas Local Workbench Reload only rereads local files.
 
 ## Source pointers
 

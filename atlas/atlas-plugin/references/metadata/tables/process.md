@@ -2,7 +2,7 @@
 
 One executable registration associated with a target Object and Process Group; registration does not deploy or run it.
 
-Use the [Process metadata workflow](../../../skills/atlas-process-metadata/SKILL.md) for artifact selection, missing runtime details and assignment review. This page owns the field, key and execution rules.
+Use the [Process metadata workflow](../../../skills/atlas-registration/SKILL.md) for artifact selection, missing runtime details and assignment review. This page owns the field, key and execution rules.
 
 **Datasets:** `process`.
 **Change Set:** editable.
@@ -22,6 +22,7 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 
 | Field | Accepted value / presence | Meaning and use |
 |---|---|---|
+| `value` | any valid JSON; optional; null allowed | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
 | `tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Owner of the Process Group context; use the locked Tenant. Reference: [process group](process-group.md). |
 | `system_code` | string; minLength=1; maxLength=100; pattern=\S; required | System component of the Process Group identity; may differ from the target Object's physical GDS System. Reference: [process group](process-group.md). |
 | `zone_code` | string; minLength=1; maxLength=30; required | Zone component of the referenced Process Group key, not an independent Process Zone or the target Object's Zone. Resolve the exact group before authoring. Reference: [process group](process-group.md). |

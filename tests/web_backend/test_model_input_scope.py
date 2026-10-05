@@ -14,7 +14,7 @@ from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.metadata import ObjectAttribute
+from gds_workbench_api.features.model_input_scope.contracts import ModelInputScopeAttribute
 from gds_workbench_api.features.model_input_scope import (
     DatabaseModelInputScopeService,
     ModelInputScopeCandidate,
@@ -176,7 +176,7 @@ class StaticModelInputScopeService(ModelInputScopeService):
             created_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
             updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
             attributes=(
-                ObjectAttribute(
+                ModelInputScopeAttribute(
                     attribute_id=601,
                     review_revision="b" * 64,
                     attribute_name="customer_id",

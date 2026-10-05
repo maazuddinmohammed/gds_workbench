@@ -248,6 +248,14 @@ function digestValue(value) {
   return crypto.createHash("sha256").update(stableStringify(value), "utf8").digest("hex");
 }
 
+function pageOffset(cursor, binding) {
+  if (cursor === undefined) return 0;
+  const match = /^v1\.([0-9a-f]{64})\.([0-9]+)$/.exec(cursor);
+  if (!match || !Number.isSafeInteger(Number(match[2]))) fail("Invalid cursor; restart without --cursor.");
+  if (match[1] !== binding) fail("Selection changed; restart without --cursor.");
+  return Number(match[2]);
+}
+
 function canonicalKey(area, dataset, record) {
   if (!Array.isArray(dataset.canonical_key)) fail(`${dataset.name} canonical key is invalid.`);
   return dataset.canonical_key.map((field) => {
@@ -700,55 +708,66 @@ function sha256Bytes(value) {
 async function selectRecords(options) {
   if (!options.dataset) fail("--dataset is required.");
   const limit = options.limit === undefined ? 50 : Number(options.limit);
-  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) {
-    fail("--limit must be between 1 and 200.");
-  }
-  const where = parseWhere(options.where);
-  const snapshot = locateSnapshot(options);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) fail("--limit must be between 1 and 200.");
+  const where = parseWhere(options.where), snapshot = locateSnapshot(options);
   const dataset = snapshot.byName.get(options.dataset);
   if (!dataset) fail(`Unknown Snapshot dataset: ${options.dataset}.`);
-  if (options.view !== undefined && !["snapshot", "effective"].includes(options.view)) fail("--view must be snapshot or effective.");
-  if (options.view === "effective") {
+  const view = options.view ?? "snapshot";
+  if (!["snapshot", "effective"].includes(view)) fail("--view must be snapshot or effective.");
+  let fields = null;
+  if (options.fields !== undefined) {
+    try { fields = JSON.parse(options.fields); } catch { fail("--fields must be a JSON string array."); }
+    if (!Array.isArray(fields) || !fields.length || fields.length > 100 || fields.some((field) => typeof field !== "string" || !field)) {
+      fail("--fields must contain 1 to 100 field names.");
+    }
+    const schema = readJsonFile(resolveSnapshotMember(snapshot.root, dataset.schema_file, snapshot.inventory), "Dataset schema");
+    if (fields.some((field) => !Object.hasOwn(schema.properties ?? {}, field))) fail("--fields contains an unknown schema field.");
+    fields = [...new Set([...dataset.canonical_key, ...fields])].sort();
+  }
+  let pending = [];
+  if (view === "effective") {
     const directory = stateFiles.safePath(snapshot.session, `${ownerPrefix(snapshot.owner)}${options.area}-change-set`);
-    const pending = fs.existsSync(directory) ? readPending({...snapshot, directory})[dataset.name] ?? [] : [];
-    const effective = workbenchCore.overlay(options.area, dataset, readSnapshotRecords(snapshot, dataset), pending);
-    const matches = effective.filter((record) => Object.entries(where).every(([field, expected]) =>
-      Object.hasOwn(record, field) && normalizedValue(options.area, field, record[field]) === normalizedValue(options.area, field, expected)));
-    return {dataset: options.dataset, view: "effective", count: Math.min(matches.length, limit), truncated: matches.length > limit, records: matches.slice(0, limit)};
+    pending = fs.existsSync(directory) ? readPending({...snapshot, directory})[dataset.name] ?? [] : [];
   }
-  const rowsPath = resolveSnapshotMember(snapshot.root, dataset.rows_file, snapshot.inventory);
-  const records = [];
-  let truncated = false;
-  let lineNumber = 0;
-  const lines = readline.createInterface({
-    input: fs.createReadStream(rowsPath, { encoding: "utf8" }),
-    crlfDelay: Infinity,
+  // A cursor binds a read position to these inputs; it is never authorization or
+  // proof that omitted pages were reviewed.
+  const binding = digestValue({
+    manifest: digestValue(snapshot.manifest), owner: snapshot.owner.id, dataset: dataset.name,
+    view, limit, fields, where: Object.fromEntries(Object.entries(where).map(([key, value]) => [key, normalizedValue(options.area, key, value)])),
+    pending: digestValue(pending),
   });
-  for await (const line of lines) {
-    lineNumber += 1;
-    if (!line.trim()) continue;
-    let record;
-    try {
-      record = JSON.parse(line);
-    } catch {
-      lines.close();
-      fail(`${options.dataset} contains invalid JSON on line ${lineNumber}.`);
-    }
-    const matches = Object.entries(where).every(
-      ([field, expected]) =>
-        Object.hasOwn(record, field) &&
-        normalizedValue(options.area, field, record[field]) ===
-          normalizedValue(options.area, field, expected),
-    );
-    if (!matches) continue;
-    if (records.length === limit) {
-      truncated = true;
-      lines.close();
-      break;
-    }
-    records.push(record);
+  const offset = pageOffset(options.cursor, binding), records = [];
+  let truncated = false, matched = 0, lineNumber = 0, entries, input, lines;
+  if (view === "effective") {
+    entries = workbenchCore.overlay(options.area, dataset, readSnapshotRecords(snapshot, dataset), pending);
+  } else {
+    const rowsPath = resolveSnapshotMember(snapshot.root, dataset.rows_file, snapshot.inventory);
+    input = fs.createReadStream(rowsPath, {encoding: "utf8"});
+    lines = readline.createInterface({input, crlfDelay: Infinity});
+    entries = lines;
   }
-  return { dataset: options.dataset, count: records.length, truncated, records };
+  try {
+    for await (const entry of entries) {
+      let record = entry;
+      if (view === "snapshot") {
+        lineNumber += 1;
+        if (!entry.trim()) continue;
+        try { record = JSON.parse(entry); } catch { fail(`${dataset.name} contains invalid JSON on line ${lineNumber}.`); }
+      }
+      if (!Object.entries(where).every(([field, expected]) => Object.hasOwn(record, field) &&
+          normalizedValue(options.area, field, record[field]) === normalizedValue(options.area, field, expected))) continue;
+      if (matched++ < offset) continue;
+      if (records.length === limit) { truncated = true; break; }
+      records.push(record);
+    }
+  } finally { lines?.close(); input?.destroy(); }
+  if (offset > 0 && !records.length) fail("Cursor is outside the selection; restart without --cursor.");
+  return {dataset: options.dataset, view, count: records.length, truncated, selection_digest: binding,
+    next_cursor: truncated ? `v1.${binding}.${offset + records.length}` : null,
+    records: fields ? records.map((record) => {
+      canonicalKey(options.area, dataset, record);
+      return Object.fromEntries(fields.filter((field) => Object.hasOwn(record, field)).map((field) => [field, record[field]]));
+    }) : records};
 }
 
 function requireSessionPath(value) {
@@ -885,9 +904,33 @@ function updateTask(options) {
 
 function sessionStatus(options) {
   const root = requireSessionPath(options.session), document = stateFiles.session(root);
-  const tasks = fs.readdirSync(stateFiles.safePath(root, ".atlas/tasks")).filter((name) => name.endsWith(".json"));
-  return {workspace: root, session: document.value, session_digest: document.digest,
-    tasks: tasks.map((file) => { const id = file.slice(0, -5), task = stateFiles.task(root, id); return {id, ...task.value, digest: task.digest}; })};
+  const detail = options.detail ?? "summary", history = options.history === "true";
+  if (!["summary", "full"].includes(detail)) fail("--detail must be summary or full.");
+  if (options.history !== undefined && !history) fail("--history accepts true only.");
+  if ((history && options.task) || (!history && options.cursor)) fail("Use --task or paged --history true, not both.");
+  const limit = options.limit === undefined ? 50 : Number(options.limit);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) fail("--limit must be between 1 and 200.");
+  const entries = fs.readdirSync(stateFiles.safePath(root, ".atlas/tasks"), {withFileTypes: true}).filter((entry) => entry.name.endsWith(".json"));
+  if (entries.some((entry) => !entry.isFile() || entry.isSymbolicLink() || !stateFiles.uuid.test(entry.name.slice(0, -5)))) {
+    fail("Task entries must be regular UUID-named JSON files.");
+  }
+  const names = entries.map((entry) => entry.name).sort();
+  const binding = digestValue({names, session: document.digest, detail, limit});
+  const offset = pageOffset(options.cursor, binding), selected = options.task ?? document.value.active_task;
+  const ids = history ? names.slice(offset, offset + limit).map((name) => name.slice(0, -5)) : selected ? [selected] : [];
+  if (offset > 0 && !ids.length) fail("Cursor is outside the task history; restart without --cursor.");
+  const tasks = ids.map((id) => {
+    const task = stateFiles.task(root, id), value = task.value;
+    if (detail === "full") return {...value, id, digest: task.digest};
+    return {id, digest: task.digest, outcome: value.outcome.slice(0, 1000),
+      ...(typeof value.workflow === "string" ? {workflow: value.workflow.slice(0, 200)} : {}),
+      ...(typeof value.progress === "string" ? {progress: value.progress.slice(0, 2000)} : {}),
+      text_truncated: value.outcome.length > 1000 || (value.progress?.length ?? 0) > 2000 || (value.workflow?.length ?? 0) > 200,
+      has_inputs: value.inputs !== undefined, work_count: value.work?.length ?? 0, evidence_count: value.evidence?.length ?? 0};
+  });
+  const truncated = history && offset + tasks.length < names.length;
+  return {workspace: root, session: document.value, session_digest: document.digest, detail,
+    task_count: names.length, tasks, truncated, next_cursor: truncated ? `v1.${binding}.${offset + tasks.length}` : null};
 }
 
 function setSqlPolicy(options) {
@@ -898,6 +941,18 @@ function setSqlPolicy(options) {
   document.value.sql = {policy: options.policy, ...(options.policy === "never" ? {} : {environment})};
   stateFiles.write(root, ".atlas/session.json", document.value, document.digest);
   return {sql: document.value.sql};
+}
+
+function setSubagentPolicy(options) {
+  if (Object.keys(options).some(key => !["session", "mode", "model", "output-file"].includes(key))) {
+    fail("Sub-agent policy accepts only --session, --mode, --model and --output-file.");
+  }
+  const root = requireSessionPath(options.session), document = stateFiles.session(root);
+  const policy = workbenchCore.validateSubagentPolicy({mode: options.mode,
+    ...(Object.hasOwn(options, "model") ? {model: options.model} : {})});
+  document.value.subagent_policy = policy;
+  stateFiles.write(root, ".atlas/session.json", document.value, document.digest);
+  return {subagent_policy: policy};
 }
 
 function fileDigest(file) { return sha256Bytes(fs.readFileSync(file)); }
@@ -1142,14 +1197,12 @@ async function main() {
   const {command, options} = parseArguments(process.argv.slice(2));
   const commands = {
     "command-contract": commandContract, "session-init": initializeSession, "status": sessionStatus,
-    "owner-add": registerOwner, "model-select": selectModel, "sql-policy": setSqlPolicy, "task-add": addTask, "task-update": updateTask, "task-select": selectTask,
+    "owner-add": registerOwner, "model-select": selectModel, "sql-policy": setSqlPolicy, "subagent-policy": setSubagentPolicy, "task-add": addTask, "task-update": updateTask, "task-select": selectTask,
     "inspect": inspectSnapshot, "describe": describeDataset, "select": selectRecords, "copy": copyRecords,
     "upsert": upsertRecord, "upsert-batch": upsertBatch, "discard": discardRecord,
     "review": reviewChangeSet, "validate": validateChangeSet, "accept": acceptChangeSet,
     "draft-cache": cacheServerDraft, "prepare-stage-request": prepareStageRequest,
     "snapshot-install": installSnapshot, "operation-record": recordOperation,
-    "profile-results": importProfileResults,
-    "profile-plan": (value) => aggregatePlan(value, "profiling"),
     "analysis-plan": (value) => aggregatePlan(value, "analysis"),
   };
   if (!commands[command]) fail(`Unknown Atlas command: ${command}.`);
@@ -1335,116 +1388,4 @@ function recordOperation(options) {
   }
   return {operation_id: operation.id, change_set_id: operation.draft.id, draft_revision: operation.draft.revision,
     operation: operation.id, checkpoint: options.checkpoint, refresh_required: Boolean(operation.apply)};
-}
-
-function importProfileResults(options) {
-  const context = changeSetContext({...options, area: "model"});
-  assertExpectedDigest(options, context);
-  const planPath = path.resolve(options["plan-file"] ?? "");
-  if (!planPath.startsWith(`${context.session}${path.sep}`)) fail("Profiling plan must be inside this workspace.");
-  stateFiles.safePath(context.session, path.relative(context.session, planPath).split(path.sep).join("/"));
-  const plan = readJsonFile(planPath, "Profiling plan");
-  if (plan.schema_version !== "1.0" || plan.kind !== "profiling" || plan.task !== context.taskId || !Array.isArray(plan.queries) || !Array.isArray(plan.inputs)) fail("Profiling plan/task mismatch.");
-  const applied = loadAppliedMetadata(context), currentInputs = [snapshotBinding(context), ...applied.inputs];
-  if (applied.missingMetadataOwners.length || plan.inputs.length !== currentInputs.length ||
-      currentInputs.some((input) => !plan.inputs.some((saved) => stableStringify(saved) === stableStringify(input)))) fail("Profiling plan must bind the complete current Snapshot inputs.");
-  const indexesByObject = new Map();
-  for (const query of plan.queries) {
-    if (!stateFiles.object(query) || !/^[0-9]{4,}\.sql$/.test(query.file ?? "") || !stateFiles.digest.test(query.sha256 ?? "") ||
-        !Array.isArray(query.attributes) || !query.attributes.length || query.attributes.length > 50 || query.expected_row_count !== query.attributes.length ||
-        !Number.isSafeInteger(query.connection_id) || query.connection_id < 1 || query.environment !== plan.environment || !["dev", "qa", "stg", "prod"].includes(query.environment)) fail("Invalid profiling query manifest.");
-    const objectKey = stableStringify(query.object), seen = indexesByObject.get(objectKey) ?? new Set();
-    for (const attribute of query.attributes) {
-      if (!Number.isSafeInteger(attribute.attribute_index) || attribute.attribute_index < 1 || seen.has(attribute.attribute_index) ||
-          Object.entries(query.object ?? {}).some(([field, value]) => attribute[field] !== value)) fail("Profiling Attribute identity/coverage mismatch.");
-      seen.add(attribute.attribute_index);
-    }
-    indexesByObject.set(objectKey, seen);
-  }
-  for (const input of plan.inputs ?? []) {
-    if (fileDigest(stateFiles.safePath(context.session, input.manifest_path)) !== input.manifest_sha256) fail("Profiling inputs changed.");
-  }
-  const results = readJsonFile(path.resolve(options["results-file"] ?? ""), "Profiling aggregate results");
-  if (!Array.isArray(results) || results.length !== plan.queries.length) fail("Every planned query needs one complete aggregate result.");
-  const profileDefinition = context.byName.get("profiling_profile");
-  if (!profileDefinition) fail("Snapshot has no Profiling Profile dataset.");
-  const profileSchema = datasetSchema(context, profileDefinition);
-  const profileTypes = require("./profiling.js");
-  const physicalAttributes = new Map([...(applied.metadata.get("source_attribute")?.baseline ?? []), ...(applied.metadata.get("bronze_attribute")?.baseline ?? [])]
-    .filter((row) => row.is_active !== false).map((row) => [profileTypes.attributeKey(row), row]));
-  const scope = context.byName.get("model_input_scope");
-  const scopedObjects = new Set((scope ? readSnapshotRecords(context, scope) : []).filter((row) => row.is_active !== false).map((row) => profileTypes.key(row)));
-  const rows = [], counts = new Map(), seenFiles = new Set();
-  const metricNames = ["row_count", "non_null_count", "null_count", "blank_count", "distinct_count", "min_data_length", "max_data_length", "avg_data_length", "percent_populated", "percent_duplicates", "percent_null", "percent_blank", "percent_distinct"];
-  const evidence = [];
-  for (const query of plan.queries) {
-    const matches = results.filter((item) => stateFiles.object(item) && item.file === query.file);
-    if (matches.length !== 1) fail("Profiling execution binding/coverage mismatch.");
-    let result = matches[0];
-    if (Object.hasOwn(result, "result")) {
-      const payload = result.result, columns = ["attribute_index", ...metricNames];
-      const fields = ["schema_version", "connection_id", "environment_code", "statement_count", "row_limit", "columns", "rows", "row_count", "rows_truncated", "cells_truncated"];
-      if (Object.keys(result).length !== 3 || Object.keys(result).some((name) => !["file", "executed_at", "result"].includes(name)) ||
-          !stateFiles.object(payload) || Object.keys(payload).length !== fields.length || fields.some((name) => !Object.hasOwn(payload, name)) ||
-          payload.schema_version !== "1.0" || payload.statement_count !== 1 || !Number.isSafeInteger(payload.connection_id) ||
-          payload.connection_id !== query.connection_id || typeof payload.environment_code !== "string" || payload.environment_code.trim().toLowerCase() !== query.environment ||
-          !Number.isSafeInteger(payload.row_limit) || payload.row_limit < query.expected_row_count || payload.row_limit > 50 ||
-          !Number.isSafeInteger(payload.row_count) || payload.row_count !== query.expected_row_count ||
-          payload.rows_truncated !== false || payload.cells_truncated !== false || !Array.isArray(payload.rows) || payload.rows.length !== payload.row_count) fail("Profiling SQL result contract/binding mismatch or truncated result.");
-      if (!Array.isArray(payload.columns) || payload.columns.length !== columns.length || new Set(payload.columns).size !== columns.length ||
-          payload.columns.some((name) => !columns.includes(name)) || payload.rows.some((row) => !Array.isArray(row) || row.length !== columns.length)) fail("Profiling SQL result columns/rows must match the fixed aggregate contract.");
-      result = {file: result.file, executed_at: result.executed_at, connection_id: payload.connection_id,
-        environment: query.environment, truncated: false,
-        rows: payload.rows.map((row) => Object.fromEntries(payload.columns.map((name, index) => [name, row[index]])))};
-    }
-    if (!result || seenFiles.has(query.file) || result.truncated === true || !Array.isArray(result.rows) || result.rows.length !== query.attributes.length ||
-        result.connection_id !== query.connection_id || result.environment !== query.environment || typeof result.executed_at !== "string" || !Number.isFinite(Date.parse(result.executed_at))) fail("Profiling execution binding/coverage mismatch.");
-    seenFiles.add(query.file);
-    const sqlFile = path.join(path.dirname(planPath), query.file);
-    stateFiles.safePath(context.session, path.relative(context.session, sqlFile).split(path.sep).join("/"));
-    if (fileDigest(sqlFile) !== query.sha256) fail("Profiling SQL changed after planning.");
-    const indexes = new Set();
-    for (const row of result.rows) {
-      if (!stateFiles.object(row) || Object.keys(row).some((name) => !["attribute_index", ...metricNames].includes(name)) || metricNames.some((name) => !Object.hasOwn(row, name))) fail("Profiling result columns must match the fixed aggregate contract.");
-      const key = query.attributes.find((attribute) => attribute.attribute_index === row.attribute_index);
-      if (!key || indexes.has(row.attribute_index)) fail("Profiling result has an unknown or duplicate Attribute index.");
-      indexes.add(row.attribute_index);
-      const {attribute_index: _index, ...identity} = key;
-      const record = {...identity, ...Object.fromEntries(metricNames.map((name) => [name, row[name]]))};
-      const issues = schemaIssues(record, profileSchema);
-      if (issues.length) fail(`Profiling metrics fail the record schema: ${issues[0]}`);
-      const physicalAttribute = physicalAttributes.get(profileTypes.attributeKey(record));
-      if (!physicalAttribute || !scopedObjects.has(profileTypes.key(record))) fail("Profile Attribute must exist in active applied Model Input Scope.");
-      const type = profileTypes.normalizedType(physicalAttribute.attribute_data_type);
-      const stringMetric = profileTypes.stringType.test(type), distinctMetric = stringMetric || profileTypes.scalarType.test(type);
-      for (const field of ["row_count", "non_null_count", "null_count", "blank_count", "distinct_count"]) {
-        if (record[field] !== null && !Number.isSafeInteger(record[field])) fail("Profile counts exceed exact local integer precision.");
-      }
-      if (!stringMetric && ["blank_count", "min_data_length", "max_data_length", "avg_data_length", "percent_blank"].some((field) => record[field] !== null) ||
-          !distinctMetric && ["distinct_count", "percent_duplicates", "percent_distinct"].some((field) => record[field] !== null)) fail("Profile metrics do not match the registered physical type.");
-      const ratio = (numerator, denominator) => denominator === 0 ? 0 : Math.round(1000000 * numerator / denominator) / 10000;
-      for (const [field, numerator, denominator, applicable] of [
-        ["percent_populated", record.non_null_count, record.row_count, true],
-        ["percent_null", record.null_count, record.row_count, true],
-        ["percent_blank", record.blank_count, record.non_null_count, stringMetric],
-        ["percent_distinct", record.distinct_count, record.non_null_count, distinctMetric],
-        ["percent_duplicates", record.non_null_count - record.distinct_count, record.non_null_count, distinctMetric],
-      ]) if (applicable && (record[field] === null || numerator === null || Math.abs(Number(record[field]) - ratio(numerator, denominator)) > 0.000001)) fail("Profile percentages do not reconcile with their counts.");
-      if (record.row_count !== record.non_null_count + record.null_count || record.distinct_count !== null && record.distinct_count > record.non_null_count || record.blank_count !== null && record.blank_count > record.non_null_count) fail("Profiling metric counts are inconsistent.");
-      const objectKey = stableStringify(query.object);
-      if (counts.has(objectKey) && counts.get(objectKey) !== record.row_count) fail("Attribute groups observed different Object row counts; rerun instead of combining.");
-      counts.set(objectKey, record.row_count);
-      rows.push(record);
-    }
-    evidence.push({object: query.object, sql_sha256: query.sha256, connection_id: query.connection_id, environment: query.environment,
-      executed_at: result.executed_at, batch_ids: query.batch_ids, attribute_count: query.attributes.length});
-  }
-  let expected = options["expected-digest"];
-  for (let index = 0; index < rows.length; index += 200) {
-    const result = upsertBatch({...options, area: "model", changes: JSON.stringify({profiling_profile: rows.slice(index, index + 200)}), "expected-digest": expected});
-    expected = result.digest;
-  }
-  const relative = `.atlas/tasks/${context.taskId}.evidence/profiling-${crypto.randomUUID()}.json`;
-  stateFiles.write(context.session, relative, {schema_version: "1.0", inputs: plan.inputs, coverage: evidence});
-  return {profiles: rows.length, digest: expected, evidence: relative};
 }

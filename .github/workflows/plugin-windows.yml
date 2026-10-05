@@ -22,9 +22,9 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: atlas/atlas-vs-code/package-lock.json
-      - name: Install Workbench test dependencies
+      - name: Install Atlas Local Workbench test dependencies
         run: npm ci
-      - name: Test Atlas Workbench
+      - name: Test Atlas Local Workbench
         run: node --test tests/atlas/*.test.mjs
       - name: Install frozen Atlas Stage Runner dependencies
         working-directory: atlas/atlas-vs-code
@@ -38,6 +38,9 @@ jobs:
       - name: Build Atlas Stage Runner VSIX
         working-directory: atlas/atlas-vs-code
         run: npm run package:vsix
+      - name: Verify dependency-free bridge launcher
+        working-directory: atlas/atlas-connector
+        run: node atlas-connector.cjs --help
 
   powershell-51:
     runs-on: windows-latest
@@ -49,7 +52,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: Install Workbench form test dependencies
+      - name: Install Atlas Local Workbench form test dependencies
         run: npm ci
       - name: Install package manager
         run: python -m pip install uv==0.10.2
@@ -57,12 +60,24 @@ jobs:
         run: uv sync --frozen --project mcp_server
       - name: Install pinned Codex CLI for exported plugin verification
         run: npm install --global @openai/codex@0.147.0
+      - name: Install and test both Stage Runner hosts on Windows
+        working-directory: atlas/atlas-vs-code
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run compile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify dependency-free bridge launcher on Windows
+        working-directory: atlas/atlas-connector
+        run: node atlas-connector.cjs --help
       - name: Verify exported Atlas package in native Windows
         shell: powershell
         run: |
           codex --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          uv run --frozen --project mcp_server python -m pytest -c mcp_server/pyproject.toml tests/atlas/test_packaging.py --tb=no --show-capture=no -q
+          uv run --frozen --project mcp_server python -m pytest -c mcp_server/pyproject.toml tests/atlas/test_packaging.py tests/atlas/test_connector_update.py --tb=no --show-capture=no -q
       - name: Test Atlas native workspace parity with Windows PowerShell 5.1
         shell: powershell
         run: |

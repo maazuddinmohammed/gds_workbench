@@ -16,7 +16,6 @@ const workflowViews = {
   mapping: {
     title: "Mapping",
     eyebrow: "Applied model register",
-    context: "Choose a Model to review its Mapping",
     className: "mapping-models-page",
     queryKey: "mapping-models",
     route: "/tenants/$tenantId/mapping/models/$modelId",
@@ -24,7 +23,6 @@ const workflowViews = {
   code_generation: {
     title: "Code Generation",
     eyebrow: "Applied Mapping register",
-    context: "Choose an active Model to review target SQL",
     className: "code-generation-models",
     queryKey: "code-generation-models",
     route: "/tenants/$tenantId/code-generation/models/$modelId",
@@ -32,7 +30,6 @@ const workflowViews = {
   validation: {
     title: "Validation",
     eyebrow: "Applied validation register",
-    context: "Choose an active Model to review or author Validation",
     className: "validation-models",
     queryKey: "validation-models",
     route: "/tenants/$tenantId/validation/models/$modelId",
@@ -114,11 +111,9 @@ export function WorkflowModels({
     <section className={`models-page ${view.className} page-enter`}>
       <header className="models-commandbar">
         <div>
-          <p className="eyebrow">{view.eyebrow}</p>
           <h1>{view.title}</h1>
         </div>
         <div className="mapping-model-actions">
-          <span className="models-context-note">{view.context}</span>
           <button
             className="button button-secondary button-small"
             type="button"
@@ -142,7 +137,7 @@ export function WorkflowModels({
       ) : models.length === 0 ? (
         <div className="empty-state compact">No active Models are available for {view.title}.</div>
       ) : (
-        <div className="models-table-scroll table-scroll">
+        <div className="models-table-scroll table-scroll ledger-grid" role="region" aria-label="Workflow Models table" tabIndex={0}>
           <table aria-label={`Models for ${view.title}`}>
             <thead>
               {table.getHeaderGroups().map((group) => (

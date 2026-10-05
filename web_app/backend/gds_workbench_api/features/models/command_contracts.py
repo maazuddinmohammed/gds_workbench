@@ -185,6 +185,12 @@ class ArchiveModelRequest(BaseModel):
     expected_model_revision: int = Field(gt=0)
 
 
+class SetModelLockRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    expected_model_revision: int = Field(gt=0)
+    is_locked: bool
+
+
 class ModelCommandResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 

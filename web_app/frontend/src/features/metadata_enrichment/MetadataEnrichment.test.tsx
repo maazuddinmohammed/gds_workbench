@@ -441,7 +441,7 @@ describe("current metadata enrichment workspace", () => {
     vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke }));
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     try {
-      await user.click(await screen.findByRole("button", { name: "Export Excel" }));
+      await user.click(await screen.findByRole("button", { name: "Export" }));
       await waitFor(() => expect(api.exportEnrichment).toHaveBeenCalledWith(7, 18));
       await waitFor(() => expect(click).toHaveBeenCalledOnce());
       expect(create).toHaveBeenCalledOnce(); expect(revoke).toHaveBeenCalledWith("blob:fixture");

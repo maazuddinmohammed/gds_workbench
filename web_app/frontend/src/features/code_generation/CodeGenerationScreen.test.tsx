@@ -76,10 +76,8 @@ describe("Code Generation journey", () => {
     const heading = await screen.findByRole("heading", { name: "customer.sql" });
     expect(heading).toHaveFocus();
     expect(screen.getByLabelText("Stored SQL for silver_nwa.customer")).toBeVisible();
-    expect(within(screen.getByRole("group", { name: "Contributing source Systems" })).getByText("CRM")).not.toBeVisible();
-    for (const label of ["Entity", "Contributing source Systems", "Applied Mapping"]) await userEvent.setup().click(screen.getByRole("heading", { name: label }));
-    expect(screen.getByRole("heading", { name: "Contributing source Systems" })).toBeVisible();
-    expect(within(screen.getByRole("group", { name: "Contributing source Systems" })).getByText("CRM")).toBeVisible();
+    expect(within(screen.getByLabelText("SQL context")).getByText("CRM")).toBeVisible();
+    await userEvent.setup().click(screen.getByRole("heading", { name: "Source mappings" }));
     expect(screen.getByRole("table", { name: "Applied Mapping supports" })).toBeVisible();
     expect(screen.getByText("Customer source")).toBeVisible();
     expect(screen.queryByText("Standard Databricks SQL (databricks.standard)")).not.toBeInTheDocument();
@@ -90,12 +88,11 @@ describe("Code Generation journey", () => {
     );
     expect(container.querySelector("script")).toBeNull();
     expect(screen.getAllByRole("heading", { level: 2 }).map((item) => item.textContent)).toEqual([
-      "Stored SQL", "Entity", "Contributing source Systems", "Applied Mapping",
+      "Stored SQL", "Source mappings",
     ]);
-    expect(screen.getByRole("link", { name: "Object Mapping 81" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Show mapping" })).toHaveAttribute(
       "href", "/tenants/7/mapping/models/18/objects/81",
     );
-    expect(screen.getByText(/This record does not report SQL execution results/)).toBeVisible();
     expect(screen.getByRole("link", { name: "Download .sql" })).toHaveAttribute(
       "href",
       "/api/v1/tenants/7/models/18/code-generation/artifacts/501/download.sql",
@@ -151,14 +148,13 @@ describe("Code Generation journey", () => {
     })} />);
     await screen.findByRole("heading", { name: "customer.sql" });
     expect(screen.getByLabelText("Stored SQL for silver_nwa.customer").textContent).toBe(generatedSqlDetail.generated_sql);
-    await userEvent.setup().click(screen.getByRole("heading", { name: "Applied Mapping" }));
-    await userEvent.setup().click(screen.getByRole("heading", { name: "Contributing source Systems" }));
+    await userEvent.setup().click(screen.getByRole("heading", { name: "Source mappings" }));
     if (truncated) {
       expect(screen.getByText("Showing 1 of 3 Mapping supports.")).toBeVisible();
     } else {
       expect(screen.getByText("Stale")).toBeVisible();
       expect(screen.getByText("Current Mapping support is unavailable for this stale artifact.")).toBeVisible();
-      expect(screen.getByText("Current contributing Systems are unavailable for this stale artifact.")).toBeVisible();
+      expect(within(screen.getByLabelText("SQL context")).getByText("Unavailable")).toBeVisible();
     }
   });
 
@@ -393,7 +389,6 @@ describe("Code Generation journey", () => {
     const dialog = within(await screen.findByRole("dialog", { name: "Generate SQL" }));
     const submit = dialog.getByRole("button", { name: "Generate SQL" });
     await waitFor(() => expect(submit).toBeEnabled());
-    expect(dialog.getByText("Tool-assisted")).toBeVisible();
     expect(dialog.queryByRole("combobox", { name: "Execution mode" })).not.toBeInTheDocument();
     expect(dialog.getByRole("status")).toHaveTextContent("1 Entities · 1 Entity/System mappings · 1 SQL files");
     await user.click(submit);
@@ -870,17 +865,17 @@ it("finds and reactivates inactive Code without an eligible generation target", 
     history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
   })} />);
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Applied Code" }));
-  const table = await screen.findByRole("table", { name: "Applied Code" });
+  await user.click(await screen.findByRole("button", { name: "SQL files" }));
+  const table = await screen.findByRole("table", { name: "SQL files" });
   expect(within(table).getByText("inactive")).toBeVisible();
   expect(within(table).getByRole("link", { name: "Show SQL details" })).toHaveAttribute("href", "/tenants/7/code-generation/models/18/artifacts/501?layer=logical");
-  await user.click(screen.getByRole("checkbox", { name: "Select Applied Code 501" }));
+  await user.click(screen.getByRole("checkbox", { name: "Select SQL files 501" }));
   await user.click(screen.getByRole("button", { name: "Activate selected" }));
   await user.click(await screen.findByRole("button", { name: "Apply this change" }));
   expect(commands[0]).toEqual({ dataset: "generated_code", record_ids: [501], action: "reactivate", expected_model_revision: 18 });
 });
 
-it.each(["Generation targets", "Applied Code"] as const)("keeps Dimensional context through %s SQL details and back into Mapping", async (view) => {
+it.each(["Entities", "SQL files"] as const)("keeps Dimensional context through %s SQL details and back into Mapping", async (view) => {
   const base = codeGenerationFetchStub();
   const { fetcher } = withRecordReview(vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
@@ -904,8 +899,8 @@ it.each(["Generation targets", "Applied Code"] as const)("keeps Dimensional cont
     history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18?layer=dimensional"] }) });
   render(<WorkbenchApp router={router} />);
   const user = userEvent.setup();
-  if (view === "Applied Code") {
-    await user.click(await screen.findByRole("button", { name: "Applied Code" }));
+  if (view === "SQL files") {
+    await user.click(await screen.findByRole("button", { name: "SQL files" }));
     await user.click(await screen.findByRole("link", { name: "Show SQL details" }));
   } else {
     await user.click(await screen.findByRole("link", { name: "Show customer.sql for silver_nwa.customer" }));

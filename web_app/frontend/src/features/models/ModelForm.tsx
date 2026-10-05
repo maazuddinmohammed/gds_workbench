@@ -6,7 +6,7 @@ import { ApiError } from "../../core/http";
 import type { JsonObject } from "../../shared/contracts";
 import type { SystemRecord } from "../tenants/api";
 import { reasoningEffortDisplayName, type WorkflowsApi } from "../workflows/api";
-import type { CreateModelCommand, ModelEntityScdType, ModelDetail } from "./api";
+import type { CreateModelCommand, ModelEntityScdType, ModelDetail, ModelsApi } from "./api";
 import "./model-schemas.css";
 
 const layerFields = [
@@ -25,7 +25,7 @@ export function ModelForm({
   api, tenantId, hasTenantLock, initialModel, disabledReason, isPending, error,
   onSubmit, onCancel, onDirty, nameInput, systems = [],
 }: {
-  api: Pick<WorkflowsApi, "readAgentCapabilities">;
+  api: Pick<WorkflowsApi, "readAgentCapabilities"> & Partial<Pick<ModelsApi, "readModelTemplates">>;
   tenantId: number;
   hasTenantLock: boolean;
   initialModel?: ModelDetail;
@@ -54,6 +54,16 @@ export function ModelForm({
   const [agentDefaultsChanged, setAgentDefaultsChanged] = useState(false);
   const [agentSettingsOpen, setAgentSettingsOpen] = useState(false);
   const [validationError, setValidationError] = useState<{ field: string; message: string } | null>(null);
+  const [templateOverrides, setTemplateOverrides] = useState<Record<string, string | null>>(() =>
+    Object.fromEntries(layerFields.flatMap((group) => group.fields.map((field) => [field.name,
+      initialModel?.[field.name] == null ? null : field.json
+        ? JSON.stringify(initialModel[field.name], null, 2) : String(initialModel[field.name]),
+    ]))));
+  const templates = useQuery({
+    queryKey: ["model-templates", tenantId],
+    queryFn: () => api.readModelTemplates!(tenantId),
+    enabled: Boolean(api.readModelTemplates),
+  });
   const capabilities = useQuery({
     queryKey: ["agent-capabilities"],
     queryFn: api.readAgentCapabilities,
@@ -120,6 +130,7 @@ export function ModelForm({
     }
     for (const group of layerFields) {
       for (const field of group.fields) {
+        if (templateOverrides[field.name] == null) continue;
         const value = text(field.name);
         if (!value) continue;
         if (!field.json && new TextEncoder().encode(value).length > 32 * 1024) {
@@ -186,6 +197,7 @@ export function ModelForm({
     tenant_lock_required: "Acquire the Tenant Lock on Home, then return to save this Model.",
     tenant_locked: "Another user holds the Tenant Lock. Acquire it on Home before retrying.",
     tenant_not_found: "This Tenant is no longer available to you.",
+    model_locked: "The Model is locked. A human must unlock it before saving. Your edits are preserved.",
     model_revision_conflict: "The Model changed. Your edits are preserved. Refresh saved settings before retrying.",
     model_schema_conflict: "An existing Entity still uses a removed or renamed schema, including inactive Entities. Restore its schema name before saving. Your edits are preserved.",
     model_not_found: "This Model is no longer available for editing. Refresh saved settings.",
@@ -309,16 +321,29 @@ export function ModelForm({
                     <small id="dimensional-scd-type-help" className="field-help">Controls Dimension history and Mapping generation. Type 1 overwrites changes; Type 2 keeps versions. Facts and Bridges are unaffected.</small>
                   </label> : null}
                   {group.fields.map((field) => (
-                    <label key={field.name}>
-                      <span>{field.label}{field.json ? <small>JSON object</small> : null}</span>
-                      <textarea name={field.name} rows={3} maxLength={32 * 1024} spellCheck={!field.json}
-                        defaultValue={initialModel?.[field.name] == null ? "" : field.json ? JSON.stringify(initialModel[field.name], null, 2) : String(initialModel[field.name])}
+                    <div key={field.name}>
+                      <label htmlFor={field.name}>{field.label}{field.json ? <small>JSON object</small> : null}</label>
+                      <textarea id={field.name} name={field.name} rows={3} maxLength={32 * 1024} spellCheck={!field.json}
+                        readOnly={templateOverrides[field.name] == null}
+                        value={templateOverrides[field.name] ?? (templates.data?.[field.name] == null ? "" : field.json
+                          ? JSON.stringify(templates.data[field.name], null, 2) : String(templates.data[field.name]))}
+                        onChange={(event) => setTemplateOverrides((current) => ({ ...current, [field.name]: event.target.value }))}
                         aria-invalid={validationError?.field === field.name} aria-describedby={validationError?.field === field.name ? "model-form-error" : undefined} />
-                    </label>
+                      <small className="field-help">{templateOverrides[field.name] == null ? "Using shared default template." : "Custom template for this Model. Copy to reuse in another Model."}</small>
+                      <button type="button" className="button button-secondary button-small"
+                        disabled={templateOverrides[field.name] == null && !templates.data}
+                        onClick={() => {
+                          const value = templates.data?.[field.name];
+                          setTemplateOverrides((current) => ({ ...current, [field.name]: current[field.name] == null
+                            ? (field.json ? JSON.stringify(value, null, 2) : String(value)) : null }));
+                          onDirty?.();
+                        }}>{templateOverrides[field.name] == null ? "Customize" : "Reset to defaults"}</button>
+                    </div>
                   ))}
                 </div>
               </details>
             ))}
+            {templates.isError ? <p role="alert">Could not load default templates. <button type="button" className="text-action" onClick={() => void templates.refetch()}>Retry templates</button></p> : null}
             <details className="create-model-settings" onToggle={(event) => setAgentSettingsOpen(event.currentTarget.open)}>
               <summary>Agent defaults</summary>
               <div className="create-model-fields" onChange={() => setAgentDefaultsChanged(true)}>
@@ -348,7 +373,7 @@ export function ModelForm({
           </fieldset>
           {validationError ? <p id="model-form-error" role="alert">{validationError.message}</p> : null}
           {error ? <p role="alert">{errorMessages[errorCode] ?? (initialModel ? "Saving could not be confirmed. Your edits are preserved. Refresh saved settings before retrying." : "Creation could not be confirmed. Check the Models list before retrying.")}</p> : null}
-          {!hasTenantLock ? <p className="field-help">Acquire the Tenant Lock on <Link to="/tenants/$tenantId" params={{ tenantId: String(tenantId) }}>Home</Link> to save a Model.</p> : null}
+          {!hasTenantLock && !initialModel ? <p className="field-help">Acquire the Tenant Lock on <Link to="/tenants/$tenantId" params={{ tenantId: String(tenantId) }}>Home</Link> to save a Model.</p> : null}
           <footer className="dialog-actions">
             <p>{initialModel ? `Editing revision ${initialModel.model_revision}.` : "Created in the current Tenant at revision 1."}</p>
             <div>

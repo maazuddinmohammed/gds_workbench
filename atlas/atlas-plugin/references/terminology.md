@@ -48,7 +48,7 @@ Use these terms consistently. Load the affected [metadata table reference](metad
 | Landing naming | Filename/pattern values consumed by the landing writer and Bronze reader; their exact usage comes from the applicable framework. |
 | Framework contract | Confirmed behavior of the code consuming metadata for a given connector/version, including defaults and substitution rules. Field names alone do not establish it. |
 | Copy Group | Named collection of Copy operations within a Tenant/System. Inactive groups skip all their Copies. |
-| Member Group | Existing optional grouping for control state. Its execution behavior is deferred; default is_member_group_required to false on new Copy Groups. |
+| Member Group | Optional filter applied to a Copy Group through Copy Group Control. Members provide codes and Attribute names. Use only on explicit request; default is_member_group_required=false. |
 | Member | Table identified for future Atlas coverage; its schema, keys and Member Group relationship remain to be defined. |
 | Copy Group Control | Optional initial-load filter date and framework-maintained run state for a Copy Group and optional Member Group. New run values start null. |
 | Copy | Registered Source-to-target copy configuration within a Copy Group. |

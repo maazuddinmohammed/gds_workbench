@@ -1,6 +1,6 @@
 # Model Change Set authoring
 
-Shared record-authoring procedure. Workflows decide what to model; dataset guides define the fields. The [Model Snapshot guide](../snapshots/model.md) owns archive reading and freshness; the [Change Set lifecycle](../change-set-lifecycle.md) owns review, staging, validation and Apply. Use the [runtime guide](../../docs/runtime-guide.md) for actual commands.
+Shared record-authoring procedure. Workflows decide what to model; dataset guides define the fields. The [Model Snapshot guide](../snapshots/model.md) owns archive reading and freshness; the [Change Set lifecycle](../change-set-lifecycle.md) owns review, staging, validation and Apply. Use the [runtime reference](../local-runtime.md) for actual commands.
 
 ## Resolve the contract and identities
 
@@ -28,7 +28,7 @@ Pass that object to `describe_model_dataset`. Use `detail:"compact"` for the can
 
 Each dataset guide includes a complete synthetic array that illustrates the file format. Arrays hold complete changed records, not patches or the entire applied Model. Omitted applied keys remain unchanged.
 
-Local upsert merges complete records into the existing pending dataset. Server staging instead replaces the complete pending list for each supplied dataset; omitted datasets remain pending as before, and an empty list clears only that pending dataset. Let the approved extension transport the prepared draft; do not pass a partial local edit as a full pending replacement.
+Local upsert merges complete records into the existing pending dataset. Server staging instead replaces the complete pending list for each supplied dataset; omitted datasets remain pending as before, and an empty list clears only that pending dataset. Let the approved runner transport the prepared draft; do not pass a partial local edit as a full pending replacement.
 
 ## Atlas helpers
 

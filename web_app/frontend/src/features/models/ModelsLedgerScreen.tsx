@@ -12,13 +12,13 @@ import {
 import { TenantWorkspace } from "../../app/TenantWorkspace";
 import { formatDateTime } from "../../shared/presentation";
 import { ErrorPage, LoadingPage, StatusBadge } from "../../shared/ui";
-import type { TenantsApi } from "../tenants/api";
+import type { TenantHomeRecord, TenantsApi } from "../tenants/api";
 import type {
   ModelLedgerRecord,
   ModelsApi,
   ModelStatus,
 } from "./api";
-import { workflowLabel } from "./presentation";
+import { ModelLockControl } from "./ModelLockControl";
 import { CreateModelDialog } from "./CreateModelDialog";
 import type { WorkflowsApi } from "../workflows/api";
 
@@ -65,7 +65,8 @@ export function ModelsLedgerScreen({
           models={modelsQuery.data.items}
           status={status}
           tenantId={tenantId}
-          tenantName={homeQuery.data.tenant.tenant_name}
+          api={api}
+          home={homeQuery.data}
           onStatusChange={(nextStatus) => statusForm.setFieldValue("status", nextStatus)}
           onCreate={canCreate ? () => setCreating(true) : undefined}
         />
@@ -92,18 +93,30 @@ function ModelLedgerTable({
   models,
   status,
   tenantId,
-  tenantName,
+  api,
+  home,
   onStatusChange,
   onCreate,
 }: {
   models: ModelLedgerRecord[];
   status: ModelStatus;
   tenantId: number;
-  tenantName: string;
+  api: ModelsLedgerApi;
+  home: TenantHomeRecord;
   onStatusChange: (status: ModelStatus) => void;
   onCreate: (() => void) | undefined;
 }) {
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const selected = models.find((model) => model.model_id === selectedId);
   const columns = useMemo<ColumnDef<ModelLedgerRecord>[]>(() => [
+    {
+      id: "select",
+      header: "Select",
+      cell: ({ row }) => <input type="radio" name="model-lock-selection"
+        aria-label={`Select ${row.original.model_name}`}
+        checked={selectedId === row.original.model_id}
+        onChange={() => setSelectedId(row.original.model_id)} />,
+    },
     {
       accessorKey: "model_name",
       header: "Model",
@@ -114,26 +127,15 @@ function ModelLedgerTable({
         </span>
       ),
     },
-    { id: "owner_tenant", header: "Owner Tenant", cell: () => tenantName },
     {
       accessorKey: "model_revision",
       header: "Revision",
       cell: ({ getValue }) => `r${getValue<number>()}`,
     },
     {
-      accessorKey: "model_input_scope_object_count",
-      header: "Active scope",
-      cell: ({ getValue }) => `${getValue<number>()} Objects`,
-    },
-    {
-      accessorKey: "latest_workflow",
-      header: "Latest workflow",
-      cell: ({ getValue }) => workflowLabel(getValue<ModelLedgerRecord["latest_workflow"]>()),
-    },
-    {
-      accessorKey: "latest_run_status",
-      header: "Latest run",
-      cell: ({ getValue }) => <StatusBadge value={getValue<string | null>()} />,
+      accessorKey: "is_locked",
+      header: "Lock status",
+      cell: ({ getValue }) => <StatusBadge value={getValue<boolean>() ? "Locked" : "Unlocked"} />,
     },
     {
       accessorKey: "updated_at",
@@ -154,7 +156,7 @@ function ModelLedgerTable({
         </Link>
       ),
     },
-  ], [tenantId, tenantName]);
+  ], [tenantId, selectedId]);
   const table = useReactTable({
     data: models,
     columns,
@@ -165,27 +167,28 @@ function ModelLedgerTable({
     <section className="models-page page-enter" aria-labelledby="models-heading">
       <header className="models-commandbar">
         <div>
-          <p className="eyebrow">Governed model register</p>
           <h1 id="models-heading">Models</h1>
         </div>
         <div className="models-ledger-actions">
-        <div className="models-mode-tabs" aria-label="Model status">
+        <div className="workspace-tabs" aria-label="Model status">
           {(["active", "archived"] as const).map((option) => (
             <button
               className={status === option ? "is-active" : ""}
               type="button"
               aria-pressed={status === option}
               key={option}
-              onClick={() => onStatusChange(option)}
+              onClick={() => { setSelectedId(null); onStatusChange(option); }}
             >
               {option === "active" ? "Active" : "Archived"}
             </button>
           ))}
         </div>
         {onCreate ? <button className="button button-primary button-small" type="button" onClick={onCreate}>Create Model</button> : null}
+        <ModelLockControl key={selectedId ?? "unselected"} api={api} home={home}
+          model={selected ? { ...selected, tenant_id: tenantId, is_active: status === "active" } : undefined} />
         </div>
       </header>
-      <div className="models-table-scroll table-scroll">
+      <div className="models-table-scroll table-scroll ledger-grid" role="region" aria-label="Models table" tabIndex={0}>
         <table aria-label={`${status === "active" ? "Active" : "Archived"} Models`}>
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (

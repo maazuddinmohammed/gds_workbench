@@ -13,13 +13,11 @@ DECLARE
     v_databricks_function_count INTEGER;
     v_application_web_function_count INTEGER;
     v_application_web_function_signatures TEXT[] := ARRAY[
+        'application.set_model_lock(uuid,uuid,bigint,bigint,bigint,boolean)',
         'application.review_model_enrichment(uuid,uuid,bigint,bigint,bigint,character varying,character varying,jsonb,uuid)',
-        'application.metadata_object_review_revision(core.object)',
-        'application.metadata_attribute_review_revision(core.attribute,core.object)',
         'application.delete_model_records(uuid,uuid,bigint,bigint,bigint,uuid,jsonb)',
         'application.authorize_model_record_review(uuid,uuid,character varying,bigint,bigint)',
         'application.add_model_input_scope_objects(uuid,uuid,bigint,bigint,bigint,bigint[])',
-        'application.review_metadata_records(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,uuid)',
         'application.archive_model(uuid,uuid,character varying,bigint,bigint)',
         'application.set_principal_last_tenant(uuid,uuid,character varying,bigint)',
         'application.create_model(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,jsonb,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer,bigint,character varying,character varying)',
@@ -57,6 +55,14 @@ DECLARE
         'application.persist_profiling_results(uuid,uuid,character varying,bigint,bigint,jsonb)'
     ];
 BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='model' AND table_name='model'
+        AND column_name='is_locked' AND data_type='boolean' AND is_nullable='NO')
+       OR has_column_privilege('gds_app_write','model.model','is_locked','UPDATE')
+       OR has_column_privilege('gds_web_write','model.model','is_locked','UPDATE')
+       OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='model.model'::REGCLASS
+           AND tgname='aa_model_write_fence' AND tgenabled='O') THEN
+        RAISE EXCEPTION 'Model lock contract is unavailable';
+    END IF;
     IF NOT (EXISTS (
         SELECT 1 FROM information_schema.columns
          WHERE table_schema = 'core' AND table_name = 'process_group'
@@ -1430,11 +1436,7 @@ BEGIN
            AS expected_function(signature)
      JOIN pg_catalog.pg_proc AS application_function
         ON application_function.oid = to_regprocedure(expected_function.signature)
-     WHERE application_function.prosecdef = (application_function.proname NOT IN (
-               'metadata_object_review_revision', 'metadata_attribute_review_revision'))
-       AND (application_function.proname NOT IN (
-               'metadata_object_review_revision', 'metadata_attribute_review_revision')
-            OR (application_function.provolatile = 'i' AND application_function.proisstrict))
+     WHERE application_function.prosecdef
        AND application_function.proconfig =
            ARRAY['search_path=pg_catalog']::TEXT[]
        AND has_function_privilege(
@@ -1608,6 +1610,10 @@ BEGIN
                               'mcp.record_metadata_change_set_validation(uuid,uuid,character varying,bigint,uuid,bigint,boolean,character,jsonb,uuid,uuid)',
                               'mcp.apply_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character,uuid)',
                               'mcp.archive_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,uuid)',
+                              'mcp.start_mcp_profiling_run(uuid,uuid,character varying,bigint,bigint,bigint[],text[],character varying,uuid)',
+                              'mcp.get_mcp_profiling_status(uuid,uuid,character varying,bigint)',
+                              'mcp.cancel_mcp_profiling_run(uuid,uuid,character varying,bigint)',
+                              'mcp.mcp_profiling_worker(text,bigint,uuid,jsonb)',
                               'mcp.get_databricks_sql_connection_values(bigint,text)',
                               'mcp.runtime_readiness()'
                           ]) AS allowed_mcp_function(signature)

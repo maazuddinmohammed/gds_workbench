@@ -2,7 +2,7 @@
 
 A named Tenant/System member grouping referenced by Copy Group Control records, with optional initial-load date.
 
-Atlas member-based execution is deferred. Keep is_member_group_required=false on new Copy Groups and preserve existing Member Group records. The separate `member` table is a [deferred addition](../index.md#deferred-additions); no field/key contract has been defined for it here.
+A Member Group applies an optional filter to a Copy Group through Copy Group Control in the same Tenant/System. Its [Members](member.md) specify filter codes and Attribute names. Use this configuration only when explicitly requested; ordinary Copy Groups default is_member_group_required=false.
 
 **Datasets:** `member_group`.
 **Change Set:** editable.
@@ -19,12 +19,13 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 
 | Field | Accepted value / presence | Meaning and use |
 |---|---|---|
+| `value` | any valid JSON; optional; null allowed | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
 | `tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Owning Tenant code for this group/record; match the selected Change Set Tenant. Reference: [tenant](../read-only/tenant.md). |
 | `system_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the System. Reference: [system](../read-only/system.md). |
 | `member_group_name` | string; minLength=1; maxLength=200; pattern=\S; required | Name identifying the Member Group. |
 | `member_group_description` | string; required; null allowed | Plain-language description of the Member Group. Provide concise business or operational context; use null when no description is available. |
 | `member_group_initial_load_date` | string; format=date; required; null allowed | Optional initial-load date attached to the Member Group. ISO date or null; precedence relative to the control-level date needs runtime confirmation. |
-| `is_active` | `false`, `true`; required | Default true if a new record is explicitly requested; preserve existing values on unrelated edits. Control state and parent Copy Group activation are separate. Member setup remains deferred. |
+| `is_active` | `false`, `true`; required | Default true if a new record is explicitly requested; preserve existing values on unrelated edits. Control state and parent Copy Group activation are separate. |
 
 ## References and dependencies
 
@@ -34,17 +35,17 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 
 ## Making changes
 
-- Do not create Member Groups as part of default ingestion setup. Resolve member-specific behavior when this deferred feature is designed; unrelated metadata work can proceed with existing records preserved.
+- Create Member Groups only when the user explicitly requests Member filtering. Preserve existing configuration in unrelated edits.
 - The Member Group and referencing Copy Group Control must share Tenant and System.
 - Preserve existing initial-load dates unless the requested operational change requires another value.
-- Date precedence and Member Group activation semantics remain deferred with member-based execution; do not invent fallback or selection rules.
+- Do not infer date precedence or consumer-specific SQL from this optional filter. The external orchestration framework owns execution.
 - Follow [shared editing rules](../editing.md); validate the complete effective result and preserve unrelated fields.
 
 ## Validation checklist
 
 Source-review coverage only; see [status meanings and common checks](../validation.md).
 
-These describe the existing dataset contract. They do not require creating Member Group records or enabling the deferred feature.
+These describe the existing dataset contract. They do not require creating Member Group records or enabling Member filtering automatically.
 
 | Rule | Check / why | Database | MCP backend | Local | Status |
 |---|---|---|---|---|---|

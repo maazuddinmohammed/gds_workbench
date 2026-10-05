@@ -63,7 +63,14 @@ class CompleteMappingCandidateV1(MappingContractModel):
     """Agent output: transformation content only; identity comes from the frozen run."""
 
     schema_version: Literal["1.0"]
-    outcome: Literal["mapped", "no_applicable_source"] = "mapped"
+    outcome: Literal["mapped", "no_applicable_source"] = Field(
+        default="mapped",
+        description=(
+            "Use no_applicable_source with no transformations when this System has no "
+            "evidenced contribution. Generated keys and framework audit/history population "
+            "alone never establish a Mapping. Preserve supported partial business output."
+        ),
+    )
     issues: tuple[MappingUnresolvedIssue, ...] = Field(default=(), max_length=200)
     object_mapping: MappingObjectCandidate | None
     attribute_mappings: tuple[MappingAttributeCandidate, ...] = Field(max_length=5_000)

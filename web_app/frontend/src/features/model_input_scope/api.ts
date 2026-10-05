@@ -1,6 +1,6 @@
 import type { HttpRequest } from "../../core/http";
-import type { ObjectAttribute } from "../metadata/api";
-export type { ObjectAttribute } from "../metadata/api";
+import type { ObjectAttribute as PhysicalAttribute } from "../metadata/api";
+export interface ObjectAttribute extends PhysicalAttribute { review_revision?: string | null; }
 
 export type ZoneCode = "source" | "bronze";
 

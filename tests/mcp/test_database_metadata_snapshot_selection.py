@@ -252,8 +252,8 @@ async def test_complete_database_snapshot_builds_uploads_and_cleans_archive(
     with zipfile.ZipFile(BytesIO(store.content)) as archive:
         manifest = json.loads(archive.read("metadata-snapshot/manifest.json"))
     assert manifest["tenant_code"] == f"{prefix}_TENANT"
-    assert manifest["counts"]["logical_dataset_count"] == 28
-    assert manifest["counts"]["file_count"] == 68
+    assert manifest["counts"]["logical_dataset_count"] == 30
+    assert manifest["counts"]["file_count"] == 72
 
 
 async def _select(

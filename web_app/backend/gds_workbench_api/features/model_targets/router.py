@@ -11,12 +11,22 @@ from gds_workbench_api.features.metadata.contracts import MetadataWorkbookDownlo
 from gds_workbench_api.features.metadata.workbook import XLSX_MEDIA_TYPE
 
 from .contracts import (
+    ExportModelDdlRequest,
     ExportModelTargetsRequest,
     ModelTargetOptions,
 )
 
 
 class ModelTargetsService(Protocol):
+    async def export_ddl(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        command: ExportModelDdlRequest,
+    ) -> str: ...
+
     async def options(
         self, principal: RequestPrincipal, *, tenant_id: int, model_id: int
     ) -> ModelTargetOptions: ...
@@ -71,4 +81,30 @@ def create_model_targets_router(
 
     router.add_api_route("/options", options, methods=["GET"])
     router.add_api_route("/export", export, methods=["POST"])
+
+    async def export_ddl(
+        tenant_id: Annotated[int, Path(gt=0)],
+        model_id: Annotated[int, Path(gt=0)],
+        command: ExportModelDdlRequest,
+        *,
+        principal: RequestPrincipal = Depends(authenticate),
+    ) -> Response:
+        content = await service.export_ddl(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            command=command,
+        )
+        filename = f"gds_{command.layer}__model_{model_id}__r{command.expected_model_revision}.sql"
+        return Response(
+            content=content,
+            media_type="application/sql",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    router.add_api_route("/ddl", export_ddl, methods=["POST"])
     return router

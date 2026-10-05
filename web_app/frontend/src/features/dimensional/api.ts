@@ -262,7 +262,7 @@ export interface DimensionalTransport {
   ) => Promise<DimensionalRelationshipDetail>;
 }
 
-export type DimensionalApi = Pick<LogicalTransport, "listLogicalEntities"> & DimensionalTransport & Pick<ModelTargetsTransport, "readTargetOptions" | "exportModelTargets"> & ModelRecordHistoryApi
+export type DimensionalApi = Pick<LogicalTransport, "listLogicalEntities"> & DimensionalTransport & Pick<ModelTargetsTransport, "readTargetOptions" | "exportModelTargets" | "exportModelDdl"> & ModelRecordHistoryApi
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"

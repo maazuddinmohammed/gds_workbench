@@ -1,3 +1,4 @@
+import type { ModelTargetsTransport } from "../model_targets/api";
 import type { HttpRequest } from "../../core/http";
 import type {
   ModelingCardinality,
@@ -147,7 +148,7 @@ export interface ConceptualTransport {
   ) => Promise<ConceptualRelationshipDetail>;
 }
 
-export type ConceptualApi = ConceptualTransport
+export type ConceptualApi = Pick<ModelTargetsTransport, "exportModelDdl"> & ConceptualTransport
   & ModelRecordReviewApi
   & Pick<
     WorkflowsApi,

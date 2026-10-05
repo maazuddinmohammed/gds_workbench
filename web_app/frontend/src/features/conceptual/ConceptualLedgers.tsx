@@ -383,7 +383,7 @@ function ConceptualLedgerSurface<T>({
       ) : items.length === 0 ? (
         <div className="empty-state compact">{emptyLabel}</div>
       ) : (
-        <div className="workflow-table-scroll table-scroll">
+        <div className="workflow-table-scroll table-scroll ledger-grid" tabIndex={0} role="region" aria-label={`Scrollable ${tableLabel}`}>
           <table aria-label={tableLabel}>
             <thead>
               {table.getHeaderGroups().map((group) => (

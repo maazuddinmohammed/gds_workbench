@@ -290,3 +290,10 @@ function jsonResponse(payload: unknown): Response {
     headers: { "content-type": "application/json" },
   });
 }
+
+describe("Mapping workbook download", () => {
+  it("rejects an unexpected download content type", async () => {
+    const api = createMappingApi(createHttpRequest(vi.fn<typeof fetch>(async () => new Response("not a workbook", { headers: { "content-type": "text/html" } }))));
+    await expect(api.exportMapping(7, 18, 4, "dimensional_entity", "CRM")).rejects.toMatchObject({ status: 502, code: "invalid_response" });
+  });
+});

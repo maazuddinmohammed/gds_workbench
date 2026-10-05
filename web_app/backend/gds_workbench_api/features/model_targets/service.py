@@ -20,11 +20,13 @@ from gds_workbench_api.features.metadata.workbook import (
 from gds_workbench_api.features.models import ModelNotFoundError, ModelRevisionConflictError
 
 from .contracts import (
+    ExportModelDdlRequest,
     ExportModelTargetsRequest,
     ModelTargetOptions,
     TargetLayer,
     TargetPlacement,
 )
+from .ddl import build_model_ddl
 
 _PLACEMENT_SQL: LiteralString = """
 SELECT placement.tenant_code, system.system_code, connection.connection_code,
@@ -108,6 +110,37 @@ _ATTRIBUTE_QUERIES: dict[TargetLayer, LiteralString] = {
             "ON physical.attribute_id = logical_source.source_attribute_id",
         )
     ),
+}
+
+
+_CONCEPTUAL_DDL_SQL: LiteralString = """
+SELECT conceptual_object_id AS entity_id, conceptual_object_name AS entity_name,
+       'conceptual' AS entity_schema_name, conceptual_object_definition AS definition
+  FROM workflow.conceptual_object
+ WHERE model_id = %s AND (%s::BIGINT[] IS NULL OR conceptual_object_id = ANY(%s::BIGINT[]))
+   AND conceptual_object_status = 'active'
+ ORDER BY conceptual_object_id LIMIT 201
+"""
+_LOGICAL_DDL_RELATIONSHIPS: LiteralString = """
+SELECT relation.logical_relationship_from_entity_id AS from_entity_id,
+       relation.logical_relationship_to_entity_id AS to_entity_id,
+       source.logical_attribute_name AS from_attribute_name,
+       target.logical_attribute_name AS to_attribute_name
+  FROM workflow.logical_relationship AS relation
+  JOIN workflow.logical_attribute AS source ON source.model_id = relation.model_id
+   AND source.logical_attribute_id = relation.logical_relationship_from_attribute_id
+   AND source.logical_attribute_status = 'active'
+  JOIN workflow.logical_attribute AS target ON target.model_id = relation.model_id
+   AND target.logical_attribute_id = relation.logical_relationship_to_attribute_id
+   AND target.logical_attribute_status = 'active'
+ WHERE relation.model_id = %s AND relation.logical_relationship_status = 'active'
+   AND (relation.logical_relationship_from_entity_id = ANY(%s::BIGINT[])
+        OR relation.logical_relationship_to_entity_id = ANY(%s::BIGINT[]))
+ ORDER BY relation.logical_relationship_id LIMIT 5001
+"""
+_DDL_RELATIONSHIPS: dict[TargetLayer, LiteralString] = {
+    "logical": _LOGICAL_DDL_RELATIONSHIPS,
+    "dimensional": _LOGICAL_DDL_RELATIONSHIPS.replace("logical", "dimensional"),
 }
 
 
@@ -309,4 +342,56 @@ class DatabaseModelTargetsService:
             content=content,
             filename=f"gds_{zone}_registration__model_{model_id}__r{model.model_revision}.xlsx",
             sheet_count=2,
+        )
+
+    async def export_ddl(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        command: ExportModelDdlRequest,
+    ) -> str:
+        async with self._database.read_transaction(
+            isolation=ReadIsolation.REPEATABLE_READ
+        ) as transaction:
+            model = await authorize_model_read(
+                transaction, authorizer=self._authorizer, principal=principal, model_id=model_id
+            )
+            if model.tenant_id != tenant_id:
+                raise ModelNotFoundError()
+            if model.model_revision != command.expected_model_revision:
+                raise ModelRevisionConflictError()
+            entities = await transaction.fetch_all(
+                _CONCEPTUAL_DDL_SQL
+                if command.layer == "conceptual"
+                else _ENTITY_QUERIES[command.layer],
+                (model_id, command.entity_ids, command.entity_ids),
+            )
+            if command.entity_ids is not None and {row["entity_id"] for row in entities} != set(
+                command.entity_ids
+            ):
+                raise InvalidRequestError(
+                    "Some selected Entities are no longer active or available."
+                )
+            ids = [row["entity_id"] for row in entities]
+            attributes = (
+                await transaction.fetch_all(_ATTRIBUTE_QUERIES[command.layer], (model_id, ids))
+                if command.layer != "conceptual"
+                else []
+            )
+            relationships = (
+                await transaction.fetch_all(_DDL_RELATIONSHIPS[command.layer], (model_id, ids, ids))
+                if command.layer != "conceptual"
+                else []
+            )
+            if len(relationships) > 5000:
+                raise InvalidRequestError(
+                    "Select fewer Entities to stay within the relationship limit."
+                )
+        return build_model_ddl(
+            entities=entities,
+            attributes=attributes,
+            relationships=relationships,
+            conceptual=command.layer == "conceptual",
         )

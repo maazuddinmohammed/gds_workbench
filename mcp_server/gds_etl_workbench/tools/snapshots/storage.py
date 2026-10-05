@@ -26,6 +26,7 @@ class SnapshotStore(Protocol):
         archive: SnapshotArchive,
         *,
         snapshot_kind: SnapshotKind,
+        tenant_id: int,
         scope_id: int,
         schema_version: str,
         snapshot_id: UUID,
@@ -37,9 +38,11 @@ class SnapshotStore(Protocol):
         self,
         *,
         snapshot_kind: SnapshotKind,
+        tenant_id: int,
         scope_id: int,
         schema_version: str,
         snapshot_id: UUID,
+        created_at: datetime,
         now: datetime,
         ttl_seconds: int,
     ) -> str | None: ...
@@ -74,24 +77,26 @@ class AzureSnapshotStore:
         archive: SnapshotArchive,
         *,
         snapshot_kind: SnapshotKind,
+        tenant_id: int,
         scope_id: int,
         schema_version: str,
         snapshot_id: UUID,
         created_at: datetime,
         available_until: datetime,
     ) -> None:
-        _validate_identity(snapshot_kind, scope_id, schema_version, snapshot_id)
+        _validate_identity(snapshot_kind, tenant_id, scope_id, schema_version, snapshot_id)
         created = _utc(created_at)
         available = _utc(available_until)
         if available <= created:
             raise SnapshotContractError("snapshot availability must follow creation time")
         blob = self._service.get_blob_client(
             container=self._container,
-            blob=_blob_name(snapshot_kind, scope_id, snapshot_id),
+            blob=_blob_name(snapshot_kind, tenant_id, snapshot_id, created),
         )
         metadata = {
             "snapshot_kind": snapshot_kind,
             "schema_version": schema_version,
+            "tenant_id": str(tenant_id),
             _scope_field(snapshot_kind): str(scope_id),
             "snapshot_id": str(snapshot_id),
             "created_time": _timestamp(created),
@@ -123,22 +128,25 @@ class AzureSnapshotStore:
         self,
         *,
         snapshot_kind: SnapshotKind,
+        tenant_id: int,
         scope_id: int,
         schema_version: str,
         snapshot_id: UUID,
+        created_at: datetime,
         now: datetime,
         ttl_seconds: int,
     ) -> str | None:
-        _validate_identity(snapshot_kind, scope_id, schema_version, snapshot_id)
+        _validate_identity(snapshot_kind, tenant_id, scope_id, schema_version, snapshot_id)
+        created = _utc(created_at)
         current = _utc(now)
         if not 60 <= ttl_seconds <= 3600:
             raise SnapshotContractError("snapshot download TTL is invalid")
-        blob_name = _blob_name(snapshot_kind, scope_id, snapshot_id)
+        blob_name = _blob_name(snapshot_kind, tenant_id, snapshot_id, created)
         blob = self._service.get_blob_client(container=self._container, blob=blob_name)
         try:
             properties = await blob.get_blob_properties()
             metadata = properties.metadata
-            created_at = _parse_timestamp(metadata.get("created_time"))
+            stored_created_at = _parse_timestamp(metadata.get("created_time"))
             available_until = _parse_timestamp(metadata.get("available_until"))
             expected_disposition = (
                 f'attachment; filename="{snapshot_kind}-snapshot-{scope_id}-{snapshot_id}.zip"'
@@ -146,17 +154,19 @@ class AzureSnapshotStore:
             expected = {
                 "snapshot_kind": snapshot_kind,
                 "schema_version": schema_version,
+                "tenant_id": str(tenant_id),
                 _scope_field(snapshot_kind): str(scope_id),
                 "snapshot_id": str(snapshot_id),
+                "created_time": _timestamp(created),
                 "size_bytes": str(properties.size),
             }
             if (
-                created_at is None
+                stored_created_at is None
                 or available_until is None
                 or properties.size <= 0
-                or created_at > current + timedelta(minutes=5)
-                or available_until <= created_at
-                or available_until - created_at > timedelta(hours=168)
+                or stored_created_at > current + timedelta(minutes=5)
+                or available_until <= stored_created_at
+                or available_until - stored_created_at > timedelta(hours=168)
                 or available_until <= current
                 or any(metadata.get(key) != value for key, value in expected.items())
                 or not _is_sha256(metadata.get("sha256"))
@@ -188,10 +198,12 @@ class AzureSnapshotStore:
             raise DependencyUnavailableError() from exc
 
 
-def _blob_name(snapshot_kind: SnapshotKind, scope_id: int, snapshot_id: UUID) -> str:
-    if scope_id <= 0 or snapshot_id.version != 4:
+def _blob_name(
+    snapshot_kind: SnapshotKind, tenant_id: int, snapshot_id: UUID, created_at: datetime
+) -> str:
+    if tenant_id <= 0 or snapshot_id.version != 4:
         raise SnapshotContractError("snapshot identity is invalid")
-    return f"{snapshot_kind}/{scope_id}/{snapshot_id}.zip"
+    return f"{snapshot_kind}/{tenant_id}/{_utc(created_at):%Y%m%d}/{snapshot_id}.zip"
 
 
 def _scope_field(snapshot_kind: SnapshotKind) -> str:
@@ -200,13 +212,16 @@ def _scope_field(snapshot_kind: SnapshotKind) -> str:
 
 def _validate_identity(
     snapshot_kind: SnapshotKind,
+    tenant_id: int,
     scope_id: int,
     schema_version: str,
     snapshot_id: UUID,
 ) -> None:
     if (
         snapshot_kind not in ("metadata", "model")
+        or tenant_id <= 0
         or scope_id <= 0
+        or (snapshot_kind == "metadata" and scope_id != tenant_id)
         or not schema_version
         or len(schema_version) > 20
         or snapshot_id.version != 4

@@ -30,6 +30,8 @@ from gds_workbench_api.features.analysis import (
 from gds_workbench_api.features.analysis.read_service import (
     _normalize_analysis_summary,  # pyright: ignore[reportPrivateUsage]
 )
+from gds_workbench_api.features.metadata.contracts import MetadataWorkbookDownload
+from gds_workbench_api.features.analysis.workbook import build_analysis_workbook
 from gds_workbench_api.features.profiling import (
     AttributeProfile,
     DatabaseProfilingReviewService,
@@ -214,6 +216,18 @@ class StaticProfilingReviewService:
             ),
             next_cursor=None,
         )
+
+    async def export_analysis_findings(
+        self, principal: RequestPrincipal, *, tenant_id: int, model_id: int,
+        filters: AnalysisFindingFilters, expected_model_revision: int,
+    ) -> MetadataWorkbookDownload:
+        assert expected_model_revision == 4
+        page = await self.list_analysis_findings(
+            principal, tenant_id=tenant_id, model_id=model_id, filters=filters,
+            page_size=25, cursor=None,
+        )
+        return MetadataWorkbookDownload(content=build_analysis_workbook(findings=page.items),
+                                        filename="analysis.xlsx", sheet_count=1)
 
     async def read_analysis_finding(
         self,
@@ -562,7 +576,7 @@ class ReviewTransaction:
                 True,
             )
             limit, offset = parameters[-2:]
-            assert limit == 2
+            assert limit in (2, 50_001)
             self.analysis_offsets.append(offset)
             endpoint = {
                 "from_object_id": 501,
@@ -1279,3 +1293,46 @@ async def test_cardinality_inference_is_independent_of_measured_counts(
     assert summary.inferred_cardinality == inferred
     assert summary.observed_cardinality == ("many_to_one" if observed else None)
     assert summary.cardinality_mismatch is mismatch
+
+
+async def test_analysis_export_loads_all_matching_rows_and_checks_revision() -> None:
+    from io import BytesIO
+
+    from gds_workbench_api.features.models import ModelRevisionConflictError
+    from openpyxl import load_workbook
+
+    database = ReviewDatabase()
+    service = DatabaseAnalysisReviewService(
+        database=database, authorizer=AuthorizationService(),
+        cursor_signing_key=b"development-only-key-32-bytes-long",
+    )
+    principal = _identity_provider().request_principal(None)
+    result = await service.export_analysis_findings(
+        principal, tenant_id=7, model_id=18, filters=AnalysisFindingFilters(object_id=501, from_object_id=501, to_object_id=502,
+                                      validation_state="validated", status="active", locked=True, show_inactive=True),
+        expected_model_revision=4,
+    )
+    workbook = load_workbook(BytesIO(result.content))
+    assert workbook.active is not None
+    assert workbook.active.max_row == 3
+    assert result.filename.endswith("__r4.xlsx")
+    with pytest.raises(ModelRevisionConflictError):
+        await service.export_analysis_findings(
+            principal, tenant_id=7, model_id=18, filters=AnalysisFindingFilters(object_id=501, from_object_id=501, to_object_id=502,
+                                      validation_state="validated", status="active", locked=True, show_inactive=True),
+            expected_model_revision=3,
+        )
+
+
+def test_analysis_export_endpoint_downloads_excel_with_safe_headers() -> None:
+    app = FastAPI()
+    app.include_router(create_analysis_review_router(
+        identity_provider=_identity_provider(), service=StaticProfilingReviewService(),
+    ))
+    with TestClient(app) as client:
+        result = client.post("/api/v1/tenants/7/models/18/analysis/export", json={
+            "expected_model_revision": 4, "filters": {"locked": True},
+        })
+    assert result.status_code == 200
+    assert result.content.startswith(b"PK")
+    assert result.headers["cache-control"] == "no-store"

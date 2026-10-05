@@ -6,6 +6,7 @@ import { AssertionDocumentsLedger } from "./AssertionLedgers";
 import { AssertionEditor } from "./AssertionEditor";
 import type { ModelInputScopeApi } from "../model_input_scope/api";
 import { scopeFilterChoicesKey, sourceCodes, useScopeFilterChoices } from "../model_input_scope/scopeFilterChoices";
+import { WorkflowCommandCenter, WorkflowCommandTools } from "../workflows/WorkflowCommandCenter";
 
 export function AssertionsScreen({ api, tenantId, model, hasTenantLock }: {
   api: AssertionsApi & Pick<ModelInputScopeApi, "listModelInputScope">; tenantId: number; model: ModelDetail; hasTenantLock: boolean;
@@ -53,7 +54,7 @@ export function AssertionsScreen({ api, tenantId, model, hasTenantLock }: {
       queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
     ]);
   };
-  return <div className="assertions-page page-enter">
+  return <WorkflowCommandCenter className="assertions-page page-enter" filterCount={Object.values(filters).filter((value) => value !== undefined && value !== "").length}>
     <header className="workflow-commandbar model-section-toolbar assertions-commandbar">
       <h1 className="model-section-title sr-only">Assertion documents</h1>
       <div className="workflow-command-context">
@@ -62,6 +63,7 @@ export function AssertionsScreen({ api, tenantId, model, hasTenantLock }: {
         </span>
       </div>
       <div className="workflow-command-actions">
+        <WorkflowCommandTools />
         <button className="button button-secondary button-small" type="button" onClick={async () => {
           await Promise.all([documents.refetch(), documentSystems.refetch(), scopeChoices.refetch(), queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }), queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] })]);
         }}>Refresh</button>
@@ -72,5 +74,5 @@ export function AssertionsScreen({ api, tenantId, model, hasTenantLock }: {
     <AssertionDocumentsLedger sourceChoices={sourceChoices} key={JSON.stringify(filters)} tenantId={tenantId} modelId={model.model_id} items={documents.data?.pages.flatMap((page) => page.items) ?? []} filters={filters}
       state={{ isLoading: documents.isPending, isError: documents.isError, revisionMismatch: documents.data?.pages.some((page) => page.model_revision !== model.model_revision) ?? false, hasMore: documents.hasNextPage, isLoadingMore: documents.isFetchingNextPage }}
       onApplyFilters={setFilters} onLoadMore={() => { void documents.fetchNextPage(); }} />
-  </div>;
+  </WorkflowCommandCenter>;
 }

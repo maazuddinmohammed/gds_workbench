@@ -31,7 +31,7 @@ const child = spawn(code, [workspace, '--wait', '--new-window', '--user-data-dir
   `--extensionDevelopmentPath=${path.join(fixture, 'candidate/extension')}`,
   `--extensionTestsPath=${path.join(root, 'test/vscode-host.cjs')}`,
   '--disable-extensions', '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes'], {
-  env: { ...process.env, ATLAS_STAGE_HOST_FIXTURE_ROOT: fixture },
+  env: { ...process.env, ATLAS_STAGE_HOST_FIXTURE_ROOT: fixture, ATLAS_STAGE_TEST_NODE: process.execPath },
   stdio: ['ignore', 'ignore', 'ignore'],
 });
 const timeout = setTimeout(() => child.kill(), 120_000);

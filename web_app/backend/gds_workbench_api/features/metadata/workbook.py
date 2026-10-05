@@ -73,7 +73,11 @@ def build_metadata_workbook(
     for definition in sheets:
         for row in definition.rows:
             for column in definition.columns:
-                value = _validated_cell_value(row[column])
+                value = _validated_cell_value(
+                    json.dumps(row[column], ensure_ascii=False, allow_nan=False)
+                    if column == "value" and row[column] is not None
+                    else row[column]
+                )
                 if isinstance(value, str):
                     text_characters += len(value)
                     if text_characters > MAX_XLSX_TEXT_CHARACTERS:
@@ -93,7 +97,14 @@ def build_metadata_workbook(
         worksheet = workbook.create_sheet(definition.name)
         worksheet.append(definition.columns)
         for row in definition.rows:
-            worksheet.append([row[column] for column in definition.columns])
+            worksheet.append(
+                [
+                    json.dumps(row[column], ensure_ascii=False, allow_nan=False)
+                    if column == "value" and row[column] is not None
+                    else row[column]
+                    for column in definition.columns
+                ]
+            )
         for row in worksheet.iter_rows():
             for cell in row:
                 _set_literal_cell_type(cell)
@@ -337,6 +348,13 @@ def _parse_sheet_rows(
                     raise MetadataWorkbookParseError("XLSX cell value is too long")
             if value is not None and not isinstance(value, (str, bool, int, date, datetime)):
                 raise MetadataWorkbookParseError("XLSX cell value type is unsupported")
+            if column == "value" and value is not None:
+                if not isinstance(value, str):
+                    raise MetadataWorkbookParseError("Value must contain JSON text")
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    raise MetadataWorkbookParseError("Value must contain valid JSON") from None
             values[column] = value
         if text_characters > MAX_XLSX_TEXT_CHARACTERS:
             raise MetadataWorkbookParseError("XLSX text content is too large")

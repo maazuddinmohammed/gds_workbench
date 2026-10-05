@@ -1,8 +1,8 @@
 # Model Snapshot
 
-Shared format and reading guide for workflows using Model state. Read [working method](../working-method.md#snapshot-use) for freshness/recovery and [Model Change Set authoring](../model/change-sets.md) for record construction, local writes and helper contracts. Workflow references provide modeling decisions and prerequisites.
+Shared format and reading guide for workflows using Model state. Read [working method](../platform/state.md#snapshot-use) for freshness/recovery and [Model Change Set authoring](../model/change-sets.md) for record construction, local writes and helper contracts. Workflow references provide modeling decisions and prerequisites.
 
-Atlas preserves the verified Model Snapshot format and uses the shared [runtime](../../docs/runtime-guide.md).
+Atlas preserves the verified Model Snapshot format and uses the shared [runtime](../local-runtime.md).
 
 ## Files and purpose
 
@@ -52,7 +52,7 @@ Follow the catalog's actual paths. Stored SQL/Python content is part of JSONL re
 
 Atlas snapshot installation replaces only the selected snapshot area and leaves the separate workspace `code/` directory untouched. It does not synchronize those files with Code records. Pending Change Set JSON has replacement/reconciliation protections; a loose edited code file is not automatically covered by that guard.
 
-Before reusing or regenerating Code, compare saved Snapshot content with existing pending records and relevant local files under [existing work and update scope](../working-method.md#existing-work-and-update-scope). Preserve unsubmitted/manual edits and resolve conflicts before producing a replacement. Extracting saved code into a reviewable local file is separate from regenerating its logic; it must preserve exact content and avoid overwriting a differing file. File extraction is an agent action: compare bytes before writing and verify equality with the complete Code record. No automatic file synchronization is implied.
+Before reusing or regenerating Code, compare saved Snapshot content with existing pending records and relevant local files under [existing work and update scope](../methods/change-impact.md). Preserve unsubmitted/manual edits and resolve conflicts before producing a replacement. Extracting saved code into a reviewable local file is separate from regenerating its logic; it must preserve exact content and avoid overwriting a differing file. File extraction is an agent action: compare bytes before writing and verify equality with the complete Code record. No automatic file synchronization is implied.
 
 ## Applied prerequisites and revision boundaries
 
@@ -65,7 +65,7 @@ Before reusing or regenerating Code, compare saved Snapshot content with existin
 
 ## Runtime reuse
 
-Use `create_model_snapshot` and Atlas `snapshot-install` to acquire context. The installer checks archive integrity, identity and nondecreasing Model revision; it refuses unsafe replacement over unapplied work. After confirmed Apply it retires only matching local proposals. See the [runtime guide](../../docs/runtime-guide.md).
+Use `create_model_snapshot` and Atlas `snapshot-install` to acquire context. The installer checks archive integrity, identity and nondecreasing Model revision; it refuses unsafe replacement over unapplied work. After confirmed Apply it retires only matching local proposals. See the [runtime reference](../local-runtime.md).
 
 ## Source pointers
 

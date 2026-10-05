@@ -32,7 +32,6 @@ from .contracts import (
     MetadataChangeSetActionReview,
     MetadataChangeSetDatasetCount,
     MetadataChangeSetValidationError,
-    StageMetadataChangeSetRequest,
     StageMetadataChangeSetResult,
     ValidateMetadataChangeSetResult,
 )
@@ -79,42 +78,6 @@ class DatabaseMetadataChangeSetService:
             draft_revision=row["draft_revision"],
             created_at=row["created_time"],
             expires_at=row["expires_time"],
-        )
-
-    async def stage(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        change_set_id: UUID,
-        command: StageMetadataChangeSetRequest,
-        idempotency_key: UUID,
-    ) -> StageMetadataChangeSetResult:
-        documents = canonical_metadata.stage_documents(
-            [
-                canonical_metadata.StageChange(
-                    dataset=change.dataset,
-                    records=change.records,
-                )
-                for change in command.changes
-            ]
-        )
-        identity = canonical_metadata.metadata_identity_arguments(principal)
-        async with self._database.write_transaction() as transaction:
-            row = await self._stage_in_transaction(
-                transaction,
-                identity=identity,
-                tenant_id=tenant_id,
-                change_set_id=change_set_id,
-                expected_draft_revision=command.expected_draft_revision,
-                documents=documents,
-                correlation_id=idempotency_key,
-            )
-        return self._stage_result(
-            tenant_id=tenant_id,
-            change_set_id=change_set_id,
-            datasets=tuple(documents),
-            row=row,
         )
 
     async def get(

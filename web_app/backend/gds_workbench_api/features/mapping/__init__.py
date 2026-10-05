@@ -55,6 +55,7 @@ from .read_contracts import (
     MappingObjectNotFoundError,
     MappingObjectPage,
     MappingObjectSummary,
+    MappingReadDatabase,
     MappingStatus,
     ModeledAttributeReference,
     ModeledEntityReference,
@@ -69,7 +70,6 @@ from .read_service import (
     MAPPING_OBJECT_DETAIL_SQL,
     MAPPING_OBJECTS_SQL,
     DatabaseMappingReviewService,
-    MappingReadDatabase,
     MappingReviewService,
 )
 from .readiness import MappingReadinessService, assess_mapping_readiness

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
-import { DetailState, Fact } from "../../shared/ui";
+import { DetailState } from "../../shared/ui";
 import { ApiError } from "../../core/http";
 import type { ModelDetail } from "../models/api";
 import {
@@ -120,9 +120,7 @@ function GeneratedSqlDetailView({
           >
             ← Back to Code Generation
           </Link>
-          <p className="eyebrow">Stored SQL artifact {detail.generated_sql_artifact_id}</p>
           <h1 ref={heading} tabIndex={-1}>{detail.artifact_name}</h1>
-          <p>{title}</p>
         </div>
         <div className="code-generation-detail-actions">
           <div className="detail-badge-stack">
@@ -153,7 +151,13 @@ function GeneratedSqlDetailView({
 
       {!detail.artifact_is_current ? <p className="drawer-warning">Generation context changed. Review this SQL before reuse.</p> : null}
       <CodeMappingWarnings supports={detail.mapping_supports} systemCodes={detail.source_systems.map((system) => system.system_code)} />
-      <section className="detail-section detail-primary generated-sql-section" aria-labelledby="stored-sql-heading">
+      <dl className="workspace-detail-facts" aria-label="SQL context">
+        <div><dt>Schema</dt><dd>{detail.target.entity_schema_name}</dd></div>
+        <div><dt>Entity</dt><dd>{detail.target.entity_name}</dd></div>
+        <div><dt>Systems</dt><dd>{detail.source_systems.map((system) => system.system_code).join(", ") || "Unavailable"}</dd></div>
+        <div><dt>Status</dt><dd>{humanize(detail.generated_code_status)}</dd></div>
+      </dl>
+      <section className="workspace-sql generated-sql-section" aria-labelledby="stored-sql-heading">
         <header>
           <h2 id="stored-sql-heading">Stored SQL</h2>
           <span>{detail.generated_sql_byte_count.toLocaleString()} bytes · Read-only</span>
@@ -161,75 +165,30 @@ function GeneratedSqlDetailView({
         <pre tabIndex={0} aria-label={`Stored SQL for ${title}`}><code>{detail.generated_sql}</code></pre>
       </section>
 
-      <details className="detail-section detail-disclosure" aria-labelledby="generated-sql-target-heading">
-        <summary><h2 id="generated-sql-target-heading">Entity</h2></summary>
-        <dl className="detail-fact-grid">
-          <Fact label="Object" value={title} />
-          <Fact label="Artifact status" value={humanize(detail.generated_code_status)} />
-        </dl>
-        <p className="detail-empty-note">
-          {detail.artifact_is_current
-            ? "Current for the recorded generation context."
-            : "The generation context has changed; review the stored SQL before reuse."}
-          {" "}This record does not report SQL execution results.
-        </p>
-      </details>
-
-
-      <details className="detail-section detail-disclosure" aria-labelledby="generated-sql-systems-heading">
+      <details className="workspace-detail-disclosure" aria-labelledby="generated-sql-mapping-heading">
         <summary>
-          <h2 id="generated-sql-systems-heading">Contributing source Systems</h2>
-          <span>{detail.source_system_count} System{detail.source_system_count === 1 ? "" : "s"}</span>
-        </summary>
-        {detail.source_systems.length ? (
-          <ul className="code-generation-system-ledger">
-            {detail.source_systems.map((system) => (
-              <li key={system.system_id}>
-                <strong>{system.system_code}</strong>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="detail-empty-note">Current contributing Systems are unavailable for this stale artifact.</p>
-        )}
-      </details>
-
-      <details className="detail-section detail-disclosure" aria-labelledby="generated-sql-mapping-heading">
-        <summary>
-          <h2 id="generated-sql-mapping-heading">Applied Mapping</h2>
+          <h2 id="generated-sql-mapping-heading">Source mappings</h2>
           <span>{detail.mapping_support_count} support{detail.mapping_support_count === 1 ? "" : "s"}</span>
         </summary>
         {detail.mapping_supports.length ? (
-          <div className="table-scroll code-generation-support-scroll">
+          <div className="table-scroll code-generation-support-scroll ledger-grid" role="region" aria-label="Source mappings" tabIndex={0}>
             <table aria-label="Applied Mapping supports">
               <thead>
                 <tr>
-                  <th>Mapping</th>
-                  <th>Modeled source</th>
-                  <th>Source System</th>
-                  <th>Dependency order</th>
+                  <th>System</th><th>Schema</th><th>Entity</th><th>Order</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {detail.mapping_supports.map((support) => (
                   <tr key={support.mapping_object_id}>
-                    <td>
-                      <Link
-                        className="text-action"
-                        to="/tenants/$tenantId/mapping/models/$modelId/objects/$mappingObjectId"
-                        params={{ tenantId: String(tenantId), modelId: String(model.model_id), mappingObjectId: String(support.mapping_object_id) }}
-                      >
-                        Object Mapping {support.mapping_object_id}
-                      </Link>
-                    </td>
-                    <td>
-                      <span className="endpoint-cell">
-                        <strong>{support.source.entity_name}</strong>
-                        <span>{layerLabel(support.source.entity_type)} Entity {support.source.entity_id}</span>
-                      </span>
-                    </td>
                     <td>{support.source_system.system_code}</td>
+                    <td>{support.source.entity_schema_name}</td>
+                    <td>{support.source.entity_name}</td>
                     <td>{support.dependency_order}</td>
+                    <td><Link className="text-action"
+                      to="/tenants/$tenantId/mapping/models/$modelId/objects/$mappingObjectId"
+                      params={{ tenantId: String(tenantId), modelId: String(model.model_id), mappingObjectId: String(support.mapping_object_id) }}
+                    >Show mapping</Link></td>
                   </tr>
                 ))}
               </tbody>

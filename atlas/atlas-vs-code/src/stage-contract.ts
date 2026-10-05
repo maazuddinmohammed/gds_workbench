@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { unicodeCasefold, unicodeLower } from "./unicode.js";
-// @ts-expect-error Shared Workbench serialization intentionally has no declaration file.
+// @ts-expect-error Shared Atlas Local Workbench serialization intentionally has no declaration file.
 import workbenchCore from "../../atlas-plugin/workbench/core.js";
 export const stableStringify = workbenchCore.stableStringify as (value: unknown) => string;
 export const isEntityOwnedModelCatalog = workbenchCore.isEntityOwnedModelCatalog as (catalog: unknown) => boolean;

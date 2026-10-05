@@ -141,9 +141,11 @@ def register_create_metadata_snapshot_tool(
             download = await create_snapshot_download(
                 store,
                 snapshot_kind="metadata",
+                tenant_id=ready.tenant_id,
                 scope_id=ready.tenant_id,
                 schema_version="2.0",
                 snapshot_id=ready.snapshot_id,
+                created_at=ready.created_at,
                 available_until=ready.available_until,
                 now=download_created_at,
                 ttl_seconds=download_ttl_seconds,
@@ -260,6 +262,7 @@ async def build_and_upload_metadata_snapshot(
     ready = await build_and_upload_snapshot(
         store,
         snapshot_kind="metadata",
+        tenant_id=tenant_id,
         scope_id=tenant_id,
         schema_version="2.0",
         snapshot_id=snapshot_id,

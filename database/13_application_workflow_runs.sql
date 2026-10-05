@@ -20,6 +20,19 @@ CREATE TABLE application.workflow_run (
     code_generation_file_layout VARCHAR(30),
     code_generation_system_codes VARCHAR(100)[],
     requested_batch_id VARCHAR(500),
+    execution_backend VARCHAR(10) NOT NULL DEFAULT 'web',
+    profiling_batch_ids TEXT[],
+    profiling_environment_code VARCHAR(100),
+    profiling_context_digest CHAR(64),
+    profiling_request_digest CHAR(64),
+    profiling_completed_objects INTEGER NOT NULL DEFAULT 0,
+    profiling_saved_profiles INTEGER NOT NULL DEFAULT 0,
+    CONSTRAINT ck_workflow_execution_backend CHECK (
+        execution_backend = 'web' OR (execution_backend = 'mcp' AND model_workflow = 'profiling')
+    ),
+    CONSTRAINT ck_profiling_progress CHECK (
+        profiling_completed_objects >= 0 AND profiling_saved_profiles >= 0
+    ),
     mapping_operation VARCHAR(20),
     mapping_coverage_mode VARCHAR(30),
     mapping_route VARCHAR(30),
@@ -576,6 +589,14 @@ LANGUAGE plpgsql
 SET search_path = pg_catalog
 AS $guard_workflow_run$
 BEGIN
+    IF TG_OP = 'UPDATE' AND OLD.profiling_context_digest IS NOT NULL AND
+       ROW(NEW.execution_backend, NEW.profiling_batch_ids, NEW.profiling_environment_code,
+           NEW.profiling_context_digest, NEW.profiling_request_digest) IS DISTINCT FROM
+       ROW(OLD.execution_backend, OLD.profiling_batch_ids, OLD.profiling_environment_code,
+           OLD.profiling_context_digest, OLD.profiling_request_digest) THEN
+        RAISE EXCEPTION 'Profiling request is immutable';
+    END IF;
+
     IF TG_OP = 'DELETE' THEN
         RAISE EXCEPTION 'workflow runs cannot be deleted' USING ERRCODE = '55000';
     END IF;
@@ -2556,8 +2577,9 @@ REVOKE ALL ON FUNCTION application.cancel_workflow_run(
     UUID, UUID, VARCHAR, BIGINT, BIGINT, BIGINT
 ) FROM PUBLIC;
 
-CREATE FUNCTION application.claim_next_workflow_run(
-    p_lease_duration_seconds INTEGER
+CREATE FUNCTION application.claim_workflow_run(
+    p_lease_duration_seconds INTEGER,
+    p_execution_backend VARCHAR(10)
 )
 RETURNS TABLE (
     workflow_run_id BIGINT,
@@ -2584,6 +2606,9 @@ DECLARE
     v_claim_token UUID;
     v_claimed_time TIMESTAMPTZ;
 BEGIN
+    IF p_execution_backend IS NULL OR p_execution_backend NOT IN ('web', 'mcp') THEN
+        RAISE EXCEPTION 'invalid_execution_backend';
+    END IF;
     IF p_lease_duration_seconds IS NULL
        OR p_lease_duration_seconds NOT BETWEEN 1 AND 300 THEN
         RAISE EXCEPTION 'Workflow Run lease duration must be between 1 and 300 seconds';
@@ -2624,7 +2649,8 @@ BEGIN
                 FROM model.model_event_log AS log
                WHERE log.workflow_run_id = run.workflow_run_id
           ) AS event ON TRUE
-         WHERE run.workflow_run_state = 'running'
+         WHERE run.execution_backend = p_execution_backend
+           AND run.workflow_run_state = 'running'
            AND (
                target_model.model_id IS NULL
                OR NOT target_model.is_active
@@ -2700,7 +2726,8 @@ BEGIN
                 FROM model.model_event_log AS log
                WHERE log.workflow_run_id = run.workflow_run_id
           ) AS event ON TRUE
-         WHERE run.workflow_run_state = 'running'
+         WHERE run.execution_backend = p_execution_backend
+           AND run.workflow_run_state = 'running'
            AND NOT EXISTS (
                SELECT 1
                  FROM invalid_failed
@@ -2790,7 +2817,8 @@ BEGIN
                OR actor_identity.entra_principal_identity_id =
                    run.actor_entra_principal_identity_id
            )
-         WHERE run.workflow_run_state = 'running'
+         WHERE run.execution_backend = p_execution_backend
+           AND run.workflow_run_state = 'running'
            AND NOT EXISTS (
                SELECT 1
                  FROM invalid_failed
@@ -2868,6 +2896,30 @@ BEGIN
       FROM claimed;
 END;
 $claim_next_workflow_run$;
+
+REVOKE ALL ON FUNCTION application.claim_workflow_run(INTEGER, VARCHAR) FROM PUBLIC;
+
+CREATE FUNCTION application.claim_next_workflow_run(
+    p_lease_duration_seconds INTEGER
+)
+RETURNS TABLE (
+    workflow_run_id BIGINT,
+    tenant_id BIGINT,
+    model_id BIGINT,
+    model_revision BIGINT,
+    model_workflow VARCHAR(30),
+    workflow_execution_mode VARCHAR(50),
+    correlation_id UUID,
+    actor_principal_type VARCHAR(30),
+    actor_entra_tenant_id UUID,
+    actor_entra_object_id UUID,
+    workflow_run_claim_token UUID,
+    workflow_run_claimed_time TIMESTAMPTZ,
+    workflow_run_claim_expires_time TIMESTAMPTZ,
+    workflow_run_recovery_count INTEGER
+)
+LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
+AS $$ SELECT * FROM application.claim_workflow_run(p_lease_duration_seconds, 'web'); $$;
 
 REVOKE ALL ON FUNCTION application.claim_next_workflow_run(INTEGER)
 FROM PUBLIC;

@@ -3,6 +3,10 @@ import { mkdtemp, mkdir, readFile, rename, symlink, truncate, writeFile } from "
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { describe, expect, test } from "vitest";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { createConnectorServer } from "../src/connector/server.js";
+import { resolveStageProfile } from "../src/profile.js";
 
 import {
   canonicalRecordsSha256,
@@ -1055,7 +1059,7 @@ describe("stageApprovedManifest", () => {
     expect(receipt.datasets).toEqual([{ dataset: "source_object", record_count: 0 }]);
   });
 
-  test("stages one approved Metadata request without returning payload records", async () => {
+  test.each(["engine", "connector"])("stages one approved Metadata request through %s without returning payload records", async (host) => {
     const records = [
       {
         tenant_code: "DEMO",
@@ -1095,10 +1099,22 @@ describe("stageApprovedManifest", () => {
       },
     };
 
-    const receipt = await stageApprovedManifest(
-      { manifestPath, expectedDigest: acceptedDigest },
-      { mcp, workspaceRoots: [workspace] },
-    );
+    let receipt;
+    if (host === "engine") {
+      receipt = await stageApprovedManifest({ manifestPath, expectedDigest: acceptedDigest }, { mcp, workspaceRoots: [workspace] });
+    } else {
+      const server = createConnectorServer({ ...mcp, listTools: async () => [] },
+        resolveStageProfile("local", "http://127.0.0.1:8000/mcp"), workspace);
+      const client = new Client({ name: "codex-fixture", version: "1" });
+      const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+      await server.connect(serverSide); await client.connect(clientSide);
+      try {
+        const result = await client.callTool({ name: "atlas_stageApprovedManifest", arguments: { manifestPath } });
+        expect(result.isError).toBe(false);
+        expect(JSON.stringify(result)).not.toContain("Customer");
+        receipt = result.structuredContent;
+      } finally { await client.close(); await server.close(); }
+    }
 
     expect(receipt).toEqual({
       task_id:TASK,operation_id:OP,owner_tenant_id:17,owner_root:".",backend:BACKEND,

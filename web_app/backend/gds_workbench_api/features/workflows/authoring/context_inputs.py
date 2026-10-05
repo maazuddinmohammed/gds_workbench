@@ -10,6 +10,7 @@ from gds_etl_workbench.domain.modeling_records import normalize_model_key_value
 
 from gds_workbench_api.features.assertions.context import project_assertions
 
+from .audit_policy import effective_audit_template
 from .context_contracts import WORKFLOW_INPUTS
 from .gold_policy import effective_gold_templates
 from .naming import effective_naming_instructions
@@ -192,7 +193,9 @@ def project_context_inputs(
             workflow, details[f"{layer}_model_naming_instructions"]
         )
         values["schemas"] = deepcopy(details[f"{workflow}_schemas"])
-        values["audit_columns"] = deepcopy(details[f"{layer}_model_audit_columns_template"])
+        values["audit_columns"] = effective_audit_template(
+            details[f"{layer}_model_audit_columns_template"]
+        )
         if workflow == "logical":
             values["logical_entity_scd_type"] = details.get("logical_entity_scd_type")
         if workflow == "dimensional":

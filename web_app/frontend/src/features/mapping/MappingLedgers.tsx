@@ -1,6 +1,6 @@
 import { WorkflowFilters } from "../workflows/WorkflowCommandCenter";
 import { reviewSelectionColumn } from "../model_record_review/selection";
-import { useId, useMemo, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
 import {
@@ -72,7 +72,7 @@ export function MappingObjectsLedger({
       id: "action",
       header: "Actions",
       cell: ({ row }) => (
-        <Link
+        <div className="workflow-command-actions"><Link
           className="text-action"
           aria-label={`Open Object Mapping ${row.original.mapping_object_id}`}
           to="/tenants/$tenantId/mapping/models/$modelId/objects/$mappingObjectId"
@@ -84,7 +84,7 @@ export function MappingObjectsLedger({
           }}
         >
           Show details
-        </Link>
+        </Link></div>
       ),
     },
   ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
@@ -150,7 +150,7 @@ export function MappingAttributesLedger({
       onLoadMore={onLoadMore}
       renderCell={(item, column) => {
         // These rows come from modeled Attributes, not persisted Mapping records.
-        if (item.mapping_attribute_id === null && column !== "target" && column !== "status") return <></>;
+        if (item.mapping_attribute_id === null && column !== "target" && column !== "status" && column !== "action") return <></>;
         const isField = column.startsWith("field:") || column === "empty-document";
         if (!isField && column !== "record-info") return undefined;
         const record = item.mapping_attribute_id === null ? undefined : documents.get(item.mapping_attribute_id);
@@ -304,7 +304,6 @@ function MappingLedgerSurface<T>({
   renderCell?: (item: T, column: string) => ReactNode;
 }) {
   const table = useReactTable({ data: items, columns, getCoreRowModel: getCoreRowModel() });
-  const scrollHintId = useId();
   return (
     <section className="workflow-surface mapping-surface" aria-label={label}>
       {filters}
@@ -322,9 +321,8 @@ function MappingLedgerSurface<T>({
         <div className="empty-state compact">No {label} match these filters.</div>
       ) : (
         <>
-          {renderCell ? <p id={scrollHintId} className="mapping-scroll-hint">Scroll horizontally to view all transformation and source columns.</p> : null}
           <div className="workflow-table-scroll mapping-table-scroll mapping-spreadsheet table-scroll" role="region" aria-label={`${label} spreadsheet`}
-            aria-describedby={renderCell ? scrollHintId : undefined} tabIndex={0}>
+            tabIndex={0}>
             <table aria-label={label}>
               <thead>
                 {table.getHeaderGroups().map((group) => (

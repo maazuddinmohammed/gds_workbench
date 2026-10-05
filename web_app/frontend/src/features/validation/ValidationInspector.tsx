@@ -20,7 +20,7 @@ export function ValidationInspector({ children, onClose, returnFocus }: {
       }
     }}>
     <header className="workflow-activity-heading">
-      <div><h2>Validation details</h2><span>Applied definitions</span></div>
+      <h2>Validation details</h2>
       <div className="workflow-activity-actions">
         <button type="button" className="button button-secondary button-small validation-expand"
           aria-label={expanded ? "Reduce Validation details" : "Expand Validation details"}

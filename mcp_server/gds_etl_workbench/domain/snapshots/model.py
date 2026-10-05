@@ -194,6 +194,7 @@ class ModelSnapshot(ContractModel):
     model_id: int
     model_name: str
     model_revision: int
+    is_locked: bool = False
     model_tenant_code: str | None = None
     other_active_model_names: tuple[str, ...] = ()
     model_input_scope: ModelInputScopeSection

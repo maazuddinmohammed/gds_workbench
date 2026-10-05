@@ -18,6 +18,19 @@ test('invalid owner path, SQL policy and active task paths are rejected',()=>{
  const base={schema_version:'1.0',tenant:{id:1,code:'T'},model:null};
  for(const update of [{active_task:'../x'},{sql:{policy:'always'}},{metadata_owners:{2:{id:2,code:'OTHER',root:'../other'}}}]) assert.throws(()=>validateSession({...base,...update}));
 });
+test('sub-agent policy loads without changes and rejects ambiguous or invalid saved choices',async()=>{
+ for(const policy of [{mode:'current'},{mode:'auto'},{mode:'custom',model:'Provider/Model-A:1'}]){
+  const root=workspace();state(root,{subagent_policy:policy});
+  const file=root.entries.get('.atlas').entries.get('session.json'),before=file.text;
+  const ws=await connect(root);assert.deepEqual(ws.state.subagent_policy,policy);assert.equal(file.text,before);
+ }
+ const base={schema_version:'1.0',tenant:{id:1,code:'T'},model:null};
+ for(const policy of [null,[],{},'auto',{mode:'AUTO'},{mode:'custom'},{mode:'current',model:null},
+  {mode:'auto',fallback:'current'},{mode:'custom',model:' A'},{mode:'custom',model:'\ufeffA'},
+  {mode:'custom',model:'A\nB'},{mode:'custom',model:'A'.repeat(201)}]){
+  assert.throws(()=>validateSession({...base,subagent_policy:policy}),/sub-agent policy/);
+ }
+});
 test('a conflicting Snapshot disables its area without rewriting session context',async()=>{
  const root=workspace();snapshot(root,'metadata',[source],'WRONG');modelFixture(root);
  const ws=await connect(root);assert.equal(ws.area('metadata').manifest,null);assert.match(ws.areaErrors.get('metadata'),/Tenant/);assert.equal(ws.area('model').manifest.model_id,7);

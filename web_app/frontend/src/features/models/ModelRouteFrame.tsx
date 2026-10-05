@@ -9,7 +9,7 @@ import type { ModelDetail, ModelsApi } from "./api";
 import type { TenantLockApi } from "../tenant_locks/api";
 import { TenantLockControl } from "../tenant_locks/TenantLockControl";
 
-export type ModelRouteApi = Pick<TenantsApi, "readTenantHome"> & Pick<ModelsApi, "readModel" | "readModelOverview">;
+export type ModelRouteApi = Pick<TenantsApi, "readTenantHome"> & Pick<ModelsApi, "readModel" | "readModelOverview"> & Partial<Pick<ModelsApi, "setModelLock">>;
 
 export interface ModelRouteContext {
   home: TenantHomeRecord;

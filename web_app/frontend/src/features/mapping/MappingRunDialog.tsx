@@ -258,7 +258,7 @@ export function MappingRunDialog({ api, tenantId, model, entityType, onClose, on
                 <button type="button" className="button button-secondary button-small" disabled={!selected.length}
                   onClick={() => setExcluded((previous) => new Set([...previous, ...eligibleKeys]))}>Clear Entity selection</button>
               </div> : null}
-              {search.trim() ? <p className="field-help">Showing {visible.length} of {scoped.length} mappings. Searching keeps your selections.</p> : null}
+              {search.trim() ? <p className="field-help">Showing {visible.length} of {scoped.length} mappings.</p> : null}
               <div className="workflow-table-scroll table-scroll">
                 <table className="enrichment-selection-table" aria-label="Entities for Mapping">
                   <thead><tr><th className="selection-cell"><span className="sr-only">Selected</span></th><th>Schema</th><th>Entity</th><th>Source System</th><th>Attributes</th><th>Locks</th></tr></thead>

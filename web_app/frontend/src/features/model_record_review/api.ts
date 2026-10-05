@@ -70,16 +70,30 @@ export interface ModelRecordHistoryApi extends ModelRecordReviewApi {
     modelRevision: number, page?: number, entityType?: "logical_entity" | "dimensional_entity") => Promise<ModelRecordHistoryPage>;
 }
 
-export type EditableDataset = Extract<ModelReviewDataset, `conceptual_${string}` | `logical_${string}` | `dimensional_${string}`>;
+export type EditableDataset = Extract<ModelReviewDataset, `conceptual_${string}` | `logical_${string}` | `dimensional_${string}`> | "mapping_object";
 export interface ModelRecordEditorRequest {
   dataset: EditableDataset; record_id: number; expected_model_revision: number;
+  mapping_target?: { entity_type: "logical_entity" | "dimensional_entity"; entity_id: number; source_system_id: number };
 }
 export interface ModelRecordEditor {
+  mapping?: MappingEditorData | null;
   model_revision: number; label: string; is_locked: boolean;
   fields: { name: string; label: string; kind: "text" | "multiline" | "number" | "boolean" | "choice" | "lines";
     value: string | number | boolean | string[] | null; required: boolean; options: string[];
     minimum: number | null; maximum_length: number | null;
   }[];
+}
+
+export interface MappingSourceChoice {
+  reference: Record<string, string>; label: string;
+  columns: { name: string; data_type: string; reference: Record<string, string> }[];
+}
+export interface MappingEditorData {
+  object_document: Record<string, unknown> | null; dependency_order: number;
+  object_is_locked: boolean; structured: boolean;
+  attributes: { name: string; data_type: string; ordinal: number; is_locked: boolean;
+    document: Record<string, unknown> | null; structured: boolean }[];
+  source_tables: MappingSourceChoice[];
 }
 export interface ModelRecordEditorApi extends ModelRecordHistoryApi {
   readModelRecordEditor: (tenantId: number, modelId: number, command: ModelRecordEditorRequest) => Promise<ModelRecordEditor>;

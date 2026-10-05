@@ -149,8 +149,6 @@ APPLICATION_WEB_FUNCTIONS = (
         "lock_authoring_workflow_run",
         "bigint, bigint",
     ),
-    ("metadata_attribute_review_revision", "core.attribute, core.object"),
-    ("metadata_object_review_revision", "core.object"),
     (
         "persist_analysis_validation_results",
         "uuid, uuid, character varying, bigint, bigint, character varying, jsonb",
@@ -168,10 +166,6 @@ APPLICATION_WEB_FUNCTIONS = (
         "bigint, uuid, integer",
     ),
     (
-        "review_metadata_records",
-        "uuid, uuid, character varying, bigint, character varying, character varying, jsonb, uuid",
-    ),
-    (
         "review_model_enrichment",
         "uuid, uuid, bigint, bigint, bigint, character varying, character varying, jsonb, uuid",
     ),
@@ -185,6 +179,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "uuid, uuid, character varying, bigint, bigint, text, text, text, "
         "timestamp with time zone, text[]",
     ),
+    ("set_model_lock", "uuid, uuid, bigint, bigint, bigint, boolean"),
     (
         "set_principal_last_tenant",
         "uuid, uuid, character varying, bigint",
@@ -248,13 +243,11 @@ def test_application_web_function_allowlist_is_exact_and_verified(
             """
         ).fetchall()
 
-    assert len(APPLICATION_WEB_FUNCTIONS) == 42
+    assert len(APPLICATION_WEB_FUNCTIONS) == 40
     assert [(row["function_name"], row["argument_types"]) for row in rows] == list(
         APPLICATION_WEB_FUNCTIONS
     )
     assert [row["function_name"] for row in rows if not row["is_security_definer"]] == [
-        "metadata_attribute_review_revision",
-        "metadata_object_review_revision",
     ]
     assert all(row["fixed_search_path"] for row in rows)
     assert not any(row["mcp_can_execute"] for row in rows)

@@ -62,6 +62,31 @@ def test_native_workspace_parity(
     getattr(cases, case)(tmp_path)
 
 
+def test_selection_cursor_continues_across_node_and_native(tmp_path: Path) -> None:
+    root = cases.workspace(tmp_path)
+    args = (
+        "select",
+        "--session",
+        str(root),
+        "--area",
+        "metadata",
+        "--dataset",
+        "source_object",
+        "--view",
+        "effective",
+        "--limit",
+        "1",
+        "--fields",
+        '["is_active"]',
+    )
+    first = cases.run(*args)
+    native_first = native_run(*args)
+    assert native_first == first
+    second = native_run(*args, "--cursor", first["next_cursor"])
+    assert second == cases.run(*args, "--cursor", native_first["next_cursor"])
+    assert second["next_cursor"] is None
+
+
 def test_native_selection_preserves_draft_and_attaches_model(tmp_path: Path) -> None:
     root = tmp_path / "work"
     native_run("session-init", "--root", str(root), "--tenant", "TENANT_A", "--tenant-id", "1")
@@ -164,20 +189,6 @@ def test_native_new_model_policy_rejects_unsupported_layout(
     assert {"model.naming-policy", "model.own-surrogate", "model.audit-order"} <= codes
 
 
-def test_native_profile_import_complete_and_rejects_raw_columns(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from tests.atlas import test_profiling_runtime as profile
-    from tests.atlas import test_workspace as shared
-
-    monkeypatch.setattr(shared, "run", native_run)
-    monkeypatch.setattr(profile, "run", native_run)
-    profile.test_profile_runtime_groups_sql_and_imports_exact_record_contract(tmp_path / "complete")
-    profile.test_profile_runtime_rejects_incomplete_or_unbound_results_before_writing(
-        tmp_path / "reject", "unknown_column"
-    )
-
-
 def test_native_apply_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from tests.atlas import test_lifecycle as lifecycle
     from tests.atlas import test_workspace as shared
@@ -185,39 +196,6 @@ def test_native_apply_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(shared, "run", native_run)
     monkeypatch.setattr(lifecycle, "run", native_run)
     lifecycle.test_apply_needs_stage_server_review_and_separate_approval(tmp_path)
-
-
-def test_native_profile_rejects_unbound_plan_before_import(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from tests.atlas import test_profiling_runtime as profile
-    from tests.atlas import test_workspace as shared
-
-    monkeypatch.setattr(shared, "run", native_run)
-    monkeypatch.setattr(profile, "run", native_run)
-    root, plan_path, plan, results = profile.planned_workspace(tmp_path)
-    for corruption in ("missing_inputs", "wrong_object", "duplicate_index"):
-        changed = json.loads(json.dumps(plan))
-        if corruption == "missing_inputs":
-            changed["inputs"] = []
-        elif corruption == "wrong_object":
-            changed["queries"][0]["attributes"][0]["object_name"] = "WrongObject"
-        else:
-            changed["queries"][1]["attributes"][0]["attribute_index"] = changed["queries"][0][
-                "attributes"
-            ][0]["attribute_index"]
-        plan_path.write_text(json.dumps(changed))
-        profile.import_results(root, plan_path, results, success=False)
-        assert not (root / "model-change-set/profiling_profile.json").exists()
-    plan_path.write_text(json.dumps(plan))
-    for field, index, value in [
-        ("percent_distinct", 1, "49"),
-        ("min_data_length", 0, 3),
-    ]:
-        changed_results = json.loads(json.dumps(results))
-        changed_results[0]["rows"][index][field] = value
-        profile.import_results(root, plan_path, changed_results, success=False)
-        assert not (root / "model-change-set/profiling_profile.json").exists()
 
 
 def test_native_refresh_fences_applied_revision_without_pending_rows(

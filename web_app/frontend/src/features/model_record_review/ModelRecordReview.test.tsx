@@ -42,6 +42,18 @@ function fixture() {
 }
 
 describe("Model record review", () => {
+  it("previews deletion of only unlocked selected mappings", async () => {
+    const { api, props } = fixture();
+    render(<QueryClientProvider client={new QueryClient()}><ModelRecordReview {...props}
+      dataset="mapping_object" selectedIds={new Set([41, 42])} deleteIds={new Set([42])} actions={["delete"]} />
+    </QueryClientProvider>);
+    await userEvent.setup().click(screen.getByRole("button", { name: "Delete selected" }));
+    await waitFor(() => expect(api.previewModelRecordReview).toHaveBeenCalled());
+    expect(api.previewModelRecordReview.mock.calls[0]?.[2]).toEqual({
+      dataset: "mapping_object", record_ids: [42], action: "delete", expected_model_revision: 7,
+    });
+  });
+
   it("previews every dependent change before explicit apply and uses the scoped HTTP contract", async () => {
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => new Response(JSON.stringify(
       String(input).includes("/preview") ? preview

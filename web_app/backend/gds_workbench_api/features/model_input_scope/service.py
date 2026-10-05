@@ -49,7 +49,7 @@ SELECT model_input_scope.model_input_scope_id,
        left(object.object_description, 2000) AS object_description,
        coalesce(length(object.object_description) > 2000, FALSE) AS description_truncated,
        object.is_locked,
-       application.metadata_object_review_revision(object) AS review_revision,
+       NULL::TEXT AS review_revision,
        object.batch_attribute_name,
        attribute_count.attribute_count,
        eligible_object.is_model_input_eligible,
@@ -112,7 +112,7 @@ SELECT model_input_scope.model_input_scope_id,
        left(object.object_description, 2000) AS object_description,
        coalesce(length(object.object_description) > 2000, FALSE) AS description_truncated,
        object.is_locked,
-       application.metadata_object_review_revision(object) AS review_revision,
+       NULL::TEXT AS review_revision,
        object.batch_attribute_name,
        attribute_count.attribute_count,
        attribute_count.total_attribute_count,
@@ -147,7 +147,7 @@ SELECT model_input_scope.model_input_scope_id,
 
 _MODEL_INPUT_SCOPE_ATTRIBUTES_SQL = """
 SELECT attribute.attribute_id,
-       application.metadata_attribute_review_revision(attribute, object) AS review_revision,
+       NULL::TEXT AS review_revision,
        attribute.attribute_name,
        attribute.attribute_ordinal_position,
        left(attribute.attribute_description, 2000) AS attribute_description,
@@ -179,8 +179,9 @@ _ENRICHMENT_OBJECT_SQL: tuple[LiteralString, ...] = tuple(
         statement.replace("object.object_description", "enrichment.object_description")
         .replace("object.is_locked,", "coalesce(enrichment.is_locked, FALSE) AS is_locked,")
         .replace(
-            "application.metadata_object_review_revision(object)",
-            "workflow.enrichment_review_revision(target_model.model_id, object.object_id)",
+            "NULL::TEXT AS review_revision",
+            "workflow.enrichment_review_revision(target_model.model_id, object.object_id) "
+            "AS review_revision",
         )
         .replace(
             "  JOIN core.system AS system",
@@ -195,9 +196,9 @@ _ENRICHMENT_OBJECT_SQL: tuple[LiteralString, ...] = tuple(
 _ENRICHMENT_ATTRIBUTES_SQL: LiteralString = (
     "WITH requested_model AS (SELECT %s::BIGINT AS model_id) "
     + _MODEL_INPUT_SCOPE_ATTRIBUTES_SQL.replace(
-        "application.metadata_attribute_review_revision(attribute, object)",
+        "NULL::TEXT AS review_revision",
         "workflow.enrichment_review_revision("
-        "requested_model.model_id, object.object_id, attribute.attribute_id)",
+        "requested_model.model_id, object.object_id, attribute.attribute_id) AS review_revision",
     )
     .replace("attribute.attribute_description", "enrichment.attribute_description")
     .replace("attribute.attribute_inferred_data_type,", "enrichment.attribute_inferred_data_type,")

@@ -9,12 +9,15 @@ from gds_etl_workbench.domain.errors import (
     MetadataChangeSetNotFoundError,
     TenantLockRequiredError,
 )
+from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
+from gds_workbench_api.features.metadata.workbook import (
+    MetadataWorkbookSheet,
+    build_metadata_workbook,
+)
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.metadata_change_sets.contracts import (
     CreateMetadataChangeSetRequest,
     ExpectedDraftRevisionRequest,
-    StageMetadataChangeSetRequest,
-    StageMetadataDatasetRequest,
 )
 from gds_workbench_api.features.metadata_change_sets.service import (
     DatabaseMetadataChangeSetService,
@@ -109,6 +112,12 @@ async def test_web_metadata_change_set_preserves_lock_isolation_revision_and_app
                 connection_type["connection_type_id"],
             ),
         )
+        existing_group = connection.execute(
+            "INSERT INTO core.copy_group (tenant_id, system_id, copy_group_name) "
+            "VALUES (%s, %s, 'CUSTOMERS') RETURNING copy_group_id",
+            (tenant_id, system["system_id"]),
+        ).fetchone()
+        assert existing_group is not None
 
     principal = RequestPrincipal(
         actor_kind=ActorKind.HUMAN,
@@ -179,36 +188,46 @@ async def test_web_metadata_change_set_preserves_lock_isolation_revision_and_app
             "is_member_group_required": False,
             "is_active": True,
         }
-        stale_command = StageMetadataChangeSetRequest(
-            expected_draft_revision=2,
-            changes=[
-                StageMetadataDatasetRequest(
-                    dataset="copy_group",
-                    records=[record],
-                )
-            ],
+        definition = DATASETS_BY_NAME["copy_group"]
+        record = definition.row_model.model_validate(record).model_dump(mode="json")
+        workbook = build_metadata_workbook(
+            tenant_id=tenant_id,
+            sheets=(
+                MetadataWorkbookSheet(
+                    code="copy_group",
+                    name="Copy Groups",
+                    columns=tuple(definition.row_model.model_fields),
+                    canonical_key=definition.canonical_key,
+                    row_schema=definition.row_model.model_json_schema(),
+                    rows=(record,),
+                ),
+            ),
         )
         with pytest.raises(DraftRevisionConflictError):
-            await service.stage(
+            await service.import_workbook(
                 principal,
                 tenant_id=tenant_id,
                 change_set_id=created.metadata_change_set_id,
-                command=stale_command,
+                expected_draft_revision=2,
+                content=workbook,
                 idempotency_key=uuid4(),
             )
-
-        staged = await service.stage(
+        imported = await service.import_workbook(
             principal,
             tenant_id=tenant_id,
             change_set_id=created.metadata_change_set_id,
-            command=stale_command.model_copy(update={"expected_draft_revision": 1}),
+            expected_draft_revision=1,
+            content=workbook,
             idempotency_key=uuid4(),
         )
+        staged = imported.staged
         reviewed = await service.validate(
             principal,
             tenant_id=tenant_id,
             change_set_id=created.metadata_change_set_id,
-            command=ExpectedDraftRevisionRequest(expected_draft_revision=staged.draft_revision),
+            command=ExpectedDraftRevisionRequest(
+                expected_draft_revision=staged.draft_revision
+            ),
         )
         assert reviewed.valid is True
         assert reviewed.status == "validated"
@@ -217,7 +236,9 @@ async def test_web_metadata_change_set_preserves_lock_isolation_revision_and_app
             principal,
             tenant_id=tenant_id,
             change_set_id=created.metadata_change_set_id,
-            command=ExpectedDraftRevisionRequest(expected_draft_revision=staged.draft_revision),
+            command=ExpectedDraftRevisionRequest(
+                expected_draft_revision=staged.draft_revision
+            ),
             idempotency_key=uuid4(),
         )
     finally:
@@ -229,7 +250,8 @@ async def test_web_metadata_change_set_preserves_lock_isolation_revision_and_app
     with web_postgres_database.connect_owner() as connection:
         stored = connection.execute(
             """
-            SELECT copy_group.copy_group_name,
+            SELECT copy_group.copy_group_id,
+                   copy_group.copy_group_name,
                    copy_group.copy_group_description,
                    copy_group.is_active
               FROM core.copy_group AS copy_group
@@ -238,6 +260,7 @@ async def test_web_metadata_change_set_preserves_lock_isolation_revision_and_app
             (tenant_id,),
         ).fetchone()
     assert stored == {
+        "copy_group_id": existing_group["copy_group_id"],
         "copy_group_name": "CUSTOMERS",
         "copy_group_description": "Customer ingestion",
         "is_active": True,

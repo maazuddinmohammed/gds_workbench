@@ -78,7 +78,7 @@ The server derives Group `mapping_context_digest` and nullable `code_context_dig
 
 Group digests cover System-level context rather than an individual Check target. A Group-only refresh can stamp fresh context without proving every retained Check was reconsidered; a Check-only update does not itself refresh the Group digest. Review relevant changes before refreshing currentness, and report unresolved stale/protected definitions.
 
-Use [existing work and update scope](../working-method.md#existing-work-and-update-scope). Ordinary Model Change Set records overlay by canonical key; omitted applied definitions remain. The existing backend agent reconciler instead expects a **complete System ledger** and deactivates omitted unlocked active Groups/Checks. Never send a selected/affected subset to that reconciler as a complete ledger. Atlas's selected-update handling must preserve unselected definitions explicitly.
+Use [existing work and update scope](../methods/change-impact.md). Ordinary Model Change Set records overlay by canonical key; omitted applied definitions remain. The existing backend agent reconciler instead expects a **complete System ledger** and deactivates omitted unlocked active Groups/Checks. Never send a selected/affected subset to that reconciler as a complete ledger. Atlas's selected-update handling must preserve unselected definitions explicitly.
 
 ## Validation record checks
 

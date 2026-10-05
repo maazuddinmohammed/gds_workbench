@@ -4,7 +4,7 @@ import json
 from collections.abc import Mapping
 from datetime import date, datetime
 from hashlib import sha256
-from typing import Literal, cast
+from typing import Literal
 
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.cursor import CursorCodec
@@ -16,7 +16,7 @@ from gds_etl_workbench.domain.snapshots.metadata import (
     normalize_natural_key_value,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from pydantic import JsonValue, ValidationError
+from pydantic import ValidationError
 
 from gds_workbench_api.features.metadata.contracts import (
     MAX_METADATA_EXPORT_ROWS,
@@ -25,7 +25,6 @@ from gds_workbench_api.features.metadata.contracts import (
     OPERATIONAL_DATASETS,
     MetadataDatabase,
     MetadataDatasetDescription,
-    MetadataDatasetDetail,
     MetadataDatasetRegistry,
     MetadataFilter,
     MetadataObjectNotFoundError,
@@ -137,24 +136,6 @@ class DatabaseMetadataService:
             items=items,
             next_cursor=next_cursor,
         )
-
-    async def describe_dataset(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        dataset: MetadataDataset,
-    ) -> MetadataDatasetDetail:
-        async with self._database.read_transaction(
-            isolation=ReadIsolation.REPEATABLE_READ
-        ) as transaction:
-            await self._authorizer.authorize_tenant(
-                transaction,
-                principal,
-                tenant_id=tenant_id,
-                policy=ToolPolicy.TENANT_READ,
-            )
-        return metadata_dataset_detail(tenant_id=tenant_id, dataset=dataset)
 
     async def list_objects(
         self,
@@ -317,26 +298,10 @@ def _metadata_dataset_description(dataset: MetadataDataset) -> MetadataDatasetDe
 
 
 def metadata_dataset_registry(*, tenant_id: int) -> MetadataDatasetRegistry:
-    """Project all canonical V2 sheets without database internals."""
+    """Project the same natural-key fields used by canonical Metadata workbooks."""
     return MetadataDatasetRegistry(
         tenant_id=tenant_id,
         datasets=tuple(_metadata_dataset_description(name) for name in METADATA_DATASETS),
-    )
-
-
-def metadata_dataset_detail(
-    *,
-    tenant_id: int,
-    dataset: MetadataDataset,
-) -> MetadataDatasetDetail:
-    """Expose canonical field types and bounds for one authorized Metadata sheet."""
-    description = _metadata_dataset_description(dataset)
-    definition = DATASETS_BY_NAME[dataset]
-    return MetadataDatasetDetail(
-        **description.model_dump(),
-        tenant_id=tenant_id,
-        row_schema=definition.row_model.model_json_schema(),
-        fixed_values=cast(dict[str, JsonValue], dict(definition.fixed_values)),
     )
 
 

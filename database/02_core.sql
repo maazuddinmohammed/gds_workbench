@@ -26,6 +26,7 @@ CREATE TABLE core.tenant (
     gds_admin_catalog VARCHAR(255) NOT NULL,
     gds_connection_id BIGINT,
     tenant_visibility VARCHAR(20) NOT NULL DEFAULT 'private',
+    value JSONB,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -46,6 +47,7 @@ CREATE TABLE core.system (
     system_name VARCHAR(200) NOT NULL,
     system_description TEXT,
     system_type_id BIGINT NOT NULL,
+    value JSONB,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -90,6 +92,7 @@ CREATE TABLE core.connection (
     is_global_data_store BOOLEAN NOT NULL DEFAULT FALSE,
     test_initial_batch_id BIGINT,
     test_incremental_batch_ids BIGINT[],
+    value JSONB,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -115,6 +118,7 @@ CREATE TABLE core.connection_location (
     connection_location_secret_reference TEXT NOT NULL,
     connection_location_container VARCHAR(255) NOT NULL,
     connection_location_path TEXT NOT NULL,
+    value JSONB,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -177,6 +181,7 @@ CREATE TABLE core.object (
     object_type_id BIGINT NOT NULL,
     zone_id BIGINT NOT NULL,
     is_locked BOOLEAN NOT NULL DEFAULT FALSE,
+    value JSONB,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -215,6 +220,7 @@ CREATE TABLE core.attribute (
     is_mapped BOOLEAN NOT NULL DEFAULT FALSE,
     is_purge BOOLEAN NOT NULL DEFAULT FALSE,
     is_locked BOOLEAN NOT NULL DEFAULT FALSE,
+    value JSONB,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -307,6 +313,7 @@ CREATE TABLE core.copy_group (
     copy_group_name VARCHAR(200) NOT NULL,
     copy_group_description TEXT,
     is_member_group_required BOOLEAN NOT NULL DEFAULT FALSE,
+    value JSONB,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -330,6 +337,7 @@ CREATE TABLE core.member_group (
     member_group_name VARCHAR(200) NOT NULL,
     member_group_description TEXT,
     member_group_initial_load_date DATE,
+    value JSONB,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -345,6 +353,28 @@ CREATE TABLE core.member_group (
         reference.is_nonblank(member_group_name)
     )
 );
+
+CREATE TABLE core.member (
+    member_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    member_group_id BIGINT NOT NULL,
+    member_code VARCHAR(100) NOT NULL,
+    member_name VARCHAR(200) NOT NULL,
+    member_description TEXT,
+    member_attribute_name VARCHAR(400),
+    value JSONB,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    CONSTRAINT fk_member_group FOREIGN KEY (member_group_id)
+        REFERENCES core.member_group (member_group_id) ON DELETE NO ACTION,
+    CONSTRAINT ck_member_code CHECK (reference.is_nonblank(member_code)),
+    CONSTRAINT ck_member_name CHECK (reference.is_nonblank(member_name))
+);
+
+CREATE UNIQUE INDEX ux_member_group_code_ci
+    ON core.member (member_group_id, lower(btrim(member_code)));
 
 CREATE TABLE core.copy_group_control (
     copy_group_control_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -401,6 +431,7 @@ CREATE TABLE core.copy (
     copy_source_order INTEGER NOT NULL DEFAULT 1 CHECK (copy_source_order > 0),
     source_data_operation_id BIGINT NOT NULL,
     target_data_operation_id BIGINT NOT NULL,
+    value JSONB,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -436,6 +467,7 @@ CREATE TABLE core.process_group (
     process_group_dependency_order INTEGER NOT NULL DEFAULT 1
         CHECK (process_group_dependency_order > 0),
     copy_group_id BIGINT NOT NULL,
+    value JSONB,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -470,6 +502,7 @@ CREATE TABLE core.process (
     process_executable TEXT NOT NULL,
     process_type_id BIGINT NOT NULL,
     process_group_id BIGINT NOT NULL,
+    value JSONB,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,

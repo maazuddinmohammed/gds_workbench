@@ -326,6 +326,8 @@ class CreateTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "INSERT INTO mcp.model_change_set (" in query:
             self.created = True
             return {

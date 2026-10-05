@@ -119,6 +119,7 @@ export function ModelWorkspaceShell({ api, model, activeStage, tenantLock, lockC
         <div className="model-identity-status">
           <span>Revision {model.model_revision}</span>
           {!model.is_active ? <span className="status-badge">Archived</span> : null}
+          {model.is_locked ? <span className="status-badge">Model locked</span> : null}
           {lockControl ?? <span className={tenantLock.owned_by_current_principal ? "model-lock is-held" : "model-lock"}>{lockLabel}</span>}
           <button className="model-status-refresh" type="button" aria-label="Refresh section status"
             title="Refresh section status" disabled={overview.isFetching}
@@ -187,7 +188,7 @@ export function ModelWorkspaceShell({ api, model, activeStage, tenantLock, lockC
           <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6" /></svg>
         </button>
       </div>
-      <main className="model-workspace">{children}</main>
+      <main className="model-workspace">{model.is_locked ? <p className="lock-context" role="status">Model locked. Model changes and workflows are disabled. Metadata remains available.</p> : null}{children}</main>
     </div>
   );
 }

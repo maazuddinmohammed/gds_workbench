@@ -170,7 +170,7 @@ export function AssertionEditor({ api, tenantId, modelId, modelRevision, hasTena
         {imported ? <p role="alert">This assertion was imported. Update it through its source import, or add a new manual assertion.</p> : null}
         {(!editing || selectedRecord) ? <fieldset key={`${selectedDocument?.modeling_assertion_document_id ?? documentMode}:${selectedRecord?.modeling_assertion_record_id ?? "new"}`} className="assertion-editor-fields assertion-content-fields" disabled={frozen || Boolean(unavailable) || Boolean(recordBlocked)}>
           <legend className="sr-only">Assertion content</legend>
-          <p className="field-help">A document contains multiple assertions. Each key identifies one assertion and must be unique within this Model.</p>
+          <p className="field-help">Assertion keys must be unique within this Model.</p>
           <div className="agent-run-grid agent-run-grid-two">
             <label><span>Assertion key</span><input name="key" aria-label="Assertion key" aria-describedby="assertion-key-help" required maxLength={100} pattern="[A-Za-z][A-Za-z0-9_.\-]*" readOnly={editing} defaultValue={selectedRecord?.modeling_assertion_record_key} placeholder="customer_identity" /><small id="assertion-key-help">{editing ? "The key stays the same when you edit." : "Start with a letter; use letters, numbers, dots, underscores or hyphens."}</small></label>
             <TypeField name="type" label="Assertion type" required options={assertionTypes} initialValue={selectedRecord?.modeling_assertion_record_type ?? "business_rule"} />
@@ -179,7 +179,6 @@ export function AssertionEditor({ api, tenantId, modelId, modelRevision, hasTena
           <label><span>Additional context (optional)</span><textarea name="notes" rows={3} defaultValue={typeof selectedRecord?.modeling_assertion_details.notes === "string" ? selectedRecord.modeling_assertion_details.notes : ""} placeholder="Examples, exceptions, definitions, formulas, or other useful context." /></label>
           <label><span>Reference (optional)</span><input name="reference" defaultValue={typeof selectedRecord?.modeling_assertion_source_location?.reference === "string" ? selectedRecord.modeling_assertion_source_location.reference : ""} placeholder="Document section, page, or meeting reference" /></label>
         </fieldset> : null}
-        <p className="field-help">Active assertions are available to all downstream workflows. Each agent uses what is relevant to its task and reports missing evidence or conflicts.</p>
         {!parent && documents.isError ? <p role="alert">Documents could not be loaded. <button type="button" className="text-action" onClick={() => void documents.refetch()}>Retry</button></p> : null}
         {selectedDocument?.is_active === false ? <p role="alert">This document is inactive. Choose an active document.</p> : null}
         {stale && !uncertain ? <p role="alert">The Model changed. Close and reopen this form before saving.</p> : null}

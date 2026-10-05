@@ -1,6 +1,8 @@
 """Human edits of Model enrichment, with revision fencing and durable replay."""
 
-from typing import Annotated, Literal, Self
+import re
+from contextlib import AbstractAsyncContextManager
+from typing import Annotated, Literal, Protocol, Self
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Path
@@ -13,26 +15,69 @@ from gds_etl_workbench.domain.errors import (
     TenantLockRequiredError,
     WorkbenchError,
 )
+from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from psycopg import Error
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from gds_workbench_api.dependencies import principal_dependency
-from gds_workbench_api.features.metadata.review import (
-    MetadataReviewDatabase,
-    MetadataReviewRecord,
-    ReviewMetadataRecordsResult,
-)
 from gds_workbench_api.features.models import ModelNotFoundError
 from gds_workbench_api.features.workflows.authoring.lifecycle import raise_workflow_lifecycle_error
 
+type RecordId = Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)]
+type ReviewRevision = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$", min_length=64, max_length=64)]
 
-class EnrichmentReviewRecord(MetadataReviewRecord):
+
+class EnrichmentReviewRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    record_id: RecordId
+    expected_revision: ReviewRevision
+    description: str | None = Field(default=None, max_length=2000, repr=False)
+
     attribute_inferred_data_type: str | None = Field(default=None, max_length=100)
     is_natural_key: bool | None = None
     is_primary_key: bool | None = None
     is_nullable: bool | None = None
     is_pii: bool | None = None
+
+    @field_validator("description")
+    @classmethod
+    def bound_description(cls, value: str | None) -> str | None:
+        if value is not None and (
+            len(value.encode("utf-8")) > 2000
+            or re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", value)
+        ):
+            raise ValueError("Descriptions must be bounded text")
+        return value
+
+
+class ReviewedEnrichmentRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    record_id: RecordId
+    review_revision: ReviewRevision
+    is_active: bool
+    is_locked: bool
+
+
+class ReviewEnrichmentResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    review_event_id: RecordId
+    action_count: int = Field(ge=0, le=200)
+    records: list[ReviewedEnrichmentRecord] = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_result(self) -> Self:
+        ids = [row.record_id for row in self.records]
+        if ids != sorted(set(ids)) or self.action_count > len(ids):
+            raise ValueError("The enrichment review result is inconsistent")
+        return self
+
+
+class EnrichmentReviewDatabase(Protocol):
+    def write_transaction(self) -> AbstractAsyncContextManager[WriteTransaction]: ...
 
 
 class ReviewEnrichmentRequest(BaseModel):
@@ -65,7 +110,7 @@ class ReviewEnrichmentRequest(BaseModel):
 
 
 class DatabaseEnrichmentReviewService:
-    def __init__(self, *, database: MetadataReviewDatabase) -> None:
+    def __init__(self, *, database: EnrichmentReviewDatabase) -> None:
         self._database = database
 
     async def review_records(
@@ -76,7 +121,7 @@ class DatabaseEnrichmentReviewService:
         model_id: int,
         command: ReviewEnrichmentRequest,
         idempotency_key: UUID,
-    ) -> ReviewMetadataRecordsResult:
+    ) -> ReviewEnrichmentResult:
         if (
             principal.actor_kind is not ActorKind.HUMAN
             or principal.entra_tenant_id is None
@@ -131,7 +176,7 @@ class DatabaseEnrichmentReviewService:
                 raise_workflow_lifecycle_error(error)
         if row is None:
             raise DependencyUnavailableError()
-        result = ReviewMetadataRecordsResult.model_validate(row["result"])
+        result = ReviewEnrichmentResult.model_validate(row["result"])
         if {record.record_id for record in result.records} != {
             record.record_id for record in command.records
         }:
@@ -153,7 +198,7 @@ def create_enrichment_review_router(
         command: ReviewEnrichmentRequest,
         idempotency_key: Annotated[UUID, Header(alias="Idempotency-Key")],
         principal: RequestPrincipal = Depends(authenticate),
-    ) -> ReviewMetadataRecordsResult:
+    ) -> ReviewEnrichmentResult:
         return await service.review_records(
             principal,
             tenant_id=tenant_id,
@@ -163,7 +208,7 @@ def create_enrichment_review_router(
         )
 
     router.add_api_route(
-        "/review", review_records, methods=["POST"], response_model=ReviewMetadataRecordsResult
+        "/review", review_records, methods=["POST"], response_model=ReviewEnrichmentResult
     )
 
     return router

@@ -158,7 +158,7 @@ describe("Tenant Lock renewal", () => {
       name: "Extend duration (minutes)",
     });
     const help = screen.getByText(
-      "1–240 whole minutes from server time; the server checks this again.",
+      "1–240 minutes from now.",
     );
 
     expect(duration).toHaveAttribute("aria-describedby", help.id);
@@ -611,7 +611,7 @@ describe("Tenant Lock history", () => {
     await user.click(screen.getByRole("button", { name: "View history" }));
 
     const history = await screen.findByRole("region", { name: "Tenant Lock history" });
-    expect(listTenantLockHistory).toHaveBeenCalledWith(7, undefined);
+    expect(listTenantLockHistory).toHaveBeenCalledWith(7, undefined, 3);
     expect(within(history).getByText("Force unlocked")).toBeVisible();
     expect(within(history).getByText("Elena Morris")).toBeVisible();
     expect(within(history).getByText("Maaz")).toBeVisible();
@@ -622,25 +622,20 @@ describe("Tenant Lock history", () => {
     expect(within(history).getByText(formatExpectedDate("2026-08-24T14:30:00Z"))).toBeVisible();
   });
 
-  it("loads more only on click and stops when the server repeats a cursor", async () => {
-    const listTenantLockHistory = vi.fn(async (
-      _tenantId: number,
-      cursor?: string,
-    ) => ({
+  it("shows only the latest three events without older-page controls", async () => {
+    const listTenantLockHistory = vi.fn(async () => ({
       tenant_id: 7,
-      items: [
-        {
-          event_id: cursor ? 42 : 41,
-          event_type: cursor ? "renewed" as const : "acquired" as const,
-          owner_display_name: "Maaz",
-          actor_display_name: "Maaz",
-          reason: null,
-          acquired_at: "2026-08-24T14:00:00Z",
-          expires_at: "2026-08-24T15:00:00Z",
-          created_at: cursor ? "2026-08-24T14:30:00Z" : "2026-08-24T14:00:00Z",
-        },
-      ],
-      next_cursor: "repeat-cursor",
+      items: [44, 43, 42, 41].map((eventId) => ({
+        event_id: eventId,
+        event_type: "renewed" as const,
+        owner_display_name: "Maaz",
+        actor_display_name: "Maaz",
+        reason: `Event ${eventId}`,
+        acquired_at: "2026-08-24T14:00:00Z",
+        expires_at: "2026-08-24T15:00:00Z",
+        created_at: "2026-08-24T14:30:00Z",
+      })),
+      next_cursor: "older-events",
     }));
     const api = {
       acquireTenantLock: vi.fn(),
@@ -650,22 +645,15 @@ describe("Tenant Lock history", () => {
       listTenantLockHistory,
     };
     const user = userEvent.setup();
-
-    renderTenantLock({
-      api,
-      readTenantHome: vi.fn(async () => unlockedTenant()),
-    });
+    renderTenantLock({ api, readTenantHome: vi.fn(async () => unlockedTenant()) });
     await user.click(await screen.findByRole("button", { name: "View history" }));
 
-    expect((await screen.findAllByText("Acquired"))[0]).toBeVisible();
+    expect(await screen.findByText("Event 44")).toBeVisible();
+    expect(screen.getByText("Event 43")).toBeVisible();
+    expect(screen.getByText("Event 42")).toBeVisible();
+    expect(screen.queryByText("Event 41")).not.toBeInTheDocument();
     expect(listTenantLockHistory).toHaveBeenCalledTimes(1);
-    expect(listTenantLockHistory).toHaveBeenLastCalledWith(7, undefined);
-
-    await user.click(screen.getByRole("button", { name: "Load more" }));
-
-    expect(await screen.findByText("Renewed")).toBeVisible();
-    expect(listTenantLockHistory).toHaveBeenCalledTimes(2);
-    expect(listTenantLockHistory).toHaveBeenLastCalledWith(7, "repeat-cursor");
+    expect(listTenantLockHistory).toHaveBeenCalledWith(7, undefined, 3);
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
   });
 

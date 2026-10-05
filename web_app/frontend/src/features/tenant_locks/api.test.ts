@@ -21,6 +21,7 @@ describe("Tenant Lock HTTP adapter", () => {
     await api.overrideTenantLock(7, { reason: "Incident 4821 access recovery" });
     await api.listTenantLockHistory(7);
     await api.listTenantLockHistory(7, "opaque-next");
+    await api.listTenantLockHistory(7, undefined, 3);
 
     expect(calls).toEqual([
       ["/api/v1/tenants/7/lock/acquire", {
@@ -47,6 +48,7 @@ describe("Tenant Lock HTTP adapter", () => {
         "/api/v1/tenants/7/lock/history?page_size=50&cursor=opaque-next",
         undefined,
       ],
+      ["/api/v1/tenants/7/lock/history?page_size=3", undefined],
     ]);
   });
 });

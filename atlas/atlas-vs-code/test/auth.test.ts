@@ -70,7 +70,7 @@ describe("acquireMicrosoftAccessToken", () => {
       [`${PRODUCTION_MCP_URL}/workbench.access`, `VSCODE_TENANT:${TENANT_ID}`],
       {
         createIfNone: {
-          detail: "Sign in with the Microsoft account authorized for GDS Workbench.",
+          detail: "Sign in with the Microsoft account authorized for Atlas Local Workbench.",
         },
       },
     );
@@ -114,7 +114,7 @@ describe("acquireMicrosoftAccessToken", () => {
 
     expect(getSession.mock.calls[0]?.[2]).toEqual({
       forceNewSession: {
-        detail: "GDS Workbench rejected the expired session. Sign in again to continue Stage.",
+        detail: "Atlas Local Workbench rejected the expired session. Sign in again to continue Stage.",
       },
     });
     expect(getSession.mock.calls[0]?.[1]).toEqual([

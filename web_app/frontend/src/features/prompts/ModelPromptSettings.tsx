@@ -8,6 +8,7 @@ import {
   type ColumnDef,
 } from "@tanstack/react-table";
 
+import { WorkspaceToolbar } from "../../shared/ui";
 import { ApiError } from "../../core/http";
 import { ModelSettingsTabs } from "../models/ModelSettingsScreen";
 import type { ModelDetail } from "../models/api";
@@ -129,14 +130,7 @@ export function ModelPromptSettings({
   return (
     <section className="model-prompt-settings page-enter" aria-labelledby="model-prompts-heading">
       <h1 className="model-section-title sr-only" id="model-prompts-heading">Prompts</h1>
-      <header className="model-prompts-commandbar model-section-toolbar">
-        <div className="workflow-command-context">
-          <ModelSettingsTabs model={model} active="prompts" />
-          <span className={canAssign ? "lock-context is-held" : "lock-context"}>
-            {permissionLabel}
-          </span>
-        </div>
-        <div className="workflow-command-actions">
+      <WorkspaceToolbar actions={
           <button
             className="button button-secondary button-small"
             type="button"
@@ -148,8 +142,10 @@ export function ModelPromptSettings({
           >
             {query.isFetching ? "Refreshing…" : "Refresh"}
           </button>
-        </div>
-      </header>
+      }>
+        <ModelSettingsTabs model={model} active="prompts" />
+        <span className={canAssign ? "lock-context is-held" : "lock-context"}>{permissionLabel}</span>
+      </WorkspaceToolbar>
       <p className="model-prompts-context">Global defaults are read-only. Model overrides use active, published Tenant versions.</p>
 
       {query.isPending ? (
@@ -165,7 +161,7 @@ export function ModelPromptSettings({
       ) : query.data.items.length === 0 ? (
         <div className="empty-state compact">No agentic workflow stages are available for this Model.</div>
       ) : (
-        <div className="table-scroll model-prompts-table-scroll">
+        <div className="table-scroll model-prompts-table-scroll ledger-grid" role="region" aria-label="Model Prompt assignments table" tabIndex={0}>
           <table aria-label="Effective Model Prompt assignments">
             <thead>
               {table.getHeaderGroups().map((group) => (
@@ -384,7 +380,6 @@ function PromptAssignmentDialog({
             </p>
           ) : null}
           <footer className="dialog-actions">
-            <p>The API rechecks Tenant Lock, role, Model ownership, version status, and assignment fencing.</p>
             <div>
               <button className="button button-secondary button-small" type="button" onClick={onClose}>
                 Cancel

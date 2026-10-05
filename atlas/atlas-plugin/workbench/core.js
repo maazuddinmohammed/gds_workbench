@@ -28,6 +28,23 @@
       .join(",")}}`;
   }
 
+  function validateSubagentPolicy(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value) ||
+        !["current", "auto", "custom"].includes(value.mode) ||
+        Object.keys(value).some(key => !["mode", "model"].includes(key))) {
+      throw new Error("Invalid sub-agent policy. Choose current, auto or custom.");
+    }
+    if (value.mode === "custom") {
+      if (typeof value.model !== "string" || !value.model || value.model.length > 200 ||
+          value.model !== value.model.trim() || /[\u0000-\u001f\u007f-\u009f]/.test(value.model)) {
+        throw new Error("Custom sub-agent policy requires one model name or ID, at most 200 characters, without surrounding whitespace or control characters.");
+      }
+    } else if (Object.hasOwn(value, "model")) {
+      throw new Error("Only the custom sub-agent policy accepts a model.");
+    }
+    return value;
+  }
+
   function normalize(area, field, value) {
     if (typeof value !== "string") return value;
     const trimmed = value.replace(/^ +| +$/g, "");
@@ -118,5 +135,5 @@
     });
   }
 
-  return { active, isEntityOwnedModelCatalog, key, normalize, overlay, reviewActions, stableStringify };
+  return { active, isEntityOwnedModelCatalog, key, normalize, overlay, reviewActions, stableStringify, validateSubagentPolicy };
 });

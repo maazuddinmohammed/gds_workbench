@@ -79,10 +79,6 @@ export function MetadataExportDialog({
             onClick={onClose}
           >×</button>
         </header>
-        <p>
-          The server creates one bounded, versioned workbook in memory. Export does not require
-          a Tenant Lock.
-        </p>
         <div className="metadata-export-modes">
           <label>
             <input
@@ -92,7 +88,7 @@ export function MetadataExportDialog({
               checked={mode === "selected"}
               onChange={() => setMode("selected")}
             />
-            <span><strong>Selected sheets</strong><small>Choose one or more below.</small></span>
+            <span><strong>Selected sheets</strong></span>
           </label>
           <label>
             <input

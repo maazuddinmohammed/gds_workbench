@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearch } from "@tanstack/react-router";
+import { WorkspaceToolbar } from "../../shared/ui";
 
 import type { TenantHomeRecord, TenantsApi } from "../tenants/api";
 import { canAuthorModels } from "../tenants/presentation";
@@ -27,7 +28,7 @@ export function ModelSettingsScreen({ api, home, model }: {
   const modelId = model.model_id;
   const hasTenantLock = home.lock.owned_by_current_principal === true;
   const stale = initialModel.model_revision !== model.model_revision;
-  const disabledReason = !model.is_active ? "Archived Models are read-only."
+  const disabledReason = model.is_locked ? "Model locked. Unlock it before changing settings." : !model.is_active ? "Archived Models are read-only."
     : !canAuthorModels(home.tenant.effective_role) ? "Architect permission required to update Model settings."
       : !hasTenantLock ? "Tenant Lock required to update Model settings."
         : stale || needsRefresh ? "The Model changed. Your edits are preserved. Refresh saved settings before retrying."
@@ -73,13 +74,12 @@ export function ModelSettingsScreen({ api, home, model }: {
 
   return <section className="model-settings-page page-enter" aria-labelledby="model-settings-heading">
     <h1 className="model-section-title sr-only" id="model-settings-heading" ref={heading} tabIndex={-1}>Definition</h1>
-    <header className="models-commandbar model-section-toolbar">
-      <ModelSettingsTabs model={model} active="definition" />
+    <WorkspaceToolbar actions={
       <button className="button button-secondary button-small" type="button" disabled={busy} onClick={() => {
         if (dirty) setConfirmRefresh(true);
         else { mutation.reset(); void refresh(); }
       }}>{refreshing ? "Refreshing…" : "Refresh saved settings"}</button>
-    </header>
+    }><ModelSettingsTabs model={model} active="definition" /></WorkspaceToolbar>
     {disabledReason ? <p className="lock-context">{disabledReason}</p> : null}
     {confirmRefresh ? <div className="model-settings-refresh" role="alert">
       <p>Refreshing replaces your unsaved edits with the saved Model settings.</p>
@@ -98,7 +98,7 @@ export function ModelSettingsScreen({ api, home, model }: {
 export function ModelSettingsTabs({ model, active }: { model: ModelDetail; active: "definition" | "prompts" }) {
   const { layer } = useSearch({ strict: false });
   const params = { tenantId: String(model.tenant_id), modelId: String(model.model_id) };
-  return <nav className="models-mode-tabs model-settings-tabs" aria-label="Model settings pages">
+  return <nav className="workspace-tabs" aria-label="Model settings pages">
     <Link className={active === "definition" ? "is-active" : ""} to="/tenants/$tenantId/models/$modelId/settings"
       params={params} search={layer ? { layer } : {}} aria-current={active === "definition" ? "page" : undefined}>Definition</Link>
     <Link className={active === "prompts" ? "is-active" : ""} to="/tenants/$tenantId/models/$modelId/settings/prompts"

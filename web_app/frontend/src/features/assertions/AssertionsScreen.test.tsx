@@ -15,11 +15,22 @@ describe("Model Assertions", () => {
     const ledger = await screen.findByRole("table", { name: "Assertion Documents" });
     expect(within(ledger).getByText("Customer governance rules")).toBeVisible();
 
+    const toggle = screen.getByRole("button", { name: "Filters" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByLabelText("Document name prefix")).not.toBeVisible();
+    toggle.focus();
+    await user.keyboard("{Enter}");
     await user.type(screen.getByLabelText("Document name prefix"), " Customer ");
+    await user.click(toggle);
+    expect(screen.getByLabelText("Document name prefix")).not.toBeVisible();
+    await user.click(toggle);
+    expect(screen.getByLabelText("Document name prefix")).toHaveValue(" Customer ");
     await user.selectOptions(screen.getByLabelText("Source System code"), "CRM");
     await user.selectOptions(screen.getByLabelText("Document activity"), "true");
     await user.click(screen.getByRole("button", { name: "Apply Document filters" }));
     await screen.findByRole("table", { name: "Assertion Documents" });
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Filters/ })).toHaveTextContent(/Filters\s*3/));
+    expect(screen.getByRole("button", { name: /^Filters/ })).toHaveAttribute("aria-expanded", "true");
 
     expect(fetcher).toHaveBeenCalledWith(
       "/api/v1/tenants/7/models/18/assertions/documents?source_system_code=crm&active=true&name_prefix=customer&page_size=200",
@@ -44,11 +55,15 @@ describe("Model Assertions", () => {
 
     await user.click(screen.getByRole("link", { name: "Open Assertion Document 31" }));
     expect(await screen.findByRole("table", { name: "Assertion Records" })).toBeVisible();
+    expect(screen.getByLabelText("Record key prefix")).not.toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Filters" }));
     await user.type(screen.getByLabelText("Record key prefix"), " Customer. ");
     await user.selectOptions(screen.getByLabelText("Record status"), "inactive");
     await user.selectOptions(screen.getByLabelText("Record lock"), "false");
     await user.click(screen.getByRole("button", { name: "Apply Record filters" }));
     await screen.findByRole("table", { name: "Assertion Records" });
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Filters/ })).toHaveTextContent(/Filters\s*3/));
+    expect(screen.getByRole("button", { name: /^Filters/ })).toHaveAttribute("aria-expanded", "true");
 
     expect(fetcher).toHaveBeenCalledWith(
       "/api/v1/tenants/7/models/18/assertions/records?document_id=31&status=inactive&locked=false&key_prefix=customer.&page_size=200",

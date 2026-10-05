@@ -3,15 +3,23 @@
 from __future__ import annotations
 
 import json
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Protocol
 
 from gds_etl_workbench.domain.errors import WorkbenchError
+from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationInfo, field_validator
 
 type MappingEntityType = Literal["logical_entity", "dimensional_entity"]
 type MappingStatus = Literal["active", "inactive", "deprecated"]
 type JsonObject = dict[str, JsonValue]
+
+
+class MappingReadDatabase(Protocol):
+    def read_transaction(
+        self, *, isolation: ReadIsolation = ReadIsolation.READ_COMMITTED
+    ) -> AbstractAsyncContextManager[ReadTransaction]: ...
 
 
 class ContractModel(BaseModel):

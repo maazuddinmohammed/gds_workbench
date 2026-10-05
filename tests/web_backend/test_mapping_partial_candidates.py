@@ -142,3 +142,29 @@ async def test_missing_output_preserves_protected_saved_transformations(
             for record in result.changes[0].records
         )
         assert result.mapped_attribute_count == 5
+
+
+@pytest.mark.parametrize("layer", ["logical_entity", "dimensional_entity"])
+async def test_generated_key_note_alone_cannot_create_a_mapping_pair(layer: ModeledEntityType) -> None:
+    preparation = mapping_preparation(modeled_entity_type=layer, attribute_count=3)
+    header = preparation.context.headers[0]
+    attributes = tuple(item.model_copy(update={"is_surrogate_key": index == 0})
+                       for index, item in enumerate(preparation.context.target.attributes))
+    context = preparation.context.model_copy(update={
+        "target": preparation.context.target.model_copy(update={"attributes": attributes}),
+        "headers": (header.model_copy(update={"modeled_entity": header.modeled_entity.model_copy(
+            update={"attributes": attributes})}),),
+    })
+    preparation = preparation.model_copy(update={"context": context})
+    candidate = mapping_candidate()
+    candidate["object_mapping"] = None
+    candidate["attribute_mappings"] = [{
+        "modeled_attribute_name": attributes[0].attribute_name,
+        "attribute_mapping_transformation_document": {"transformation_logic": "Generated; omit from load SELECT."},
+    }]
+    validator = CompleteMappingCandidateValidator(preparation=preparation)
+    assert not (await validator.validate(candidate)).issues
+    result = validator.parse_validated(candidate)
+    assert result.changes == ()
+    assert result.normalized.outcome == "no_applicable_source"
+    assert not result.has_transformations

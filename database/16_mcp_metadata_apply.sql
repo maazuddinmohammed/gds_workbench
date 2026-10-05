@@ -298,13 +298,13 @@ BEGIN
               object_type_code VARCHAR(100),
               zone_code VARCHAR(30),
               is_locked BOOLEAN,
-              is_active BOOLEAN
+              value JSONB, is_active BOOLEAN
           )
     )
     INSERT INTO core.object AS target (
         connection_id, source_tenant_id, object_schema, object_name, fc_object_schema,
         fc_object_name, object_transformation, object_description,
-        batch_attribute_name, object_type_id, zone_id, is_locked, is_active,
+        batch_attribute_name, object_type_id, zone_id, is_locked, value, is_active,
         created_by, updated_by
     )
     SELECT connection.connection_id,
@@ -319,7 +319,7 @@ BEGIN
            object_type.object_type_id,
            zone.zone_id,
            records.is_locked,
-           records.is_active,
+           records.value, records.is_active,
            v_actor,
            v_actor
       FROM records
@@ -369,6 +369,7 @@ BEGIN
         object_type_id = EXCLUDED.object_type_id,
         zone_id = EXCLUDED.zone_id,
         is_locked = EXCLUDED.is_locked,
+        value = EXCLUDED.value,
         is_active = EXCLUDED.is_active,
         updated_time = v_now,
         updated_by = EXCLUDED.updated_by
@@ -401,7 +402,7 @@ BEGIN
               attribute_nullability BOOLEAN, attribute_custom_code TEXT,
               is_surrogate_key BOOLEAN, is_natural_key BOOLEAN,
               is_meta_data BOOLEAN, is_masking_required BOOLEAN,
-              is_mapped BOOLEAN, is_purge BOOLEAN, is_locked BOOLEAN, is_active BOOLEAN
+              is_mapped BOOLEAN, is_purge BOOLEAN, is_locked BOOLEAN, value JSONB, is_active BOOLEAN
           )
     )
     INSERT INTO core.attribute AS target (
@@ -409,7 +410,7 @@ BEGIN
         attribute_description, attribute_data_type, attribute_inferred_data_type,
         attribute_nullability,
         attribute_custom_code, is_surrogate_key, is_natural_key, is_meta_data,
-        is_masking_required, is_mapped, is_purge, is_locked, is_active,
+        is_masking_required, is_mapped, is_purge, is_locked, value, is_active,
         created_by, updated_by
     )
     SELECT object.object_id,
@@ -428,7 +429,7 @@ BEGIN
            records.is_mapped,
            records.is_purge,
            records.is_locked,
-           records.is_active,
+           records.value, records.is_active,
            v_actor,
            v_actor
       FROM records
@@ -462,6 +463,7 @@ BEGIN
         is_mapped = EXCLUDED.is_mapped,
         is_purge = EXCLUDED.is_purge,
         is_locked = EXCLUDED.is_locked,
+        value = EXCLUDED.value,
         is_active = EXCLUDED.is_active,
         updated_time = v_now,
         updated_by = EXCLUDED.updated_by;
@@ -658,16 +660,16 @@ BEGIN
         AS record (
             tenant_code VARCHAR(100), system_code VARCHAR(100),
             copy_group_name VARCHAR(200), copy_group_description TEXT,
-            is_member_group_required BOOLEAN, is_active BOOLEAN
+            is_member_group_required BOOLEAN, value JSONB, is_active BOOLEAN
         )
     )
     INSERT INTO core.copy_group AS target (
         tenant_id, system_id, copy_group_name, copy_group_description,
-        is_member_group_required, is_active, created_by, updated_by
+        is_member_group_required, value, is_active, created_by, updated_by
     )
     SELECT tenant.tenant_id, system.system_id, records.copy_group_name,
            records.copy_group_description, records.is_member_group_required,
-           records.is_active, v_actor, v_actor
+           records.value, records.is_active, v_actor, v_actor
       FROM records
       JOIN core.tenant AS tenant
         ON tenant.tenant_id = p_tenant_id
@@ -679,6 +681,7 @@ BEGIN
     ) DO UPDATE SET
         copy_group_description = EXCLUDED.copy_group_description,
         is_member_group_required = EXCLUDED.is_member_group_required,
+        value = EXCLUDED.value,
         is_active = EXCLUDED.is_active,
         updated_time = v_now,
         updated_by = EXCLUDED.updated_by;
@@ -694,16 +697,16 @@ BEGIN
         AS record (
             tenant_code VARCHAR(100), system_code VARCHAR(100),
             member_group_name VARCHAR(200), member_group_description TEXT,
-            member_group_initial_load_date DATE, is_active BOOLEAN
+            member_group_initial_load_date DATE, value JSONB, is_active BOOLEAN
         )
     )
     INSERT INTO core.member_group AS target (
         tenant_id, system_id, member_group_name, member_group_description,
-        member_group_initial_load_date, is_active, created_by, updated_by
+        member_group_initial_load_date, value, is_active, created_by, updated_by
     )
     SELECT tenant.tenant_id, system.system_id, records.member_group_name,
            records.member_group_description, records.member_group_initial_load_date,
-           records.is_active, v_actor, v_actor
+           records.value, records.is_active, v_actor, v_actor
       FROM records
       JOIN core.tenant AS tenant
         ON tenant.tenant_id = p_tenant_id
@@ -715,12 +718,49 @@ BEGIN
     ) DO UPDATE SET
         member_group_description = EXCLUDED.member_group_description,
         member_group_initial_load_date = EXCLUDED.member_group_initial_load_date,
+        value = EXCLUDED.value,
         is_active = EXCLUDED.is_active,
         updated_time = v_now,
         updated_by = EXCLUDED.updated_by;
     GET DIAGNOSTICS v_affected_count = ROW_COUNT;
     IF v_affected_count <> v_expected_count THEN
         RAISE EXCEPTION 'Member Group natural-key dependency changed' USING ERRCODE = '40001';
+    END IF;
+    v_action_count := v_action_count + v_affected_count;
+
+    v_expected_count := jsonb_array_length(v_change_set.member_document);
+    WITH records AS (
+        SELECT * FROM jsonb_to_recordset(v_change_set.member_document)
+        AS record (
+            tenant_code VARCHAR(100), system_code VARCHAR(100),
+            member_group_name VARCHAR(200), member_code VARCHAR(100),
+            member_name VARCHAR(200), member_description TEXT,
+            member_attribute_name VARCHAR(400), value JSONB, is_active BOOLEAN
+        )
+    )
+    INSERT INTO core.member AS target (
+        member_group_id, member_code, member_name, member_description,
+        member_attribute_name, value, is_active, created_by, updated_by
+    )
+    SELECT member_group.member_group_id, records.member_code, records.member_name,
+           records.member_description, records.member_attribute_name,
+           records.value, records.is_active, v_actor, v_actor
+      FROM records
+      JOIN core.tenant AS tenant ON tenant.tenant_id = p_tenant_id
+       AND lower(btrim(tenant.tenant_code)) = lower(btrim(records.tenant_code))
+      JOIN core.system AS system
+        ON lower(btrim(system.system_code)) = lower(btrim(records.system_code))
+      JOIN core.member_group AS member_group ON member_group.tenant_id = tenant.tenant_id
+       AND member_group.system_id = system.system_id
+       AND lower(btrim(member_group.member_group_name)) = lower(btrim(records.member_group_name))
+    ON CONFLICT (member_group_id, (lower(btrim(member_code)))) DO UPDATE SET
+        member_name = EXCLUDED.member_name, member_description = EXCLUDED.member_description,
+        member_attribute_name = EXCLUDED.member_attribute_name,
+        value = EXCLUDED.value,
+        is_active = EXCLUDED.is_active, updated_time = v_now, updated_by = EXCLUDED.updated_by;
+    GET DIAGNOSTICS v_affected_count = ROW_COUNT;
+    IF v_affected_count <> v_expected_count THEN
+        RAISE EXCEPTION 'Member natural-key dependency changed' USING ERRCODE = '40001';
     END IF;
     v_action_count := v_action_count + v_affected_count;
 
@@ -799,7 +839,7 @@ BEGIN
             copy_source_file_name TEXT, copy_source_file_pattern TEXT,
             copy_source_file_delimiter VARCHAR(20), source_file_type_name VARCHAR(200),
             copy_source_order INTEGER, source_data_operation_name VARCHAR(200),
-            target_data_operation_name VARCHAR(200), is_active BOOLEAN
+            target_data_operation_name VARCHAR(200), value JSONB, is_active BOOLEAN
         )
     ), resolved AS (
         SELECT copy_group.copy_group_id,
@@ -816,7 +856,7 @@ BEGIN
                records.copy_source_order,
                source_operation.data_operation_id AS source_data_operation_id,
                target_operation.data_operation_id AS target_data_operation_id,
-               records.is_active
+               records.value, records.is_active
           FROM records
           JOIN core.tenant AS tenant
             ON tenant.tenant_id = p_tenant_id
@@ -898,7 +938,7 @@ BEGIN
         copy_source_initial_sql_script, copy_source_incremental_sql_script,
         copy_source_file_name, copy_source_file_pattern, copy_source_file_delimiter,
         source_file_type_id, copy_source_order, source_data_operation_id,
-        target_data_operation_id, is_active, created_by, updated_by
+        target_data_operation_id, value, is_active, created_by, updated_by
     )
     SELECT copy_group_id,
            ingestion_object_mapping_id,
@@ -914,7 +954,7 @@ BEGIN
            copy_source_order,
            source_data_operation_id,
            target_data_operation_id,
-           is_active,
+           value, is_active,
            v_actor,
            v_actor
       FROM resolved
@@ -931,6 +971,7 @@ BEGIN
         copy_source_order = EXCLUDED.copy_source_order,
         source_data_operation_id = EXCLUDED.source_data_operation_id,
         target_data_operation_id = EXCLUDED.target_data_operation_id,
+        value = EXCLUDED.value,
         is_active = EXCLUDED.is_active,
         updated_time = v_now,
         updated_by = EXCLUDED.updated_by;
@@ -947,18 +988,18 @@ BEGIN
             tenant_code VARCHAR(100), system_code VARCHAR(100), zone_code VARCHAR(30),
             process_group_name VARCHAR(200), process_group_description TEXT,
             process_group_dependency_order INTEGER,
-            copy_group_name VARCHAR(200), is_active BOOLEAN
+            copy_group_name VARCHAR(200), value JSONB, is_active BOOLEAN
         )
     )
     INSERT INTO core.process_group AS target (
         tenant_id, system_id, zone_id, process_group_name,
         process_group_description, process_group_dependency_order,
-        copy_group_id, is_active, created_by, updated_by
+        copy_group_id, value, is_active, created_by, updated_by
     )
     SELECT tenant.tenant_id, system.system_id, zone.zone_id,
            records.process_group_name, records.process_group_description,
            records.process_group_dependency_order,
-           copy_group.copy_group_id, records.is_active, v_actor, v_actor
+           copy_group.copy_group_id, records.value, records.is_active, v_actor, v_actor
       FROM records
       JOIN core.tenant AS tenant
         ON tenant.tenant_id = p_tenant_id
@@ -978,6 +1019,7 @@ BEGIN
         process_group_description = EXCLUDED.process_group_description,
         process_group_dependency_order = EXCLUDED.process_group_dependency_order,
         copy_group_id = EXCLUDED.copy_group_id,
+        value = EXCLUDED.value,
         is_active = EXCLUDED.is_active,
         updated_time = v_now,
         updated_by = EXCLUDED.updated_by;
@@ -996,7 +1038,7 @@ BEGIN
             process_location TEXT, process_executable TEXT,
             object_tenant_code VARCHAR(100), object_system_code VARCHAR(100),
             object_connection_code VARCHAR(100), object_schema VARCHAR(400),
-            object_name VARCHAR(400), process_type_name VARCHAR(200), is_active BOOLEAN
+            object_name VARCHAR(400), process_type_name VARCHAR(200), value JSONB, is_active BOOLEAN
         )
     ), resolved AS (
         SELECT process_group.process_group_id,
@@ -1006,7 +1048,7 @@ BEGIN
                records.process_location,
                records.process_executable,
                process_type.process_type_id,
-               records.is_active
+               records.value, records.is_active
           FROM records
           JOIN core.tenant AS tenant
             ON tenant.tenant_id = p_tenant_id
@@ -1045,17 +1087,18 @@ BEGIN
     )
     INSERT INTO core.process AS target (
         connection_id, object_id, process_execution_order, process_location,
-        process_executable, process_type_id, process_group_id, is_active,
+        process_executable, process_type_id, process_group_id, value, is_active,
         created_by, updated_by
     )
     SELECT connection_id, object_id, process_execution_order, process_location,
-           process_executable, process_type_id, process_group_id, is_active,
+           process_executable, process_type_id, process_group_id, value, is_active,
            v_actor, v_actor
       FROM resolved
     ON CONFLICT ON CONSTRAINT uq_process_group_order DO UPDATE SET
         connection_id = EXCLUDED.connection_id,
         object_id = EXCLUDED.object_id,
         process_type_id = EXCLUDED.process_type_id,
+        value = EXCLUDED.value,
         is_active = EXCLUDED.is_active,
         updated_time = v_now,
         updated_by = EXCLUDED.updated_by;

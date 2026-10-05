@@ -2,6 +2,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vscode = require('vscode');
+const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
+const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
 const { createRequest, serveFixture, ID } = require('./host-fixture.cjs');
 
 exports.run = async () => {
@@ -11,9 +14,10 @@ exports.run = async () => {
     'Run through test:host using its disposable workspace and isolated profile');
   const resultPath = path.join(workspace, 'host-test-result.json');
   const checks = [];
+  let latency;
   let check = 'activation';
   const record = status => fs.writeFileSync(resultPath, JSON.stringify({
-    status, vscodeVersion: vscode.version, check, checks,
+    status, vscodeVersion: vscode.version, check, checks, latency,
   }));
   const invoke = async (input, name = 'atlas_stageApprovedManifest') => {
     const result = await vscode.lm.invokeTool(name, {
@@ -48,27 +52,63 @@ exports.run = async () => {
       message: 'Stage request manifest was not found.', stage_started: false, legacy_fallback_allowed: true,
     });
     checks.push(check);
-    for (const scenario of ['direct', 'chunked', 'changed-digest', 'lost-write', 'bad-fingerprint']) {
-      check = scenario;
+    for (const viaBridge of [false, true]) for (const scenario of ['direct', 'chunked', 'changed-digest', 'lost-write', 'bad-fingerprint']) {
+      check = `${viaBridge ? "bridge" : "copilot"}: ${scenario}`;
+      record("running");
+      let bridgeClient;
       const server = await serveFixture(scenario);
       const fixture = createRequest(workspace, scenario === 'chunked', server.endpoint);
       try {
         await vscode.workspace.getConfiguration('atlas.stageRunner').update(
           'localUrl', server.endpoint, vscode.ConfigurationTarget.Global);
+        if (viaBridge) {
+          assert.equal((await vscode.commands.executeCommand('atlasBridge.start')).status, 'ready');
+          bridgeClient = new Client({ name: 'packaged-relay-test', version: '1' });
+          await bridgeClient.connect(new StdioClientTransport({
+            command: process.env.ATLAS_STAGE_TEST_NODE,
+            args: [path.resolve(__dirname, '../../atlas-connector/atlas-connector.cjs'), 'serve'],
+            cwd: workspace, stderr: 'pipe',
+          }));
+          const tools = (await bridgeClient.listTools()).tools.map(tool => tool.name);
+          assert.ok(tools.includes('atlas_stageApprovedManifest'));
+          assert.ok(!tools.includes('stage_metadata_change_set'));
+          server.state.calls.length = 0;
+        }
+        const call = viaBridge
+          ? async (input, name = 'atlas_stageApprovedManifest') => (await bridgeClient.callTool({ name, arguments: input })).structuredContent
+          : invoke;
+        if (viaBridge && scenario === 'direct') {
+          const direct = new Client({ name: 'latency-baseline', version: '1' });
+          await direct.connect(new StreamableHTTPClientTransport(new URL(server.endpoint)));
+          try {
+            const baseline = [], bridged = [];
+            await call({}, 'atlas_checkStageRunner');
+            for (let i = 0; i < 30; i++) {
+              let start = performance.now();
+              await direct.callTool({ name: 'list_tenants', arguments: { page_size: 1 } });
+              baseline.push(performance.now() - start);
+              start = performance.now();
+              await call({}, 'atlas_checkStageRunner');
+              bridged.push(performance.now() - start);
+            }
+            baseline.sort((a,b) => a-b); bridged.sort((a,b) => a-b);
+            latency = { samples: 30, directMedianMs: baseline[15], bridgeMedianMs: bridged[15], bridgeP95Ms: bridged[28] };
+          } finally { await direct.close(); }
+        }
         const input = { ...fixture.input };
         if (scenario === 'direct') {
           const temporary = path.join(workspace, '.atlas/temp');
           fs.mkdirSync(temporary, { recursive: true });
-          const outputFile = path.join(temporary, 'ready.json');
-          const ready = await invoke({ outputFile }, 'atlas_checkStageRunner');
+          const outputFile = path.join(temporary, `${viaBridge ? 'bridge-' : ''}ready.json`);
+          const ready = await call({ outputFile }, 'atlas_checkStageRunner');
           assert.deepEqual(ready, { schema_version: '1.0', status: 'ready', backend: fixture.backend });
           assert.deepEqual(JSON.parse(fs.readFileSync(outputFile, 'utf8')), ready);
           checks.push('readiness tool and one-document export');
           delete input.expectedDigest;
-          input.outputFile = path.join(temporary, 'stage.json');
+          input.outputFile = path.join(temporary, `${viaBridge ? 'bridge-' : ''}stage.json`);
         }
         if (scenario === 'changed-digest') input.expectedDigest = '0'.repeat(64);
-        const receipt = await invoke(input);
+        const receipt = await call(input);
         assert.deepEqual(server.state.errors, []);
         if (scenario === 'changed-digest') {
           assert.equal(receipt.status, 'failed');
@@ -108,6 +148,8 @@ exports.run = async () => {
         }
         checks.push(check);
       } finally {
+        await bridgeClient?.close();
+        await vscode.commands.executeCommand("atlasBridge.stop");
         await server.close();
       }
     }

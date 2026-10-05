@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.authorization import RequestPrincipal
+from pydantic import JsonValue
 
 from gds_workbench_api.dependencies import principal_dependency
 from gds_workbench_api.features.models.contracts import (
@@ -13,6 +14,7 @@ from gds_workbench_api.features.models.contracts import (
     ModelStatus,
 )
 from gds_workbench_api.features.models.service import ModelService
+from gds_workbench_api.features.models.templates import default_model_templates
 
 
 def create_models_router(
@@ -45,6 +47,17 @@ def create_models_router(
         methods=["GET"],
         response_model=ModelCollection,
     )
+
+    async def read_templates(
+        tenant_id: int, *, principal: RequestPrincipal = Depends(authenticate)
+    ) -> dict[str, JsonValue]:
+        # Reuse the existing Tenant read authorization boundary.
+        await service.list_models(
+            principal, tenant_id=tenant_id, model_status="active", page_size=1, cursor=None
+        )
+        return default_model_templates()
+
+    router.add_api_route("/templates", read_templates, methods=["GET"])
 
     async def read_model(
         tenant_id: int, model_id: int, *, principal: RequestPrincipal = Depends(authenticate)

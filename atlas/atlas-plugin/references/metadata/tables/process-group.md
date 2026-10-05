@@ -17,6 +17,7 @@ Every field is listed explicitly. Exact current MCP/Snapshot schemas remain auth
 
 | Field | Accepted value / presence | Meaning and use |
 |---|---|---|
+| `value` | any valid JSON; optional; null allowed | Optional additional details. Preserve existing JSON; populate only when requested. No implied execution behavior. |
 | `tenant_code` | string; minLength=1; maxLength=100; pattern=\S; required | Owning Tenant code for this group/record; match the selected Change Set Tenant. Reference: [tenant](../read-only/tenant.md), [copy group](copy-group.md). |
 | `system_code` | string; minLength=1; maxLength=100; pattern=\S; required | Stable code identifying the System. Reference: [system](../read-only/system.md), [copy group](copy-group.md). |
 | `zone_code` | string; minLength=1; maxLength=30; required | Registered Zone identifying the group and its execution phase: selected Silver groups finish before Gold starts. Not automatically derived from the target Object. Reference: [zone](../read-only/zone.md). |

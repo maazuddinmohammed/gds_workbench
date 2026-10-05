@@ -114,6 +114,7 @@ export interface TenantLockApi {
   listTenantLockHistory: (
     tenantId: number,
     cursor?: string,
+    pageSize?: number,
   ) => Promise<TenantLockHistoryPage>;
 }
 
@@ -141,8 +142,8 @@ export function createTenantLockApi(request: HttpRequest): TenantLockApi {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(command),
       }),
-    listTenantLockHistory: (tenantId, cursor) => {
-      const query = new URLSearchParams({ page_size: "50" });
+    listTenantLockHistory: (tenantId, cursor, pageSize = 50) => {
+      const query = new URLSearchParams({ page_size: String(pageSize) });
       if (cursor) query.set("cursor", cursor);
       return request<TenantLockHistoryPage>(
         `/api/v1/tenants/${tenantId}/lock/history?${query}`,

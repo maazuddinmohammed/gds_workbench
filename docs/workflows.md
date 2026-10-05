@@ -1,7 +1,10 @@
 # Workflow sources and handoffs
 
-The SQL seeds and Python code are the maintained sources. Do not keep copied prompt
-text, schemas, tool lists or review transcripts in documentation.
+The SQL seeds and Python code are the maintained web workflow sources. Atlas
+plugin workflows live in its [task skills](../atlas/README.md#maintainer-boundaries)
+and load references on demand. The two applications share governed contracts
+and orchestrate their work independently. Do not copy prompt text, schemas, tool lists or review transcripts
+into this navigation guide.
 
 | Concern | Source |
 | --- | --- |
@@ -23,15 +26,19 @@ not silently change installed or already-running prompts.
 
 | Workflow | Main evidence and intended output |
 | --- | --- |
-| Object/Attribute Enrichment | Source context, selected physical metadata, ingestion lineage and current Profiles → supported descriptions and eligible missing inferred types. |
 | Profiling | Exact selected physical Attributes and row scope → deterministic current measurements with provenance. |
-| Analysis | Enriched physical Objects/Attributes, Profiles, lineage and relevant context → supported relationship inference; measured validation remains separate. |
+| Object/Attribute Enrichment | Source context, selected physical metadata, ingestion lineage and current Profiles → Model-owned descriptions, inferred types and natural/primary key, nullability and PII findings. Human edits and locks stay Model-specific. |
+| Analysis | Physical Objects/Attributes with available Model-owned enrichment, Profiles, lineage and relevant context → supported relationship inference; measured validation remains separate. |
 | Conceptual | Source context, physical evidence, Analysis and applicable Assertions → business concepts and relationships. |
-| Logical | Enriched physical metadata, Profiles, Analysis, Assertions and model naming/key/audit policy → normalized Entity/Attribute/relationship design. Conceptual context is supportive, not a mandatory substitute for physical evidence. |
+| Logical | Physical metadata with available Model-owned enrichment, Profiles, Analysis, Assertions and model naming/key/audit policy → normalized Entity/Attribute/relationship design. Conceptual context is supportive, not a mandatory substitute for physical evidence. |
 | Dimensional | Selected applied Logical Entities/Attributes, their authorized physical support, Profiles, Analysis, Assertions and Gold policy → dimensions, facts, bridges, grains and measures. |
 | Mapping | Modeled target/Attributes, eligible physical or modeled sources, support evidence, Assertions, existing protected Mapping and selected templates → Object/Attribute transformation documents per Entity/System pair. |
-| Code | Complete applied transformation documents, their exact saved template definitions, modeled target shape, eligible sources and frozen artifact requirements → SQL artifacts with exact source-System assignment. |
+| Code | Applied transformation documents, their exact saved template definitions, modeled target shape, eligible sources and frozen artifact requirements → SQL artifacts with exact source-System assignment. Partial Mapping requires explicit gaps and placeholders. |
 | Validation | Complete Mapping, relevant current Code, metadata and applicable requirements → deterministic Validation Groups/Checks. |
+
+Profiling precedes Model-owned Enrichment in the web workflow. Physical Metadata
+correction is a separate operation. The plugin currently lacks governed contracts
+for the web workflow's Model-owned enrichment; see its [capability boundaries](../atlas/atlas-plugin/references/platform/capabilities.md).
 
 Only configured variables/readers enter an agent request; do not assume an earlier
 workflow's whole output is implicitly appended. One-shot and tool-assisted modes

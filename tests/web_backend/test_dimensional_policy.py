@@ -241,9 +241,9 @@ def test_projection_adds_type_2_columns_only_when_dimension_historizes() -> None
     assert [item["dimensional_attribute_name"] for item in attributes] == [
         "Customer Dimension key",
         "Customer Name",
+        "Is Current",
         "Effective From",
         "Effective To",
-        "Is Current",
         "Loaded At",
     ]
     assert [item["dimensional_attribute_role"] for item in [attributes[0], *attributes[2:5]]] == [

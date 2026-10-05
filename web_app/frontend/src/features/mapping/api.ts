@@ -1,5 +1,6 @@
-import type { ModelRecordReviewApi } from "../model_record_review/api";
-import type { HttpRequest } from "../../core/http";
+import { METADATA_XLSX_MEDIA_TYPE } from "../metadata/api";
+import type { ModelRecordReviewApi, ModelRecordEditorApi } from "../model_record_review/api";
+import { ApiError, type HttpRequest } from "../../core/http";
 import type { JsonObject, ReviewStatus } from "../../shared/contracts";
 import type { ModelsApi } from "../models/api";
 import type { WorkflowsApi } from "../workflows/api";
@@ -142,6 +143,7 @@ export interface MappingAttributeDetail extends MappingAttribute {
 }
 
 export interface MappingTransport {
+  exportMapping: (tenantId: number, modelId: number, revision: number, entityType: MappingEntityType, systemCode: string) => Promise<{ blob: Blob; filename: string }>;
   listMappingGenerationTargets: (tenantId: number, modelId: number, entityType: MappingEntityType, pageSize?: number, cursor?: string) => Promise<MappingGenerationPage>;
   listMappingObjects: (
     tenantId: number,
@@ -177,6 +179,7 @@ export interface MappingTransport {
 }
 
 export type MappingApi = MappingTransport & ModelRecordReviewApi
+  & Pick<ModelRecordEditorApi, "readModelRecordEditor" | "saveModelRecord">
   & Pick<ModelsApi, "listModels">
   & Pick<
     WorkflowsApi,
@@ -193,6 +196,13 @@ export type MappingApi = MappingTransport & ModelRecordReviewApi
 
 export function createMappingApi(request: HttpRequest): MappingTransport {
   return {
+    exportMapping: (tenantId, modelId, revision, entityType, systemCode) => request(`/api/v1/tenants/${tenantId}/models/${modelId}/mapping/export`, {
+      method: "POST", headers: { "content-type": "application/json", accept: METADATA_XLSX_MEDIA_TYPE },
+      body: JSON.stringify({ expected_model_revision: revision, entity_type: entityType, source_system_code: systemCode }),
+    }, async (response) => {
+      if (response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== METADATA_XLSX_MEDIA_TYPE) throw new ApiError(502, "invalid_response", null);
+      return { blob: await response.blob(), filename: /filename="([A-Za-z0-9._-]{1,180}\.xlsx)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ?? "Mapping.xlsx" };
+    }),
     listMappingGenerationTargets: (tenantId, modelId, entityType, pageSize = 200, cursor) => {
       const query = new URLSearchParams({
         entity_type: entityType,

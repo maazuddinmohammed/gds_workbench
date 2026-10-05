@@ -401,6 +401,7 @@ async def read_model_review_snapshot(
             "model_id": model.model_id,
             "model_name": model.model_name,
             "model_revision": model.model_revision,
+            "is_locked": model.is_locked,
             "model_tenant_code": rows["model_details"][0].get(
                 "model_tenant_code", model.tenant_code
             ),

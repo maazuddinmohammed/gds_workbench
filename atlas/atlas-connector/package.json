@@ -1,0 +1,13 @@
+{
+  "name": "atlas-connector",
+  "version": "0.2.0",
+  "description": "Local Codex relay to the running Atlas VS Code extension. No standalone sign-in.",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "setup": "node install.cjs"
+  }
+}

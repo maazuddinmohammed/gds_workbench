@@ -1,10 +1,10 @@
 # Validation check design
 
-Owns check selection, expected behavior and population. The [Validation skill](../../skills/atlas-validation/SKILL.md) owns workflow/questions; [Validation records](../model/validation.md) owns fields, operators and current storage/SQL constraints. Use the [complete Mapping view](../model/mapping-documents.md#complete-context-for-coding-and-validation), without reconstructing upstream modeling decisions.
+Owns check selection, expected behavior and population. The [Validation skill](../../skills/atlas-verify/SKILL.md) owns workflow/questions; [Validation records](../model/validation.md) owns fields, operators and current storage/SQL constraints. Use the [complete Mapping view](../model/mapping-documents.md#complete-context-for-coding-and-validation), without reconstructing upstream modeling decisions.
 
 ## Establish what is being tested
 
-1. Bind each selected target and originating System to its applied Mapping. Identify changes, preserved checks and missing coverage through the shared [update-scope rules](../working-method.md#existing-work-and-update-scope).
+1. Bind each selected target and originating System to its applied Mapping. Identify changes, preserved checks and missing coverage through the shared [update-scope rules](../methods/change-impact.md).
 2. The agent selects the useful observation point for each failure: transformation output before persistence, or actual stored rows after the relevant framework operation. Use both only when they reveal distinct meaningful failures. This is a design decision, not a routine user selection; honor any explicit scope the user supplies.
 3. Define the exact population: contributing System, key/grain, Mapping predicates, batch/time window and runtime point. Full current state, historical state and one load's changes are different populations. Group association and equal batch numbers do not make two queries comparable.
 4. Read actual implementation only for the side being tested. Expected behavior comes from Mapping and attributable business rules. Comparing generated SQL with a copy of itself cannot expose a translation error. Do not invent filters, tolerances, nonempty-data guarantees or expected counts.
@@ -75,6 +75,6 @@ Keep concrete substitutions and diagnostic variants separate from saved definiti
 | `checks.preservation` | Selected updates preserve unrelated/locked work and pending edits; no partial input to complete-ledger retirement logic. |
 | `checks.evidence` | Distinguish authored definitions, structural checks, SQL preflight, unexecuted checks and unknown external-runner behavior. |
 
-Keep the concise coverage proposal and actual findings in the existing task and Workbench review. No second handoff ledger or invented result dataset is needed. Fix a bad test here; an ambiguous business rule returns to Mapping. Group freshness must reflect reviewed input changes, not just rewritten descriptions.
+Keep the concise coverage proposal and actual findings in the existing task and Atlas Local Workbench review. No second handoff ledger or invented result dataset is needed. Fix a bad test here; an ambiguous business rule returns to Mapping. Group freshness must reflect reviewed input changes, not just rewritten descriptions.
 
 Sources: the [Mapping consumer contract](../model/mapping-documents.md#complete-context-for-coding-and-validation), [Generated Code records](../model/generated-code.md) and the source pointers in [Validation records](../model/validation.md). These are documentation rules; automation of additional semantic checks remains implementation work.

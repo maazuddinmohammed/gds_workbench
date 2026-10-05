@@ -19,7 +19,8 @@ All 16 currently accepted Metadata Change Set datasets are listed below, grouped
 | [ingestion object mapping](tables/ingestion-object-mapping.md) | `ingestion_object_mapping` | Source-to-Bronze link used by Copy selection and provenance; multiple Sources may share a Bronze target. |
 | [ingestion attribute mapping](tables/ingestion-attribute-mapping.md) | `ingestion_attribute_mapping` | Optional reference correspondence, usually empty. Current ingestion uses Bronze metadata/custom code, not these records, to select columns. |
 | [copy group](tables/copy-group.md) | `copy_group` | A Tenant/System ingestion group containing Copy entries and associated execution control state. |
-| [member group](tables/member-group.md) | `member_group` | Existing named member grouping. Member-based execution is deferred; preserve records and default new Copy Groups to member-required=false. |
+| [member group](tables/member-group.md) | `member_group` | Optional Copy Group filter, associated through Copy Group Control; use only when requested. |
+| [member](tables/member.md) | `member` | Code and filter Attribute within a Member Group; natural key is Member Group + Member Code. |
 | [copy group control](tables/copy-group-control.md) | `copy_group_control` | Stored ingestion progress for one Copy Group and an optional Member Group. |
 | [copy](tables/copy.md) | `copy` | Extraction filters, landing naming/format, order, optional chunking and target loading function for an Object Mapping within a Copy Group. |
 | [process group](tables/process-group.md) | `process_group` | A Tenant/System/Zone processing group linked to the actual Copy Group whose ingestion precedes relevant processing. |
@@ -62,16 +63,22 @@ For example, changing a Copy landing-name pattern needs the Copy page and releva
 
 Use [editing](editing.md) before constructing records and [validation](validation.md) before reporting results. Current tool contracts and matching Snapshot schemas remain the contract evidence.
 
+## Optional details
+
+`value` is nullable JSONB on Object, Attribute, Copy, Process, Copy Group,
+Process Group, Member Group, Member, Tenant, System, Connection and Connection
+Location. It can hold any valid JSON value. Preserve it during unrelated edits;
+populate only when requested. Do not infer workflow behavior from it or store
+credentials/secret references. The Connection Locations foundational dataset
+exposes only Tenant/System/Connection keys, location type, environment and value.
+
 ## Documentation coverage
 
-- 10 editable physical tables / 16 datasets.
-- 4 foundational tables and 8 lookup tables, each with an explicit page.
-- 184 current field entries across the 22 table contracts; one proposed Process Group field documented separately.
-- 80 table-specific checklist entries, including observed checks, proposed checks, review items, deferred rules, server-only conditions and runtime-only behavior.
-- Runtime meanings not established in current source are identified rather than invented.
+- 11 editable physical tables / 17 operational datasets.
+- 5 foundational datasets and 8 reference datasets.
+- Runtime schemas remain authoritative for exact fields and constraints.
 
 ## Deferred additions
 
 - Copy order compatibility: default copy_source_order=1 is agreed. Current DB/backend/local contracts require unique order within a group; the proposed compatibility change is to [remove that separate uniqueness requirement](tables/copy.md#copy-order-and-default). Copy natural keys stay unchanged; this does not introduce runtime dependency stages.
 - `process_group_dependency_order`: Process Group field for ordering groups across selected Systems within each Zone phase, then pooling their Processes by execution order. Current payload schemas accept it; see the [contract and implementation coverage](tables/process-group.md#dependency-order). Execution remains the external orchestration framework's responsibility.
-- `member`: new support is deferred from the first release. No Member table or dataset contract was found in the current repository SQL, Snapshot registry or Change Set allowlist. Obtain its actual fields, keys and Member Group relationship before defining database, Snapshot, Change Set, tool and validation support. Do not stage an invented `member` dataset. Preserve existing Member Group records; member-based execution remains deferred.

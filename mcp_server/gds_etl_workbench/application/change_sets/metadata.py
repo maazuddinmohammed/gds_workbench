@@ -67,6 +67,7 @@ type ChangeSetDataset = Literal[
     "ingestion_attribute_mapping",
     "copy_group",
     "member_group",
+    "member",
     "copy_group_control",
     "copy",
     "process_group",
@@ -86,6 +87,7 @@ CHANGE_SET_DATASETS: tuple[ChangeSetDataset, ...] = (
     "ingestion_attribute_mapping",
     "copy_group",
     "member_group",
+    "member",
     "copy_group_control",
     "copy",
     "process_group",
@@ -197,7 +199,7 @@ class StageMetadataChangeSetResult(ContractModel):
     tenant_id: int = Field(gt=0, le=9_223_372_036_854_775_807)
     metadata_change_set_id: UUID
     staged: Literal[True] = True
-    datasets: list[StagedMetadataChangeSetDataset] = Field(min_length=1, max_length=16)
+    datasets: list[StagedMetadataChangeSetDataset] = Field(min_length=1, max_length=17)
     draft_revision: int = Field(gt=0)
     status: Literal["active"] = "active"
     expires_at: datetime

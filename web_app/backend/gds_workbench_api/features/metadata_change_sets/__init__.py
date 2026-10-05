@@ -8,7 +8,6 @@ from .contracts import (
     ExpectedDraftRevisionRequest,
     GetMetadataChangeSetResult,
     ImportMetadataWorkbookResult,
-    StageMetadataChangeSetRequest,
     StageMetadataChangeSetResult,
     ValidateMetadataChangeSetResult,
 )
@@ -26,7 +25,6 @@ __all__ = [
     "ImportMetadataWorkbookResult",
     "MetadataChangeSetDatabase",
     "MetadataChangeSetService",
-    "StageMetadataChangeSetRequest",
     "StageMetadataChangeSetResult",
     "ValidateMetadataChangeSetResult",
     "create_metadata_change_sets_router",

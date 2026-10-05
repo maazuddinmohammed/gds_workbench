@@ -369,6 +369,13 @@ SELECT tenant.tenant_id,
  WHERE tenant.tenant_code = 'DEMO_TENANT'
    AND system.system_code = 'DEMO_CUSTOMER_SYSTEM';
 
+INSERT INTO core.member (member_group_id, member_code, member_name, member_attribute_name)
+SELECT member_group.member_group_id, 'NORTH', 'North region', 'region'
+  FROM core.member_group AS member_group
+  JOIN core.tenant AS tenant USING (tenant_id)
+ WHERE tenant.tenant_code = 'DEMO_TENANT'
+   AND member_group.member_group_name = 'Demo Customer Members';
+
 INSERT INTO core.copy_group_control (
     copy_group_id,
     member_group_id,

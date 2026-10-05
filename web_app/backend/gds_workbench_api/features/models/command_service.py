@@ -32,6 +32,7 @@ from gds_workbench_api.features.models.command_contracts import (
     ModelNameConflictError,
     ModelRevisionConflictError,
     ModelSchemaConflictError,
+    SetModelLockRequest,
     UpdateModelRequest,
 )
 from gds_workbench_api.features.models.contracts import ModelNotFoundError
@@ -79,6 +80,15 @@ SELECT archived.model_id,
 
 
 class ModelCommandService(Protocol):
+    async def set_model_lock(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        request: SetModelLockRequest,
+    ) -> ModelCommandResult: ...
+
     async def create_model(
         self,
         principal: RequestPrincipal,
@@ -123,6 +133,38 @@ class DatabaseModelCommandService:
         self._database = database
         self._authorizer = authorizer
         self._agent_capability_registry = agent_capability_registry
+
+    async def set_model_lock(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        request: SetModelLockRequest,
+    ) -> ModelCommandResult:
+        if principal.actor_kind is not ActorKind.HUMAN:
+            raise AuthorizationDeniedError()
+        identity = _identity_triple(principal)
+        try:
+            async with self._database.write_transaction() as transaction:
+                row = await transaction.fetch_one(
+                    "SELECT model_id, tenant_id, model_revision, is_active, "
+                    "updated_time AS updated_at "
+                    "FROM application.set_model_lock(%s,%s,%s,%s,%s,%s)",
+                    (
+                        identity[0],
+                        identity[1],
+                        tenant_id,
+                        model_id,
+                        request.expected_model_revision,
+                        request.is_locked,
+                    ),
+                )
+        except Exception as error:
+            _raise_safe_command_error(error)
+        if row is None:
+            raise DependencyUnavailableError()
+        return ModelCommandResult.model_validate(row, strict=True)
 
     async def create_model(
         self,
@@ -333,6 +375,7 @@ def _primary_database_message(error: Exception) -> str:
 
 def _controlled_denial_code(message: str) -> str | None:
     prefixes = (
+        "Model lock denied: ",
         "Model creation denied: ",
         "Model update denied: ",
         "Model archive denied: ",

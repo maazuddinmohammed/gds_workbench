@@ -49,10 +49,24 @@ access. It does not weaken locks, revisions, validation or audit. Tests and the 
 runner use fixture-created disposable PostgreSQL only. Production uses TLS and
 separate runtime logins; see the deployment runbooks.
 
-Stage Runner is a separate MCP client using VS Code's Microsoft authentication
-provider. Restricted Mode disables it. Credentials remain in process/request headers,
-never manifests, child processes, agent context or receipts. The local profile accepts
-only loopback MCP. Any nonproduction profile must be explicitly selected.
+In VS Code, Stage Runner uses VS Code's Microsoft authentication provider;
+Restricted Mode disables it. Codex's local connector relays governed requests to
+that extension over a private Unix socket or Windows named pipe. The user starts
+the bridge in the same local trusted working folder. Only that explicit VS Code
+command can open sign-in. Background calls use silent sessions pinned to the
+selected Microsoft account. Account, backend, or workspace changes invalidate
+the bridge; closing VS Code disconnects clients without replaying writes.
+
+Microsoft tokens go only from VS Code to the authenticated backend. They never
+cross the local bridge or enter manifests, child-process arguments, agent context
+or receipts. Short-lived local pairing capabilities are
+stored outside workspaces in the user's `.atlas-bridge` directory, protected by
+Unix ownership/modes or an explicit Windows user ACL. Pairing verifies the exact
+canonical workspace. Descriptors accept only derived local socket/pipe paths.
+Messages and connection counts are bounded. Only reviewed governed tools and the
+two Stage Runner tools cross this boundary; direct batch transport stays private.
+The Codex bridge permits production authentication or disposable loopback tests,
+not remote no-auth profiles. See the [bridge reference](../atlas/atlas-connector/README.md).
 
 `execute_databricks_sql` is the sole arbitrary-SQL exception: authorized reads and
 unqualified temporary views/tables only, with qualified physical references and bounded

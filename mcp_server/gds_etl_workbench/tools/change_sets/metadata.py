@@ -200,7 +200,7 @@ def register_metadata_change_set_tools(
             list[StageChange],
             Field(
                 min_length=1,
-                max_length=16,
+                max_length=17,
                 description="One complete pending replacement per affected Metadata dataset.",
             ),
         ],

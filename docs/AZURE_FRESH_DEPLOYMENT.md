@@ -371,5 +371,5 @@ Repository-specific sources:
 - `mcp_server/README.md`
 - `atlas/atlas-plugin/plugin.json`
 - `atlas/atlas-plugin/mcp.json`
-- `atlas/atlas-plugin/docs/user-guide.md`
+- `atlas/atlas-plugin/docs/usage-guide.md`
 - `docs/security.md`

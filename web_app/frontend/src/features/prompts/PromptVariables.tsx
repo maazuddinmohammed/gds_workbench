@@ -35,8 +35,7 @@ export function PromptVariables({
   return (
     <div className="prompt-input-reference">
       <p>
-        Choose what this workflow receives. Only referenced variables are inserted into your prompts.
-        Dictionaries and lists render as JSON; examples below are synthetic.
+        Include variables to supply workflow context. Examples use synthetic data.
       </p>
       <div className="prompt-reference-filters">
         <label htmlFor={searchId}><span>Search variables</span><input id={searchId} type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name or meaning" /></label>
@@ -44,7 +43,7 @@ export function PromptVariables({
         <span role="status">{filtered.length} of {variables.length} variables</span>
       </div>
       {!filtered.length ? <div className="empty-state compact">No variables match. Change the search or group.</div> : (
-      <div className="table-scroll">
+      <div className="table-scroll ledger-grid" role="region" aria-label={label} tabIndex={0}>
         <table aria-label={label}>
           <thead><tr><th>Input</th><th>Meaning and use</th></tr></thead>
           <tbody>

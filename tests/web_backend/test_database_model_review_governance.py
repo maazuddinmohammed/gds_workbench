@@ -24,7 +24,6 @@ from gds_workbench_api.features.model_change_sets.service import (
     DatabaseModelChangeSetService,
 )
 from psycopg.errors import InsufficientPrivilege
-from psycopg.types.json import Jsonb
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.database_test_support import require_row
@@ -34,10 +33,10 @@ from tests.mcp.test_database_workflow_run_lifecycle import (
     seed_workflow_context,
 )
 
-AUTHORIZE_SQL = "SELECT * FROM application.authorize_model_record_review(%s,%s,%s,%s,%s)"
-AUTHORIZE_SIGNATURE = (
-    "application.authorize_model_record_review(uuid,uuid,character varying,bigint,bigint)"
+AUTHORIZE_SQL = (
+    "SELECT * FROM application.authorize_model_record_review(%s,%s,%s,%s,%s)"
 )
+AUTHORIZE_SIGNATURE = "application.authorize_model_record_review(uuid,uuid,character varying,bigint,bigint)"
 
 
 async def _wait_for_database_lock(database: DisposablePostgres, function: str) -> None:
@@ -136,7 +135,9 @@ async def test_review_serializes_with_other_model_workflow_start(
         entra_tenant_id=context.entra_tenant_id,
         entra_object_id=context.entra_object_id,
     )
-    service = DatabaseModelChangeSetService(database=runtime, authorizer=AuthorizationService())
+    service = DatabaseModelChangeSetService(
+        database=runtime, authorizer=AuthorizationService()
+    )
     command = ReviewModelRecordsRequest(
         dataset="analysis_result",
         record_ids=[record_id],
@@ -194,7 +195,9 @@ async def test_review_serializes_with_other_model_workflow_start(
                         other_context.model_revision,
                     ),
                 )
-                assert started is not None and started["workflow_run_state"] == "running"
+                assert (
+                    started is not None and started["workflow_run_state"] == "running"
+                )
                 competing = asyncio.create_task(review())
                 tasks.append(competing)
                 await asyncio.wait_for(entered.wait(), timeout=2)
@@ -273,11 +276,9 @@ def test_web_role_cannot_lock_tenant_row_directly(
             connection.execute("SELECT tenant_id FROM security.tenant_lock FOR UPDATE")
 
 
-@pytest.mark.parametrize("other_review", ["model", "metadata"])
 async def test_review_serializes_with_other_governed_review(
     web_postgres_database: DisposablePostgres,
     monkeypatch: pytest.MonkeyPatch,
-    other_review: str,
 ) -> None:
     context, record_id, other_context, _, runtime = _setup(web_postgres_database)
     with web_postgres_database.connect_owner() as connection:
@@ -295,19 +296,14 @@ async def test_review_serializes_with_other_governed_review(
                 (other_context.model_id, record_id),
             ).fetchone()
         )["analysis_result_id"]
-        object_selection = require_row(
-            connection.execute(
-                "SELECT object_id AS record_id,application.metadata_object_review_revision(object) "
-                "AS expected_revision FROM core.object AS object WHERE object_id=%s",
-                (context.selected_object_ids[0],),
-            ).fetchone()
-        )
     principal = RequestPrincipal(
         actor_kind=ActorKind.HUMAN,
         entra_tenant_id=context.entra_tenant_id,
         entra_object_id=context.entra_object_id,
     )
-    service = DatabaseModelChangeSetService(database=runtime, authorizer=AuthorizationService())
+    service = DatabaseModelChangeSetService(
+        database=runtime, authorizer=AuthorizationService()
+    )
     checked = asyncio.Event()
     release = asyncio.Event()
     original = PostgresModelChangeSetRepository.has_running_tenant_workflow
@@ -329,38 +325,19 @@ async def test_review_serializes_with_other_governed_review(
     )
 
     async def competing_review():
-        if other_review == "model":
-            result = await service.review_records(
-                principal,
-                tenant_id=context.tenant_id,
-                model_id=other_context.model_id,
-                command=ReviewModelRecordsRequest(
-                    dataset="analysis_result",
-                    record_ids=[other_record_id],
-                    action="lock",
-                    expected_model_revision=other_context.model_revision,
-                ),
-                idempotency_key=uuid4(),
-            )
-            return result.action_count
-        async with runtime.write_transaction() as transaction:
-            result = require_row(
-                await transaction.fetch_one(
-                    (
-                        "SELECT * FROM "
-                        "application.review_metadata_records(%s,%s,'user',%s,'object','lock',%s,%s)"
-                    ),
-                    (
-                        context.entra_tenant_id,
-                        context.entra_object_id,
-                        context.tenant_id,
-                        Jsonb([object_selection]),
-                        uuid4(),
-                    ),
-                )
-            )
-            assert result["denial_code"] is None
-            return result["action_count"]
+        result = await service.review_records(
+            principal,
+            tenant_id=context.tenant_id,
+            model_id=other_context.model_id,
+            command=ReviewModelRecordsRequest(
+                dataset="analysis_result",
+                record_ids=[other_record_id],
+                action="lock",
+                expected_model_revision=other_context.model_revision,
+            ),
+            idempotency_key=uuid4(),
+        )
+        return result.action_count
 
     tasks: list[asyncio.Task[Any]] = []
     await runtime.open()
@@ -385,9 +362,7 @@ async def test_review_serializes_with_other_governed_review(
         tasks.append(competing)
         await _wait_for_database_lock(
             web_postgres_database,
-            "authorize_model_record_review"
-            if other_review == "model"
-            else "review_metadata_records",
+            "authorize_model_record_review",
         )
         assert not competing.done()
         release.set()
@@ -411,7 +386,9 @@ async def test_committed_other_model_start_already_blocks_review(
         entra_tenant_id=context.entra_tenant_id,
         entra_object_id=context.entra_object_id,
     )
-    service = DatabaseModelChangeSetService(database=runtime, authorizer=AuthorizationService())
+    service = DatabaseModelChangeSetService(
+        database=runtime, authorizer=AuthorizationService()
+    )
     await runtime.open()
     try:
         async with runtime.write_transaction() as transaction:
@@ -565,7 +542,9 @@ def test_review_helper_authority_and_denials_do_not_return_model_headers(
                 "model_revision": context.model_revision,
             }
         else:
-            assert all(value is None for key, value in result.items() if key != "denial_code")
+            assert all(
+                value is None for key, value in result.items() if key != "denial_code"
+            )
         after = require_row(
             connection.execute(
                 "SELECT to_jsonb(target) AS model FROM model.model AS target WHERE model_id=%s",
@@ -634,7 +613,9 @@ async def test_review_helper_rechecks_lock_expiry_after_waiting(
             )
             task = asyncio.create_task(authorize())
             await asyncio.wait_for(entered.wait(), timeout=2)
-            await _wait_for_database_lock(web_postgres_database, "authorize_model_record_review")
+            await _wait_for_database_lock(
+                web_postgres_database, "authorize_model_record_review"
+            )
             assert not task.done()
             connection.execute(
                 (
@@ -679,7 +660,9 @@ async def test_review_rechecks_expiry_after_graph_validation_before_mutation(
         "read_analysis_review_records",
         pause_during_review,
     )
-    service = DatabaseModelChangeSetService(database=runtime, authorizer=AuthorizationService())
+    service = DatabaseModelChangeSetService(
+        database=runtime, authorizer=AuthorizationService()
+    )
     principal = RequestPrincipal(
         actor_kind=ActorKind.HUMAN,
         entra_tenant_id=context.entra_tenant_id,
@@ -742,7 +725,9 @@ async def test_authorized_review_replay_survives_other_model_start_but_requires_
         entra_tenant_id=context.entra_tenant_id,
         entra_object_id=context.entra_object_id,
     )
-    service = DatabaseModelChangeSetService(database=runtime, authorizer=AuthorizationService())
+    service = DatabaseModelChangeSetService(
+        database=runtime, authorizer=AuthorizationService()
+    )
     command = ReviewModelRecordsRequest(
         dataset="analysis_result",
         record_ids=[record_id],

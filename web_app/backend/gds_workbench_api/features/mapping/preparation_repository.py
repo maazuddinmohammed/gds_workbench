@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from typing import LiteralString
+from typing import Any, LiteralString
 
 from gds_etl_workbench.infrastructure.postgres import ReadTransaction
 from pydantic import ValidationError
 
+from gds_workbench_api.features.workflows.authoring.audit_policy import effective_audit_template
+from gds_workbench_api.features.workflows.authoring.gold_policy import effective_gold_templates
+from gds_workbench_api.features.workflows.authoring.naming import effective_naming_instructions
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlanRepository,
     PostgresAgentRunPlanRepository,
@@ -14,6 +17,7 @@ from gds_workbench_api.features.workflows.authoring.plan import (
 
 from .preparation_contracts import (
     ExistingMappingHeader,
+    MappingAuthoringPolicy,
     MappingModeledEntity,
     MappingRunContext,
     MappingRunContextUnavailableError,
@@ -196,6 +200,7 @@ SELECT jsonb_build_object('modeled_entity_id', entity.modeled_entity_id,
  'attribute_id', item.modeled_attribute_id, 'attribute_name', item.attribute_name,
  'attribute_definition', item.definition, 'attribute_data_type', item.data_type,
  'is_nullable', item.is_nullable, 'ordinal_position', item.ordinal_position,
+ 'is_surrogate_key', item.is_surrogate_key,
  'is_audit_column', item.is_audit_column, 'status', item.status, 'is_locked', item.is_locked)
      ORDER BY item.ordinal_position, item.modeled_attribute_id), '[]'::JSONB) AS items FROM
      attributes AS item) AS modeled_attributes
@@ -317,6 +322,7 @@ SELECT jsonb_build_object(
  'attribute_id', item.modeled_attribute_id, 'attribute_name', item.attribute_name,
  'attribute_definition', item.definition, 'attribute_data_type', item.data_type,
  'is_nullable', item.is_nullable, 'ordinal_position', item.ordinal_position,
+ 'is_surrogate_key', item.is_surrogate_key,
  'is_audit_column', item.is_audit_column, 'status', item.status, 'is_locked', item.is_locked
  ) ORDER BY item.ordinal_position, item.modeled_attribute_id), '[]'::JSONB) AS items
  FROM workflow.modeled_attribute AS item WHERE item.model_id = entity.model_id
@@ -327,7 +333,7 @@ SELECT jsonb_build_object(
  ORDER BY source.mapping_order NULLS LAST, entity.modeled_entity_id
 """
 
-_MAPPING_SOURCE_CONTEXT_SQL: LiteralString = (
+MAPPING_SOURCE_CONTEXT_SQL: LiteralString = (
     "WITH selected_sources AS MATERIALIZED ("
     "SELECT owner.model_id, source.* FROM (SELECT %s::BIGINT AS model_id) AS owner "
     "CROSS JOIN LATERAL workflow.list_mapping_source_objects("
@@ -558,7 +564,7 @@ class PostgresMappingRunContextRepository:
         if header is None:
             raise MappingRunContextUnavailableError()
         source_rows = await transaction.fetch_all(
-            _MAPPING_SOURCE_CONTEXT_SQL,
+            MAPPING_SOURCE_CONTEXT_SQL,
             (
                 plan.model_id,
                 plan.pair.modeled_entity_id,
@@ -628,6 +634,20 @@ class PostgresMappingRunContextRepository:
                 if referenced_template_ids
                 else []
             )
+            authoring: dict[str, Any] = MappingAuthoringPolicy.model_validate(
+                anchor.get("authoring"), strict=False
+            ).model_dump(mode="json")
+            family = "logical" if plan.modeled_entity_type == "logical_entity" else "dimensional"
+            authoring["naming_instructions"] = effective_naming_instructions(
+                family, authoring["naming_instructions"]
+            )
+            authoring["audit_columns_template"] = effective_audit_template(
+                authoring["audit_columns_template"]
+            )
+            if family == "dimensional":
+                authoring["technical_columns_template"], _ = effective_gold_templates(
+                    authoring["technical_columns_template"], authoring["audit_columns_template"]
+                )
             context = MappingRunContext.model_validate(
                 {
                     "workflow_run_id": anchor.get("workflow_run_id"),
@@ -655,7 +675,7 @@ class PostgresMappingRunContextRepository:
                         row.get("source") for row in upstream_physical_rows
                     ],
                     "headers": [parsed_header],
-                    "authoring": anchor.get("authoring"),
+                    "authoring": authoring,
                 },
                 strict=False,
             )

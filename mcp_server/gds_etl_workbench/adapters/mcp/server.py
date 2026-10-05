@@ -14,6 +14,8 @@ from starlette.responses import JSONResponse, Response
 from gds_etl_workbench import __version__
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
+from gds_etl_workbench.application.profiling.execution import ConnectorProfilingExecutor
+from gds_etl_workbench.application.profiling.service import ProfilingService, ProfilingWorker
 from gds_etl_workbench.configuration import RuntimeSettings
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
 from gds_etl_workbench.infrastructure.databricks_sql import (
@@ -43,6 +45,7 @@ from gds_etl_workbench.tools.modeling.read_mapping_context import register_read_
 from gds_etl_workbench.tools.modeling.read_model_section import (
     register_read_model_section_tool,
 )
+from gds_etl_workbench.tools.profiling import register_profiling_tools
 from gds_etl_workbench.tools.snapshots.metadata.describe_metadata_dataset import (
     register_describe_metadata_dataset_tool,
 )
@@ -76,6 +79,8 @@ def create_mcp_server(
 ) -> MCPServer[None]:
     shared_snapshot_store = snapshot_store or AzureSnapshotStore(settings)
     sql_executor = databricks_executor or ConnectorDatabricksSqlExecutor()
+    profiling_service = ProfilingService(cast(WriteDatabase, database))
+    profiling_worker = ProfilingWorker(profiling_service, ConnectorProfilingExecutor())
 
     @asynccontextmanager
     async def lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
@@ -83,10 +88,14 @@ def create_mcp_server(
         with suppress(DependencyUnavailableError):
             await database.expire_tenant_locks()
         expiry_task = asyncio.create_task(_expire_tenant_locks(database))
+        profiling_task = asyncio.create_task(profiling_worker.run_forever())
         try:
             yield None
         finally:
             expiry_task.cancel()
+            profiling_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await profiling_task
             with suppress(asyncio.CancelledError):
                 await expiry_task
             await shared_snapshot_store.close()
@@ -105,7 +114,8 @@ def create_mcp_server(
         description="Governed GDS context, Snapshot, and Change Set workflows.",
         instructions=(
             "This server exposes governed reads, Snapshots, Tenant Locks, Change Sets, and "
-            "bounded Databricks SQL. Clients own interaction and workflow orchestration. The "
+            "bounded Databricks SQL, and deterministic Profiling runs. Clients own interaction; "
+            "Profiling SQL, execution, and persistence run on the server. The "
             "server derives identity and authorization and enforces Tenant Lock ownership, "
             "revision fencing, idempotency, validation, dependency order, and audit. Lock "
             "override and Apply are separate high-impact operations that require explicit "
@@ -210,6 +220,12 @@ def create_mcp_server(
         executor=sql_executor,
         max_rows=settings.databricks_sql_max_rows,
         timeout_seconds=settings.databricks_sql_timeout_seconds,
+    )
+    register_profiling_tools(
+        server,
+        service=profiling_service,
+        identity_provider=identity_provider,
+        audit=audit,
     )
     register_describe_model_dataset_tool(
         server,

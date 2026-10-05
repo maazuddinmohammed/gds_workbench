@@ -3,6 +3,16 @@ import { Link } from "@tanstack/react-router";
 
 import { initials } from "./presentation";
 
+export function WorkspaceToolbar({ children, actions }: {
+  children?: ReactNode;
+  actions: ReactNode;
+}) {
+  return <header className="workspace-toolbar">
+    {children ? <div className="workflow-command-context">{children}</div> : null}
+    <div className="workflow-command-actions">{actions}</div>
+  </header>;
+}
+
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <div className={compact ? "brand is-compact" : "brand"} aria-label="Atlas">

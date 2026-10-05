@@ -17,7 +17,7 @@ export function WorkflowTable<T extends ProfilingObject | WorkflowRunRecord>({
   selectedId: number | null;
 }) {
   return (
-    <div className="workflow-table-scroll table-scroll">
+    <div className="workflow-table-scroll table-scroll ledger-grid" tabIndex={0} role="region" aria-label={`Scrollable ${label}`}>
       <table aria-label={label}>
         <thead>
           {table.getHeaderGroups().map((group) => (

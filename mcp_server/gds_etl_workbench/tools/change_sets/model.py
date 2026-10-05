@@ -82,6 +82,7 @@ from gds_etl_workbench.domain.errors import (
     ModelChangeSetNotActiveError,
     ModelChangeSetNotFoundError,
     ModelChangeSetNotValidatedError,
+    ModelLockedError,
     StageBatchConflictError,
     StageBatchIncompleteError,
     StageBatchNotActiveError,
@@ -110,7 +111,8 @@ _MODEL_CONTEXT_FOR_UPDATE_SQL: LiteralString = """
 SELECT model_id,
        tenant_id,
        model_name,
-       model_revision
+       model_revision,
+       is_locked
   FROM model.model
  WHERE model_id = %s
    AND is_active
@@ -209,6 +211,8 @@ expired_change_set AS (
        AND change_set.workflow_run_id IS NULL
        AND change_set.model_change_set_status IN ('active', 'validated')
        AND change_set.expires_time <= operation_time.current_time
+       AND NOT EXISTS (SELECT 1 FROM model.model AS owner
+                       WHERE owner.model_id = change_set.model_id AND owner.is_locked)
     RETURNING change_set.*
 ),
 expired_batches AS (
@@ -2123,6 +2127,8 @@ def register_model_change_set_tools(
                     model_id=model_id,
                     policy=READ_POLICY,
                 )
+                if model.is_locked:
+                    raise ModelLockedError()
                 row = await _owned_change_set(
                     transaction,
                     change_set_id=model_change_set_id,
@@ -2220,6 +2226,7 @@ async def _authorize_model(
             tenant_id=row["tenant_id"],
             model_name=row["model_name"],
             model_revision=row["model_revision"],
+            is_locked=bool(row.get("is_locked", False)),
             readable_source_tenant_ids=readable,
         ),
         authorization.principal,

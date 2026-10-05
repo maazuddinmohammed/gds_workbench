@@ -9,7 +9,9 @@ test counts are intentionally omitted.
 MCP runs on Azure App Service; the web App runs on Databricks with its own durable
 worker. Each artifact receives shared domain/application code at build time and
 connects directly to PostgreSQL with a separate least-privilege role. Web features
-own workflow orchestration. Transport-neutral code must import without MCP handlers
+own their orchestration. MCP also owns a durable deterministic Profiling worker;
+web and MCP claim only runs assigned to their backend. Shared aggregate SQL
+planning lives in `application/profiling/execution.py`. Transport-neutral code must import without MCP handlers
 or authentication adapters. This avoids a runtime dependency between deployments.
 
 ## Authorization and concurrency
@@ -24,6 +26,22 @@ by its exact Principal; a database unique constraint permits at most one running
 Workflow Run per Tenant across processes. Super Admins bypass neither. Claim,
 revision and idempotency fences prevent stale workers or uncertain retries from
 reapplying work.
+
+## Persistent Model lock
+
+`model.model.is_locked` is independent of the Tenant lease and individual record
+locks. PostgreSQL triggers fence all Model-owned inserts, updates and deletes,
+including Change Sets, workflow state/results, code, profiling and enrichment.
+Checks lock the parent Model row in write transactions, serializing writes with
+lock transitions. Both old and new owners are checked on reassignment.
+
+The web-only command requires a human Architect (or higher), the Tenant Lock,
+ownership and expected revision. Each transition advances the Model revision
+and appends a lock audit event. Queued/running work must finish or be cancelled
+before locking, so no in-flight execution remains behind a locked Model. Reads
+remain available; expiring a draft during a read is deferred until unlock.
+MCP and Change Sets expose no lock mutation. Runtime roles cannot update the
+flag directly. Engineering SQL follows the same write fence and active-run check.
 
 ## Model ownership and evidence
 
@@ -90,3 +108,65 @@ Prompt/default seeds have their documented replay behavior; that does not make
 numbered schema installation repeatable. Changes to source and artifacts do not
 change installed databases or deployments. Live provider/Databricks execution needs
 separate operational validation beyond local contract and synthetic output tests.
+
+## Atlas host compatibility
+
+Atlas has one portable plugin and one deterministic Stage engine. Copilot uses
+VS Code language-model tools. Codex uses a bundled stdio relay to the running
+VS Code extension. Authentication, the reviewed remote-tool proxy and Stage all
+execute in the extension; Microsoft tokens never cross the local bridge.
+The connector has no separate login, app registration, MSAL cache or native npm
+dependencies. Validation and Apply remain distinct governed steps.
+
+The user opens the same local trusted folder in both clients and runs
+**Atlas: Start Codex Bridge**. Each workspace gets a private Unix socket or
+Windows named pipe, protected by a random session capability and a private
+per-user descriptor. The server binds file access to that real workspace root;
+the connector cannot widen it. One persistent local connection and remote MCP
+session per Codex session avoid per-call startup and authentication overhead.
+Only Atlas tool calls take this route. Workspace, profile and account changes
+invalidate it. Disconnects never replay uncertain operations. VS Code must remain
+open; remote VS Code windows and Codex cloud execution are unsupported.
+
+The stable layout is `Tools/Atlas/atlas`, `atlas-connector`, and generated sibling
+`codex-atlas`. Setup adapts transport without changing the portable source and
+registers/refreshes Codex's installed copy. Generated copies contain no credentials.
+Updates validate input, serialize local replacement, and retain rollback backups.
+The ZIP updater replaces entire package folders, leaving working files separate.
+The matching VSIX must also be installed. Local builds change no cloud identity,
+backend authorization or deployment.
+
+## Deterministic plugin profiling
+
+Atlas starts, polls, or cancels a Profiling run through three governed MCP tools.
+The MCP worker resolves applied Model Input Scope, GDS execution credentials,
+Source foreign-catalog coordinates or Bronze owner `tenant_catalog`, then builds
+parameterized aggregate SQL and saves complete profiles atomically. The plugin
+refreshes its Model Snapshot; it does not author SQL or stage profile results.
+Batch ID lists are required on batched Objects and shared across a run. Separate
+runs represent different selections. Request UUIDs provide idempotency, frozen
+context digests reject metadata changes, and claim tokens fence stale/cancelled
+workers. Existing Model/Tenant locks and one-running-workflow-per-Tenant remain.
+The Connector attempts cancellation; Workbench cancellation guarantees no later
+save even if Databricks has not yet stopped its statement. Internal credential
+and worker functions are never exposed as tools. SQL changes are fresh-install
+contracts, not populated-database migrations.
+## Atlas task workflows and context disclosure
+
+Atlas 0.2 organizes agent instructions by requested outcome: investigation, source analysis,
+conceptual/logical/dimensional design, mapping, code, verification, model changes,
+physical metadata and registration. The entry skill routes these tasks; Guided and
+Grill Me share the same modeling skill and records. Shared context is minimal;
+platform knowledge, domain methods, tool procedures and evidence formats load on demand.
+
+Readiness is derived for selected artifacts from applied state, pending changes and
+bound evidence, not a new global Model stage or a second progress ledger. Existing
+Change Set authorization, locks, revisions, approval digests and uncertain-write
+recovery remain authoritative. Model-owned enrichment and server-enforced analysis
+scope/masking gaps are explicit; plugin instructions cannot implement missing backend
+capabilities or replace their governed boundary.
+
+Local reads support manifest/draft-bound continuation and field projection retaining
+canonical identity. Task status defaults to bounded active-task context, with explicit
+detail/history retrieval. Node and native PowerShell share this command contract;
+neither surface grants additional access or proves business correctness.

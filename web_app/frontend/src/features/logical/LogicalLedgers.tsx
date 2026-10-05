@@ -132,7 +132,7 @@ export function LogicalEntitiesLedger({
       ) : items.length === 0 ? (
         <div className="empty-state compact">No Logical Entities match these filters.</div>
       ) : (
-        <div className="workflow-table-scroll table-scroll">
+        <div className="workflow-table-scroll table-scroll ledger-grid" tabIndex={0} role="region" aria-label="Scrollable Logical Entities">
           <table className="modeled-entity-ledger" aria-label="Logical Entities">
             <thead>
               {table.getHeaderGroups().map((group) => (
@@ -641,7 +641,7 @@ function LogicalLedgerSurface<T>({
       ) : items.length === 0 ? (
         <div className="empty-state compact">No {tableLabel} match these filters.</div>
       ) : (
-        <div className="workflow-table-scroll table-scroll">
+        <div className="workflow-table-scroll table-scroll ledger-grid" tabIndex={0} role="region" aria-label={`Scrollable ${tableLabel}`}>
           <table aria-label={tableLabel}>
             <thead>
               {table.getHeaderGroups().map((group) => (

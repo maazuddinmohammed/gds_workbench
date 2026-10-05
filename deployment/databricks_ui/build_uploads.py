@@ -118,7 +118,7 @@ def _build_app_source(destination: Path) -> None:
     _copy_tree(
         REPOSITORY_ROOT / "mcp_server" / "gds_etl_workbench",
         destination / "mcp_server" / "gds_etl_workbench",
-        allowed_suffixes=frozenset({".py"}),
+        allowed_suffixes=frozenset({".py", ".json"}),
     )
 
     _copy_file(

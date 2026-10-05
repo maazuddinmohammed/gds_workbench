@@ -1,16 +1,17 @@
 """Tenant-owned Mapping reads over the Entity-owned schema."""
 
-from contextlib import AbstractAsyncContextManager
 from hashlib import sha256
 from typing import Any, LiteralString, Protocol
 
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.cursor import CursorCodec
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
+from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 
+from gds_workbench_api.features.metadata.contracts import MetadataWorkbookDownload
 from gds_workbench_api.features.models import ModelNotFoundError
 
+from .export import export_mapping_workbook
 from .read_contracts import (
     MappingAttributeDetail,
     MappingAttributeFilters,
@@ -25,6 +26,7 @@ from .read_contracts import (
     MappingObjectNotFoundError,
     MappingObjectPage,
     MappingObjectSummary,
+    MappingReadDatabase,
 )
 
 _MODEL_HEADER_SQL: LiteralString = """
@@ -265,6 +267,17 @@ MAPPING_ATTRIBUTE_DETAIL_SQL: LiteralString = (
 
 
 class MappingReviewService(Protocol):
+    async def export_workbook(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        entity_type: MappingEntityType,
+        source_system_code: str,
+        expected_model_revision: int,
+    ) -> MetadataWorkbookDownload: ...
+
     async def list_generation_targets(
         self,
         principal: RequestPrincipal,
@@ -309,12 +322,6 @@ class MappingReviewService(Protocol):
     ) -> MappingAttributeDetail: ...
 
 
-class MappingReadDatabase(Protocol):
-    def read_transaction(
-        self, *, isolation: ReadIsolation = ReadIsolation.READ_COMMITTED
-    ) -> AbstractAsyncContextManager[ReadTransaction]: ...
-
-
 class DatabaseMappingReviewService:
     def __init__(
         self,
@@ -326,6 +333,27 @@ class DatabaseMappingReviewService:
         self._database = database
         self._authorizer = authorizer
         self._cursors = CursorCodec(cursor_signing_key)
+
+    async def export_workbook(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        entity_type: MappingEntityType,
+        source_system_code: str,
+        expected_model_revision: int,
+    ) -> MetadataWorkbookDownload:
+        return await export_mapping_workbook(
+            database=self._database,
+            authorizer=self._authorizer,
+            principal=principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            entity_type=entity_type,
+            source_system_code=source_system_code,
+            expected_model_revision=expected_model_revision,
+        )
 
     async def list_generation_targets(
         self,

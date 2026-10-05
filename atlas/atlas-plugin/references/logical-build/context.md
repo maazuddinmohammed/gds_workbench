@@ -1,17 +1,15 @@
-# Logical build context
+# Logical modeling context
 
-Shared entry for Guided and Grill Me. This page owns input readiness; each skill owns its sequence and interaction.
+Shared inputs for either interaction mode. The [logical skill](../../skills/atlas-logical-model/SKILL.md) owns design sequence; methods and record guides own domain meaning.
 
-1. Follow the [working method](../working-method.md). Resolve missing Tenant, absolute working directory, SQL policy, applicable environment and Model. Reuse valid supplied/saved choices and the selected workflow; Atlas routes to a dedicated Guided or Grill Me skill.
-2. Show existing session context and unfinished work. Ask "Continue this session or start new work?" unless already answered. Preserve unfinished drafts and their Tenant/Model bindings.
-3. Show available Metadata/Model Snapshot identities, Model revision and known refresh requirements. Ask "Fetch fresh snapshots or use the existing snapshots?" unless already answered. Fetch missing required inputs before dependent work.
-4. Follow the [Metadata](../snapshots/metadata.md) and [Model](../snapshots/model.md) guides for acquisition, placement and reading. Reconcile pending work before baseline replacement; reuse does not override identity or freshness conflicts.
-5. Resolve requested Objects from applied Model Input Scope without changing membership. Follow catalog prerequisites. Connect the resolved directory in the already open Workbench.
-6. Read [record-state rules](../record-state.md) before authoring. Identify protected and inactive records; locked active inputs may still be read and used.
-7. At a new build, show effective [naming](../model/naming.md) and [key/audit policy](../model/keys-and-audit.md). Reuse approved choices; ask only about missing or conflicting settings. Missing audit types/nullability need the actual Model template, not guesses.
+1. Follow [working context](../working-method.md). Resolve only needed Tenant, absolute workspace and Model. SQL policy/environment matter only for evidence execution. Reuse valid supplied/saved selections; ask about resuming only when unfinished work makes intent unclear.
+2. Inspect required [Metadata](../snapshots/metadata.md) and [Model](../snapshots/model.md) identities, applied revision and refresh requirements. Reuse valid bound inputs; fetch missing inputs. Reconcile a required refresh with pending work before replacing a baseline. Ask only when an actual conflict needs a choice, not for routine freshness preference.
+3. Resolve exact requested Objects from active applied Model Input Scope without changing membership. Follow catalog and ownership prerequisites. Inspect effective existing Model records and relevant evidence. Missing foundational configuration remains an operator action.
+4. Read [record state](../record-state.md); protected active inputs may remain readable. Preserve inactive history and locked records. Open/reuse Workbench when authoring or review needs it.
+5. Use actual Model policies/templates for [naming](../model/naming.md) and [keys/audit](../model/keys-and-audit.md). Reuse confirmed choices; resolve missing/conflicting types or nullability before finalizing affected Attributes.
 
-Entity schemas must come from the Model's configured `logical_schemas`. Resolve an empty or conflicting configuration before generation. Use [Entity ownership](../model/entity-ownership.md) for schema-qualified identities.
+Entity schemas come from configured `logical_schemas`. Resolve empty/conflicting configuration; use [Entity ownership](../model/entity-ownership.md) for schema-qualified identity. Do not invent a schema or physical lineage.
 
 ## Switching workflows
 
-When the user switches between Guided and Grill Me, preserve session context, snapshots, evidence and pending records. Update the selected workflow in the existing task context. Load only the destination skill. Guided assesses its phases using the existing-result rules; switching alone never discards work or triggers a redo, Stage or Apply.
+Changing Guided/Grill Me mode keeps the same task, context, evidence, snapshots and pending records. Load interview guidance only when needed. A mode change does not repeat stages or trigger Stage/Apply. Enter another task skill only when its distinct outcome is requested or needed.

@@ -745,7 +745,16 @@ function Parse-Object([hashtable]$Options, [string]$Name) {
     return $value
 }
 
-function Select-Records([hashtable]$Options, $Snapshot) {
+function Get-PageOffset([hashtable]$Options, [string]$Binding) {
+    if (-not $Options.ContainsKey('cursor')) { return [long]0 }
+    if ($Options.cursor -cnotmatch '^v1\.([0-9a-f]{64})\.([0-9]+)$') { Fail 'Invalid cursor; restart without --cursor.' }
+    $digest = $Matches[1]; [double]$offset = 0
+    if (-not [double]::TryParse($Matches[2], [ref]$offset) -or -not (Test-SafeJsonInteger $offset)) { Fail 'Invalid cursor; restart without --cursor.' }
+    if ($digest -cne $Binding) { Fail 'Selection changed; restart without --cursor.' }
+    return [long]$offset
+}
+
+function Select-Records([hashtable]$Options, $Snapshot, [long]$Offset = 0) {
     $datasetName = Require-Option $Options 'dataset'
     if (-not $Snapshot.ByName.ContainsKey($datasetName)) { Fail "Unknown Snapshot dataset: $datasetName." }
     $limit = 50
@@ -757,12 +766,14 @@ function Select-Records([hashtable]$Options, $Snapshot) {
     $records = New-Object System.Collections.ArrayList
     $truncated = $false
     $lineNumber = 0
+    [long]$matched = 0
     foreach ($line in [IO.File]::ReadLines($rowsPath, [Text.Encoding]::UTF8)) {
         $lineNumber++
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
         try { $record = ConvertFrom-GdsJson $line }
         catch { Fail "$datasetName contains invalid JSON on line $lineNumber." }
         if (-not (Test-Where $record $where $Snapshot.Area)) { continue }
+        if ($matched++ -lt $Offset) { continue }
         if ($records.Count -eq $limit) { $truncated = $true; break }
         [void]$records.Add($record)
     }
@@ -817,30 +828,74 @@ function Describe-Dataset([hashtable]$Options) {
 
 function Select-Snapshot([hashtable]$Options) {
     $snapshot = Find-Snapshot $Options
-    if ($Options.ContainsKey('view') -and @('snapshot', 'effective') -cnotcontains $Options.view) { Fail '--view must be snapshot or effective.' }
-    if ($Options['view'] -ceq 'effective') {
-        $name = Require-Option $Options 'dataset'
-        if (-not $snapshot.ByName.ContainsKey($name)) { Fail 'Unknown Snapshot dataset.' }
-        $limit = if ($Options.ContainsKey('limit')) { [int]$Options.limit } else { 50 }
-        if ($limit -lt 1 -or $limit -gt 200) { Fail '--limit must be between 1 and 200.' }
-        $where = if ($Options.ContainsKey('where')) { Parse-Object $Options 'where' } else { @{} }
+    $name = Require-Option $Options 'dataset'
+    if (-not $snapshot.ByName.ContainsKey($name)) { Fail 'Unknown Snapshot dataset.' }
+    $dataset = $snapshot.ByName[$name]
+    $view = if ($Options.ContainsKey('view')) { [string]$Options.view } else { 'snapshot' }
+    if (@('snapshot', 'effective') -cnotcontains $view) { Fail '--view must be snapshot or effective.' }
+    [double]$limitValue = 50
+    if ($Options.ContainsKey('limit') -and -not [double]::TryParse($Options.limit, [ref]$limitValue)) { Fail '--limit must be between 1 and 200.' }
+    if (-not (Test-SafeJsonInteger $limitValue $false) -or $limitValue -gt 200) { Fail '--limit must be between 1 and 200.' }
+    $limit = [int]$limitValue
+    $where = if ($Options.ContainsKey('where')) { Parse-Object $Options 'where' } else { @{} }
+    $fields = $null
+    if ($Options.ContainsKey('fields')) {
+        try { $requested = ConvertFrom-GdsJson $Options.fields } catch { Fail '--fields must be a JSON string array.' }
+        if ($requested -isnot [Array] -or $requested.Count -lt 1 -or $requested.Count -gt 100) { Fail '--fields must contain 1 to 100 field names.' }
+        $schema = Read-Json (Resolve-Member $snapshot.Root ([string]$dataset.schema_file) $snapshot.Members) 'Dataset schema'
+        $fieldNames = New-Object 'System.Collections.Generic.List[string]'
+        foreach ($field in @($dataset.canonical_key)) { if (-not $fieldNames.Contains($field)) { [void]$fieldNames.Add($field) } }
+        foreach ($field in $requested) {
+            if ($field -isnot [string] -or -not $field -or -not (Test-Property $schema.properties $field)) { Fail '--fields contains an unknown schema field.' }
+            if (-not $fieldNames.Contains($field)) { [void]$fieldNames.Add($field) }
+        }
+        $fieldNames.Sort([StringComparer]::Ordinal); $fields = @($fieldNames)
+    }
+    $pending = @()
+    if ($view -ceq 'effective') {
         $directory = Resolve-WorkspacePath $snapshot.Session ((Get-OwnerPrefix $snapshot.Owner) + $snapshot.Area + '-change-set')
-        $pending = @()
         if (Test-Path -LiteralPath $directory) {
             $snapshot | Add-Member -NotePropertyName ChangeDirectory -NotePropertyValue $directory
             $allPending = Read-Pending $snapshot
             if ($allPending.ContainsKey($name)) { $pending = @($allPending[$name]) }
         }
-        $matches = @(Get-EffectiveRecords $snapshot $snapshot.ByName[$name] $pending | Where-Object { Test-Where $_ $where $snapshot.Area })
-        return [ordered]@{dataset = $name; view = 'effective'; count = [Math]::Min($matches.Count, $limit); truncated = $matches.Count -gt $limit; records = @($matches | Select-Object -First $limit)}
     }
-    $selection = Select-Records $Options $snapshot
-    return [ordered]@{
-        dataset = [string]$selection.Dataset.name
-        count = @($selection.Records).Count
-        truncated = [bool]$selection.Truncated
-        records = @($selection.Records)
+    $normalizedWhere = New-Object Collections.Specialized.OrderedDictionary ([StringComparer]::Ordinal)
+    foreach ($field in @(Get-PropertyNames $where)) { $normalizedWhere.Add($field, (Normalize-Value $snapshot.Area $field (Get-Property $where $field))) }
+    $bindingValue = [ordered]@{
+        manifest = Get-ByteDigest ($script:Utf8NoBom.GetBytes((ConvertTo-StableJson $snapshot.Manifest)))
+        owner = $snapshot.Owner.id; dataset = $name; view = $view; limit = $limit; fields = $fields; where = $normalizedWhere
+        pending = Get-ByteDigest ($script:Utf8NoBom.GetBytes((ConvertTo-StableJson $pending)))
     }
+    $binding = Get-ByteDigest ($script:Utf8NoBom.GetBytes((ConvertTo-StableJson $bindingValue)))
+    $offset = Get-PageOffset $Options $binding
+    $records = New-Object Collections.ArrayList; $truncated = $false
+    if ($view -ceq 'effective') {
+        [long]$matched = 0
+        foreach ($record in @(Get-EffectiveRecords $snapshot $dataset $pending)) {
+            if (-not (Test-Where $record $where $snapshot.Area)) { continue }
+            if ($matched++ -lt $offset) { continue }
+            if ($records.Count -eq $limit) { $truncated = $true; break }
+            [void]$records.Add($record)
+        }
+    } else {
+        $readOptions = $Options.Clone(); $readOptions.limit = $limit.ToString([Globalization.CultureInfo]::InvariantCulture)
+        $selection = Select-Records $readOptions $snapshot $offset
+        foreach ($record in @($selection.Records)) { [void]$records.Add($record) }
+        $truncated = $selection.Truncated
+    }
+    if ($offset -gt 0 -and $records.Count -eq 0) { Fail 'Cursor is outside the selection; restart without --cursor.' }
+    $output = New-Object Collections.ArrayList
+    foreach ($record in $records) {
+        if ($null -eq $fields) { [void]$output.Add($record); continue }
+        [void](Get-CanonicalKeyObject $snapshot.Area $dataset $record)
+        $projected = New-Object Collections.Specialized.OrderedDictionary ([StringComparer]::Ordinal)
+        foreach ($field in $fields) { if (Test-Property $record $field) { $projected.Add($field, (Get-Property $record $field)) } }
+        [void]$output.Add($projected)
+    }
+    return [ordered]@{dataset = $name; view = $view; count = $records.Count; truncated = $truncated; selection_digest = $binding
+        next_cursor = if ($truncated) { 'v1.' + $binding + '.' + ($offset + $records.Count).ToString([Globalization.CultureInfo]::InvariantCulture) } else { $null }
+        records = @($output)}
 }
 
 function Get-WorkspaceDigest($Context) {
@@ -2302,6 +2357,7 @@ try {
         'status' { $output = Get-SessionStatus $options }
         'owner-add' { $output = Register-Owner $options }
         'sql-policy' { $output = Set-SqlPolicy $options }
+        'subagent-policy' { $output = Set-SubagentPolicy $options }
         'task-add' { $output = Add-Task $options }
         'task-update' { $output = Update-Task $options }
         'inspect' { $output = Inspect-Snapshot $options }
@@ -2318,8 +2374,6 @@ try {
         'prepare-stage-request' { $output = Prepare-StageRequest $options }
         'snapshot-install' { $output = Install-Snapshot $options }
         'operation-record' { $output = Record-Operation $options }
-        'profile-results' { $output = Import-ProfileResults $options }
-        'profile-plan' { . (Join-Path $PSScriptRoot 'profiling.ps1'); $output = New-AggregatePlan $options 'profiling' }
         'analysis-plan' { . (Join-Path $PSScriptRoot 'analysis.ps1'); $output = New-AggregatePlan $options 'analysis' }
         default { Fail "Unknown Atlas command: $Command." }
     }

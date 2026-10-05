@@ -1,3 +1,4 @@
+import { DdlExportButton } from "../model_targets/DdlExportButton";
 import { WorkflowCommandCenter, WorkflowCommandTools, WorkflowMenu } from "../workflows/WorkflowCommandCenter";
 import { ModelLayerActions } from "../model_record_review/ModelLayerActions";
 import { TargetExportButton } from "../model_targets/TargetExportDialog";
@@ -149,6 +150,7 @@ export function DimensionalScreen({
           <WorkflowMenu>
           <ModelLayerActions api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} hasTenantLock={hasTenantLock} canDelete={canDelete} layer="dimensional" onApplied={() => setSelectedIds(new Set())} />
           <TargetExportButton api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} layer="dimensional" entityIds={view === "objects" && selectedIds.size ? [...selectedIds] : undefined} />
+          <DdlExportButton api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} layer="dimensional" entityIds={view === "objects" && selectedIds.size ? [...selectedIds] : undefined} />
           </WorkflowMenu>
           <button className="button button-secondary button-small" type="button" disabled={refreshing} onClick={() => void refresh()}>
             {refreshing ? "Refreshing…" : "Refresh"}

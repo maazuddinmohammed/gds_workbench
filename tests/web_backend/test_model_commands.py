@@ -28,6 +28,13 @@ from psycopg.types.json import Jsonb
 
 
 class StaticModelCommandService:
+    async def set_model_lock(self, principal: RequestPrincipal, *, tenant_id: int,
+                             model_id: int, request: Any) -> ModelCommandResult:
+        assert principal.actor_kind is ActorKind.HUMAN
+        assert (tenant_id, model_id, request.expected_model_revision) == (7, 18, 4)
+        return ModelCommandResult(model_id=18, tenant_id=7, model_revision=5,
+            is_active=True, updated_at=datetime(2026, 8, 24, 14, 5, tzinfo=UTC))
+
     async def create_model(
         self,
         principal: RequestPrincipal,
@@ -187,6 +194,8 @@ class CreateModelTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "security.authorize_tenant_operation" in query:
             assert parameters == (
                 UUID("11111111-1111-1111-1111-111111111111"),
@@ -270,6 +279,8 @@ def test_model_creation_duplicate_name_is_safe_and_distinct_from_other_database_
         async def fetch_one(
             self, query: LiteralString, parameters: tuple[Any, ...] = ()
         ) -> dict[str, Any] | None:
+            if "model.assert_writable" in query:
+                return {"assert_writable": None}
             if "application.create_model" in query:
                 try:
                     raise UniqueFailureError("private database details")
@@ -361,6 +372,8 @@ class RevisionCommandTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "security.authorize_tenant_operation" in query:
             assert parameters[3:] == (7, "tenant_model_write")
             return {
@@ -566,6 +579,8 @@ class FailingFunctionTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "security.authorize_tenant_operation" in query:
             return {
                 "principal_id": 41,
@@ -667,6 +682,8 @@ class RejectedPrecheckTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "security.authorize_tenant_operation" in query:
             return {
                 "principal_id": 41,
@@ -796,3 +813,13 @@ def test_model_commands_preserve_explicit_logical_scd_choice(scd_type: str | Non
 
 def test_omitted_logical_scd_choice_is_unspecified() -> None:
     assert CompleteModelRequest(model_name="Customer 360").logical_entity_scd_type is None
+
+
+def test_model_lock_route_accepts_only_lock_and_expected_revision() -> None:
+    app = create_app(identity_provider=_identity_provider(), model_command_service=StaticModelCommandService())
+    with TestClient(app) as client:
+        response = client.put("/api/v1/tenants/7/models/18/lock", json={"expected_model_revision":4, "is_locked":True})
+        assert response.status_code == 200
+        assert response.json()["model_revision"] == 5
+        assert client.put("/api/v1/tenants/7/models/18/lock", json={"is_locked":False}).status_code == 422
+        assert client.put("/api/v1/tenants/7/models/18/lock", json={"expected_model_revision":4, "is_locked":True, "actor":"agent"}).status_code == 422

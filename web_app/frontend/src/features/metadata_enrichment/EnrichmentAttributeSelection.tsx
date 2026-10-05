@@ -79,7 +79,7 @@ export function EnrichmentAttributeSelection({
           || new Set(value.attributes.map((attribute) => attribute.attribute_id)).size !== value.attributes.length
           || value.attributes.some((attribute) => !Number.isSafeInteger(attribute.attribute_id) || attribute.attribute_id <= 0
             || !attribute.attribute_name?.trim() || attribute.is_active !== true
-            || typeof attribute.is_locked !== "boolean" || !/^[0-9a-f]{64}$/.test(attribute.review_revision))) {
+            || typeof attribute.is_locked !== "boolean" || !/^[0-9a-f]{64}$/.test(attribute.review_revision ?? ""))) {
           throw new Error("Complete Attribute selection is unavailable");
         }
         if (!mounted.current) return;
@@ -121,7 +121,7 @@ export function EnrichmentAttributeSelection({
       if (selected.length) {
         storedAttributeCount += entry.value.total_attribute_count!;
         targets.push(...selected.map((attribute) => ({ object_id: object.object_id,
-          attribute_id: attribute.attribute_id, expected_revision: attribute.review_revision })));
+          attribute_id: attribute.attribute_id, expected_revision: attribute.review_revision! })));
       }
     }
     return { targets, storedAttributeCount, complete, failed,

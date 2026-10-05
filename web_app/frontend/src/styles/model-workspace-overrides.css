@@ -1,6 +1,7 @@
 /* Model-owned authoring: one horizontal row with explicit overflow controls. */
 .workspace.workspace-ledger { padding-top: 0; }
 .workspace.workspace-model { min-width: 0; padding: 0; overflow: visible; }
+/* Match Metadata's quiet typography throughout Model values and controls. */
 .model-identity {
   display: flex; min-width: 0; align-items: center; justify-content: space-between;
   gap: 1.5rem; padding: 1.5rem 2rem 1.1rem; background: var(--surface);
@@ -36,12 +37,12 @@
 .model-tab {
   position: relative; display: flex; flex: none; flex-direction: column; align-items: flex-start; gap: .45rem; min-height: 6.25rem;
   padding: .8rem .85rem .75rem; border: 0; color: var(--muted);
-  text-decoration: none; white-space: nowrap; font-size: .875rem; font-weight: 600;
+  text-decoration: none; white-space: nowrap; font-size: .875rem; font-weight: 400;
   transition: color 150ms ease;
 }
 .model-tab::before { position: absolute; inset: auto .85rem 0; height: 2px; border-radius: 2px 2px 0 0; background: transparent; content: ""; }
 .model-tab:hover { color: var(--ink); }
-.model-tab.is-active { color: var(--ink); font-weight: 700; }
+.model-tab.is-active { color: var(--ink); font-weight: 400; }
 .model-tab.is-active::before { background: var(--orange); }
 .model-tab.is-group-end { margin-right: .8rem; }
 .model-tab::after { position: absolute; top: 1.4rem; left: 2.1rem; right: -.9rem; height: 1px; background: var(--line); content: ""; }
@@ -91,7 +92,7 @@
 .model-section-toolbar .workflow-tabs { min-height: 2.65rem; align-self: center; }
 .model-section-toolbar .workflow-tabs button { min-height: 2.65rem; font-size: .8rem; }
 .model-section-toolbar .model-settings-tabs { margin: 0; }
-.model-section-toolbar .model-settings-tabs a { display: inline-flex; align-items: center; font-size: .82rem; font-weight: 650; }
+.model-section-toolbar .model-settings-tabs a { display: inline-flex; align-items: center; font-size: .82rem; font-weight: 400; }
 .model-workspace .model-settings-page { padding: 0; }
 .button.button-small { min-height: 2.15rem; padding: .5rem .72rem; font-size: .74rem; }
 @media (max-width: 58rem) {

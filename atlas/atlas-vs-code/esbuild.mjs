@@ -11,3 +11,10 @@ await esbuild.build({
   sourcemap: false,
   legalComments: "none",
 });
+
+await esbuild.build({
+  entryPoints: ["src/connector/cli.ts"],
+  outfile: "../atlas-connector/atlas-connector.cjs",
+  bundle: true, platform: "node", format: "cjs", target: "node22",
+  sourcemap: false, legalComments: "none",
+});

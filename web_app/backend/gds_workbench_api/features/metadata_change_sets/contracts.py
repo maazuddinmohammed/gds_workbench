@@ -1,7 +1,7 @@
 """Web DTOs for governed Tenant Metadata Change Sets."""
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Literal
 from uuid import UUID
 
 from gds_etl_workbench.application.change_sets.contracts import SHA256_PATTERN
@@ -15,20 +15,6 @@ class ContractModel(BaseModel):
 
 class CreateMetadataChangeSetRequest(ContractModel):
     schema_version: Literal["1.0"] = "1.0"
-
-
-class StageMetadataDatasetRequest(ContractModel):
-    dataset: ChangeSetDataset
-    records: Annotated[list[dict[str, object]], Field(max_length=50_000)]
-
-
-class StageMetadataChangeSetRequest(ContractModel):
-    schema_version: Literal["1.0"] = "1.0"
-    expected_draft_revision: int = Field(gt=0)
-    changes: Annotated[
-        list[StageMetadataDatasetRequest],
-        Field(min_length=1, max_length=16),
-    ]
 
 
 class ExpectedDraftRevisionRequest(ContractModel):
@@ -59,7 +45,7 @@ class StageMetadataChangeSetResult(ContractModel):
     staged: Literal[True] = True
     datasets: tuple[MetadataChangeSetDatasetCount, ...] = Field(
         min_length=1,
-        max_length=16,
+        max_length=17,
     )
     draft_revision: int = Field(gt=0)
     status: Literal["active"] = "active"
@@ -83,7 +69,7 @@ class GetMetadataChangeSetResult(ContractModel):
     validation_outcome: dict[str, object] | None
     dataset_counts: tuple[MetadataChangeSetDatasetCount, ...] = Field(
         min_length=16,
-        max_length=16,
+        max_length=17,
     )
     dataset: ChangeSetDataset | None
     records: tuple[dict[str, object], ...] | None
@@ -131,7 +117,7 @@ class ValidateMetadataChangeSetResult(ContractModel):
     staged_record_count: int = Field(ge=0)
     error_count: int = Field(ge=0, le=100)
     errors: tuple[MetadataChangeSetValidationError, ...] = Field(max_length=100)
-    action_review: tuple[MetadataChangeSetActionReview, ...] = Field(max_length=16)
+    action_review: tuple[MetadataChangeSetActionReview, ...] = Field(max_length=17)
     validated_at: datetime | None
     expires_at: datetime
 
@@ -150,7 +136,7 @@ class ApplyMetadataChangeSetResult(ContractModel):
     action_count: int = Field(ge=0)
     error_count: int = Field(ge=0, le=100)
     errors: tuple[MetadataChangeSetValidationError, ...] = Field(max_length=100)
-    action_review: tuple[MetadataChangeSetActionReview, ...] = Field(max_length=16)
+    action_review: tuple[MetadataChangeSetActionReview, ...] = Field(max_length=17)
     applied_at: datetime | None
 
 
@@ -185,8 +171,6 @@ __all__ = [
     "MetadataChangeSetActionReview",
     "MetadataChangeSetDatasetCount",
     "MetadataChangeSetValidationError",
-    "StageMetadataChangeSetRequest",
     "StageMetadataChangeSetResult",
-    "StageMetadataDatasetRequest",
     "ValidateMetadataChangeSetResult",
 ]

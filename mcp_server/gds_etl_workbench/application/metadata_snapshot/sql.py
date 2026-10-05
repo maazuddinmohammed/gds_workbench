@@ -44,6 +44,7 @@ SELECT object_id,
        object_type_id,
        zone_id,
        is_locked,
+       value,
        is_active
   FROM core.object
  WHERE object_id = ANY(%s::BIGINT[])
@@ -68,6 +69,7 @@ SELECT attribute_id,
        is_mapped,
        is_purge,
        is_locked,
+       value,
        is_active
   FROM core.attribute
  WHERE object_id = ANY(%s::BIGINT[])
@@ -106,6 +108,7 @@ SELECT copy_group_id,
        copy_group_name,
        copy_group_description,
        is_member_group_required,
+       value,
        is_active
   FROM core.copy_group
  WHERE tenant_id = %s
@@ -119,10 +122,19 @@ SELECT member_group_id,
        member_group_name,
        member_group_description,
        member_group_initial_load_date,
+       value,
        is_active
   FROM core.member_group
  WHERE tenant_id = %s
  ORDER BY member_group_id
+"""
+
+MEMBER_ROWS_SQL: LiteralString = """
+SELECT member.*
+  FROM core.member AS member
+  JOIN core.member_group AS member_group USING (member_group_id)
+ WHERE member_group.tenant_id = %s
+ ORDER BY member.member_id
 """
 
 COPY_GROUP_CONTROL_ROWS_SQL: LiteralString = """
@@ -155,6 +167,7 @@ SELECT copy.copy_id,
        copy.copy_source_order,
        copy.source_data_operation_id,
        copy.target_data_operation_id,
+       copy.value,
        copy.is_active
   FROM core.copy AS copy
   JOIN core.copy_group AS copy_group
@@ -172,6 +185,7 @@ SELECT process_group_id,
        process_group_description,
        process_group_dependency_order,
        copy_group_id,
+       value,
        is_active
   FROM core.process_group
  WHERE tenant_id = %s
@@ -187,6 +201,7 @@ SELECT process.process_id,
        process.process_executable,
        process.process_type_id,
        process.process_group_id,
+       process.value,
        process.is_active
   FROM core.process AS process
   JOIN core.process_group AS process_group
@@ -207,6 +222,7 @@ SELECT connection.connection_id,
        connection.has_foreign_catalog,
        connection.foreign_catalog,
        connection.is_global_data_store,
+       connection.value,
        connection.is_active
   FROM core.connection AS connection
  WHERE connection.tenant_id = %s
@@ -229,6 +245,7 @@ SELECT tenant_id,
        gds_admin_catalog,
        gds_connection_id,
        tenant_visibility,
+       value,
        is_active
   FROM core.tenant
  WHERE tenant_id = %s
@@ -253,6 +270,7 @@ SELECT system_id,
        system_name,
        system_description,
        system_type_id,
+       value,
        is_active
   FROM core.system
  WHERE system_id = ANY(%s::BIGINT[])
@@ -345,3 +363,14 @@ REFERENCE_ROWS_SQL: dict[str, LiteralString] = {
     "data_operation": DATA_OPERATION_ROWS_SQL,
     "process_type": PROCESS_TYPE_ROWS_SQL,
 }
+
+# Deliberately omit storage paths, account names, and secret references.
+CONNECTION_LOCATION_ROWS_SQL: LiteralString = """
+SELECT location.connection_id, location_type.location_type_name,
+       environment.environment_code, location.value
+  FROM core.connection_location AS location
+  JOIN reference.location_type AS location_type USING (location_type_id)
+  JOIN reference.environment AS environment USING (environment_id)
+ WHERE location.connection_id = ANY(%s::BIGINT[])
+ ORDER BY location.connection_id, location_type.location_type_name, environment.environment_code
+"""

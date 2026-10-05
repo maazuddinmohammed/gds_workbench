@@ -76,11 +76,10 @@ function SystemsTable({ systems }: { systems: SystemRecord[] }) {
     <section className="systems-section" aria-labelledby="systems-heading">
       <header>
         <div>
-          <p className="eyebrow">Registered metadata</p>
           <h2 id="systems-heading">Systems</h2>
         </div>
       </header>
-      <div className="table-scroll">
+      <div className="table-scroll ledger-grid" role="region" aria-label="Registered Systems table" tabIndex={0}>
         <table aria-label="Registered Systems">
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (

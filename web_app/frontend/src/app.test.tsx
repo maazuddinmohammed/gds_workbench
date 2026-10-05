@@ -308,7 +308,7 @@ describe("Tenant Home", () => {
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input);
       if (url === "/api/v1/tenants/7/home") return jsonResponse(readerHome);
-      if (url === "/api/v1/tenants/7/lock/history?page_size=50") {
+      if (url === "/api/v1/tenants/7/lock/history?page_size=3") {
         return jsonResponse({
           tenant_id: 7,
           items: [
@@ -344,7 +344,7 @@ describe("Tenant Home", () => {
     expect(within(history).getByText("Expired")).toBeVisible();
     expect(within(history).getByText("System")).toBeVisible();
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/lock/history?page_size=50",
+      "/api/v1/tenants/7/lock/history?page_size=3",
       expect.objectContaining({ credentials: "same-origin" }),
     );
     expect(fetcher.mock.calls.some(([input]) => /lock\/(acquire|renew|release|override)$/.test(String(input)))).toBe(false);
@@ -407,6 +407,8 @@ describe("Models ledger", () => {
     await user.type(within(dialog).getAllByRole("textbox", { name: "Description" })[0]!, "Customer domain");
     await user.click(within(dialog).getByText("Silver settings"));
     const template = within(dialog).getByRole("textbox", { name: /Silver audit columns template/ });
+    await user.click(within(template.parentElement!).getByRole("button", { name: "Customize" }));
+    await user.clear(template);
     await user.click(template);
     await user.paste("[]");
     await user.click(submit);
@@ -416,7 +418,10 @@ describe("Models ledger", () => {
     await user.clear(template);
     await user.click(template);
     await user.paste('{"columns":[{"name":"created_at","type":"timestamp"}]}');
-    await user.type(within(dialog).getByRole("textbox", { name: "Silver naming instructions" }), "Use snake case.");
+    const naming = within(dialog).getByRole("textbox", { name: "Silver naming instructions" });
+    await user.click(within(naming.parentElement!).getByRole("button", { name: "Customize" }));
+    await user.clear(naming);
+    await user.type(naming, "Use snake case.");
     await user.click(submit);
     expect(await screen.findByRole("alert")).toHaveTextContent("already has a Model with that name");
     expect(name).toHaveValue("  Customer 360  ");
@@ -466,9 +471,15 @@ describe("Models ledger", () => {
     const dimensionalSchemas = within(within(dialog).getByText("Dimensional schemas", { exact: true }).closest("details")!);
     await user.type(dimensionalSchemas.getByRole("textbox", { name: "Schema name" }), "gold_analytics");
     await user.click(within(dialog).getByText("Gold settings"));
-    await user.type(within(dialog).getByRole("textbox", { name: "Gold naming instructions" }), "Use business names.");
+    const naming = within(dialog).getByRole("textbox", { name: "Gold naming instructions" });
+    await user.click(within(naming.parentElement!).getByRole("button", { name: "Customize" }));
+    await user.clear(naming);
+    await user.type(naming, "Use business names.");
     for (const label of ["Gold technical columns template", "Gold audit columns template"]) {
-      await user.click(within(dialog).getByRole("textbox", { name: new RegExp(label) }));
+      const template = within(dialog).getByRole("textbox", { name: new RegExp(label) });
+      await user.click(within(template.parentElement!).getByRole("button", { name: "Customize" }));
+      await user.clear(template);
+      await user.click(template);
       await user.paste('{"columns":[]}');
     }
     await user.click(within(dialog).getByText("Agent defaults"));
@@ -508,7 +519,8 @@ describe("Models ledger", () => {
 
     const ledger = await screen.findByRole("table", { name: "Active Models" });
     expect(within(ledger).getByText("Customer 360")).toBeVisible();
-    expect(within(ledger).getByText("25 Objects")).toBeVisible();
+    expect(within(ledger).queryByText("25 Objects")).not.toBeInTheDocument();
+    expect(within(ledger).getByText("Unlocked")).toBeVisible();
     expect(within(ledger).getByRole("link", { name: "Open Customer 360" })).toHaveAttribute(
       "href",
       "/tenants/7/models/18",
@@ -627,6 +639,8 @@ describe("Active Scope", () => {
     render(<WorkbenchApp router={router} />);
     await screen.findByRole("table", { name: "Active Model Input Scope" });
 
+    expect(screen.getByLabelText("Zone")).not.toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Filters" }));
     await user.selectOptions(screen.getByLabelText("Zone"), "bronze");
     await user.selectOptions(screen.getByLabelText("System code"), "CRM");
     await user.selectOptions(screen.getByLabelText("Source Tenant code"), "GRDM");
@@ -638,6 +652,10 @@ describe("Active Scope", () => {
       "/api/v1/tenants/7/models/18/input-scope?zone=bronze&system_code=crm&source_tenant_code=grdm&object_name=customer_raw&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
+    expect(screen.getByLabelText("Zone")).not.toBeVisible();
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
+    expect(screen.getByLabelText("Zone")).toHaveValue("bronze");
   });
 
   it("opens details only on request and returns focus when the drawer closes", async () => {
@@ -691,6 +709,11 @@ function tenantFetchStub(): ReturnType<typeof vi.fn<typeof fetch>> {
       return jsonResponse({ tenant_id: 7 });
     }
     if (url === "/api/v1/tenants/7/home") return jsonResponse(tenantHomePayload);
+    if (url.endsWith("/models/templates")) return jsonResponse({
+      silver_model_naming_instructions: "Use PascalCase.", silver_model_audit_columns_template: { columns: [] },
+      gold_model_naming_instructions: "Use PascalCase.", gold_model_technical_columns_template: { columns: [] },
+      gold_model_audit_columns_template: { columns: [] },
+    });
     if (url === "/api/v1/tenants/7/models?status=active&page_size=200") {
       return jsonResponse(modelCollectionPayload);
     }

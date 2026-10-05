@@ -431,6 +431,8 @@ class WorkflowCommandTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "security.authorize_tenant_operation" in query:
             assert parameters[-2:] == (7, "tenant_model_write")
             return {
@@ -700,6 +702,8 @@ class _ImplicitDefaultWorkflowCommandTransaction(WorkflowCommandTransaction):
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "FROM model.model AS target_model" in query:
             row = await super().fetch_one(query, parameters)
             assert row is not None
@@ -728,6 +732,8 @@ class _SuccessfulImplicitDefaultWorkflowCommandTransaction(WorkflowCommandTransa
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "application.create_workflow_run" not in query:
             return await super().fetch_one(query, parameters)
         self.create_parameters = parameters
@@ -875,6 +881,8 @@ async def test_database_command_recovers_retired_implicit_model_agent_default() 
             query: LiteralString,
             parameters: tuple[Any, ...] = (),
         ) -> dict[str, Any] | None:
+            if "model.assert_writable" in query:
+                return {"assert_writable": None}
             row = await super().fetch_one(query, parameters)
             if row is not None and "FROM model.model AS target_model" in query:
                 row.update(
@@ -926,6 +934,8 @@ class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
+        if "model.assert_writable" in query:
+            return {"assert_writable": None}
         if "application.create_workflow_run" not in query:
             return await super().fetch_one(query, parameters)
         assert len(parameters) == 29
@@ -1041,6 +1051,8 @@ async def test_missing_mapping_default_returns_a_clear_controlled_error(
         async def fetch_one(
             self, query: LiteralString, parameters: tuple[Any, ...] = ()
         ) -> dict[str, Any] | None:
+            if "model.assert_writable" in query:
+                return {"assert_writable": None}
             if "application.create_workflow_run" in query:
                 raise RuntimeError(
                     f"Global default Mapping {target} output template is unavailable"
@@ -1111,6 +1123,8 @@ async def test_incomplete_mapping_prerequisite_returns_an_actionable_controlled_
         async def fetch_one(
             self, query: LiteralString, parameters: tuple[Any, ...] = ()
         ) -> dict[str, Any] | None:
+            if "model.assert_writable" in query:
+                return {"assert_writable": None}
             if "application.create_workflow_run" in query:
                 raise RuntimeError(database_message)
             return await super().fetch_one(query, parameters)

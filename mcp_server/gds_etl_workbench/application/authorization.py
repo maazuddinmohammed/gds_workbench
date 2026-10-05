@@ -185,6 +185,12 @@ class AuthorizationService:
         )
         if model_id is None:
             return authorization
+        if policy is ToolPolicy.TENANT_MODEL_WRITE:
+            await transaction.fetch_one(
+                "SELECT model.assert_writable(model_id) FROM model.model "
+                "WHERE model_id = %s AND tenant_id = %s",
+                (model_id, tenant_id),
+            )
         from gds_etl_workbench.application.model_read import authorize_model_sources
 
         readable = await authorize_model_sources(transaction, authorization, model_id)

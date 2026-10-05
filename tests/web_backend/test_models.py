@@ -32,7 +32,8 @@ class StaticModelService:
         cursor: str | None,
     ) -> ModelCollection:
         assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_status, page_size, cursor) == (7, "active", 25, None)
+        assert (tenant_id, model_status, cursor) == (7, "active", None)
+        assert page_size in (1, 25)
         return ModelCollection(
             items=(
                 ModelLedgerRecord(
@@ -82,6 +83,28 @@ class StaticModelService:
         )
 
 
+def test_shared_templates_are_visible_through_the_authorized_models_route() -> None:
+    app = create_app(
+        identity_provider=IdentityProvider(
+            AuthMode.DEV,
+            local_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+            local_principal_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+        ),
+        model_service=StaticModelService(),
+    )
+    with TestClient(app) as client:
+        response = client.get("/api/v1/tenants/7/models/templates")
+    assert response.status_code == 200
+    templates = response.json()
+    assert "PascalCase" in templates["silver_model_naming_instructions"]
+    assert templates["silver_model_audit_columns_template"] == templates["gold_model_audit_columns_template"]
+    assert [column["semantic_name"] for column in templates["silver_model_audit_columns_template"]["columns"]] == [
+        "SourceSystemID", "IsDataValid", "HashKey", "IsActive", "GDSBatchID", "PipelineRunID",
+        "CreatedDate", "UpdatedDate", "CreatedBy", "UpdatedBy",
+    ]
+    assert templates["gold_model_technical_columns_template"]["type_2"]["is_current"]["semantic_name"] == "IsCurrentRecord"
+
+
 def test_model_ledger_is_tenant_scoped_and_contains_current_workflow_state() -> None:
     app = create_app(
         identity_provider=IdentityProvider(
@@ -103,6 +126,7 @@ def test_model_ledger_is_tenant_scoped_and_contains_current_workflow_state() -> 
                 "model_name": "Customer 360",
                 "model_description": "Cross-system customer domain",
                 "model_revision": 18,
+                "is_locked": False,
                 "model_input_scope_object_count": 25,
                 "latest_workflow": "analysis",
                 "latest_run_status": "completed",
@@ -153,6 +177,7 @@ class ModelTransaction:
                 "model_name": "Customer 360",
                 "model_description": "Cross-system customer domain",
                 "model_revision": 18,
+                "is_locked": False,
                 "model_input_scope_object_count": 25,
                 "logical_entity_scd_type": "type_1",
                 "silver_model_naming_instructions": None,
@@ -205,6 +230,7 @@ class ModelTransaction:
                 "model_name": "Customer 360",
                 "model_description": None,
                 "model_revision": 18,
+                "is_locked": False,
                 "model_input_scope_object_count": 25,
                 "latest_workflow": "analysis",
                 "latest_run_status": "completed",

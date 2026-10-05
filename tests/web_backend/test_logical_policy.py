@@ -13,7 +13,8 @@ from gds_workbench_api.features.logical.policy import project_logical_audit_poli
 
 def _entity(name: str) -> LogicalEntityRecord:
     return LogicalEntityRecord(
-        logical_entity_schema_name="silver", logical_entity_name=name,
+        logical_entity_schema_name="silver",
+        logical_entity_name=name,
         logical_entity_definition=f"One {name}.",
         logical_entity_type="core",
         logical_entity_type_detail=None,
@@ -29,7 +30,8 @@ def _entity(name: str) -> LogicalEntityRecord:
 
 def _business_attribute(entity: str) -> LogicalAttributeRecord:
     return LogicalAttributeRecord(
-        logical_entity_schema_name="silver", logical_entity_name=entity,
+        logical_entity_schema_name="silver",
+        logical_entity_name=entity,
         logical_attribute_name=f"{entity} ID",
         logical_attribute_definition=f"{entity} identifier.",
         logical_attribute_data_type="bigint",
@@ -114,22 +116,35 @@ def test_projection_adds_policy_columns_to_new_and_applied_active_entities() -> 
     assert all(item["sources"] == [] for item in audit)
 
 
-def test_missing_policy_is_an_exact_no_op() -> None:
+def test_missing_policy_adds_default_audit_columns_and_generated_key() -> None:
     changes = (
         StageModelChange(
             dataset="logical_entity",
             records=[_entity("Customer").model_dump(mode="json")],
         ),
     )
-
-    assert (
-        project_logical_audit_policy(
-            changes=changes,
-            applied=None,
-            raw_template=None,
-        )
-        is changes
+    projected = project_logical_audit_policy(
+        changes=changes, applied=None, raw_template=None
     )
+    attributes = sorted(
+        _attribute_records(projected),
+        key=lambda row: int(str(row["logical_attribute_ordinal_position"])),
+    )
+    assert [row["logical_attribute_name"] for row in attributes] == [
+        "CustomerID",
+        "SourceSystemID",
+        "IsDataValid",
+        "HashKey",
+        "IsActive",
+        "GDSBatchID",
+        "PipelineRunID",
+        "CreatedDate",
+        "UpdatedDate",
+        "CreatedBy",
+        "UpdatedBy",
+    ]
+    assert attributes[0]["logical_attribute_is_surrogate_key"] is True
+    assert all(row["logical_attribute_is_audit_column"] for row in attributes[1:])
 
 
 def test_projection_rejects_non_audit_name_collision() -> None:
@@ -149,6 +164,20 @@ def test_projection_rejects_non_audit_name_collision() -> None:
             changes=(),
             applied=applied,
             raw_template=_template(),
+        )
+
+
+def test_default_generated_key_never_overwrites_a_same_named_business_attribute() -> None:
+    business = _business_attribute("Customer").model_copy(
+        update={"logical_attribute_name": "CustomerID"}
+    )
+    with pytest.raises(InvalidRequestError, match="generated key name conflicts"):
+        project_logical_audit_policy(
+            changes=(
+                StageModelChange(dataset="logical_entity", records=[_entity("Customer").model_dump(mode="json")]),
+                StageModelChange(dataset="logical_attribute", records=[business.model_dump(mode="json")]),
+            ),
+            applied=None, raw_template=None,
         )
 
 

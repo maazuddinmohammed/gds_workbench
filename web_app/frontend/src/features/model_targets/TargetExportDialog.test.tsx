@@ -15,7 +15,7 @@ describe("Entity registration export", () => {
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     render(<QueryClientProvider client={new QueryClient()}><TargetExportButton api={createApiClient(fetcher)} tenantId={7} modelId={18} modelRevision={3} layer={layer} /></QueryClientProvider>);
     const user = userEvent.setup();
-    const trigger = screen.getByRole("button", { name: "Export" });
+    const trigger = screen.getByRole("button", { name: "Export Metadata" });
     await user.click(trigger);
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).queryByRole("textbox", { name: "Target schema" })).toBeNull();

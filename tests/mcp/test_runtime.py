@@ -139,7 +139,7 @@ class FakeSnapshotStore:
     def __init__(
         self,
         read_url: str = (
-            "https://snapshot.blob.core.windows.net/snapshots/metadata/123/"
+            "https://snapshot.blob.core.windows.net/snapshots/metadata/123/20260811/"
             "7d7cc8ad-62b5-44ef-aeb0-c09c770ff233.zip?sp=r&sig=fake"
         ),
     ) -> None:
@@ -155,6 +155,7 @@ class FakeSnapshotStore:
         archive: SnapshotArchive,
         *,
         snapshot_kind: str,
+        tenant_id: int,
         scope_id: int,
         schema_version: str,
         snapshot_id: UUID,
@@ -167,12 +168,16 @@ class FakeSnapshotStore:
         self,
         *,
         snapshot_kind: str,
+        tenant_id: int,
         scope_id: int,
         schema_version: str,
         snapshot_id: UUID,
+        created_at: datetime,
         now: datetime,
         ttl_seconds: int,
     ) -> str | None:
+        assert tenant_id == scope_id
+        assert created_at <= now
         assert snapshot_kind == "metadata"
         assert schema_version == "2.0"
         self.read_url_calls.append((scope_id, snapshot_id, now, ttl_seconds))
@@ -259,6 +264,9 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "read_model_section",
         "read_mapping_context",
         "execute_databricks_sql",
+        "start_profiling_run",
+        "get_profiling_run_status",
+        "cancel_profiling_run",
         "describe_model_dataset",
         "create_model_snapshot",
         "describe_metadata_dataset",
@@ -297,6 +305,8 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
                 if tool.name
                 in {
                     "create_model_change_set",
+                    "start_profiling_run",
+                    "cancel_profiling_run",
                     "stage_model_change_set",
                     "begin_model_stage_batch",
                     "put_model_stage_chunk",
@@ -597,7 +607,7 @@ def test_health_routes_are_anonymous() -> None:
     ready_body = ready.json()
     assert ready_body["status"] == "ready"
     assert ready_body["mcp_server_version"] == "0.2.0"
-    assert ready_body["tool_count"] == 37
+    assert ready_body["tool_count"] == 40
     assert "tool_contract_sha256" not in ready_body
 
 
@@ -1132,8 +1142,8 @@ async def test_local_application_builds_metadata_snapshot_end_to_end(
     with zipfile.ZipFile(BytesIO(store.archive_bytes)) as archive:
         manifest = json.loads(archive.read("metadata-snapshot/manifest.json"))
     assert manifest["tenant_code"] == "LOCAL_SNAPSHOT_RUNTIME"
-    assert manifest["counts"]["logical_dataset_count"] == 28
-    assert manifest["counts"]["file_count"] == 68
+    assert manifest["counts"]["logical_dataset_count"] == 30
+    assert manifest["counts"]["file_count"] == 72
 
 
 def test_invalid_configuration_preserves_only_safe_health_behavior() -> None:

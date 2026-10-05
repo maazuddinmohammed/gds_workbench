@@ -1,14 +1,22 @@
 # Atlas Stage Runner
 
-VS Code companion for the Atlas plugin. It checks the backend connection and stages reviewed Metadata or Model changes. **Stage never Applies changes.**
+VS Code companion and local Codex bridge for the Atlas plugin. It checks the backend connection and stages reviewed Metadata or Model changes. **Stage never Applies changes.**
 
-## Install
+## User guides
 
-1. Install `atlas-stage-runner-0.1.1.vsix` using **Extensions: Install from VSIX**.
-2. Open your Atlas working directory in a trusted workspace; reload VS Code.
-3. Start Atlas. The agent checks Stage Runner before preparing changes for submission.
+The supplied Atlas plugin contains:
 
-You can also run **Atlas: Check Stage Runner** from the Command Palette. Production uses Microsoft sign-in. Plugin and extension connections are separate; SQL environment does not select the backend.
+- `docs/copilot-vs-code-installation-and-setup.md`: installation and sign-in.
+- `docs/usage-guide.md`: the shared Copilot and Codex procedure.
+
+Before authorized delegation, the plugin resolves and saves the sub-agent model
+policy in the working folder. Independent work needs no policy selection.
+Copilot must support the selected rule; Stage Runner does not select models or
+start sub-agents.
+
+The remaining sections are a technical reference for maintainers. Production
+uses Microsoft sign-in. Plugin and extension connections are separate; SQL
+environment does not select the backend.
 
 Settings: `atlas.stageRunner.profile` accepts `production`, `local` or `azureLocalTest`. For `local`, set `atlas.stageRunner.localUrl` to a loopback HTTP `/mcp` endpoint.
 
@@ -29,8 +37,18 @@ Stage receipts use `operation_id`, `task_id`, `owner_tenant_id`, `change_set_id`
 
 ## Review and recovery
 
-Atlas validates locally, asks you to review in Workbench, then records your acknowledgement. It creates or reads the server draft and prepares the manifest before calling Stage Runner. Server validation and a **separate Apply approval** follow Stage.
+Atlas validates locally, asks you to review in Atlas Local Workbench, then records your acknowledgement. It creates or reads the server draft and prepares the manifest before calling Stage Runner. Server validation and a **separate Apply approval** follow Stage.
 
 If Stage has an uncertain outcome, use the same manifest with `recoverOnly: true`. Recovery only reads the server: it restores a receipt when the active draft and fingerprint match the saved intent. Partial or conflicting results need review; never retry blindly.
 
-These tools use VS Code's language-model API. Other agent hosts need a supported integration; installing the plugin alone does not expose VS Code tools there.
+Copilot calls these tools through VS Code's language-model API. Codex uses the
+[Atlas Connector](../atlas-connector/README.md) as a private local relay. Install
+this extension for either client. In the trusted local working folder, run
+**Atlas: Start Codex Bridge** and keep VS Code open. Open Codex in the same folder.
+**Atlas: Stop Codex Bridge** disconnects it. No new Microsoft app registration or
+client ID is needed. Microsoft tokens stay in the extension.
+
+The bridge uses private local sockets/named pipes, short-lived pairing, a pinned
+Microsoft account, and the reviewed governed tool allowlist. Stage payloads are
+read by this extension and never relayed through model context. Workspace,
+backend or account changes stop the bridge; unfinished writes are not replayed.

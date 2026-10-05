@@ -58,7 +58,7 @@ import { ValidationScreen } from "./features/validation/ValidationScreen";
 import { ModelPromptSettings } from "./features/prompts/ModelPromptSettings";
 import { PromptsScreen } from "./features/prompts/PromptsScreen";
 import { PromptTemplateDetailPage } from "./features/prompts/PromptTemplateDetail";
-import { MetadataScreen } from "./features/metadata/MetadataScreen";
+import { MetadataScreen, type MetadataCategory } from "./features/metadata/MetadataScreen";
 import { PhysicalMetadataScreen } from "./features/metadata/PhysicalMetadataScreen";
 import { TenantEntryScreen } from "./features/tenants/TenantEntryScreen";
 import { TenantHomeScreen } from "./features/tenants/TenantHomeScreen";
@@ -107,6 +107,13 @@ const tenantHomeRoute = createRoute({
 const tenantMetadataRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/metadata",
+  validateSearch: (search: Record<string, unknown>): { section?: MetadataCategory; objectId?: number } => {
+    const section = ["reference", "foundational", "objects", "operational"].includes(String(search.section))
+      ? search.section as MetadataCategory : undefined;
+    const objectId = Number(search.objectId);
+    return { ...(section ? { section } : {}),
+      ...(section === "objects" && Number.isSafeInteger(objectId) && objectId > 0 ? { objectId } : {}) };
+  },
   component: TenantMetadata,
 });
 
@@ -498,6 +505,8 @@ function TenantMetadata() {
   const { api } = rootRoute.useRouteContext();
   const { tenantId } = tenantMetadataRoute.useParams();
   const numericTenantId = Number(tenantId);
+  const { section, objectId } = tenantMetadataRoute.useSearch();
+  const navigate = useNavigate({ from: tenantMetadataRoute.fullPath });
   return (
     <TenantRouteFrame
       api={api}
@@ -511,6 +520,10 @@ function TenantMetadata() {
           tenantId={numericTenantId}
           tenantLock={home.lock}
           canWriteMetadata={home.tenant.effective_role !== "viewer"}
+          section={section ?? "reference"}
+          objectId={objectId ?? null}
+          onSectionChange={(next) => { void navigate({ search: { section: next } }); }}
+          onObjectChange={(id) => { void navigate({ search: { section: "objects", ...(id === null ? {} : { objectId: id }) } }); }}
         />
       )}
     </TenantRouteFrame>
@@ -523,7 +536,7 @@ function TenantMetadataObjects() {
   const { objectId } = tenantMetadataObjectsRoute.useSearch();
   const navigate = useNavigate({ from: tenantMetadataObjectsRoute.fullPath });
   return <TenantRouteFrame api={api} tenantId={Number(tenantId)} activeNav="metadata" loadingLabel="Loading physical metadata">
-    {({ home }) => <PhysicalMetadataScreen key={tenantId} api={api} tenantId={Number(tenantId)} tenantLock={home.lock} canWriteMetadata={home.tenant.effective_role !== "viewer"} objectId={objectId ?? null} onObjectChange={(id) => { void navigate({ search: id === null ? {} : { objectId: id } }); }} />}
+    {() => <PhysicalMetadataScreen key={tenantId} api={api} tenantId={Number(tenantId)} objectId={objectId ?? null} onObjectChange={(id) => { void navigate({ search: id === null ? {} : { objectId: id } }); }} />}
   </TenantRouteFrame>;
 }
 
@@ -575,7 +588,7 @@ function TenantMappingModel() {
           api={api}
           tenantId={numericTenantId}
           model={model}
-          hasTenantLock={home.lock.owned_by_current_principal === true}
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
           hasAppPermission={canAuthorModels(home.tenant.effective_role)}
         />
       )}
@@ -635,7 +648,7 @@ function TenantMappingDetail({
           {kind === "object" ? (
             <MappingObjectDetailPage api={api} tenantId={tenantId} modelId={modelId} mappingObjectId={detailId}
               modelRevision={model.model_revision}
-              hasTenantLock={home.lock.owned_by_current_principal === true && canAuthorModels(home.tenant.effective_role)}
+              hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true && canAuthorModels(home.tenant.effective_role)}
             />
           ) : (
             <MappingAttributeDetailPage api={api} tenantId={tenantId} modelId={modelId} mappingAttributeId={detailId} />
@@ -688,7 +701,7 @@ function TenantCodeGenerationModel() {
           api={api}
           tenantId={numericTenantId}
           model={model}
-          hasTenantLock={home.lock.owned_by_current_principal === true}
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
           hasAppPermission={canAuthorModels(home.tenant.effective_role)}
         />
       )}
@@ -721,7 +734,7 @@ function TenantGeneratedSqlArtifact() {
             tenantId={numericTenantId}
             model={model}
             artifactId={numericArtifactId}
-            hasTenantLock={home.lock.owned_by_current_principal === true}
+            hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
             hasAppPermission={canAuthorModels(home.tenant.effective_role)}
           />
         </div>
@@ -772,7 +785,7 @@ function TenantValidationModel() {
           api={api}
           tenantId={numericTenantId}
           model={model}
-          hasTenantLock={home.lock.owned_by_current_principal === true}
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
           hasAppPermission={canAuthorModels(home.tenant.effective_role)}
           groupId={groupId === undefined ? undefined : Number(groupId)}
           checkId={checkId === undefined ? undefined : Number(checkId)}
@@ -864,7 +877,7 @@ function TenantModelPromptSettings() {
           api={api}
           tenantId={numericTenantId}
           model={model}
-          hasTenantLock={home.lock.owned_by_current_principal === true}
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
           hasAppPermission={canAuthorModels(home.tenant.effective_role)}
         />
       )}
@@ -905,7 +918,7 @@ function ModelProfiling() {
           api={api}
           tenantId={numericTenantId}
           model={model}
-          hasTenantLock={home.lock.owned_by_current_principal === true}
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
           resultFilters={resultFilters}
           {...(returnObjectId === undefined ? {} : { returnObjectId })}
           onApplyResultFilters={(filters) => {
@@ -967,7 +980,7 @@ function ModelAnalysis() {
           api={api}
           tenantId={numericTenantId}
           model={model}
-          hasTenantLock={home.lock.owned_by_current_principal === true}
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
         />
       )}
     </ModelRouteFrame>
@@ -989,7 +1002,7 @@ function ModelAssertions() {
       loadingLabel="Loading Assertions"
     >
       {({ home, model }) => (
-        <AssertionsScreen api={api} tenantId={numericTenantId} model={model} hasTenantLock={home.lock.owned_by_current_principal === true} />
+        <AssertionsScreen api={api} tenantId={numericTenantId} model={model} hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true} />
       )}
     </ModelRouteFrame>
   );
@@ -1055,7 +1068,7 @@ function AssertionDetailRoute({
             key={detailId}
             documentId={detailId}
             modelRevision={model.model_revision}
-            hasTenantLock={home.lock.owned_by_current_principal === true}
+            hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
           />
         ) : (
           <AssertionRecordDetailPage
@@ -1064,7 +1077,7 @@ function AssertionDetailRoute({
             modelId={modelId}
             recordId={detailId}
             modelRevision={model.model_revision}
-            hasTenantLock={home.lock.owned_by_current_principal === true}
+            hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
           />
         )
       )}
@@ -1080,7 +1093,7 @@ function ModelMetadataEnrichment() {
       activeStage="metadata-enrichment" loadingLabel="Loading Metadata enrichment">
       {({ home, model }) => (
         <MetadataEnrichmentScreen api={api} tenantId={Number(tenantId)} model={model}
-          hasTenantLock={home.lock.owned_by_current_principal === true} />
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true} />
       )}
     </ModelRouteFrame>
   );
@@ -1106,7 +1119,7 @@ function ModelConceptual() {
           tenantId={numericTenantId}
           model={model}
           canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"}
-          hasTenantLock={home.lock.owned_by_current_principal === true}
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
         />
       )}
     </ModelRouteFrame>
@@ -1166,7 +1179,7 @@ function ConceptualDetailRoute({
     >
       {({ home, model }) => (<>
         <ModelRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={tenantId} modelId={modelId} modelRevision={model.model_revision}
-          hasTenantLock={home.lock.owned_by_current_principal === true} dataset={`conceptual_${kind}`} recordId={detailId} />
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true} dataset={`conceptual_${kind}`} recordId={detailId} />
         {
         kind === "object" ? (
           <ConceptualObjectDetailPage
@@ -1209,7 +1222,7 @@ function ModelLogical() {
           tenantId={numericTenantId}
           model={model}
           canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"}
-          hasTenantLock={home.lock.owned_by_current_principal === true}
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
         />
       )}
     </ModelRouteFrame>
@@ -1234,14 +1247,14 @@ function ModelLogicalEntity() {
     >
       {({ home, model }) => (<>
         <ModelRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={numericTenantId} modelId={numericModelId} modelRevision={model.model_revision}
-          hasTenantLock={home.lock.owned_by_current_principal === true} dataset="logical_entity" recordId={numericEntityId} />
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true} dataset="logical_entity" recordId={numericEntityId} />
         <LogicalEntityDetailPage
           api={api}
           tenantId={numericTenantId}
           modelId={numericModelId}
           entityId={numericEntityId}
           modelRevision={model.model_revision}
-          hasTenantLock={home.lock.owned_by_current_principal === true}
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
         />
       </>)}
     </ModelRouteFrame>
@@ -1315,7 +1328,7 @@ function LogicalDetailRoute({
     >
       {({ home, model }) => (<>
         <ModelRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={tenantId} modelId={modelId} modelRevision={model.model_revision}
-          hasTenantLock={home.lock.owned_by_current_principal === true} dataset={`logical_${kind}`} recordId={detailId} />
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true} dataset={`logical_${kind}`} recordId={detailId} />
         {
         kind === "attribute" ? (
           <LogicalAttributeDetailPage
@@ -1364,7 +1377,7 @@ function ModelDimensional() {
           tenantId={numericTenantId}
           model={model}
           canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"}
-          hasTenantLock={home.lock.owned_by_current_principal === true}
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
         />
       )}
     </ModelRouteFrame>
@@ -1389,14 +1402,14 @@ function ModelDimensionalObject() {
     >
       {({ home, model }) => (<>
         <ModelRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={numericTenantId} modelId={numericModelId} modelRevision={model.model_revision}
-          hasTenantLock={home.lock.owned_by_current_principal === true} dataset="dimensional_entity" recordId={numericEntityId} />
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true} dataset="dimensional_entity" recordId={numericEntityId} />
         <DimensionalObjectDetailPage
           api={api}
           tenantId={numericTenantId}
           modelId={numericModelId}
           entityId={numericEntityId}
           modelRevision={model.model_revision}
-          hasTenantLock={home.lock.owned_by_current_principal === true}
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true}
         />
       </>)}
     </ModelRouteFrame>
@@ -1452,7 +1465,7 @@ function DimensionalDetailRoute({
     >
       {({ home, model }) => (<>
         <ModelRecordTools canDelete={home.tenant.effective_role === "super_admin" || home.tenant.effective_role === "tenant_admin"} api={api} tenantId={tenantId} modelId={modelId} modelRevision={model.model_revision}
-          hasTenantLock={home.lock.owned_by_current_principal === true} dataset={`dimensional_${kind}`} recordId={detailId} />
+          hasTenantLock={!model.is_locked && home.lock.owned_by_current_principal === true} dataset={`dimensional_${kind}`} recordId={detailId} />
         {
         kind === "attribute" ? (
           <DimensionalAttributeDetailPage

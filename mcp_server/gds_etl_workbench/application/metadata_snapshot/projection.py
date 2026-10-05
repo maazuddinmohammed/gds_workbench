@@ -125,6 +125,15 @@ def project_id_free_rows(
         "tenant": [],
         "system": [],
         "connection": [],
+        "connection_location": [
+            {
+                **connection_key(row["connection_id"]),
+                "location_type_name": row["location_type_name"],
+                "environment_code": row["environment_code"],
+                "value": row.get("value"),
+            }
+            for row in raw_rows.get("connection_location", ())
+        ],
     }
     for row in raw_rows["tenant"]:
         gds_connection = (
@@ -250,6 +259,24 @@ def project_id_free_rows(
         }
         for row in raw_rows["member_group"]
     ]
+    projected["member"] = [
+        {
+            "tenant_code": tenant_code(member_group_by_id[row["member_group_id"]]["tenant_id"]),
+            "system_code": system_code(member_group_by_id[row["member_group_id"]]["system_id"]),
+            "member_group_name": member_group_by_id[row["member_group_id"]]["member_group_name"],
+            **{
+                field: row[field]
+                for field in (
+                    "member_code",
+                    "member_name",
+                    "member_description",
+                    "member_attribute_name",
+                    "is_active",
+                )
+            },
+        }
+        for row in raw_rows.get("member", ())
+    ]
     projected["copy_group_control"] = [
         {
             **copy_group_key(row["copy_group_id"]),
@@ -337,6 +364,27 @@ def project_id_free_rows(
                 "is_active": row["is_active"],
             }
         )
+    for dataset in (
+        "tenant",
+        "system",
+        "connection",
+        "copy_group",
+        "member_group",
+        "member",
+        "copy",
+        "process_group",
+        "process",
+        "source_object",
+        "bronze_object",
+        "silver_object",
+        "gold_object",
+        "source_attribute",
+        "bronze_attribute",
+        "silver_attribute",
+        "gold_attribute",
+    ):
+        for record, raw in zip(projected[dataset], raw_rows.get(dataset, ()), strict=True):
+            record["value"] = raw.get("value")
     return projected
 
 

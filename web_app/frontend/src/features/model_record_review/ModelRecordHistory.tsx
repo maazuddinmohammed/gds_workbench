@@ -26,7 +26,7 @@ export function ModelRecordHistory({ api, tenantId, modelId, modelRevision, data
       <button className="button button-secondary button-small" type="button" disabled={query.isFetching}
         onClick={() => { setSelectedIds(new Set()); void query.refetch(); }}>Refresh records</button>
     </header> : null}
-    <p className="field-help">Includes inactive records. Review shows required dependencies before Apply.</p>
+    {dataset !== "generated_code" ? <p className="field-help">Includes inactive records.</p> : null}
     <ModelRecordReview api={api} tenantId={tenantId} modelId={modelId} modelRevision={modelRevision}
       {...(actions ? { actions } : {})} dataset={dataset} selectedIds={selectedIds} hasTenantLock={hasTenantLock}
       disabled={query.isPending || query.isError || stale}
@@ -34,7 +34,7 @@ export function ModelRecordHistory({ api, tenantId, modelId, modelRevision, data
     {query.isPending ? <p aria-busy="true">Loading records…</p>
       : query.isError || stale ? <p role="alert">Records could not be loaded at this Model revision. Refresh the Model and try again.</p>
       : items.length === 0 ? <p className="empty-state compact">No records yet.</p>
-      : <div className="workflow-table-scroll table-scroll" tabIndex={0} aria-label={label}>
+      : <div className="workflow-table-scroll table-scroll ledger-grid" role="region" tabIndex={0} aria-label={label}>
         <table aria-label={label}>
           <thead><tr>
             <th><input className="model-review-checkbox" type="checkbox" aria-label={`Select loaded ${label}`}

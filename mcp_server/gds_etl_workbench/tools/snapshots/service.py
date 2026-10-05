@@ -66,9 +66,11 @@ async def create_snapshot_download(
     store: SnapshotStore,
     *,
     snapshot_kind: SnapshotKind,
+    tenant_id: int,
     scope_id: int,
     schema_version: str,
     snapshot_id: UUID,
+    created_at: datetime,
     available_until: datetime,
     now: datetime,
     ttl_seconds: int,
@@ -76,9 +78,11 @@ async def create_snapshot_download(
     """Mint one bounded read-only URL for an existing immutable Snapshot."""
     download_url = await store.create_read_url(
         snapshot_kind=snapshot_kind,
+        tenant_id=tenant_id,
         scope_id=scope_id,
         schema_version=schema_version,
         snapshot_id=snapshot_id,
+        created_at=created_at,
         now=now,
         ttl_seconds=ttl_seconds,
     )
@@ -97,6 +101,7 @@ async def build_and_upload_snapshot(
     store: SnapshotStore,
     *,
     snapshot_kind: SnapshotKind,
+    tenant_id: int,
     scope_id: int,
     schema_version: str,
     snapshot_id: UUID,
@@ -113,6 +118,7 @@ async def build_and_upload_snapshot(
         await store.upload_archive(
             archive,
             snapshot_kind=snapshot_kind,
+            tenant_id=tenant_id,
             scope_id=scope_id,
             schema_version=schema_version,
             snapshot_id=snapshot_id,

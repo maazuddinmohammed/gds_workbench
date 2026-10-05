@@ -2,7 +2,10 @@
 
 # Reuse synthetic disposable fixture builders only.
 # pyright: reportPrivateUsage=false
+from io import BytesIO
 from typing import Literal
+
+from openpyxl import load_workbook
 
 import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
@@ -25,7 +28,9 @@ async def test_partial_mapping_reads_preserve_missing_attributes_and_empty_pair_
     web_postgres_database: DisposablePostgres,
     layer: Literal["logical", "dimensional"],
 ) -> None:
-    scope = _seed_mapping_scope(web_postgres_database, dimensional=layer == "dimensional")
+    scope = _seed_mapping_scope(
+        web_postgres_database, dimensional=layer == "dimensional"
+    )
     model_id, entity_id = scope.plan.model_id, scope.plan.pair.modeled_entity_id
     entity_type = scope.plan.modeled_entity_type
     with web_postgres_database.connect_owner() as connection:
@@ -95,7 +100,9 @@ async def test_partial_mapping_reads_preserve_missing_attributes_and_empty_pair_
                         f"{layer}_attribute_is_locked",
                     )
                 ),
-                sql.SQL(", dimensional_attribute_role" if layer == "dimensional" else ""),
+                sql.SQL(
+                    ", dimensional_attribute_role" if layer == "dimensional" else ""
+                ),
                 sql.SQL(", 'descriptor'" if layer == "dimensional" else ""),
                 sql.SQL(", 'descriptor'" if layer == "dimensional" else ""),
             ),
@@ -107,7 +114,10 @@ async def test_partial_mapping_reads_preserve_missing_attributes_and_empty_pair_
         entra_object_id=actor["entra_object_id"],
     )
     runtime = WebPostgresDatabase(
-        dsn=web_postgres_database.web_runtime_dsn(), pool_min=1, pool_max=1, pool_timeout_seconds=5
+        dsn=web_postgres_database.web_runtime_dsn(),
+        pool_min=1,
+        pool_max=1,
+        pool_timeout_seconds=5,
     )
     service = DatabaseMappingReviewService(
         database=runtime,
@@ -125,6 +135,24 @@ async def test_partial_mapping_reads_preserve_missing_attributes_and_empty_pair_
             cursor=None,
         )
         assert [item.mapping_object_id for item in objects.items] == [mapping_id]
+        download = await service.export_workbook(
+            principal,
+            tenant_id=scope.tenant_id,
+            model_id=model_id,
+            entity_type=entity_type,
+            source_system_code=objects.items[0].source_system.system_code,
+            expected_model_revision=objects.model_revision,
+        )
+        workbook = load_workbook(BytesIO(download.content))
+        try:
+            sheet = workbook.worksheets[0]
+            assert sheet["B4"].value == ("Gold" if layer == "dimensional" else "Silver")
+            assert sheet["B15"].value == "customer_id"
+            assert sheet["B16"].value == "postal_code"
+            assert sheet["G16"].value is None
+            assert sheet.max_row == 16
+        finally:
+            workbook.close()
         first = await service.list_attributes(
             principal,
             tenant_id=scope.tenant_id,
@@ -147,7 +175,9 @@ async def test_partial_mapping_reads_preserve_missing_attributes_and_empty_pair_
         missing = second.items[0]
         assert missing.target.attribute_name == "postal_code"
         assert missing.mapping_attribute_id is None
-        assert missing.updated_at is None and missing.status is None and missing.is_locked
+        assert (
+            missing.updated_at is None and missing.status is None and missing.is_locked
+        )
         locked = await service.list_attributes(
             principal,
             tenant_id=scope.tenant_id,
@@ -174,7 +204,10 @@ async def test_partial_mapping_reads_preserve_missing_attributes_and_empty_pair_
         assert empty.items == ()
         # Existing URLs retain governed history; clearing doesn't erase the record or its identity.
         history = await service.read_object(
-            principal, tenant_id=scope.tenant_id, model_id=model_id, mapping_object_id=mapping_id
+            principal,
+            tenant_id=scope.tenant_id,
+            model_id=model_id,
+            mapping_object_id=mapping_id,
         )
         assert history.mapping_document is None
         attribute_history = await service.read_attribute(

@@ -9,7 +9,7 @@ import type { ModelDetail } from "../models/api";
 import type { ModelInputScopeApi, ModelInputScopeFilters, ModelInputScopeObject } from "../model_input_scope/api";
 import { ScopeFilterForm } from "../model_input_scope/ModelInputScopeScreen";
 import { useScopeFilterChoices } from "../model_input_scope/scopeFilterChoices";
-import type { ObjectAttribute } from "../metadata/api";
+import type { ObjectAttribute } from "../model_input_scope/api";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
 import { WorkflowTokenUsage } from "../workflows/WorkflowTokenUsage";
 import { RunStateBadge } from "../workflows/presentation";
@@ -149,7 +149,7 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
       </div>
       <div className="workflow-command-actions">
         <WorkflowCommandTools />
-        <button type="button" className="button button-secondary button-small" disabled={download.isPending || busy} onClick={() => download.mutate()}>{download.isPending ? "Exporting…" : "Export Excel"}</button>
+        <button type="button" className="button button-secondary button-small" disabled={download.isPending || busy} onClick={() => download.mutate()}>{download.isPending ? "Exporting…" : "Export"}</button>
         <button className="button button-secondary button-small" type="button" disabled={busy || objects.isFetching || detail.isFetching} onClick={() => void refresh()}>Refresh</button>
         {objectId === null ? <WorkflowMenu label="Run" primary>
         <button className={`button button-${objectId === null ? "secondary" : "primary"} button-small`} type="button" disabled={!hasTenantLock || busy || refreshRequired || changed || (objectId !== null && (!current || current.is_locked || current.source_tenant_id !== tenantId))} title={hasTenantLock ? undefined : "Owned Tenant Lock required"} onClick={() => setRunDialog("attribute")}>Run attribute enrichment</button>

@@ -1,3 +1,4 @@
+import { MappingEditor } from "./MappingEditor";
 import { useEffect, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -33,7 +34,13 @@ export function MappingObjectDetailPage({
   if (query.isPending) return <DetailState label="Loading Object Mapping…" />;
   if (query.isError) return <DetailState label={detailError(query.error, "Object")} error />;
   return (
-    <MappingObjectDetailView tenantId={tenantId} modelId={modelId} detail={query.data}>
+    <MappingObjectDetailView tenantId={tenantId} modelId={modelId} detail={query.data}
+      editor={<div className="workflow-command-actions mapping-edit-actions">
+        <MappingEditor mode="object" api={api} tenantId={tenantId} modelId={modelId} mappingObjectId={mappingObjectId}
+          modelRevision={modelRevision} hasTenantLock={hasTenantLock} />
+        <MappingEditor mode="attribute" api={api} tenantId={tenantId} modelId={modelId} mappingObjectId={mappingObjectId}
+          modelRevision={modelRevision} hasTenantLock={hasTenantLock} />
+      </div>}>
       <MappingObjectAttributes key={mappingObjectId} api={api} tenantId={tenantId} modelId={modelId}
         mappingObjectId={mappingObjectId} modelRevision={modelRevision} hasTenantLock={hasTenantLock} />
     </MappingObjectDetailView>
@@ -64,12 +71,12 @@ function MappingObjectDetailView({
   tenantId,
   modelId,
   detail,
-  children,
+  children, editor,
 }: {
   tenantId: number;
   modelId: number;
   detail: MappingObjectDetail;
-  children: ReactNode;
+  children: ReactNode; editor?: ReactNode;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
@@ -89,6 +96,7 @@ function MappingObjectDetailView({
           <Fact label="System" value={detail.source_system.system_code} />
         </dl>}
       />
+      {editor}
       <section className="mapping-transformation-panel" aria-label="Entity transformation">
         <header><h2>Entity transformation</h2></header>
         {detail.mapping_document === null ? null

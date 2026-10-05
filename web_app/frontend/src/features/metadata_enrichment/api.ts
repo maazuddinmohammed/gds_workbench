@@ -1,5 +1,9 @@
 import { createModelInputScopeApi, type ModelInputScopeApi } from "../model_input_scope/api";
-import type { ReviewMetadataRecordsResult } from "../metadata/api";
+export interface ReviewEnrichmentResult {
+  review_event_id: number;
+  action_count: number;
+  records: Array<{ record_id: number; review_revision: string; is_active: boolean; is_locked: boolean }>;
+}
 import type { HttpRequest } from "../../core/http";
 import type { WorkflowRunStart, WorkflowRunState } from "../workflows/api";
 
@@ -55,7 +59,7 @@ export interface ReviewEnrichmentCommand {
 export interface MetadataEnrichmentTransport {
   listEnrichmentObjects: ModelInputScopeApi["listModelInputScope"];
   readEnrichmentObject: ModelInputScopeApi["readModelInputScopeObject"];
-  reviewEnrichment: (tenantId: number, modelId: number, modelRevision: number, command: ReviewEnrichmentCommand, key: string) => Promise<ReviewMetadataRecordsResult>;
+  reviewEnrichment: (tenantId: number, modelId: number, modelRevision: number, command: ReviewEnrichmentCommand, key: string) => Promise<ReviewEnrichmentResult>;
   exportEnrichment: (tenantId: number, modelId: number) => Promise<{ blob: Blob; filename: string }>;
   executeMetadataEnrichmentRun: (tenantId: number, modelId: number, runId: number,
     expectedModelRevision: number) => Promise<WorkflowRunStart>;

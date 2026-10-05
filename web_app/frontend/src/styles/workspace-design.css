@@ -1,0 +1,142 @@
+/* Shared workspace design. Feature styles own data layout, not this visual system. */
+:root {
+  --workspace-font-weight: 400;
+  --workspace-text-size: 0.75rem;
+  --workspace-label-size: 0.72rem;
+  --workspace-control-height: 2.4rem;
+  --workspace-button-height: 2.2rem;
+  --workspace-content-gap: 1.25rem;
+  --workspace-table-padding: 0.75rem 0.85rem;
+}
+
+/* Include drawers and dialogs; keep the ATLAS brand and code font families intact. */
+.app-shell :is(.workspace, .metadata-catalog, .sidebar, .tenant-context, .topbar-actions, .workflow-activity-panel, .tenant-lock-dialog)
+  :is(h1, h2, h3, h4, strong, b, th, td, label, summary, button, a, span, small, dt, dd, p, li, code, pre, legend, input, select, textarea, .button, .eyebrow, .text-action, .status-badge),
+.dialog-scrim :is(h1, h2, h3, h4, strong, b, th, td, label, summary, button, a, span, small, dt, dd, p, li, code, pre, legend, input, select, textarea, .button, .eyebrow, .text-action, .status-badge) {
+  font-weight: var(--workspace-font-weight);
+}
+
+.app-shell .button.button-small,
+.dialog-scrim .button.button-small {
+  min-height: var(--workspace-button-height);
+  padding: 0.5rem 0.72rem;
+  font-size: var(--workspace-text-size);
+}
+
+.workspace-toolbar,
+.model-workspace .model-section-toolbar,
+.workflow-command-center > .workflow-commandbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  min-height: 0;
+  gap: 0.75rem 1.25rem;
+  margin: 0 0 var(--workspace-content-gap);
+  padding: 0 0 1rem;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.workspace-toolbar > .workflow-command-context { min-width: 0; gap: 0.75rem; }
+.workspace-toolbar > .workflow-command-context > span { color: var(--muted); font-size: var(--workspace-text-size); }
+.workspace-toolbar > .workflow-command-actions { flex-wrap: wrap; margin-left: auto; gap: 0.5rem; }
+.model-workspace > :is(.workflow-command-center, .model-overview, .model-settings-page, .model-prompt-settings) { padding-top: var(--workspace-content-gap); }
+
+/* One segmented navigation treatment for page views and Settings. */
+:is(.workflow-command-center, .model-workspace, .models-page) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  padding: 0.2rem;
+  margin: 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--soft);
+}
+
+:is(.workflow-command-center, .model-workspace, .models-page) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button) {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 0.55rem;
+  min-height: 2rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 0.35rem;
+  color: var(--muted);
+  background: transparent;
+  font-size: var(--workspace-text-size);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+:is(.workflow-command-center, .model-workspace, .models-page) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button):is(.is-active, [aria-current="page"]) {
+  border-color: var(--line-strong);
+  color: var(--orange-dark);
+  background: var(--surface);
+}
+:is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button)::after { display: none; }
+:is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button):hover { background: var(--surface); }
+
+/* Every list filter uses the same collapsible panel and labelled controls. */
+.workflow-filter-panel {
+  margin: 0 0 var(--workspace-content-gap);
+  padding: 0 0 1rem;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+.workflow-filter-panel :is(.workflow-filterbar, .scope-filterbar, .prompt-filter-band) { margin: 0; padding: 0; border: 0; background: transparent; }
+.workflow-filter-panel label > span { font-size: var(--workspace-label-size); letter-spacing: normal; text-transform: none; }
+.workflow-filter-panel :is(input:not([type="checkbox"]), select, .button) { min-height: var(--workspace-control-height); font-size: var(--workspace-text-size); }
+
+/* Overview, list grids, and editable Settings share the workspace rhythm. */
+.model-overview-header { padding: 0 0 var(--workspace-content-gap); }
+.model-overview .workflow-ledger { margin-top: var(--workspace-content-gap); }
+.models-page > .models-commandbar { min-height: 5.35rem; padding-block: 1.5rem; }
+.models-page > .models-commandbar h1 { margin: 0; font-size: 1.5rem; }
+.models-page > .models-table-scroll { margin-top: var(--workspace-content-gap); }
+.model-settings-page > form { max-width: none; }
+.model-settings-page .model-definition-form { padding-top: 0.5rem; }
+.model-settings-page > .lock-context { margin: 0 0 1rem; font-size: var(--workspace-label-size); }
+.model-definition-form .create-model-settings > summary { padding-block: 0.85rem; }
+.model-definition-form .model-schema-row.is-saved { background: var(--surface); }
+.model-definition-form .dialog-actions { align-items: center; padding-block: 1rem; }
+.model-definition-form .dialog-actions > p { color: var(--muted); font-size: var(--workspace-label-size); }
+
+@media (max-width: 42rem) {
+  .workspace-toolbar > .workflow-command-context,
+  .workspace-toolbar > .workflow-command-actions { width: 100%; margin-left: 0; }
+}
+
+/* Read-only SQL and record context use the same quiet surface on detail pages. */
+.workspace-view-context { margin: 0 0 1rem; color: var(--muted); font-size: var(--workspace-text-size); }
+.workspace-detail-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: 1rem; margin: 1.25rem 0; }
+.workspace-detail-facts > div { min-width: 0; }
+.workspace-detail-facts dt { color: var(--muted); font-size: var(--workspace-label-size); }
+.workspace-detail-facts dd { margin: .35rem 0 0; overflow-wrap: anywhere; font-size: var(--workspace-text-size); }
+.workspace-sql { min-width: 0; margin: 1rem 0; }
+.workspace-sql > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .65rem; }
+.workspace-sql > header :is(h2, h3) { margin: 0; font-size: .9rem; }
+.workspace-sql > header > span { color: var(--muted); font-size: var(--workspace-label-size); }
+.workspace-sql > pre { max-height: 65vh; margin: 0; padding: 1rem; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-small); color: var(--ink); background: var(--soft); box-shadow: none; font-family: "SFMono-Regular", Consolas, monospace; font-size: .78rem; line-height: 1.65; white-space: pre; }
+.workspace-detail-disclosure { margin-top: 1.25rem; padding-block: 1rem; border-top: 1px solid var(--line); }
+.workspace-detail-disclosure > summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; cursor: pointer; }
+.workspace-detail-disclosure > summary h2 { margin: 0; font-size: .85rem; }
+.workspace-detail-disclosure > summary span { color: var(--muted); font-size: var(--workspace-label-size); }
+.workspace-detail-disclosure[open] > summary { margin-bottom: 1rem; }
+.code-generation-detail-page { width: 100%; padding-top: var(--workspace-content-gap); }
+.code-generation-detail-header { align-items: start; padding-bottom: 1rem; }
+.code-generation-detail-header h1 { margin: .75rem 0 0; font-size: 1.2rem; overflow-wrap: anywhere; }
+.code-generation-detail-actions { min-width: 0; }
+.code-generation-detail-actions > div:last-child { flex-wrap: wrap; }
