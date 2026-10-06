@@ -13,6 +13,12 @@ ZIP, upload instructions, manifest and checksums. `--replace` replaces only outp
 previously owned by this builder. Canonical `app.yaml` is included before hashing;
 never edit a generated artifact afterward.
 
+On Windows, the builder retries brief directory locks automatically. If access is
+still denied, close programs using the artifact folders and retry with `--replace`,
+or choose a new folder with `--output artifacts/databricks-ui-new`. A failed rebuild
+restores the previous output. If restoration is also blocked, the error identifies
+the preserved `previous` folder; recover it after releasing the lock.
+
 ```bash
 cd artifacts/databricks-ui
 shasum -a 256 -c SHA256SUMS.txt

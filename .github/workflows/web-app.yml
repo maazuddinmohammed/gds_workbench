@@ -100,6 +100,25 @@ jobs:
       - name: Check types
         run: uv run --frozen --project web_app/backend pyright --project web_app/backend
 
+  windows-packaging:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: "mcp_server;web_app/backend;."
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install package manager
+        run: python -m pip install uv==0.10.2
+      - name: Test Windows upload packaging and recovery
+        run: >-
+          uv run --frozen --project web_app/backend python -m pytest
+          -c web_app/backend/pyproject.toml
+          tests/web_packaging/test_databricks_ui_artifacts.py
+          --tb=no --show-capture=no -q
+
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 15

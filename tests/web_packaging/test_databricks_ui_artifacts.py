@@ -7,6 +7,7 @@ import os
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path, PurePosixPath
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
@@ -402,3 +403,107 @@ def test_failed_rebuild_preserves_previous_generated_output(
         builder.build_uploads(output, replace=True)
 
     assert _sha256(output / "gds-workbench-app-source.zip") == original_checksum
+
+
+@pytest.mark.parametrize("winerror", [5, 32, 33])
+@pytest.mark.parametrize("phase", ["first_publish", "backup", "replacement_publish"])
+def test_windows_directory_lock_is_retried_without_rebuilding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, winerror: int, phase: str
+) -> None:
+    builder = _load_builder()
+    output = tmp_path / "release"
+    replacing = phase != "first_publish"
+    if replacing:
+        builder.build_uploads(output)
+    original_replace = Path.replace
+    attempts = 0
+    pauses: list[float] = []
+
+    def locked_replace(source: Path, destination: Path) -> Path:
+        nonlocal attempts
+        if (phase == "backup" and source == output) or (
+            phase != "backup" and source.name == "new"
+        ):
+            attempts += 1
+            if attempts <= 2:
+                error = PermissionError("simulated Windows directory lock")
+                error.winerror = winerror
+                raise error
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(Path, "replace", locked_replace)
+    monkeypatch.setattr(time, "sleep", pauses.append)
+    result = builder.build_uploads(output, replace=replacing)
+
+    assert attempts == 3
+    assert pauses == [0.1, 0.2]
+    assert result.app_archive.is_file()
+    with ZipFile(result.app_archive) as package:
+        assert package.testzip() is None
+    assert not list(tmp_path.glob(".release-build-*"))
+
+
+@pytest.mark.parametrize("restore_locked", [False, True])
+def test_persistent_windows_publish_lock_restores_or_preserves_previous_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, restore_locked: bool
+) -> None:
+    builder = _load_builder()
+    output = tmp_path / "release"
+    builder.build_uploads(output)
+    original_checksum = _sha256(output / "gds-workbench-app-source.zip")
+    original_replace = Path.replace
+    attempts: dict[str, int] = {}
+    pauses: list[float] = []
+
+    def locked_replace(source: Path, destination: Path) -> Path:
+        if source.name in {"new", "previous"}:
+            attempts[source.name] = attempts.get(source.name, 0) + 1
+            if source.name == "new" or restore_locked:
+                error = PermissionError("simulated Windows directory lock")
+                error.winerror = 5
+                raise error
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(Path, "replace", locked_replace)
+    monkeypatch.setattr(time, "sleep", pauses.append)
+    with pytest.raises(builder.ArtifactBuildError) as caught:
+        builder.build_uploads(output, replace=True)
+
+    assert attempts["new"] == 6
+    if restore_locked:
+        (backup,) = tmp_path.glob(".release-build-*/previous")
+        assert str(backup) in str(caught.value)
+        assert _sha256(backup / "gds-workbench-app-source.zip") == original_checksum
+        assert attempts["previous"] == 6
+        assert not output.exists()
+    else:
+        assert "--output" in str(caught.value)
+        assert _sha256(output / "gds-workbench-app-source.zip") == original_checksum
+        assert attempts["previous"] == 1
+        assert not list(tmp_path.glob(".release-build-*"))
+
+
+def test_publish_failure_never_removes_previous_build_when_destination_reappears(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    builder = _load_builder()
+    output = tmp_path / "release"
+    builder.build_uploads(output)
+    original_checksum = _sha256(output / "gds-workbench-app-source.zip")
+    original_replace = Path.replace
+
+    def occupied_destination(source: Path, destination: Path) -> Path:
+        if source.name == "new":
+            output.mkdir()
+            (output / "other-writer.txt").write_text("preserve", encoding="utf-8")
+            raise FileExistsError("destination was recreated by another process")
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(Path, "replace", occupied_destination)
+    with pytest.raises(builder.ArtifactBuildError) as caught:
+        builder.build_uploads(output, replace=True)
+
+    (backup,) = tmp_path.glob(".release-build-*/previous")
+    assert str(backup) in str(caught.value)
+    assert _sha256(backup / "gds-workbench-app-source.zip") == original_checksum
+    assert (output / "other-writer.txt").read_text(encoding="utf-8") == "preserve"

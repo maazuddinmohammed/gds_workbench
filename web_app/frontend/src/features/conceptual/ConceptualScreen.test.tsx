@@ -20,10 +20,10 @@ describe("Model Conceptual", () => {
     expect(mode).toHaveValue("tool_assisted");
     for (const model of deployedCapabilities.models) {
       await user.selectOptions(within(dialog).getByLabelText("Model"), model.code);
-      for (const executionMode of ["one_shot", "tool_assisted"]) {
-        await user.selectOptions(mode, executionMode);
+      for (const profile of model.execution_profiles) {
+        await user.selectOptions(mode, profile.execution_mode);
         expect(within(reasoning).getAllByRole("option").map((item) => (item as HTMLOptionElement).value))
-          .toEqual(["", "default", "none", "low", "medium", "high", "xhigh"]);
+          .toEqual(["", ...profile.reasoning_effort_codes]);
         await user.selectOptions(reasoning, "high");
         expect(reasoning).toHaveValue("high");
       }

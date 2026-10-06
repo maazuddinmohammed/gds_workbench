@@ -9,6 +9,7 @@ import json
 import shutil
 import stat
 import tempfile
+import time
 from pathlib import Path, PurePosixPath
 from typing import NamedTuple
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
@@ -252,6 +253,18 @@ def _result(output: Path) -> UploadArtifacts:
     )
 
 
+def _replace_directory(source: Path, destination: Path) -> None:
+    # Windows can briefly deny renames while another process holds a handle.
+    for attempt in range(6):
+        try:
+            source.replace(destination)
+            return
+        except OSError as error:
+            if getattr(error, "winerror", None) not in {5, 32, 33} or attempt == 5:
+                raise
+            time.sleep(0.1 * 2**attempt)
+
+
 def build_uploads(
     output_directory: Path,
     *,
@@ -293,12 +306,30 @@ def build_uploads(
             encoding="utf-8",
         )
         if existing_output:
-            output.replace(backup)
-        staging.replace(output)
-    except BaseException:
-        if backup.exists() and not output.exists():
-            backup.replace(output)
+            _replace_directory(output, backup)
+        _replace_directory(staging, output)
+    except BaseException as error:
+        if backup.exists():
+            if output.exists():
+                raise ArtifactBuildError(
+                    f"output became occupied: {output}; previous build preserved at "
+                    f"{backup}. Use --output with a different, unused directory."
+                ) from error
+            try:
+                _replace_directory(backup, output)
+            except OSError as restore_error:
+                raise ArtifactBuildError(
+                    f"could not restore output: {output}; previous build preserved at "
+                    f"{backup}. Close programs using these folders before restoring it, "
+                    "or use --output with a different, unused directory."
+                ) from restore_error
         shutil.rmtree(workspace, ignore_errors=True)
+        if isinstance(error, OSError):
+            raise ArtifactBuildError(
+                f"filesystem operation failed while building {output}. "
+                "Close programs using the artifact folders and retry, or use "
+                "--output with a different, unused directory."
+            ) from error
         raise
     shutil.rmtree(workspace, ignore_errors=True)
     return _result(output)
