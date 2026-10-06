@@ -14,6 +14,26 @@ diagnostics. Candidate validation and persistence limits remain separate. `analy
 relationship validation queries and progress reporting. `profiling.json` bounds
 Profiling query size, concurrency, and execution time.
 
+The default model deployments use these reasoning settings in both execution modes:
+
+| Deployment | Explicit reasoning efforts |
+| --- | --- |
+| `gpt-6.1-sol` | `low`, `medium`, `high`, `xhigh`, `max` |
+| `gpt-6-luna` | `none`, `low`, `medium`, `high`, `xhigh`, `max` |
+
+`default` omits the setting; both models default to `medium`. Neither supports
+`minimal` or `ultra`. See the official [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
+and [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) contracts.
+Foundry must have the configured deployment names available. Tool calls use
+Responses; calls without tools use Chat Completions.
+
+Internal keys remain `foundry-primary` and `foundry-gpt-5.6-luna` so saved Model
+defaults and operator pricing retain their selected tier. The historical Luna key
+now selects GPT-6 Luna. New runs with an unsupported saved effort use the existing
+provider-default fallback; this includes Sol's former `none` setting. Stored
+defaults and frozen run selections are not rewritten. The request/transport timeout
+remains 60 minutes; an explicit `GDS_WEB_AGENT_TIMEOUT_SECONDS` override still wins.
+
 Mapping stores flexible transformation documents. Output templates provide
 advisory field guidance; the backend derives Entity identity, provenance,
 lifecycle status and integrity constraints. New runs use the seeded global

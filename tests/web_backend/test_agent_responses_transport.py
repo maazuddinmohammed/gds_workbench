@@ -21,9 +21,9 @@ async def test_code_reads_all_mapping_tools_with_reasoning_without_stored_respon
     monkeypatch: pytest.MonkeyPatch,
     effort: str,
 ) -> None:
-    """Chat Completions rejects GPT-5.6 tools with reasoning, including its default.
+    """GPT-6.1 Sol tool calls require Responses, including default reasoning.
 
-    https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning
+    https://developers.openai.com/api/docs/models/gpt-6.1-sol
     """
     sends = 0
     tools_seen: set[str] = set()
@@ -37,7 +37,7 @@ async def test_code_reads_all_mapping_tools_with_reasoning_without_stored_respon
                 json={"error": {"code": "unsupported_value", "param": "reasoning_effort"}},
             )
         assert request.url.path.endswith("/responses")
-        assert body["model"] == "gpt-5.6-sol"
+        assert body["model"] == "gpt-6.1-sol"
         assert body["text"] == {"format": {"type": "json_object"}}
         assert "response_format" not in body and "reasoning_effort" not in body
         assert body.get("reasoning") == (None if effort == "default" else {"effort": effort})

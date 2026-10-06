@@ -116,7 +116,7 @@ async def test_local_review_validation_queries_do_not_poison_conceptual_authorin
                     sdk_code="openai_agents_sdk",
                     provider_code="microsoft_foundry",
                     model_code="foundry-primary",
-                    reasoning_effort_code="none",
+                    reasoning_effort_code="low",
                     max_turns=8,
                     validation_retry_count=1,
                 ),

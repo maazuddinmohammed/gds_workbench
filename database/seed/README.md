@@ -38,9 +38,11 @@ repository. Editing a source seed does not alter published database versions.
 - Seed 04: exact replay makes no writes. Updated descriptions/examples refresh in
   place; IDs, existing order/settings and custom variables stay intact. New variables
   append. Conflicting resolver/type definitions fail explicitly.
-- Seed 05: exact replay is a no-op. Changed content publishes a new immutable version
-  and moves its seed-owned assignment. Custom defaults/unrelated drafts are protected;
-  existing frozen Runs retain their original versions.
+- Seed 05: merges by stable template code through governed functions. Existing
+  templates are reused; exact replay is a no-op. Changed content publishes one new
+  immutable version and updates the active seed-owned default, without duplicate
+  templates or active assignments. Historical versions/assignments are retained.
+  Custom defaults/unrelated drafts are protected; frozen Runs keep their versions.
 - Seed 07: exact replay is a no-op. Conflicting immutable template definitions fail;
   custom selections and frozen IDs/digests stay intact. Install the four active defaults
   for runs that omit a custom selection. Templates guide document fields, not business

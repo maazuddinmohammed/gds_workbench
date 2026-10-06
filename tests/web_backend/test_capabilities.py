@@ -21,18 +21,15 @@ from pydantic import ValidationError
 
 def test_tool_assisted_supports_the_same_registered_reasoning_choices_as_one_shot() -> None:
     registry = load_default_agent_capabilities()
+    expected = {
+        "foundry-primary": ("default", "low", "medium", "high", "xhigh", "max"),
+        "foundry-gpt-5.6-luna": ("default", "none", "low", "medium", "high", "xhigh", "max"),
+    }
     for model in registry.models:
         profiles = {profile.execution_mode: profile for profile in model.execution_profiles}
         assert (
             profiles["tool_assisted"].reasoning_effort_codes
-            == (
-                "default",
-                "none",
-                "low",
-                "medium",
-                "high",
-                "xhigh",
-            )
+            == expected[model.code]
             == profiles["one_shot"].reasoning_effort_codes
         )
 
@@ -96,7 +93,37 @@ def test_new_run_defaults_recover_retired_models_and_incompatible_efforts(
         validation_retry_count=3,
     )
     assert preserved.model_code == "foundry-gpt-5.6-luna"
+    assert preserved.reasoning_effort_code == "none"
     assert (preserved.max_turns, preserved.validation_retry_count) == (12, 3)
+    sol = registry.resolve_default_selection(
+        execution_mode=mode,
+        model_code="foundry-primary",
+        reasoning_effort_code="none",
+    )
+    assert sol.model_code == "foundry-primary"
+    assert sol.reasoning_effort_code == "default"
+
+
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+@pytest.mark.parametrize(
+    "model_code, effort",
+    [
+        ("foundry-primary", "none"),
+        ("foundry-primary", "minimal"),
+        ("foundry-primary", "ultra"),
+        ("foundry-gpt-5.6-luna", "minimal"),
+        ("foundry-gpt-5.6-luna", "ultra"),
+    ],
+)
+def test_current_models_reject_unsupported_explicit_efforts(
+    mode: AgentExecutionModeCode, model_code: str, effort: str
+) -> None:
+    registry = load_default_agent_capabilities()
+    selected = registry.resolve_default_selection(execution_mode=mode, model_code=model_code)
+    with pytest.raises(InvalidRequestError):
+        registry.validate_selection(
+            selected.model_copy(update={"reasoning_effort_code": effort}), execution_mode=mode
+        )
 
 
 def test_selection_validation_uses_the_exact_sdk_and_execution_mode_profile() -> None:
@@ -252,7 +279,12 @@ def test_agent_capabilities_are_authenticated_and_exposed_read_only() -> None:
     payload = response.json()
     assert payload["schema_version"] == "3.0"
     assert payload["models"][0]["provider_code"] == "microsoft_foundry"
-    assert payload["models"][0]["deployment_name"] == "gpt-5.6-sol"
+    assert [
+        (model["code"], model["name"], model["deployment_name"]) for model in payload["models"]
+    ] == [
+        ("foundry-primary", "OpenAI GPT-6.1 Sol", "gpt-6.1-sol"),
+        ("foundry-gpt-5.6-luna", "OpenAI GPT-6 Luna", "gpt-6-luna"),
+    ]
     assert "openai_base_url" not in response.text
     assert "environment_variable" not in response.text
     assert "secret" not in response.text.lower()

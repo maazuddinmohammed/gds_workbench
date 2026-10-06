@@ -49,7 +49,7 @@ def _selection(*, sdk_code: str) -> AgentRunSelection:
         sdk_code=sdk_code,
         provider_code="microsoft_foundry",
         model_code="foundry-primary",
-        reasoning_effort_code="none",
+        reasoning_effort_code="low",
         max_turns=8,
         validation_retry_count=2,
     )
@@ -1150,7 +1150,7 @@ async def test_remote_runtime_constructs_without_contacting_a_provider() -> None
     connection = AgentProviderConnection(
         provider_code="microsoft_foundry",
         model_code="foundry-primary",
-        model_endpoint="gpt-5.6-sol",
+        model_endpoint="gpt-6.1-sol",
         openai_base_url="https://fixture.services.ai.azure.com/openai/v1/",
         foundry_api_key=SecretStr("fixture-key"),
         timeout_seconds=90,
@@ -1171,7 +1171,7 @@ async def test_remote_runtime_constructs_without_contacting_a_provider() -> None
                 sdk_code="openai_agents_sdk",
                 provider_code="openai",
                 model_code="foundry-primary",
-                reasoning_effort_code="none",
+                reasoning_effort_code="low",
                 max_turns=8,
                 validation_retry_count=2,
             )
@@ -1187,7 +1187,7 @@ async def test_remote_foundry_runtime_constructs_without_provider_io() -> None:
     connection = AgentProviderConnection(
         provider_code="microsoft_foundry",
         model_code="foundry-primary",
-        model_endpoint="gpt-5.6-sol",
+        model_endpoint="gpt-6.1-sol",
         timeout_seconds=90,
         openai_base_url="https://fixture.openai.azure.com/openai/v1/",
         token_scope="https://cognitiveservices.azure.com/.default",
@@ -1218,7 +1218,7 @@ async def test_remote_foundry_api_key_runtime_constructs_without_provider_io() -
     connection = AgentProviderConnection(
         provider_code="microsoft_foundry",
         model_code="foundry-primary",
-        model_endpoint="gpt-5.6-sol",
+        model_endpoint="gpt-6.1-sol",
         timeout_seconds=90,
         openai_base_url="https://fixture.services.ai.azure.com/openai/v1/",
         foundry_api_key=SecretStr("never-log-this-foundry-api-key"),

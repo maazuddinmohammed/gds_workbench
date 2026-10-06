@@ -18,20 +18,20 @@
   "models": [
     {
       "code": "foundry-primary",
-      "name": "OpenAI GPT-5.6 Sol",
+      "name": "OpenAI GPT-6.1 Sol",
       "provider_code": "microsoft_foundry",
-      "deployment_name": "gpt-5.6-sol",
+      "deployment_name": "gpt-6.1-sol",
       "execution_profiles": [
         {
           "sdk_code": "openai_agents_sdk",
           "execution_mode": "one_shot",
           "reasoning_effort_codes": [
             "default",
-            "none",
             "low",
             "medium",
             "high",
-            "xhigh"
+            "xhigh",
+            "max"
           ]
         },
         {
@@ -39,20 +39,20 @@
           "execution_mode": "tool_assisted",
           "reasoning_effort_codes": [
             "default",
-            "none",
             "low",
             "medium",
             "high",
-            "xhigh"
+            "xhigh",
+            "max"
           ]
         }
       ]
     },
     {
       "code": "foundry-gpt-5.6-luna",
-      "name": "OpenAI GPT-5.6 Luna",
+      "name": "OpenAI GPT-6 Luna",
       "provider_code": "microsoft_foundry",
-      "deployment_name": "gpt-5.6-luna",
+      "deployment_name": "gpt-6-luna",
       "execution_profiles": [
         {
           "sdk_code": "openai_agents_sdk",
@@ -63,7 +63,8 @@
             "low",
             "medium",
             "high",
-            "xhigh"
+            "xhigh",
+            "max"
           ]
         },
         {
@@ -75,7 +76,8 @@
             "low",
             "medium",
             "high",
-            "xhigh"
+            "xhigh",
+            "max"
           ]
         }
       ]

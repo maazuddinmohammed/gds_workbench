@@ -114,7 +114,7 @@ def test_existing_code_and_validation_resolvers_use_canonical_prompt_evidence(
             sdk_code="openai_agents_sdk",
             provider_code="microsoft_foundry",
             model_code="foundry-primary",
-            reasoning_effort_code="none",
+            reasoning_effort_code="low",
             max_turns=6,
             validation_retry_count=1,
         ),

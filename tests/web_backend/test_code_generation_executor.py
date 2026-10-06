@@ -132,7 +132,7 @@ def _plan(*, retry_count: int = 1) -> AgentRunPlan:
             sdk_code="openai_agents_sdk",
             provider_code="microsoft_foundry",
             model_code="foundry-primary",
-            reasoning_effort_code="none",
+            reasoning_effort_code="low",
             max_turns=8,
             validation_retry_count=retry_count,
         ),
@@ -867,7 +867,7 @@ async def test_configured_code_generation_profile_accepts_internal_bounded_stage
         sdk_code="openai_agents_sdk",
         provider_code=provider_code,
         model_code=model_code,
-        reasoning_effort_code="none",
+        reasoning_effort_code="low",
         max_turns=8,
         validation_retry_count=1,
     )

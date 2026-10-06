@@ -83,7 +83,7 @@ def test_complete_databricks_app_environment_builds_production_settings() -> Non
     assert settings.environment is Environment.PRODUCTION
     assert settings.databricks_execution_mode == "remote"
     assert settings.agent_runtime.mode == "remote"
-    assert settings.agent_runtime.connections[0].model_endpoint == "gpt-5.6-sol"
+    assert settings.agent_runtime.connections[0].model_endpoint == "gpt-6.1-sol"
     assert settings.static_directory == Path("web_app/frontend/dist")
     assert settings.databricks_host == "https://fixture.azuredatabricks.net"
     assert settings.databricks_app_name == "gds-workbench"
@@ -116,8 +116,8 @@ def test_remote_agent_configuration_binds_multiple_registered_deployments() -> N
         (connection.provider_code, connection.model_code, connection.model_endpoint)
         for connection in configuration.connections
     ] == [
-        ("microsoft_foundry", "foundry-primary", "gpt-5.6-sol"),
-        ("microsoft_foundry", "foundry-gpt-5.6-luna", "gpt-5.6-luna"),
+        ("microsoft_foundry", "foundry-primary", "gpt-6.1-sol"),
+        ("microsoft_foundry", "foundry-gpt-5.6-luna", "gpt-6-luna"),
         ("microsoft_foundry", "foundry-secondary", "secondary-endpoint"),
     ]
 
@@ -306,7 +306,7 @@ def test_remote_agent_settings_use_registered_foundry_model_deployment() -> None
     assert settings.agent_runtime.timeout_seconds == 90
     assert settings.agent_runtime.connections[0].provider_code == "microsoft_foundry"
     assert settings.agent_runtime.connections[0].model_code == "foundry-primary"
-    assert settings.agent_runtime.connections[0].model_endpoint == "gpt-5.6-sol"
+    assert settings.agent_runtime.connections[0].model_endpoint == "gpt-6.1-sol"
 
 
 def test_remote_agent_settings_support_direct_foundry_authentication() -> None:
@@ -336,7 +336,7 @@ def test_remote_agent_settings_support_direct_foundry_authentication() -> None:
     }
     assert connection.provider_code == "microsoft_foundry"
     assert connection.model_code == "foundry-primary"
-    assert connection.model_endpoint == "gpt-5.6-sol"
+    assert connection.model_endpoint == "gpt-6.1-sol"
     assert connection.openai_base_url == "https://fixture.openai.azure.com/openai/v1/"
     assert connection.token_scope == "https://cognitiveservices.azure.com/.default"
     assert connection.foundry_client_credentials is not None

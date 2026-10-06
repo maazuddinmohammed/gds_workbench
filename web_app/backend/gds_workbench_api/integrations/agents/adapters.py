@@ -221,8 +221,8 @@ class OpenAIAgentsSdkAdapter:
                 max_retries=2,
                 http_client=http_client,
             )
-            # Foundry GPT-5.6 cannot combine tools and reasoning on Chat Completions.
-            # Select the supported transport without weakening the selected reasoning effort.
+            # GPT-6.1 Sol tools require Responses; GPT-6 Luna also requires it
+            # for tools with reasoning. Preserve the selected reasoning effort.
             model_type = OpenAIResponsesModel if tools else OpenAIChatCompletionsModel
             model = model_type(
                 model=connection.model_endpoint,

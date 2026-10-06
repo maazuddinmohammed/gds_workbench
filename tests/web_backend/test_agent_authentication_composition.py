@@ -42,7 +42,7 @@ def _remote_configuration() -> AgentRuntimeConfiguration:
             AgentProviderConnection(
                 provider_code="microsoft_foundry",
                 model_code="foundry-primary",
-                model_endpoint="gpt-5.6-sol",
+                model_endpoint="gpt-6.1-sol",
                 timeout_seconds=90,
             ),
         ),
@@ -301,7 +301,7 @@ async def test_multiple_foundry_models_create_and_close_one_shared_authenticatio
     primary = AgentProviderConnection(
         provider_code="microsoft_foundry",
         model_code="foundry-primary",
-        model_endpoint="gpt-5.6-sol",
+        model_endpoint="gpt-6.1-sol",
         timeout_seconds=90,
         openai_base_url="https://fixture.openai.azure.com/openai/v1/",
         token_scope="https://cognitiveservices.azure.com/.default",

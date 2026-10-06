@@ -80,7 +80,9 @@ async def test_real_sdk_uses_the_configured_model_request_timeout(
         return httpx2.Response(200, json=response_factory(None, tool=tools and sends == 1))
 
     monkeypatch.setattr(adapters, "ModelSettings", model_settings)
-    request = _request(tools=tools)
+    request = _request(
+        tools=tools, model_code="foundry-gpt-5.6-luna" if reasoning == "none" else "foundry-primary"
+    )
     request = request.model_copy(
         update={
             "selection": request.selection.model_copy(update={"reasoning_effort_code": reasoning})

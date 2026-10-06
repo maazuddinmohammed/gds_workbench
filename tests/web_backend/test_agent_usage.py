@@ -89,7 +89,9 @@ class FixtureCatalog:
         return {"available": True}
 
 
-def _request(*, tools: bool = False, max_turns: int = 3) -> AgentExecutionRequest:
+def _request(
+    *, tools: bool = False, max_turns: int = 3, model_code: str = "foundry-primary"
+) -> AgentExecutionRequest:
     return AgentExecutionRequest(
         workflow_run_id=101,
         workflow="logical",
@@ -98,8 +100,8 @@ def _request(*, tools: bool = False, max_turns: int = 3) -> AgentExecutionReques
         selection=AgentRunSelection(
             sdk_code="openai_agents_sdk",
             provider_code="microsoft_foundry",
-            model_code="foundry-primary",
-            reasoning_effort_code="none",
+            model_code=model_code,
+            reasoning_effort_code="low",
             max_turns=max_turns,
             validation_retry_count=1,
         ),
@@ -190,19 +192,21 @@ def _router(
         return DefaultAsyncHttpxClient(transport=httpx2.MockTransport(handler), **options)
 
     monkeypatch.setattr(adapters, "DefaultAsyncHttpxClient", client_factory)
+    registry = load_default_agent_capabilities()
     adapter = OpenAIAgentsSdkAdapter(
-        connections=(
+        connections=tuple(
             AgentProviderConnection(
                 provider_code="microsoft_foundry",
-                model_code="foundry-primary",
-                model_endpoint="gpt-5.6-sol",
+                model_code=model.code,
+                model_endpoint=model.deployment_name,
                 timeout_seconds=timeout_seconds,
-            ),
+            )
+            for model in registry.models
         ),
         model_authentications={"microsoft_foundry": FixtureAuthentication()},
     )
     return AgentExecutionRouter(
-        capabilities=load_default_agent_capabilities(),
+        capabilities=registry,
         adapters=(adapter,),
         usage_recorder=recorder,
     )

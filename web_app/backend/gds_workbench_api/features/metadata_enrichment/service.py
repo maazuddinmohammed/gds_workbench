@@ -1,7 +1,8 @@
-"""Infer missing types and author one Object unit at a time, then apply guarded metadata."""
+"""Enrich up to two Objects concurrently, then apply guarded metadata."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from contextlib import suppress
@@ -31,6 +32,8 @@ from gds_workbench_api.features.workflows.authoring.stage_runner import AgentSta
 from .contracts import EnrichmentFieldResult, MetadataEnrichmentCompletion
 from .evidence import MetadataEvidenceReader
 from .repository import MetadataEnrichmentRepository
+
+type EnrichmentUnit = tuple[str, dict[str, JsonValue], dict[str, str], dict[str, int]]
 
 
 class DescriptionValidator:
@@ -263,7 +266,7 @@ class DatabaseMetadataEnrichmentExecutor:
                     )
                 )
             results: list[EnrichmentFieldResult] = []
-            units: list[tuple[str, dict[str, JsonValue], dict[str, str], dict[str, int]]] = []
+            object_units: list[list[EnrichmentUnit]] = []
             key_fields = (
                 "tenant_code",
                 "system_code",
@@ -272,6 +275,7 @@ class DatabaseMetadataEnrichmentExecutor:
                 "object_name",
             )
             for item in context.objects:
+                units: list[EnrichmentUnit] = []
                 inputs = deepcopy(item.prompt_inputs)
                 object_rows = inputs.get("object_context")
                 if (
@@ -404,103 +408,144 @@ class DatabaseMetadataEnrichmentExecutor:
                         )
                     )
 
+                if units:
+                    object_units.append(units)
+
             maximum_attempt = 1
-            for unit_number, (prompt_workflow, inputs, assigned, positions) in enumerate(units, 1):
-                validator = DescriptionValidator(
-                    assigned, attributes=prompt_workflow == "metadata_enrichment_attribute"
-                )
-                stage_context = cast(JsonValue, {"prompt_inputs": inputs})
-                try:
-                    outcome = await self._stage.run(
-                        plan=plan,
-                        stage_code="candidate_authoring",
-                        prompt_workflow=prompt_workflow,
-                        resolver_values={"workflow.validation_failures": []},
-                        context=stage_context,
-                        output_schema=validator.output_schema(),
-                        allowed_tool_names=(),
-                        validator=validator,
-                    )
-                    descriptions = cast(
-                        dict[str, JsonValue],
-                        cast(dict[str, JsonValue], outcome.candidate)["descriptions"],
-                    )
-                    maximum_attempt = max(maximum_attempt, outcome.attempt_count)
-                    for ref, value in descriptions.items():
-                        position = positions[ref]
-                        results[position] = results[position].model_copy(
-                            update={
-                                "status": "applied",
-                                "applied_value": value.strip() if isinstance(value, str) else None,
-                                "evidence_method": "agent_description",
-                            }
+            completed_units = 0
+            total_units = sum(len(units) for units in object_units)
+            pending_objects = iter(object_units)
+            progress_lock = asyncio.Lock()
+
+            async def enrich_objects() -> None:
+                nonlocal maximum_attempt, completed_units
+                # Taking the next Object has no await; only two workers run. Each
+                # Object's description is available before its Attribute unit starts.
+                for units in pending_objects:
+                    for unit_number, (prompt_workflow, inputs, assigned, positions) in enumerate(
+                        units, 1
+                    ):
+                        attempt_count = 1
+                        validator = DescriptionValidator(
+                            assigned, attributes=prompt_workflow == "metadata_enrichment_attribute"
                         )
-                    if not validator.attributes:
-                        for future_workflow, future_inputs, _, _ in units[unit_number:]:
-                            if future_workflow != "metadata_enrichment_attribute":
-                                continue
-                            object_context = future_inputs.get("object_context")
-                            if (
-                                isinstance(object_context, list)
-                                and len(object_context) == 1
-                                and isinstance(object_context[0], dict)
-                            ):
-                                key = json.dumps(
-                                    [object_context[0][name] for name in key_fields],
-                                    ensure_ascii=False,
-                                    separators=(",", ":"),
-                                )
-                                if key in descriptions:
-                                    object_context[0]["object_description"] = descriptions[key]
-                    if validator.attributes:
-                        findings = cast(
-                            dict[str, dict[str, bool | None]],
-                            cast(dict[str, JsonValue], outcome.candidate)["attributes"],
-                        )
-                        for ref, flags in findings.items():
-                            for offset, flag in enumerate(
-                                ("is_natural_key", "is_primary_key", "is_nullable", "is_pii"), 1
-                            ):
-                                value = flags[flag]
-                                index = positions[ref] + offset
-                                results[index] = results[index].model_copy(
+                        stage_context = cast(JsonValue, {"prompt_inputs": inputs})
+                        try:
+                            outcome = await self._stage.run(
+                                plan=plan,
+                                stage_code="candidate_authoring",
+                                prompt_workflow=prompt_workflow,
+                                resolver_values={"workflow.validation_failures": []},
+                                context=stage_context,
+                                output_schema=validator.output_schema(),
+                                allowed_tool_names=(),
+                                validator=validator,
+                            )
+                            descriptions = cast(
+                                dict[str, JsonValue],
+                                cast(dict[str, JsonValue], outcome.candidate)["descriptions"],
+                            )
+                            attempt_count = outcome.attempt_count
+                            for ref, value in descriptions.items():
+                                position = positions[ref]
+                                results[position] = results[position].model_copy(
                                     update={
                                         "status": "applied",
-                                        "evidence_method": "agent_key_inference",
-                                        "applied_value": None
-                                        if value is None
-                                        else str(value).lower(),
+                                        "applied_value": value.strip()
+                                        if isinstance(value, str)
+                                        else None,
+                                        "evidence_method": "agent_description",
                                     }
                                 )
-                except WorkbenchError as error:
-                    # Retry belongs to the shared runner. Never split an Object unit or
-                    # substitute tools; preserve type completion and continue the next unit.
-                    for position in positions.values():
-                        for offset in range(5 if validator.attributes else 1):
-                            results[position + offset] = results[position + offset].model_copy(
-                                update={"status": "unavailable"}
+                            if not validator.attributes:
+                                for future_workflow, future_inputs, _, _ in units[unit_number:]:
+                                    if future_workflow != "metadata_enrichment_attribute":
+                                        continue
+                                    object_context = future_inputs.get("object_context")
+                                    if (
+                                        isinstance(object_context, list)
+                                        and len(object_context) == 1
+                                        and isinstance(object_context[0], dict)
+                                    ):
+                                        key = json.dumps(
+                                            [object_context[0][name] for name in key_fields],
+                                            ensure_ascii=False,
+                                            separators=(",", ":"),
+                                        )
+                                        if key in descriptions:
+                                            object_context[0]["object_description"] = descriptions[
+                                                key
+                                            ]
+                            if validator.attributes:
+                                findings = cast(
+                                    dict[str, dict[str, bool | None]],
+                                    cast(dict[str, JsonValue], outcome.candidate)["attributes"],
+                                )
+                                for ref, flags in findings.items():
+                                    for offset, flag in enumerate(
+                                        (
+                                            "is_natural_key",
+                                            "is_primary_key",
+                                            "is_nullable",
+                                            "is_pii",
+                                        ),
+                                        1,
+                                    ):
+                                        value = flags[flag]
+                                        index = positions[ref] + offset
+                                        results[index] = results[index].model_copy(
+                                            update={
+                                                "status": "applied",
+                                                "evidence_method": "agent_key_inference",
+                                                "applied_value": None
+                                                if value is None
+                                                else str(value).lower(),
+                                            }
+                                        )
+                        except WorkbenchError as error:
+                            # Retry belongs to the shared runner. Never split an Object unit or
+                            # substitute tools; preserve type completion and continue the next unit.
+                            for position in positions.values():
+                                for offset in range(5 if validator.attributes else 1):
+                                    results[position + offset] = results[
+                                        position + offset
+                                    ].model_copy(update={"status": "unavailable"})
+                            event_status = "warning"
+                            event_message = (
+                                f"Object description unit unavailable ({error.code}): "
+                                f"{error.message}"
                             )
-                    await progress.append(
-                        attempt=maximum_attempt,
-                        stage="candidate_authoring",
-                        status="warning",
-                        message=(
-                            f"Object description unit unavailable ({error.code}): {error.message}"
-                        ),
-                        current=unit_number,
-                        total=len(units),
-                        finding_count=len(positions),
-                    )
-                else:
-                    await progress.append(
-                        attempt=maximum_attempt,
-                        stage="candidate_authoring",
-                        status="running",
-                        message="Completed an Object description unit.",
-                        current=unit_number,
-                        total=len(units),
-                        finding_count=0,
-                    )
+                            finding_count = len(positions)
+                        else:
+                            event_status = "running"
+                            event_message = "Completed an Object description unit."
+                            finding_count = 0
+                        # Sequence assignment and persistence must stay ordered across workers.
+                        async with progress_lock:
+                            maximum_attempt = max(maximum_attempt, attempt_count)
+                            completed_units += 1
+                            await progress.append(
+                                attempt=maximum_attempt,
+                                stage="candidate_authoring",
+                                status=event_status,
+                                message=event_message,
+                                current=completed_units,
+                                total=total_units,
+                                finding_count=finding_count,
+                            )
+
+            workers = [
+                asyncio.create_task(enrich_objects()) for _ in range(min(2, len(object_units)))
+            ]
+            try:
+                await asyncio.gather(*workers)
+            finally:
+                # A lost claim, fatal error, or cancellation must stop sibling work
+                # before returning control to the workflow lifecycle.
+                for worker in workers:
+                    if not worker.done():
+                        worker.cancel()
+                await asyncio.gather(*workers, return_exceptions=True)
             warning_count = sum(
                 result.status in {"inconclusive", "unavailable"} for result in results
             )

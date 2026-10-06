@@ -343,7 +343,7 @@ async def test_mapping_code_validation_pipeline_uses_real_persistence_and_apply(
         sdk_code="openai_agents_sdk",
         provider_code="microsoft_foundry",
         model_code="foundry-primary",
-        reasoning_effort_code="none",
+        reasoning_effort_code="low",
         max_turns=8,
         validation_retry_count=1,
     )

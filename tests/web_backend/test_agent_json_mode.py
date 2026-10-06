@@ -34,7 +34,11 @@ from tests.web_backend.test_conceptual_candidate import _object, _validator
     [
         (False, "default"),
         (False, "none"),
-        *((True, effort) for effort in ("default", "none", "low", "medium", "high", "xhigh")),
+        (False, "max"),
+        *(
+            (True, effort)
+            for effort in ("default", "none", "low", "medium", "high", "xhigh", "max")
+        ),
     ],
 )
 @pytest.mark.parametrize("invalid", ["malformed", "wrong_type"])
@@ -88,6 +92,7 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         body: dict[str, Any] = json.loads(request.content)
+        assert body["model"] == ("gpt-6-luna" if effort == "none" else "gpt-6.1-sol")
         assert request.url.path.endswith("/responses" if tools else "/chat/completions")
         if tools:
             if effort == "default":
@@ -126,7 +131,9 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
             ),
         )
 
-    request = _request(tools=tools).model_copy(
+    request = _request(
+        tools=tools, model_code="foundry-gpt-5.6-luna" if effort == "none" else "foundry-primary"
+    ).model_copy(
         update={
             "workflow": workflow,
             "stage": stage,
