@@ -243,6 +243,11 @@ def complete_model_graph(*, include_enrichment: bool = False) -> dict[ModelChang
                 "modeled_entity_name": "Order",
                 "artifact_name": "Order.sql",
                 "artifact_type": "sql_file",
+                "code_storage_type": "table",
+                "code_repository_url": None,
+                "code_commit_path": None,
+                "code_entry_point": None,
+                "code_parameters": None,
                 "generated_code_content": "SELECT * FROM main.silver.Order",
                 "generated_code_status": "active",
             }

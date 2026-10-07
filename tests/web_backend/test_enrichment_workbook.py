@@ -52,18 +52,14 @@ def dictionary_rows() -> list[tuple[ModelInputScopeObject, ModelInputScopeAttrib
     return [(obj, attr)]
 
 
-@pytest.mark.parametrize(
-    "value", ["x" * 32768, "😀" * 16384, "invalid\x01text", "bad\ud800"]
-)
+@pytest.mark.parametrize("value", ["x" * 32768, "😀" * 16384, "invalid\x01text", "bad\ud800"])
 def test_export_rejects_unsupported_cells_before_writer_truncation(
     dictionary_rows: list[tuple[ModelInputScopeObject, ModelInputScopeAttribute]],
     value: str,
 ) -> None:
     obj, attr = dictionary_rows[0]
     with pytest.raises(ValueError, match="unsupported cell text") as error:
-        build_enrichment_workbook(
-            [(obj.model_copy(update={"object_description": value}), attr)]
-        )
+        build_enrichment_workbook([(obj.model_copy(update={"object_description": value}), attr)])
     assert value not in str(error.value)
 
 
@@ -77,7 +73,13 @@ def test_unknowns_remain_blank_and_large_counts_remain_exact(
                 obj,
                 attr.model_copy(
                     update={
-                        "profile": {"row_count": 1234567890123456789, "null_count": 0}
+                        "profile": {
+                            "row_count": 1234567890123456789,
+                            "null_count": 0,
+                            "blank_count": None,
+                            "percent_blank": None,
+                            "avg_data_length": None,
+                        }
                     }
                 ),
             ),
@@ -90,6 +92,8 @@ def test_unknowns_remain_blank_and_large_counts_remain_exact(
         assert workbook.worksheets[1]["F2"].value == "1234567890123456789"
         assert workbook.worksheets[1]["H2"].value == 0
         assert workbook.worksheets[1]["I2"].value is None
+        assert workbook.worksheets[1]["M2"].value is None
+        assert workbook.worksheets[1]["R2"].value is None
         assert workbook.worksheets[0]["D3"].value is None
     finally:
         workbook.close()

@@ -1972,9 +1972,9 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
         },
         "current_code": {
             "description": "Current saved Code artifacts and contributing "
-            "Source System codes, with lifecycle/locks and "
-            "generated content. Empty means unavailable; "
-            "no execution success is implied.",
+            "Source System codes, with lifecycle/locks, storage metadata and optional "
+            "inline content. Git references do not supply source contents. Empty means "
+            "unavailable; no execution success is implied.",
             "value_schema": {
                 "$defs": {
                     "ValidationGeneratedCodeArtifact": {
@@ -2004,11 +2004,21 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                                 "title": "Artifact Type",
                                 "type": "string",
                             },
-                            "generated_code_content": {
-                                "minLength": 1,
-                                "pattern": "\\S",
-                                "title": "Generated Code Content",
+                            "code_storage_type": {
                                 "type": "string",
+                                "enum": ["table", "git"],
+                                "default": "table",
+                            },
+                            "code_repository_url": {"type": ["string", "null"]},
+                            "code_commit_path": {"type": ["string", "null"]},
+                            "code_entry_point": {"type": ["string", "null"]},
+                            "code_parameters": {},
+                            "generated_code_content": {
+                                "anyOf": [
+                                    {"type": "string", "minLength": 1, "pattern": "\\S"},
+                                    {"type": "null"},
+                                ],
+                                "title": "Generated Code Content",
                             },
                             "generated_code_status": {
                                 "enum": ["active", "inactive", "deprecated"],
@@ -2055,6 +2065,11 @@ CONTRACTS: dict[str, dict[str, dict[str, Any]]] = {
                     "modeled_entity_name": "Customer",
                     "artifact_name": "customer.sql",
                     "artifact_type": "sql_file",
+                    "code_storage_type": "table",
+                    "code_repository_url": None,
+                    "code_commit_path": None,
+                    "code_entry_point": None,
+                    "code_parameters": None,
                     "generated_code_content": "SELECT customer_id FROM warehouse.bronze.customer;",
                     "generated_code_status": "active",
                     "generated_code_is_locked": False,

@@ -9,25 +9,7 @@ from typing import Any, cast
 
 import pytest
 from pydantic import JsonValue
-
-from gds_workbench_api.features.workflows.authoring.context import (
-    AgentAuthoringContext,
-    InMemoryAgentContextToolCatalog,
-)
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
-    agent_input_payload,
-)
-from gds_workbench_api.features.workflows.authoring.repair import (
-    AgentCandidateValidationError,
-    AgentContextPolicy,
-)
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
-    list_prompt_input_contracts,
-)
-from gds_workbench_api.prompt_rendering import (
-    PromptComponentTemplates,
-    PromptVariableDefinition,
-)
+from tests.mcp.model_test_fixtures import complete_model_graph
 from tests.web_backend.test_default_prompt_contracts import DEFAULTS
 from tests.web_backend.test_logical_executor import (
     _CLAIM_TOKEN,
@@ -41,10 +23,29 @@ from tests.web_backend.test_logical_executor import (
     _service,
 )
 
+from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    agent_input_payload,
+)
+from gds_workbench_api.features.workflows.authoring.context import (
+    AgentAuthoringContext,
+    InMemoryAgentContextToolCatalog,
+)
+from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+    list_prompt_input_contracts,
+)
+from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentCandidateValidationError,
+    AgentContextPolicy,
+)
+from gds_workbench_api.prompt_rendering import (
+    PromptComponentTemplates,
+    PromptVariableDefinition,
+)
+
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 @pytest.mark.parametrize("repair_succeeds", [True, False])
-async def test_27_objects_883_attributes_require_complete_repair(
+async def test_27_objects_883_attributes_require_object_coverage_with_selected_attributes(
     mode: str, repair_succeeds: bool
 ) -> None:
     bundle = _context_bundle(mode=mode)
@@ -96,8 +97,57 @@ async def test_27_objects_883_attributes_require_complete_repair(
                 **source_key,
                 "attribute_name": name,
             }
-            complete["attributes"].append(attribute)
+            # All input columns reach the agent; the design keeps one per Object.
+            if column == 0:
+                complete["attributes"].append(attribute)
         selected.append(item)
+    selected[0]["object"]["object_description"] = "Enriched customer business meaning."
+    selected[0]["attributes"][0].update(
+        attribute_description="Enriched customer business identifier.",
+        attribute_inferred_data_type="STRING",
+        enrichment={
+            "is_natural_key": True,
+            "is_primary_key": True,
+            "is_nullable": False,
+            "is_pii": None,
+        },
+    )
+    evidence = complete_model_graph()
+    source_key = {
+        key: selected[0]["object"][key]
+        for key in (
+            "tenant_code",
+            "system_code",
+            "connection_code",
+            "object_schema",
+            "object_name",
+        )
+    }
+    # Preserve contradictory observations instead of silently trusting enrichment flags.
+    raw["profiles"] = [{**evidence["profiling_profile"][0], **source_key}]
+    raw["profile_provenance"] = [
+        {
+            **source_key,
+            "attribute_name": "customer_id",
+            "profiled_at": "2026-10-06T00:00:00Z",
+            "row_scope": "batch",
+            "batch_attribute_name": "batch_id",
+            "batch_id": "synthetic-batch",
+        }
+    ]
+    relationship = {
+        **evidence["analysis_result"][0],
+        **{
+            f"{side}_{key}": value
+            for side in ("from", "to")
+            for key, value in source_key.items()
+        },
+        "to_object_name": "source_1",
+        "validation_result": "unsupported",
+        "validation_target_non_null_count": 6,
+        "validation_duplicate_target_key_count": 1,
+    }
+    raw["analysis_relationships"] = [relationship]
     raw["selected_objects"] = selected
     context = AgentAuthoringContext.model_validate(raw, strict=False)
     catalog = (
@@ -182,13 +232,29 @@ async def test_27_objects_883_attributes_require_complete_repair(
     repair = cast(dict[str, Any], agent.requests[1].context)["repair"]
     assert {issue["code"] for issue in repair["validation_issues"]} == {
         "candidate.object_coverage_incomplete",
-        "candidate.attribute_coverage_incomplete",
     }
     if mode == "one_shot":
         instruction = agent_input_payload(agent.requests[0])["instruction"]
         assert isinstance(instruction, str)
         assert instruction.count('"attribute_name"') == 883
         assert all(f'"source_{i}"' in instruction for i in range(1, 27))
+        for evidence_value in (
+            '"object_description":"Enriched customer business meaning."',
+            '"attribute_description":"Enriched customer business identifier."',
+            '"attribute_inferred_data_type":"STRING"',
+            '"is_primary_key":true',
+            '"is_pii":null',
+            '"row_count":10',
+            '"null_count":1',
+            '"blank_count":0',
+            '"percent_duplicates":44.4444',
+            '"row_scope":"batch"',
+            '"profiled_at":"2026-10-06T00:00:00Z"',
+            '"relationship_confidence":"high"',
+            '"validation_result":"unsupported"',
+            '"validation_duplicate_target_key_count":1',
+        ):
+            assert evidence_value in instruction
         supplied = cast(dict[str, Any], agent.requests[0].context)["original_context"][
             "selected_objects"
         ]
@@ -198,6 +264,7 @@ async def test_27_objects_883_attributes_require_complete_repair(
         assert catalog is not None
         cursor = None
         attribute_count = object_count = 0
+        supplied_details: list[dict[str, Any]] = []
         while True:
             page = cast(
                 dict[str, Any],
@@ -208,16 +275,38 @@ async def test_27_objects_883_attributes_require_complete_repair(
             )
             object_count += len(page["items"])
             attribute_count += sum(len(item["attributes"]) for item in page["items"])
+            supplied_details.extend(page["items"])
             cursor = page["next_cursor"]
             if page["is_complete"]:
                 break
         assert (object_count, attribute_count) == (27, 883)
+        objects = cast(dict[str, Any], catalog.invoke("get_objects", {}))
+        assert (
+            objects["items"][0]["object_description"]
+            == "Enriched customer business meaning."
+        )
+        attribute = supplied_details[0]["attributes"][0]
+        assert (
+            attribute["attribute_description"]
+            == "Enriched customer business identifier."
+        )
+        assert attribute["attribute_inferred_data_type"] == "STRING"
+        assert attribute["is_primary_key"] is True and attribute["is_pii"] is None
+        assert attribute["profile"]["row_count"] == 10
+        assert attribute["profile"]["null_count"] == 1
+        assert attribute["profile"]["blank_count"] == 0
+        assert attribute["profile"]["percent_duplicates"] == 44.4444
+        assert attribute["profile"]["row_scope"] == "batch"
+        assert attribute["profile"]["profiled_at"] == "2026-10-06T00:00:00Z"
+        relationships = cast(
+            dict[str, Any], catalog.invoke("get_object_relationships", {})
+        )
+        assert relationships["items"][0]["outgoing_relationships"] == [relationship]
     if not repair_succeeds:
         assert handoff.calls == []
         assert len(handoff.retained) == 1
         assert {issue.dataset for issue in handoff.retained[0]["issues"]} == {
             "logical_entity",
-            "logical_attribute",
         }
         return
     assert len(handoff.calls) == 1 and lifecycle.failed is None
@@ -228,7 +317,7 @@ async def test_27_objects_883_attributes_require_complete_repair(
         change for change in handoff.calls[0] if change.dataset == "logical_attribute"
     )
     assert len(entities.records) == 27
-    assert sum(bool(record["sources"]) for record in attributes.records) == 883
+    assert sum(bool(record["sources"]) for record in attributes.records) == 27
     assert handoff.final_events[0].attempt == 2
 
 

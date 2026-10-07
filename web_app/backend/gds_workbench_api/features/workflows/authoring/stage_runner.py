@@ -7,6 +7,11 @@ from collections.abc import Mapping
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from gds_workbench_api.capabilities import (
+    MAX_AGENT_TOOL_CALLS,
+    MAX_AGENT_TURNS,
+    MAX_AUTHORING_ATTEMPTS,
+)
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     LocalAgentToolCatalog,
@@ -31,10 +36,10 @@ class AgentStageOutcome(BaseModel):
     candidate: JsonValue = Field(repr=False)
     warning_codes: tuple[str, ...] = Field(max_length=20)
     unknown_placeholders: tuple[str, ...] = Field(max_length=100)
-    attempt_count: int = Field(ge=1, le=6)
+    attempt_count: int = Field(ge=1, le=MAX_AUTHORING_ATTEMPTS)
     was_repaired: bool
-    turn_count: int = Field(ge=1, le=300)
-    tool_call_count: int = Field(ge=0, le=6_000)
+    turn_count: int = Field(ge=1, le=MAX_AGENT_TURNS * MAX_AUTHORING_ATTEMPTS)
+    tool_call_count: int = Field(ge=0, le=MAX_AGENT_TOOL_CALLS * MAX_AUTHORING_ATTEMPTS)
 
 
 class AgentStageRunner:

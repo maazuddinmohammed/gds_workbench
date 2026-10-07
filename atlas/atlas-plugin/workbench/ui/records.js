@@ -45,7 +45,7 @@
       dimensional_relationship: [filter("dimensional_relationship_name", "Relationship"), filter("from_dimensional_entity_name", "From entity"), filter("to_dimensional_entity_name", "To entity")],
       mapping_object: [filter("source_system_code", "Source system"), filter("modeled_entity_schema_name", "Schema"), filter("modeled_entity_name", "Modeled entity"), filter("object_mapping_status", "Status")],
       mapping_attribute: [filter("source_system_code", "Source system"), filter("modeled_entity_schema_name", "Schema"), filter("modeled_entity_name", "Modeled entity"), filter("modeled_attribute_name", "Modeled attribute")],
-      generated_code: [filter("modeled_entity_schema_name", "Schema"), filter("modeled_entity_name", "Modeled entity"), filter("artifact_name", "Artifact"), filter("artifact_type", "Artifact type")],
+      generated_code: [filter("modeled_entity_schema_name", "Schema"), filter("modeled_entity_name", "Modeled entity"), filter("code_storage_type", "Storage type"), filter("artifact_name", "Artifact"), filter("artifact_type", "Artifact type")],
       generated_code_source_system: [filter("modeled_entity_schema_name", "Schema"), filter("modeled_entity_name", "Modeled entity"), filter("artifact_name", "Artifact"), filter("source_system_code", "Source system")],
       validation_group: [filter("validation_group_name", "Validation group"), filter("system_code", "System"), filter("is_active", "Active")],
       validation_check: [filter("validation_group_name", "Validation group"), filter("validation_category_code", "Category"), filter("validation_severity", "Severity")],
@@ -59,7 +59,7 @@
   const DETAIL_FIELDS = {
     mapping_object: ["mapping_transformation_document"],
     mapping_attribute: ["attribute_mapping_transformation_document"],
-    generated_code: ["generated_code_content"],
+    generated_code: ["generated_code_content", "code_parameters"],
     validation_check: ["validation_query_sql", "validation_comparison_query_sql"],
   };
 
@@ -113,7 +113,7 @@
     if (includeDetail) return fields;
     const chosen = state.columns?.[`${state.area}:${state.dataset}`];
     const name = fields.find(field => field === `${state.dataset}_name`) || fields.find(field => ["attribute_name", "object_name", "modeled_attribute_name", "modeled_entity_name"].includes(field)) || fields[0];
-    const priority = [...(state.loaded.definition.canonical_key || []), name, ...fields.filter(field => /(_data_type|_description|_definition|_is_nullable|_role|_status)$/.test(field) || ["description", "definition", "is_active", "is_locked"].includes(field))];
+    const priority = [...(state.loaded.definition.canonical_key || []), name, ...fields.filter(field => /(_data_type|_description|_definition|_is_nullable|_role|_status)$/.test(field) || ["description", "definition", "is_active", "is_locked", "code_storage_type"].includes(field))];
     const defaults = [...new Set(priority)].slice(0, Math.max(8, (state.loaded.definition.canonical_key || []).length + 1));
     const selected = chosen || defaults;
     return [...new Set([...(state.loaded.definition.canonical_key || []), name, ...selected])].filter(field => fields.includes(field));

@@ -157,6 +157,27 @@ def test_contract_examples_and_projected_context_have_exact_schema(
     )
 
 
+def test_validation_code_reader_preserves_git_metadata_without_inline_content() -> None:
+    raw = deepcopy(FIXTURE["validation"])
+    raw["generated_code"][0].update({
+        "code_storage_type": "git", "code_repository_url": "any repo",
+        "code_commit_path": "anything", "code_entry_point": None,
+        "code_parameters": [False, {"batch": 42}], "generated_code_content": None,
+    })
+    values = project_downstream_inputs("validation", raw)
+    schema = downstream_input_contracts("validation")["current_code"][0]
+    assert cast(Any, Draft202012Validator(schema)).is_valid(values["current_code"])
+    catalog = build_downstream_readers(
+        "validation", values, max_result_bytes=100_000, max_page_records=200,
+        max_cumulative_result_bytes=500_000,
+    )
+    page = catalog.invoke("get_current_code", {})
+    assert page["items"] == raw["generated_code"]
+    definition = next(item for item in catalog.definitions if item.name == "get_current_code")
+    assert definition.result_schema is not None
+    assert cast(Any, Draft202012Validator(definition.result_schema)).is_valid(page)
+
+
 def test_mapping_joins_names_from_modeled_attributes_and_keeps_document_business_keys() -> None:
     raw = deepcopy(FIXTURE["mapping"])
     child = raw["headers"][0]["attribute_mappings"][0]

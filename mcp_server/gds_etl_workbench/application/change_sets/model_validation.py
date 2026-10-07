@@ -1120,8 +1120,10 @@ def validation_code_context_digest(
             continue
         content = getattr(record, "generated_code_content", None)
         digest = getattr(record, "generated_code_digest", None)
-        if not isinstance(digest, str) and isinstance(content, str):
-            digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        if not isinstance(digest, str) and (
+            isinstance(content, str) or getattr(record, "code_storage_type", "table") == "git"
+        ):
+            digest = hashlib.sha256((content or "").encode("utf-8")).hexdigest()
         if not isinstance(digest, str):
             continue
         entries.append(
@@ -1135,6 +1137,11 @@ def validation_code_context_digest(
                 "artifact_type": getattr(record, "artifact_type", ""),
                 "code_input_digest": context.code_input_digest,
                 "generated_code_digest": digest,
+                "code_storage_type": getattr(record, "code_storage_type", "table"),
+                "code_repository_url": getattr(record, "code_repository_url", None),
+                "code_commit_path": getattr(record, "code_commit_path", None),
+                "code_entry_point": getattr(record, "code_entry_point", None),
+                "code_parameters": getattr(record, "code_parameters", None),
             }
         )
     return _context_entries_digest(entries)

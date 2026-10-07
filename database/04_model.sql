@@ -119,8 +119,8 @@ CREATE TABLE model.model (
             AND default_agent_provider_code IS NOT NULL
             AND default_agent_model_code IS NOT NULL
             AND default_reasoning_effort_code IS NOT NULL
-            AND default_max_turns BETWEEN 1 AND 50
-            AND default_validation_retry_count BETWEEN 0 AND 5
+            AND default_max_turns BETWEEN 1 AND 100
+            AND default_validation_retry_count BETWEEN 0 AND 25
         )
     ),
     CONSTRAINT ck_model_default_agent_codes CHECK (

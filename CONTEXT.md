@@ -66,9 +66,10 @@ Existing saved Models change only through reviewed authoring, never a backfill.
 Web Logical authoring is independent of Conceptual. It uses selected physical
 metadata, enrichment, Profiles, Analysis, Assertions and applicable Logical history.
 Before a successful draft handoff, active source mappings must cover every selected
-Object and business Attribute; registered metadata Attributes are policy-owned.
+Object. Physical Attributes may be selected, consolidated or omitted for the Logical
+design; included Attributes still require valid references and source evidence.
 Consolidation may map several physical inputs to one modeled record. Existing
-active applied coverage counts, but silent omissions trigger repair or a rejected
+active applied coverage counts, but missing Object coverage triggers repair or a rejected
 draft. Dimensional checks coverage of selected Logical Entities; analytical
 Attribute selection and aggregation remain valid.
 
@@ -94,7 +95,10 @@ Manual Mapping editing selects eligible Object sources before Attribute sources,
 preserves custom JSON, and uses the same locks and revision-fenced review writes.
 
 **Code Artifact** is an Entity-owned named file plus explicit source-System
-assignments. Code consumes applied Mapping and its template definitions. Partial
+assignments. Storage is `table` (inline content) or `git` (optional inline content
+and nullable free-form repository, commit/path, entry-point and JSON parameters).
+The web workflow still generates table-stored SQL only. Code consumes applied Mapping
+and its template definitions. Partial
 Mapping may produce reviewed SQL with typed-null or zero-row placeholders and
 warnings. A current input digest does not prove runnable business logic.
 Generated surrogate keys are database-owned; separately named source identifiers

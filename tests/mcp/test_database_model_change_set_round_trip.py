@@ -1239,9 +1239,10 @@ async def test_model_stage_batch_runs_through_validate_and_apply(
                 },
             )
             assert validated.is_error is False
-            assert validated.structured_content["valid"] is True, (
-                [(error["code"], error["fields"]) for error in validated.structured_content["errors"]]
-            )
+            assert validated.structured_content["valid"] is True, [
+                (error["code"], error["fields"])
+                for error in validated.structured_content["errors"]
+            ]
             applied = await client.call_tool(
                 "apply_model_change_set",
                 {
@@ -1307,6 +1308,11 @@ async def test_model_stage_batch_reassembles_generated_code_json_fragments(
         "modeled_entity_name": "FragmentedCode",
         "artifact_name": "FragmentedCode.sql",
         "artifact_type": "sql_file",
+        "code_storage_type": "table",
+        "code_repository_url": None,
+        "code_commit_path": None,
+        "code_entry_point": None,
+        "code_parameters": None,
         "generated_code_content": content,
         "generated_code_status": "active",
     }
@@ -1413,7 +1419,16 @@ async def test_model_stage_batch_reassembles_generated_code_json_fragments(
                 },
             )
             assert pending.is_error is False
-            assert pending.structured_content["records"] == [record]
+            assert pending.structured_content["records"] == [
+                {
+                    **record,
+                    "code_storage_type": "table",
+                    "code_repository_url": None,
+                    "code_commit_path": None,
+                    "code_entry_point": None,
+                    "code_parameters": None,
+                }
+            ]
     finally:
         await database.close()
 
@@ -1561,6 +1576,16 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
 ) -> None:
     model_id, tenant_id = _seed_model_foundation(postgres_database)
     staged = _replace_codes(complete_model_graph())
+    staged["generated_code"][0].update(
+        {
+            "code_storage_type": "git",
+            "code_repository_url": "any repository",
+            "code_commit_path": "branch/ref or anything \\ path",
+            "code_entry_point": "",
+            "code_parameters": {"batch": 42, "options": [False, {"nested": "é"}]},
+            "generated_code_content": None,
+        }
+    )
     for field in ANALYSIS_VALIDATION_FIELDS:
         staged["analysis_result"][0].pop(field)
     _acquire_tenant_lock(postgres_database, tenant_id)
@@ -1723,6 +1748,11 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
             assert active_scope.structured_content["object_count"] == 3
             renamed_relationship = deepcopy(staged["dimensional_relationship"][0])
             renamed_relationship["dimensional_relationship_name"] = "sale customer role"
+            updated_code = {
+                **staged["generated_code"][0],
+                "code_commit_path": "new reference",
+                "code_parameters": ["--full", 2],
+            }
             rename_change_set = await client.call_tool(
                 "create_model_change_set",
                 {"model_id": model_id},
@@ -1741,7 +1771,8 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
                         {
                             "dataset": "dimensional_relationship",
                             "records": [renamed_relationship],
-                        }
+                        },
+                        {"dataset": "generated_code", "records": [updated_code]},
                     ],
                 },
             )
@@ -1765,7 +1796,7 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
                 },
             )
             assert rename_apply.is_error is False
-            assert rename_apply.structured_content["action_count"] == 1
+            assert rename_apply.structured_content["action_count"] == 2
             abandoned = await client.call_tool(
                 "create_model_change_set",
                 {"model_id": model_id},
@@ -1969,6 +2000,26 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
     ):
         assert forbidden not in serialized
     assert '"artifact_name":"Order.sql"' in serialized
+    assert '"code_storage_type":"git"' in serialized
+    assert '"generated_code_content":null' in serialized
+    with postgres_database.connect_owner() as connection:
+        stored_code = connection.execute(
+            """SELECT code_storage_type, code_repository_url, code_commit_path,
+                      code_entry_point, code_parameters, generated_code_content
+                 FROM workflow.generated_code WHERE model_id = %s""",
+            (model_id,),
+        ).fetchone()
+    assert stored_code == {
+        field: updated_code[field]
+        for field in (
+            "code_storage_type",
+            "code_repository_url",
+            "code_commit_path",
+            "code_entry_point",
+            "code_parameters",
+            "generated_code_content",
+        )
+    }
     assert '"mapping_transformation_document":{' in serialized
     assert '"mapping_context_digest"' not in serialized
     assert '"source_context_digest"' not in serialized

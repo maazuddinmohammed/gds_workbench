@@ -129,9 +129,12 @@ class LogicalCandidateValidator:
         schema["description"] = (
             "Author the complete selected physical scope using metadata, enrichment, profiling "
             "and Analysis evidence. Conceptual records are not Logical inputs. Every selected "
-            "Object and non-metadata Attribute must have active source coverage in the resulting "
+            "Object must have active source coverage in the resulting "
             "Logical Model, including unchanged applied records. Normalization and consolidation "
-            "are allowed; arbitrary samples, silent omissions and invented source mappings are not."
+            "are allowed. Select Attributes for the Logical design; coverage does not require "
+            "copying or mapping every physical Attribute. Included Attributes must have valid "
+            "references and evidence. Do not silently omit selected Objects or invent "
+            "source mappings."
         )
         _set_lock_fields_false(schema)
         enrich_agent_output_model_definitions(schema)
@@ -143,20 +146,14 @@ class LogicalCandidateValidator:
     def validate_coverage(
         self,
         candidate: JsonValue,
-        *,
-        metadata_attribute_keys: tuple[PhysicalAttributeKey, ...] = (),
     ) -> tuple[AgentValidationIssue, ...]:
-        """Check the effective graph, including retained history, before draft handoff."""
+        """Require selected Object coverage; Attribute selection is a modeling decision."""
         normalized = self._normalize(candidate)
         if normalized.issues:
             return normalized.issues
         entities = {
             **self._applied_entities,
             **{_entity_key(record): record for record in normalized.entities},
-        }
-        attributes = {
-            **self._applied_attributes,
-            **{_attribute_key(record): record for record in normalized.attributes},
         }
         active_entities = {
             key for key, record in entities.items() if record.logical_entity_status == "active"
@@ -168,19 +165,7 @@ class LogicalCandidateValidator:
             for source in record.sources
             if isinstance(source, LogicalObjectSourceRecord) and source.status == "active"
         }
-        covered_attributes = {
-            _physical_attribute_key(source.source_attribute)
-            for key, record in attributes.items()
-            if key[:2] in active_entities and record.logical_attribute_status == "active"
-            for source in record.sources
-            if isinstance(source, AttributePhysicalSourceRecord) and source.status == "active"
-        }
-        # Framework metadata is projected by policy; it need not become business Attributes.
-        required_attributes = self._selected_attribute_keys - {
-            _physical_attribute_key(key) for key in metadata_attribute_keys
-        }
         missing_objects = self._selected_object_keys - covered_objects
-        missing_attributes = required_attributes - covered_attributes
         issues: list[AgentValidationIssue] = []
         if missing_objects:
             issues.append(
@@ -193,20 +178,6 @@ class LogicalCandidateValidator:
                         "resulting Model. Cover the complete selection; consolidation may map "
                         "several Objects to one Entity when their business meaning and grain "
                         "agree. Do not return a sample."
-                    ),
-                )
-            )
-        if missing_attributes:
-            issues.append(
-                AgentValidationIssue(
-                    code="candidate.attribute_coverage_incomplete",
-                    path=("logical_attribute",),
-                    message=(
-                        f"{len(missing_attributes)} of {len(required_attributes)} "
-                        "selected business Attributes have no active Logical Attribute source "
-                        "mapping in the resulting "
-                        "Model. Preserve source coverage through normalization and consolidation; "
-                        "do not silently omit columns or invent unrelated source mappings."
                     ),
                 )
             )

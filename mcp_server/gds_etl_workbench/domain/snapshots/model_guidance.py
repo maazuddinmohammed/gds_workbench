@@ -207,8 +207,14 @@ _FIELD_GUIDANCE: dict[str, str] = {
     ),
     "artifact_name": "Use a file name only, without a directory or path separator.",
     "generated_code_content": (
-        "Store the complete file content. The server derives content and input digests."
+        "Store complete file content for table storage; git storage may use null. "
+        "The server derives content and input digests."
     ),
+    "code_storage_type": "Use table (default) for inline content or git for external Code.",
+    "code_repository_url": "Optional repository reference as plain text; no provider restriction.",
+    "code_commit_path": "Optional free-form commit or path reference; preserve the supplied text.",
+    "code_entry_point": "Optional entry point as plain text.",
+    "code_parameters": "Optional parameters as any JSON value; no fixed shape is required.",
     "object_dependency_order": "Use zero or a positive execution dependency order.",
     "is_active": (
         "Use true for current records and false only for an intentional inactive replacement."

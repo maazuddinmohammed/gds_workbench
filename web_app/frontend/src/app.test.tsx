@@ -444,8 +444,8 @@ describe("Models ledger", () => {
       providers: [{ code: "microsoft_foundry", name: "Microsoft Foundry" }],
       models: [{ code: "foundry-primary", name: "Primary agent", provider_code: "microsoft_foundry", deployment_name: "primary", execution_profiles: [{ sdk_code: "openai_agents_sdk", execution_mode: "one_shot", reasoning_effort_codes: ["medium"] }] }],
       reasoning_efforts: [{ code: "medium", name: "Medium" }, { code: "high", name: "High" }],
-      max_turns: { minimum: 1, maximum: 50, default: 10 },
-      validation_retries: { minimum: 0, maximum: 5, default: 2 },
+      max_turns: { minimum: 1, maximum: 100, default: 10 },
+      validation_retries: { minimum: 0, maximum: 25, default: 2 },
     };
     let command: Record<string, unknown> | undefined;
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
@@ -487,14 +487,24 @@ describe("Models ledger", () => {
     await user.selectOptions(within(dialog).getByRole("combobox", { name: "Agent model" }), "foundry-primary");
     expect(within(dialog).queryByRole("option", { name: "High" })).not.toBeInTheDocument();
     const turns = within(dialog).getByRole("spinbutton", { name: "Maximum turns" });
+    const retries = within(dialog).getByRole("spinbutton", { name: "Validation retries" });
+    expect(turns).toHaveAttribute("max", "100");
+    expect(retries).toHaveAttribute("max", "25");
     await user.clear(turns);
-    await user.type(turns, "51");
+    await user.type(turns, "101");
     const submit = within(dialog).getByRole("button", { name: "Create Model" });
     await user.click(submit);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Enter a whole number from 1 to 50");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter a whole number from 1 to 100");
     expect(command).toBeUndefined();
     await user.clear(turns);
-    await user.type(turns, "12");
+    await user.type(turns, "100");
+    await user.clear(retries);
+    await user.type(retries, "26");
+    await user.click(submit);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter a whole number from 0 to 25");
+    expect(command).toBeUndefined();
+    await user.clear(retries);
+    await user.type(retries, "25");
     await user.click(submit);
     expect(await screen.findByRole("alert")).toHaveTextContent("Acquire the Tenant Lock");
     expect(command).toMatchObject({
@@ -503,9 +513,10 @@ describe("Models ledger", () => {
       model_name: "New model", gold_model_naming_instructions: "Use business names.",
       gold_model_technical_columns_template: { columns: [] }, gold_model_audit_columns_template: { columns: [] },
       default_agent_sdk_code: "openai_agents_sdk", default_agent_provider_code: "microsoft_foundry", default_agent_model_code: "foundry-primary",
-      default_reasoning_effort_code: "medium", default_max_turns: 12, default_validation_retry_count: 2,
+      default_reasoning_effort_code: "medium", default_max_turns: 100, default_validation_retry_count: 25,
     });
-    expect(turns).toHaveValue(12);
+    expect(turns).toHaveValue(100);
+    expect(retries).toHaveValue(25);
     expect(logicalSchemas.getByRole("textbox", { name: "Schema name" })).toHaveValue(" silver_shared ");
   });
 

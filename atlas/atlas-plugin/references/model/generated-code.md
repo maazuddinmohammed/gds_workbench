@@ -13,7 +13,7 @@ Both datasets belong to Model section `code_generation`. Read the current Snapsh
 
 Use shared Model key normalization for comparisons; preserve actual names. Write complete changed records as arrays in `model-change-set/generated_code.json` and `model-change-set/generated_code_source_system.json`. These are not patches or backend workflow candidate envelopes. Artifact identity belongs to one target Entity; a filename is not globally unique across the Model.
 
-All fields below are required, non-null and have no record-schema defaults. Use `active` and unlocked for new completed records; preserve existing state.
+Use `active` and unlocked for new completed records; preserve existing state. Storage type defaults to `table`; the four storage metadata fields and Git inline content may be null. Other fields remain required and non-null. Include the complete normalized record, including defaults, when preparing canonical Stage fragments.
 
 ## Artifact fields
 
@@ -25,8 +25,13 @@ The [first release](../release-scope.md) generates SQL only. Keep the complete e
 | `modeled_entity_schema_name` | Required schema from the selected modeled layer. |
 | `modeled_entity_name` | Nonblank string, 1–255 characters; exact modeled target Entity. |
 | `artifact_name` | Nonblank string, 1–400 characters; filename only, with no leading/trailing whitespace, `/`, `\`, `.` or `..` as the entire name. Use the approved filename and extension; no directory path. |
-| `artifact_type` | `sql_file`, `python_file` or `python_notebook`. These are accepted storage types, not proof that every authoring/execution consumer supports them. |
-| `generated_code_content` | Complete nonblank text, not a filepath, Markdown fence or JSON-encoded content object. Characters below U+0020 are rejected except tab, LF and CR. Record schema does not parse SQL/Python or establish a per-record content maximum; transport limits still apply. |
+| `artifact_type` | `sql_file`, `python_file` or `python_notebook`, independent of storage location. These formats do not imply every authoring/execution consumer supports them. |
+| `code_storage_type` | `table` (default) or `git`. |
+| `code_repository_url` | Nullable plain text; GitHub, Azure DevOps or any other repository reference. No provider or URL-format restriction. |
+| `code_commit_path` | Nullable free-form text. Preserve any supplied path, commit reference, URL or other convention without parsing or rewriting it. |
+| `code_entry_point` | Nullable plain text; no fixed path or entry-point convention. |
+| `code_parameters` | Nullable JSON; objects, arrays and scalar values are accepted without a fixed parameter schema. |
+| `generated_code_content` | Required complete nonblank text for `table`; optional for `git`. Supplied text is not a filepath, Markdown fence or JSON-encoded content object. Characters below U+0020 are rejected except tab, LF and CR. Transport limits still apply. |
 | `generated_code_status` | `active`, `inactive` or `deprecated`. |
 | `generated_code_is_locked` | Boolean. |
 
@@ -69,17 +74,17 @@ The backend authoring candidate has `artifact_role: target_transformation|suppor
 
 ## Content, freshness and Apply
 
-The generic schema checks text and references, not transformation correctness. The current backend Code Generation workflow authors SQL only and its review/download queries filter `sql_file`; Python storage acceptance is not an end-to-end Python workflow. Keep Python entrypoint, packaging and consumer support explicitly unresolved until designed.
+The generic schema checks text and references, not transformation correctness. Git storage can describe external code without copying it into the table; no repository metadata field becomes mandatory for Git. Apply does not clone, fetch, push or execute repository code. Local inline SQL checks apply only to table-stored SQL. The web workflow authors `table` + `sql_file` only, and its SQL review/download queries use that same filter. Web regeneration preserves existing table storage metadata and Git records, and requires explicit Change Set reassignment if selected Systems already use active Git Code. Python storage acceptance is not an end-to-end Python generation/execution workflow; entry-point text and parameters do not establish a runtime contract.
 
 Backend SQL candidate validation parses Databricks SQL but also accepts DDL, DML and commands. It does **not** establish Atlas's narrower [SQL transformation contract](../code-generation/sql.md). Local/content review must enforce that contract. A syntax pass also cannot prove grain, joins, keys, null/cast behavior or business results.
 
-Apply derives `code_input_digest` from current eligible Mapping/target context; the database derives `generated_code_digest` from content. Neither is supplied in these records. Snapshot artifact records contain neither digest, so their presence or a local timestamp cannot prove freshness. Use a supported governed freshness/context view when available; otherwise record the unresolved freshness check. Use `read_mapping_context` for a revision/digest-bound current view; do not manufacture server artifact digests.
+Apply derives `code_input_digest` from current eligible Mapping/target context; the database derives `generated_code_digest` from inline content (empty bytes when absent). Validation's Code context digest also includes storage type, repository, commit path, entry point and parameters, so changing them invalidates saved freshness. These digests do not verify external file contents or detect changes behind a mutable Git reference. Neither digest is supplied in these records. Snapshot artifact records contain neither digest. Use `read_mapping_context` for a revision/digest-bound current view; do not manufacture server artifact digests.
 
 Changing Mapping or target context can make Code stale without changing artifact text. Regenerate/review only affected artifacts against all pages of one consistent Mapping view, retaining any partial-Mapping findings. Stamping unchanged SQL with refreshed input context is not evidence that it still implements the new Mapping.
 
 Resolve [existing work and update scope](../methods/change-impact.md) before authoring. A Snapshot includes saved content, not automatically synchronized source files; inspect pending/local edits as described in [saved Code](../snapshots/model.md#saved-code-and-local-files). A narrow selection still requires complete per-target System coverage and preservation of unselected valid artifacts.
 
-Use the shared [review/Stage/Validate/Apply lifecycle](../change-set-lifecycle.md), including generated-Code transport handling. Both datasets can accumulate in one local batch. Store complete artifact text in `generated_code_content`; any reviewable local `.sql` copy must match that exact content. Apply stores records; it does not create a deployed file, run SQL, register a Process or execute a pipeline. Refresh the Model Snapshot after verified Apply.
+Use the shared [review/Stage/Validate/Apply lifecycle](../change-set-lifecycle.md), including generated-Code transport handling. Both datasets can accumulate in one local batch. For table storage, store complete artifact text in `generated_code_content`; any reviewable local `.sql` copy must match that exact content. For Git storage, preserve the supplied metadata and report unavailable source review explicitly. Apply stores records; it does not create a deployed file, run SQL, register a Process or execute a pipeline. Refresh the Model Snapshot after verified Apply.
 
 ## Code record checks
 
@@ -109,6 +114,11 @@ Assume applied silver.Customer Entity and complete CRM/ERP Mapping. The confirme
     "modeled_entity_name": "Customer",
     "artifact_name": "Customer.sql",
     "artifact_type": "sql_file",
+    "code_storage_type": "table",
+    "code_repository_url": null,
+    "code_commit_path": null,
+    "code_entry_point": null,
+    "code_parameters": null,
     "generated_code_content": "CREATE OR REPLACE TEMPORARY VIEW Customer_CRM AS\nSELECT c.customer_reference AS CustomerCode, NULLIF(TRIM(c.display_name), '') AS CustomerName, c.source_system_id AS SourceSystemID\nFROM bronze.crm_customer AS c;\nCREATE OR REPLACE TEMPORARY VIEW Customer_ERP AS\nSELECT e.customer_code AS CustomerCode, NULLIF(TRIM(e.customer_name), '') AS CustomerName, e.source_system_id AS SourceSystemID\nFROM bronze.erp_customer AS e;\nSELECT CustomerCode, CustomerName, SourceSystemID FROM Customer_CRM\nUNION ALL\nSELECT CustomerCode, CustomerName, SourceSystemID FROM Customer_ERP;",
     "generated_code_status": "active",
     "generated_code_is_locked": false

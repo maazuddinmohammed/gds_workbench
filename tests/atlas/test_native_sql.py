@@ -68,7 +68,8 @@ const pending = [record('New'), {...preserved}, {...edited,description:'changed'
   record('IsActiveFalse',{is_active:false}), record('StatusOverrides',{status:'inactive'}),
   record('Valid',{generated_code_content:'SELECT ID FROM bronze.X'}),
   record('NoStatus',{generated_code_status:null}), record('insensitive'),
-  record('NullSql',{generated_code_content:null})];
+  record('NullSql',{generated_code_content:null}),
+  record('GitSql',{code_storage_type:'git',generated_code_content:null})];
 for (const records of [[], [["generated_code", {definition,baseline,pending}]]]) {
   const expected = api.validateCodeRecords(new Map(records)).map(issue => ({
     severity:'error',dataset:issue.dataset,record:issue.record,code:issue.code,

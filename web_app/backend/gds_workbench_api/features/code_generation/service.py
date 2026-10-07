@@ -612,6 +612,7 @@ def _generated_code_changes(
                 modeled_entity_name=context.modeled_entity_name,
                 artifact_name=artifact.artifact_name,
                 artifact_type="sql_file",
+                code_storage_type="table",
                 generated_code_content=artifact.generated_sql,
                 generated_code_status="active",
                 generated_code_is_locked=False,
@@ -674,6 +675,15 @@ def _reconcile_generated_code(
         prior_record, context = prior
         if prior_record.generated_code_is_locked:
             continue
+        # SQL generation does not author or clear user-supplied storage metadata.
+        record = record.model_copy(
+            update={
+                "code_repository_url": prior_record.code_repository_url,
+                "code_commit_path": prior_record.code_commit_path,
+                "code_entry_point": prior_record.code_entry_point,
+                "code_parameters": prior_record.code_parameters,
+            }
+        )
         current_names = {name.strip().casefold() for name in context.current_artifact_names}
         if record != prior_record or record.artifact_name.strip().casefold() not in current_names:
             changed.append(record)

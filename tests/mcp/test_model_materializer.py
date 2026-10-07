@@ -287,7 +287,7 @@ async def test_generated_code_uses_server_digest_and_separate_source_assignment(
     code_insert = transaction.calls[2]
     assert "code_input_digest" in code_insert[1]
     assert "generated_code_digest" not in code_insert[1]
-    assert code_insert[2][:8] == (
+    assert code_insert[2][:13] == (
         7,
         "logical_entity",
         101,
@@ -295,6 +295,11 @@ async def test_generated_code_uses_server_digest_and_separate_source_assignment(
         "Customer.sql",
         "sql_file",
         "SELECT 1",
+        "table",
+        None,
+        None,
+        None,
+        None,
         "a" * 64,
     )
     source_insert = transaction.calls[4]
@@ -388,6 +393,11 @@ async def test_validation_digests_are_derived_after_mapping_and_code() -> None:
                 "artifact_name": "Customer.sql",
                 "artifact_type": "sql_file",
                 "generated_code_digest": "b" * 64,
+                "code_storage_type": "table",
+                "code_repository_url": None,
+                "code_commit_path": None,
+                "code_entry_point": None,
+                "code_parameters": None,
             }
         ]
     )

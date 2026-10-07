@@ -117,6 +117,8 @@ CREATE_SYSTEM_SELECTION_WORKFLOW_RUN_SQL = """
 
 def seed_workflow_context(
     postgres_database: DisposablePostgres,
+    *,
+    execution_mode: str = "one_shot",
 ) -> WorkflowContext:
     suffix = uuid4().hex
     entra_tenant_id = uuid4()
@@ -261,11 +263,12 @@ def seed_workflow_context(
             SELECT workflow_stage_id
               FROM application.workflow_stage
              WHERE model_workflow = 'conceptual'
-               AND workflow_execution_mode = 'one_shot'
+               AND workflow_execution_mode = %s
                AND workflow_stage_is_agentic
                AND is_active
              ORDER BY workflow_stage_order
-            """
+            """,
+            (execution_mode,),
         ).fetchall()
         if not workflow_stages:
             workflow_stages = [
@@ -280,11 +283,12 @@ def seed_workflow_context(
                         workflow_stage_order,
                         workflow_stage_is_agentic
                     ) VALUES (
-                        'conceptual', 'one_shot', 'candidate_authoring',
+                        'conceptual', %s, 'candidate_authoring',
                         'Candidate Authoring', 10, TRUE
                     )
                     RETURNING workflow_stage_id
-                        """
+                        """,
+                        (execution_mode,),
                     ).fetchone()
                 )
             ]

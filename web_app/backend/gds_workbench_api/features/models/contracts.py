@@ -7,6 +7,8 @@ from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.domain.modeling_records import ModelSchemaDefinition
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from gds_workbench_api.capabilities import MAX_AGENT_TURNS, MAX_VALIDATION_RETRIES
+
 type ModelStatus = Literal["active", "archived"]
 type ModelWorkflow = Literal[
     "profiling",
@@ -66,8 +68,10 @@ class ModelDetail(BaseModel):
     default_agent_provider_code: str | None = Field(default=None, max_length=100)
     default_agent_model_code: str | None = Field(default=None, max_length=200)
     default_reasoning_effort_code: str | None = Field(default=None, max_length=50)
-    default_max_turns: int | None = Field(default=None, ge=1, le=50)
-    default_validation_retry_count: int | None = Field(default=None, ge=0, le=5)
+    default_max_turns: int | None = Field(default=None, ge=1, le=MAX_AGENT_TURNS)
+    default_validation_retry_count: int | None = Field(
+        default=None, ge=0, le=MAX_VALIDATION_RETRIES
+    )
     is_active: bool
     updated_at: datetime
 

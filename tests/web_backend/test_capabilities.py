@@ -23,7 +23,15 @@ def test_tool_assisted_supports_the_same_registered_reasoning_choices_as_one_sho
     registry = load_default_agent_capabilities()
     expected = {
         "foundry-primary": ("default", "low", "medium", "high", "xhigh", "max"),
-        "foundry-gpt-5.6-luna": ("default", "none", "low", "medium", "high", "xhigh", "max"),
+        "foundry-gpt-5.6-luna": (
+            "default",
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ),
     }
     for model in registry.models:
         profiles = {profile.execution_mode: profile for profile in model.execution_profiles}
@@ -78,7 +86,7 @@ def test_new_run_defaults_recover_retired_models_and_incompatible_efforts(
         execution_mode=mode,
         model_code="retired-model",
         reasoning_effort_code="unsupported",
-        max_turns=99,
+        max_turns=101,
         validation_retry_count=-1,
     )
     assert selected.model_code == "foundry-primary"
@@ -105,6 +113,37 @@ def test_new_run_defaults_recover_retired_models_and_incompatible_efforts(
 
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+def test_expanded_limits_preserve_defaults_and_reject_out_of_range_values(
+    mode: AgentExecutionModeCode,
+) -> None:
+    registry = load_default_agent_capabilities()
+    defaults = registry.resolve_default_selection(execution_mode=mode)
+    assert (defaults.max_turns, defaults.validation_retry_count) == (50, 5)
+    for turns, retries in ((10, 2), (8, 0)):
+        preserved = registry.resolve_default_selection(
+            execution_mode=mode, max_turns=turns, validation_retry_count=retries
+        )
+        assert (preserved.max_turns, preserved.validation_retry_count) == (turns, retries)
+    selected = registry.resolve_default_selection(
+        execution_mode=mode, max_turns=100, validation_retry_count=25
+    )
+    assert (selected.max_turns, selected.validation_retry_count) == (100, 25)
+    registry.validate_selection(selected, execution_mode=mode)
+    for field, value in (
+        ("max_turns", 0),
+        ("max_turns", 101),
+        ("validation_retry_count", -1),
+        ("validation_retry_count", 26),
+    ):
+        with pytest.raises(ValidationError):
+            AgentRunSelection.model_validate({**selected.model_dump(), field: value})
+        with pytest.raises(InvalidRequestError):
+            registry.validate_selection(
+                selected.model_copy(update={field: value}), execution_mode=mode
+            )
+
+
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 @pytest.mark.parametrize(
     "model_code, effort",
     [
@@ -122,7 +161,8 @@ def test_current_models_reject_unsupported_explicit_efforts(
     selected = registry.resolve_default_selection(execution_mode=mode, model_code=model_code)
     with pytest.raises(InvalidRequestError):
         registry.validate_selection(
-            selected.model_copy(update={"reasoning_effort_code": effort}), execution_mode=mode
+            selected.model_copy(update={"reasoning_effort_code": effort}),
+            execution_mode=mode,
         )
 
 
@@ -212,8 +252,8 @@ def test_invalid_capability_cross_references_fail_before_startup(
                 "providers": [],
                 "models": [],
                 "reasoning_efforts": [],
-                "max_turns": {"minimum": 1, "default": 10, "maximum": 50},
-                "validation_retries": {"minimum": 0, "default": 2, "maximum": 5},
+                "max_turns": {"minimum": 1, "default": 10, "maximum": 100},
+                "validation_retries": {"minimum": 0, "default": 2, "maximum": 25},
             }
         ),
         encoding="utf-8",

@@ -148,6 +148,8 @@ _GENERATED_CODE_SQL: LiteralString = """
 SELECT generated.generated_code_id,
        entity.modeled_entity_type, entity.modeled_entity_schema_name, entity.modeled_entity_name,
        generated.artifact_name, generated.artifact_type, generated.generated_code_content,
+       generated.code_storage_type, generated.code_repository_url, generated.code_commit_path,
+       generated.code_entry_point, generated.code_parameters,
        generated.generated_code_status, generated.generated_code_is_locked
   FROM workflow.generated_code AS generated
   JOIN workflow.modeled_entity AS entity

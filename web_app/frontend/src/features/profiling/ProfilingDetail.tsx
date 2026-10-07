@@ -159,7 +159,7 @@ export function ProfilingObjectDetailPage({
 }
 
 function formatMetric(value: number | string | null): string {
-  if (value === null) return "Not recorded";
+  if (value === null) return "null";
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return String(value);
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 6 }).format(parsed);

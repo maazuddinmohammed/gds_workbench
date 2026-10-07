@@ -1764,8 +1764,8 @@ def test_model_agent_defaults_are_optional_and_naming_is_not_coupled_to_audit(
                    default_agent_provider_code = 'microsoft_foundry',
                    default_agent_model_code = 'model-1',
                    default_reasoning_effort_code = 'medium',
-                   default_max_turns = 50,
-                   default_validation_retry_count = 5
+                   default_max_turns = 100,
+                   default_validation_retry_count = 25
              WHERE model_id = %s
             RETURNING silver_model_naming_instructions,
                       silver_model_audit_columns_template,
@@ -1782,9 +1782,21 @@ def test_model_agent_defaults_are_optional_and_naming_is_not_coupled_to_audit(
         "gold_model_audit_columns_template": [
             {"name": "created_time", "type": "timestamp"}
         ],
-        "default_max_turns": 50,
-        "default_validation_retry_count": 5,
+        "default_max_turns": 100,
+        "default_validation_retry_count": 25,
     }
+
+    for turns, retries in ((101, 25), (100, 26)):
+        with (
+            postgres_database.connect_owner() as connection,
+            pytest.raises(CheckViolation),
+            connection.transaction(),
+        ):
+            connection.execute(
+                "UPDATE model.model SET default_max_turns = %s, "
+                "default_validation_retry_count = %s WHERE model_id = %s",
+                (turns, retries, model_id),
+            )
 
     with (
         postgres_database.connect_owner() as connection,

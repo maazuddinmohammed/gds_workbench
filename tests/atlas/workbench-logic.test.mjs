@@ -279,6 +279,15 @@ test("portable Snapshot rules cover every backend record validator", () => {
   }
 });
 
+test("Code content is optional only for Git storage", () => {
+  const schema = {"x-gds-record-validation": {version:"1.0",rules:["generated_code"]}};
+  const record = {artifact_name:"Customer.sql", generated_code_content:null,
+    code_commit_path:"any text \\ reference",code_parameters:[false,{nested:42}]};
+  assert.deepEqual(commonValidation.validateSchema({...record,code_storage_type:"git"},schema),[]);
+  assert.ok(commonValidation.validateSchema({...record,code_storage_type:"table"},schema).length);
+  assert.ok(commonValidation.validateSchema(record,schema).length);
+});
+
 test("profiling decimals enforce the backend bounds", () => {
   const record = {
     row_count: 1, non_null_count: 1, null_count: 0,

@@ -5,11 +5,18 @@ from uuid import UUID, uuid4
 
 import pytest
 from gds_etl_workbench.domain.authorization import RequestPrincipal
-from gds_etl_workbench.domain.errors import DependencyUnavailableError, InvalidRequestError
+from gds_etl_workbench.domain.errors import (
+    DependencyUnavailableError,
+    InvalidRequestError,
+)
 from gds_workbench_api.database import _READINESS_SQL, WebPostgresDatabase
-from gds_workbench_api.features.workflows.execution.contracts import WorkflowExecutionClaim
+from gds_workbench_api.features.workflows.execution.contracts import (
+    WorkflowExecutionClaim,
+)
 from gds_workbench_api.features.workflows.usage.contracts import ModelTokenUsage
-from gds_workbench_api.features.workflows.usage.service import DatabaseWorkflowUsageRecorder
+from gds_workbench_api.features.workflows.usage.service import (
+    DatabaseWorkflowUsageRecorder,
+)
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.database_test_support import require_row
@@ -21,8 +28,15 @@ from tests.mcp.test_database_workflow_run_lifecycle import (
 )
 
 
-def _run(database: DisposablePostgres, *, workflow: str = "conceptual"):
-    context = seed_workflow_context(database)
+def _run(
+    database: DisposablePostgres,
+    *,
+    workflow: str = "conceptual",
+    mode: str = "one_shot",
+    max_turns: int = 10,
+    retries: int = 2,
+):
+    context = seed_workflow_context(database, execution_mode=mode)
     with database.connect_owner() as connection:
         row = require_row(
             connection.execute(
@@ -31,14 +45,14 @@ def _run(database: DisposablePostgres, *, workflow: str = "conceptual"):
                     context,
                     correlation_id=uuid4(),
                     workflow=workflow,
-                    execution_mode="one_shot" if workflow == "conceptual" else None,
+                    execution_mode=mode if workflow == "conceptual" else None,
                     agent_configuration=(
                         "openai_agents_sdk",
                         "microsoft_foundry",
                         "foundry-primary",
                         "default",
-                        10,
-                        2,
+                        max_turns,
+                        retries,
                     )
                     if workflow == "conceptual"
                     else (None, None, None, None, None, None),
@@ -48,7 +62,12 @@ def _run(database: DisposablePostgres, *, workflow: str = "conceptual"):
         run_id = row["workflow_run_id"]
         connection.execute(
             "SELECT application.start_workflow_run(%s,%s,'user',%s,%s)",
-            (context.entra_tenant_id, context.entra_object_id, run_id, context.model_revision),
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                run_id,
+                context.model_revision,
+            ),
         )
     claim = WorkflowExecutionClaim.model_validate(_claim_specific_workflow_run(database, run_id))
     runtime = WebPostgresDatabase(
@@ -194,12 +213,35 @@ async def test_new_requests_require_frozen_stage_and_bounded_attempts(
                 with pytest.raises(DependencyUnavailableError):
                     await invocation.begin_request(1)
             invocation = _invocation(recorder, claim)
-            for ordinal in (0, 151, True):
+            for ordinal in (0, 301, True):
                 with pytest.raises(InvalidRequestError):
                     await invocation.begin_request(ordinal)
     finally:
         await runtime.close()
     assert _rows(web_postgres_database, claim) == []
+
+
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+async def test_usage_persists_last_allowed_attempt_and_request(
+    web_postgres_database: DisposablePostgres,
+    mode: str,
+) -> None:
+    _, claim, runtime = _run(web_postgres_database, mode=mode, max_turns=100, retries=25)
+    await runtime.open()
+    recorder = DatabaseWorkflowUsageRecorder(database=runtime)
+    try:
+        async with recorder.track_run(claim):
+            invocation = _invocation(recorder, claim, authoring_attempt=26)
+            await invocation.begin_request(300)
+            with pytest.raises(InvalidRequestError):
+                _invocation(recorder, claim, authoring_attempt=27)
+            with pytest.raises(InvalidRequestError):
+                await invocation.begin_request(301)
+    finally:
+        await runtime.close()
+    rows = _rows(web_postgres_database, claim)
+    assert len(rows) == 1
+    assert (rows[0]["authoring_attempt"], rows[0]["request_ordinal"]) == (26, 300)
 
 
 @pytest.mark.asyncio
@@ -324,7 +366,8 @@ async def test_database_rejects_invalid_numeric_receipts_independently(
                 with pytest.raises(DependencyUnavailableError):
                     await invocation.complete_request(request_id, invalid)
             await invocation.complete_request(
-                request_id, ModelTokenUsage(input_tokens=0, output_tokens=0, total_tokens=0)
+                request_id,
+                ModelTokenUsage(input_tokens=0, output_tokens=0, total_tokens=0),
             )
     finally:
         await runtime.close()
@@ -338,7 +381,9 @@ async def test_dispatcher_records_before_terminal_transition_clears_claim(
     web_postgres_database: DisposablePostgres,
     terminal: str,
 ) -> None:
-    from gds_workbench_api.features.workflows.authoring.lifecycle import workflow_identity_triple
+    from gds_workbench_api.features.workflows.authoring.lifecycle import (
+        workflow_identity_triple,
+    )
     from gds_workbench_api.features.workflows.execution.dispatcher import (
         WorkflowExecutionDispatcher,
         WorkflowExecutionServices,
@@ -356,7 +401,8 @@ async def test_dispatcher_records_before_terminal_transition_clears_claim(
             invocation = _invocation(recorder, claim)
             request_id = await invocation.begin_request(1)
             await invocation.complete_request(
-                request_id, ModelTokenUsage(input_tokens=6, output_tokens=2, total_tokens=8)
+                request_id,
+                ModelTokenUsage(input_tokens=6, output_tokens=2, total_tokens=8),
             )
             async with runtime.write_transaction() as transaction:
                 if terminal == "completed":
@@ -406,5 +452,8 @@ async def test_dispatcher_records_before_terminal_transition_clears_claim(
                 (claim.workflow_run_id,),
             ).fetchone()
         )
-    assert run == {"workflow_run_state": terminal, "workflow_run_claim_token_digest": None}
+    assert run == {
+        "workflow_run_state": terminal,
+        "workflow_run_claim_token_digest": None,
+    }
     assert sum(row["total_tokens"] for row in _rows(web_postgres_database, claim)) == 8

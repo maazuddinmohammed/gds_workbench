@@ -13,6 +13,7 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
     AgentExecutionResult,
 )
+from gds_workbench_api.features.workflows.authoring.lifecycle import AgentWorkflowEvent
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentCandidateValidationError,
@@ -24,7 +25,12 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     load_default_agent_context_policy,
     parse_pydantic_candidate,
 )
+from gds_workbench_api.features.workflows.authoring.stage_runner import (
+    AgentStageOutcome,
+)
 from pydantic import BaseModel, ConfigDict, JsonValue, model_validator
+
+from tests.web_backend.test_agent_stage_runner import Catalog
 
 
 class _LeakyCrossFieldCandidate(BaseModel):
@@ -68,14 +74,16 @@ class FakeExecutor:
     requests: list[AgentExecutionRequest] = field(
         default_factory=lambda: list[AgentExecutionRequest]()
     )
+    turn_count: int = 2
+    tool_call_count: int = 1
 
     async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
         self.requests.append(request)
         candidate = self.candidates[len(self.requests) - 1]
         return AgentExecutionResult(
             candidate=candidate,
-            turn_count=2,
-            tool_call_count=1,
+            turn_count=self.turn_count,
+            tool_call_count=self.tool_call_count,
         )
 
 
@@ -116,6 +124,66 @@ def _policy(*, one_shot_bytes: int = 4096) -> AgentContextPolicy:
         stage_max_context_bytes=8192,
         max_candidate_bytes=4096,
         max_validation_issues=20,
+    )
+
+
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+@pytest.mark.parametrize("succeeds", [True, False])
+async def test_all_25_repairs_can_run_and_record_the_last_attempt(
+    mode: str, succeeds: bool
+) -> None:
+    request = _request(retries=25)
+    catalog = Catalog() if mode == "tool_assisted" else None
+    request = AgentExecutionRequest.model_validate(
+        {
+            **request.model_dump(),
+            "execution_mode": mode,
+            "selection": {**request.selection.model_dump(), "max_turns": 100},
+            "local_tool_catalog": catalog,
+            "allowed_tool_names": tuple(tool.name for tool in catalog.definitions)
+            if catalog
+            else (),
+        }
+    )
+    issue = AgentValidationIssue(
+        code="candidate.reference_not_found", path=(), message="Source is unavailable."
+    )
+    executor = FakeExecutor(candidates=[{}] * 26, turn_count=100, tool_call_count=1000)
+    validator = FakeValidator(outcomes=[(issue,)] * 25 + [() if succeeds else (issue,)])
+    execution = ValidationRepairRunner(executor=executor, policy=_policy()).run(
+        request=request, validator=validator
+    )
+    if succeeds:
+        result = await execution
+        outcome = AgentStageOutcome(
+            **result.model_dump(), warning_codes=(), unknown_placeholders=()
+        )
+        assert (outcome.attempt_count, outcome.turn_count, outcome.tool_call_count) == (
+            26,
+            2600,
+            26000,
+        )
+        assert outcome.was_repaired
+        event = AgentWorkflowEvent(
+            sequence=2,
+            attempt=outcome.attempt_count,
+            stage="candidate_authoring",
+            status="running",
+            message="Authoring completed.",
+            finding_count=0,
+        )
+        assert event.attempt == 26
+    else:
+        with pytest.raises(AgentCandidateValidationError):
+            await execution
+    assert [item.authoring_attempt for item in executor.requests] == list(range(1, 27))
+    # Attempt metadata must also survive validation when sent to downstream tracking.
+    AgentExecutionRequest.model_validate(
+        {
+            **executor.requests[-1].model_dump(),
+            "authoring_attempt": 26,
+            "local_tool_catalog": catalog,
+        }
     )
 
 

@@ -35,6 +35,28 @@ from .repository import MetadataEnrichmentRepository
 
 type EnrichmentUnit = tuple[str, dict[str, JsonValue], dict[str, str], dict[str, int]]
 
+PII_CLASSIFICATION_RULES = (
+    "is_pii means personally identifiable information about a natural person. "
+    "Assess each Attribute independently using its own meaning and supplied evidence. "
+    "Set true only when evidence shows it identifies, contacts, locates or describes an "
+    "identifiable person, directly or through a supported linkage. Examples include personal "
+    "names, personal email/phone/address, government identifiers, person-linked customer or "
+    "employee IDs, date of birth, and person-linked medical or financial details. "
+    "An indirect identifier needs a concrete identifying role in the supplied context; "
+    "a hypothetical join or simply sharing a table with PII is insufficient. "
+    "Set false when the evidence establishes a non-personal business or technical meaning, "
+    "such as product codes, quantities, generic statuses, business calendar dates or ETL "
+    "timestamps. Dates are not automatically PII: date of birth can be true; an ordinary "
+    "order date, reporting date or load timestamp is not true without evidence of a "
+    "person-identifying role. Data type, uniqueness, key membership, a column name or a "
+    "previous true finding alone does not establish PII. Set null for insufficient or "
+    "conflicting evidence; uncertainty must not default to true or false. Never copy PII "
+    "classification across all columns. Before returning, recheck the specific personal "
+    "meaning supporting every true finding. Masking can protect non-personal sensitive "
+    "data too: is_masking_required is separate and must remain unchanged regardless of "
+    "is_pii. Never expose example personal values."
+)
+
 
 class DescriptionValidator:
     def __init__(self, targets: dict[str, str], *, attributes: bool = False) -> None:
@@ -68,6 +90,8 @@ class DescriptionValidator:
         )
 
         if self.attributes:
+            # Runtime guidance also reaches runs using older saved prompt templates.
+            schema["description"] = PII_CLASSIFICATION_RULES
             properties = cast(dict[str, JsonValue], schema["properties"])
             properties["attributes"] = {
                 "type": "object",

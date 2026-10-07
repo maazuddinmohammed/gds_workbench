@@ -319,6 +319,48 @@ async def test_selected_system_scope_preserves_locks_and_replaces_only_eligible_
         )
 
 
+@pytest.mark.asyncio
+async def test_web_preserves_git_code_and_cannot_replace_its_active_assignments() -> (
+    None
+):
+    row = _row(501)
+    artifact: dict[str, Any] = {
+        "modeled_entity_type": "logical_entity",
+        "modeled_entity_schema_name": "silver",
+        "modeled_entity_name": "Target501",
+        "artifact_name": "external.sql",
+        "artifact_type": "sql_file",
+        "code_storage_type": "git",
+        "code_repository_url": "any repo",
+        "code_commit_path": "anything",
+        "code_entry_point": "",
+        "code_parameters": ["--full"],
+        "generated_code_content": None,
+        "generated_code_is_locked": False,
+        "generated_code_status": "active",
+        "_is_current": True,
+        "source_systems": [],
+    }
+    row["applied_artifacts"] = [artifact]
+    plan = _plan(selected_object_ids=(501,))
+    context = await PostgresCodeGenerationContextRepository().load(
+        ContextTransaction([row]), tenant_id=7, plan=plan
+    )
+    assert context.targets[0].preserved_artifact_names == ("external.sql",)
+    assert context.targets[0].applied_generated_code == ()
+    artifact["source_systems"] = [
+        {
+            "source_system_code": "ERP",
+            "generated_code_source_system_is_locked": False,
+            "generated_code_source_system_status": "active",
+        }
+    ]
+    with pytest.raises(InvalidRequestError, match="Git-stored Code"):
+        await PostgresCodeGenerationContextRepository().load(
+            ContextTransaction([row]), tenant_id=7, plan=plan
+        )
+
+
 def test_frozen_code_plan_defaults_explicit_null_layout_to_combined() -> None:
     values = _plan().model_dump()
     values["code_generation_file_layout"] = None

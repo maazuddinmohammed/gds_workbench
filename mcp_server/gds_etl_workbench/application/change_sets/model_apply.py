@@ -659,13 +659,18 @@ INSERT INTO workflow.generated_code (
     artifact_name,
     artifact_type,
     generated_code_content,
+    code_storage_type,
+    code_repository_url,
+    code_commit_path,
+    code_entry_point,
+    code_parameters,
     code_input_digest,
     agent_run_id,
     workflow_run_id,
     generated_code_status,
     generated_code_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, %s, %s)
 RETURNING generated_code_id
 """
 
@@ -674,6 +679,11 @@ UPDATE workflow.generated_code
    SET artifact_name = %s,
        artifact_type = %s,
        generated_code_content = %s,
+       code_storage_type = %s,
+       code_repository_url = %s,
+       code_commit_path = %s,
+       code_entry_point = %s,
+       code_parameters = %s,
        code_input_digest = %s,
        agent_run_id = NULL,
        workflow_run_id = %s,
@@ -749,6 +759,11 @@ SELECT entity.modeled_entity_type,
        generated.artifact_name,
        generated.artifact_type,
        generated.generated_code_digest,
+       generated.code_storage_type,
+       generated.code_repository_url,
+       generated.code_commit_path,
+       generated.code_entry_point,
+       generated.code_parameters,
        btrim(generated.code_input_digest::TEXT) AS code_input_digest,
        generated.generated_code_status,
        coalesce(array_agg(system.system_code ORDER BY lower(system.system_code))
@@ -2401,6 +2416,11 @@ SELECT attribute.{config.attribute_id}
                 record.artifact_name,
                 record.artifact_type,
                 record.generated_code_content,
+                record.code_storage_type,
+                record.code_repository_url,
+                record.code_commit_path,
+                record.code_entry_point,
+                Jsonb(record.code_parameters) if record.code_parameters is not None else None,
                 str(context["code_input_digest"]).strip(),
                 code_workflow_run_id,
                 record.generated_code_status,
@@ -2571,6 +2591,11 @@ SELECT attribute.{config.attribute_id}
                     "artifact_name": str(row["artifact_name"]),
                     "artifact_type": str(row["artifact_type"]),
                     "generated_code_digest": str(row["generated_code_digest"]).strip(),
+                    "code_storage_type": row.get("code_storage_type", "table"),
+                    "code_repository_url": row.get("code_repository_url"),
+                    "code_commit_path": row.get("code_commit_path"),
+                    "code_entry_point": row.get("code_entry_point"),
+                    "code_parameters": row.get("code_parameters"),
                 }
             )
         resolved = (

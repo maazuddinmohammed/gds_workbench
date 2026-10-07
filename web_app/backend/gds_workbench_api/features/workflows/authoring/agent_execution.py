@@ -16,6 +16,9 @@ from pydantic import (
 from pydantic.json_schema import SkipJsonSchema
 
 from gds_workbench_api.capabilities import (
+    MAX_AGENT_TOOL_CALLS,
+    MAX_AGENT_TURNS,
+    MAX_AUTHORING_ATTEMPTS,
     AgentCapabilityRegistry,
     AgentRunSelection,
 )
@@ -164,7 +167,7 @@ class AgentExecutionRequest(BaseModel):
     execution_mode: AgentExecutionMode
     selection: AgentRunSelection
     invocation_id: UUID = Field(default_factory=uuid4, exclude=True)
-    authoring_attempt: int = Field(default=1, ge=1, le=6, exclude=True)
+    authoring_attempt: int = Field(default=1, ge=1, le=MAX_AUTHORING_ATTEMPTS, exclude=True)
     model_request_recorder: SkipJsonSchema[ModelRequestRecorder | None] = Field(
         default=None,
         exclude=True,
@@ -240,8 +243,8 @@ class AgentExecutionResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     candidate: JsonValue = Field(repr=False)
-    turn_count: int = Field(gt=0, le=50)
-    tool_call_count: int = Field(ge=0, le=1_000)
+    turn_count: int = Field(gt=0, le=MAX_AGENT_TURNS)
+    tool_call_count: int = Field(ge=0, le=MAX_AGENT_TOOL_CALLS)
 
 
 class AgentExecutionAdapter(Protocol):

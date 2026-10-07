@@ -41,7 +41,7 @@ Use the bounded read/write [helper contracts](../model/change-sets.md#atlas-help
 
 ## Saved code and local files
 
-The Model Snapshot exports existing **saved/applied** Code; it does not synthesize transformation SQL from Metadata/Mapping or execute it. Complete text is in `generated_code_content`, accompanied by artifact names/types/status/locks and separate System assignments:
+The Model Snapshot exports existing **saved/applied** Code; it does not synthesize transformation SQL from Metadata/Mapping or execute it. Table-stored text is in `generated_code_content`. Git records may have null content and carry nullable repository, commit/path, entry-point and parameter metadata; Snapshot creation does not fetch Git. Both retain artifact names/types/status/locks and separate System assignments:
 
 ```text
 model/model-snapshot/data/code_generation/generated_code/rows.jsonl

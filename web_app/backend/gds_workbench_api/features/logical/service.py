@@ -225,15 +225,7 @@ class LogicalWorkflow:
                     staged_documents={change.dataset: change.records for change in changes},
                     physical_scope=physical_scope,
                 )
-                coverage_issues = validator.validate_coverage(
-                    value,
-                    metadata_attribute_keys=tuple(
-                        PhysicalAttributeKey.model_validate(attribute.model_dump(), extra="ignore")
-                        for selected in context.context.selected_objects
-                        for attribute in selected.attributes
-                        if attribute.is_meta_data
-                    ),
-                )
+                coverage_issues = validator.validate_coverage(value)
                 return AgentCandidateValidation(
                     issues=model_validation_issues(checked.issues) + coverage_issues
                 )

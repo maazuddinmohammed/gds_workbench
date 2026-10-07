@@ -8,11 +8,18 @@ CREATE TABLE workflow.generated_code (
     dimensional_entity_id BIGINT,
     artifact_name VARCHAR(400) NOT NULL,
     artifact_type VARCHAR(30) NOT NULL,
-    generated_code_content TEXT NOT NULL,
+    code_storage_type VARCHAR(30) NOT NULL DEFAULT 'table',
+    code_repository_url TEXT,
+    code_commit_path TEXT,
+    code_entry_point TEXT,
+    code_parameters JSONB,
+    generated_code_content TEXT,
     code_input_digest CHAR(64) NOT NULL,
+    -- Fingerprints optional inline content. Code context digests also include storage metadata;
+    -- neither digest fetches or verifies the contents of an external repository.
     generated_code_digest CHAR(64) GENERATED ALWAYS AS (
         encode(
-            sha256(generated_code_content::BYTEA),
+            sha256(coalesce(generated_code_content, '')::BYTEA),
             'hex'
         )
     ) STORED,
@@ -45,8 +52,13 @@ CREATE TABLE workflow.generated_code (
     CONSTRAINT ck_generated_code_artifact_type CHECK (
         artifact_type IN ('sql_file', 'python_file', 'python_notebook')
     ),
+    CONSTRAINT ck_generated_code_storage_type CHECK (
+        code_storage_type IN ('table', 'git')
+    ),
     CONSTRAINT ck_generated_code_content CHECK (
-        reference.is_nonblank(generated_code_content)
+        (code_storage_type = 'git' AND generated_code_content IS NULL)
+        OR (generated_code_content IS NOT NULL
+            AND reference.is_nonblank(generated_code_content))
     ),
     CONSTRAINT ck_generated_code_input_digest CHECK (
         code_input_digest ~ '^[0-9a-f]{64}$'

@@ -218,6 +218,7 @@ SELECT jsonb_build_object(
            AND coalesce(generated.logical_entity_id, generated.dimensional_entity_id) =
                context.modeled_entity_id
          AND generated.artifact_type = 'sql_file'
+         AND generated.code_storage_type = 'table'
   ) AS artifact
  WHERE (%s::BIGINT IS NULL
         OR (context.source_context -> 'target' ->> 'system_id')::BIGINT = %s)
@@ -411,6 +412,7 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
    AND target_model.model_id = %s
    AND artifact.generated_code_id = %s
    AND artifact.artifact_type = 'sql_file'
+   AND artifact.code_storage_type = 'table'
 """
 
 _GENERATED_SQL_DOWNLOAD_BOUNDS_SQL: LiteralString = """
@@ -424,6 +426,7 @@ SELECT count(*)::INTEGER AS artifact_count,
    AND target_model.model_id = %s
    AND artifact.generated_code_id = ANY(%s::BIGINT[])
    AND artifact.artifact_type = 'sql_file'
+   AND artifact.code_storage_type = 'table'
 """
 
 _GENERATED_SQL_DOWNLOAD_SQL: LiteralString = """
@@ -451,6 +454,7 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
    AND target_model.model_id = %s
    AND artifact.generated_code_id = ANY(%s::BIGINT[])
    AND artifact.artifact_type = 'sql_file'
+   AND artifact.code_storage_type = 'table'
  ORDER BY array_position(%s::BIGINT[], artifact.generated_code_id)
 """
 

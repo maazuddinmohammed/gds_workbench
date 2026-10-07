@@ -167,8 +167,8 @@ CREATE TABLE application.workflow_run (
             AND agent_provider_code IS NOT NULL
             AND agent_model_code IS NOT NULL
             AND reasoning_effort_code IS NOT NULL
-            AND max_turns BETWEEN 1 AND 50
-            AND validation_retry_count BETWEEN 0 AND 5
+            AND max_turns BETWEEN 1 AND 100
+            AND validation_retry_count BETWEEN 0 AND 25
         )
     ),
     CONSTRAINT ck_workflow_run_agent_codes CHECK (
@@ -4078,8 +4078,8 @@ CREATE TABLE application.workflow_run_model_request (
     ),
     CONSTRAINT ck_workflow_run_model_request_identity CHECK (
         stage_code ~ '^[a-z][a-z0-9_]{0,99}$'
-        AND authoring_attempt BETWEEN 1 AND 6
-        AND request_ordinal BETWEEN 1 AND 150
+        AND authoring_attempt BETWEEN 1 AND 26
+        AND request_ordinal BETWEEN 1 AND 300
         AND workflow_run_recovery_count BETWEEN 0 AND 5
         AND claim_token_digest ~ '^[0-9a-f]{64}$'
     ),
@@ -4254,9 +4254,9 @@ BEGIN
        OR v_run.usage_tracked_recovery_count IS DISTINCT FROM v_run.workflow_run_recovery_count
        OR v_run.agent_sdk_code IS NULL
        OR p_request_id IS NULL OR p_invocation_id IS NULL
-       OR p_authoring_attempt IS NULL OR p_authoring_attempt NOT BETWEEN 1 AND 6
+       OR p_authoring_attempt IS NULL OR p_authoring_attempt NOT BETWEEN 1 AND 26
        OR p_authoring_attempt > v_run.validation_retry_count + 1
-       OR p_request_ordinal IS NULL OR p_request_ordinal NOT BETWEEN 1 AND 150
+       OR p_request_ordinal IS NULL OR p_request_ordinal NOT BETWEEN 1 AND 300
        OR NOT EXISTS (
            SELECT 1 FROM application.workflow_run_prompt_snapshot AS snapshot
            JOIN application.workflow_stage AS stage USING (workflow_stage_id)

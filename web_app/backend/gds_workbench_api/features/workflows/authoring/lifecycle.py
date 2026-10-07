@@ -20,6 +20,7 @@ from gds_etl_workbench.domain.errors import (
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from gds_workbench_api.capabilities import MAX_AUTHORING_ATTEMPTS
 from gds_workbench_api.features.models import ModelRevisionConflictError
 from gds_workbench_api.features.workflows.authoring.plan import (
     ModelWorkflow,
@@ -124,7 +125,7 @@ class AgentWorkflowEvent(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     sequence: int = Field(gt=1)
-    attempt: int = Field(gt=0, le=6)
+    attempt: int = Field(gt=0, le=MAX_AUTHORING_ATTEMPTS)
     stage: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,99}$")
     status: ProgressStatus
     message: str = Field(min_length=1, max_length=2000)

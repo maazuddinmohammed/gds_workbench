@@ -13,6 +13,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    JsonValue,
     StringConstraints,
     field_validator,
     model_validator,
@@ -1055,15 +1056,22 @@ class GeneratedCodeRecord(ModelingRecord):
     ]
     artifact_name: Name400
     artifact_type: Literal["sql_file", "python_file", "python_notebook"]
-    generated_code_content: NonblankText
+    code_storage_type: Literal["table", "git"] = "table"
+    code_repository_url: str | None = None
+    code_commit_path: str | None = None
+    code_entry_point: str | None = None
+    code_parameters: JsonValue = None
+    generated_code_content: NonblankText | None = None
     generated_code_status: Status
     generated_code_is_locked: bool
 
     @model_validator(mode="after")
     def validate_content(self) -> GeneratedCodeRecord:
+        if self.code_storage_type == "table" and self.generated_code_content is None:
+            raise ValueError("Table-stored Code requires content.")
         if any(
             ord(character) < 32 and character not in {"\t", "\n", "\r"}
-            for character in self.generated_code_content
+            for character in self.generated_code_content or ""
         ):
             raise ValueError("Generated Code contains an unsupported control character.")
         if self.artifact_name.strip() != self.artifact_name or any(

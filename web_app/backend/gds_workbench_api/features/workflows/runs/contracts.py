@@ -8,6 +8,7 @@ from uuid import UUID
 from gds_etl_workbench.domain.errors import WorkbenchError
 from pydantic import BaseModel, ConfigDict, Field
 
+from gds_workbench_api.capabilities import MAX_AGENT_TURNS, MAX_VALIDATION_RETRIES
 from gds_workbench_api.features.workflows.usage.read_service import WorkflowTokenUsageSummary
 
 type ModelWorkflow = Literal[
@@ -97,8 +98,8 @@ class WorkflowRunDetail(WorkflowRunLedgerRecord):
     agent_provider_code: str | None = Field(default=None, max_length=100)
     agent_model_code: str | None = Field(default=None, max_length=200)
     reasoning_effort_code: str | None = Field(default=None, max_length=50)
-    max_turns: int | None = Field(default=None, ge=1, le=50)
-    validation_retry_count: int | None = Field(default=None, ge=0, le=5)
+    max_turns: int | None = Field(default=None, ge=1, le=MAX_AGENT_TURNS)
+    validation_retry_count: int | None = Field(default=None, ge=0, le=MAX_VALIDATION_RETRIES)
     failure_code: str | None = Field(default=None, max_length=100)
     failure_message: str | None = Field(default=None, max_length=2000)
     model_change_set_id: UUID | None = None

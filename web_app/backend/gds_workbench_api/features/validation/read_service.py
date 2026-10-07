@@ -300,6 +300,11 @@ SELECT context.modeled_entity_id,
                          'artifact_type', artifact.artifact_type,
                          'source_system_codes', assignment.source_system_codes,
                          'generated_code_digest', artifact.generated_code_digest,
+                         'code_storage_type', artifact.code_storage_type,
+                         'code_repository_url', artifact.code_repository_url,
+                         'code_commit_path', artifact.code_commit_path,
+                         'code_entry_point', artifact.code_entry_point,
+                         'code_parameters', artifact.code_parameters,
                          'generated_code_status', artifact.generated_code_status
                      ) ORDER BY lower(btrim(artifact.artifact_name)),
                                 artifact.generated_code_id
@@ -593,6 +598,11 @@ class _GeneratedCodeDigestRecord:
     source_system_codes: tuple[str, ...]
     generated_code_digest: str
     generated_code_status: str
+    code_storage_type: str = "table"
+    code_repository_url: str | None = None
+    code_commit_path: str | None = None
+    code_entry_point: str | None = None
+    code_parameters: object = None
 
 
 def _ledger_digest_context(
@@ -642,6 +652,11 @@ def _ledger_digest_context(
             if not isinstance(raw_value, dict):
                 raise InvalidRequestError("The current Validation Code context is invalid.")
             value = cast(dict[str, object], raw_value)
+            if value.get("code_storage_type", "table") not in ("table", "git") or any(
+                value.get(field) is not None and not isinstance(value[field], str)
+                for field in ("code_repository_url", "code_commit_path", "code_entry_point")
+            ):
+                raise InvalidRequestError("The current Validation Code context is invalid.")
             source_values = value.get("source_system_codes")
             if not isinstance(source_values, list) or any(
                 not isinstance(code, str) or not code.strip() or len(code) > 100
@@ -680,6 +695,11 @@ def _ledger_digest_context(
                         value,
                         "generated_code_digest",
                     ),
+                    code_storage_type=str(value.get("code_storage_type", "table")),
+                    code_repository_url=cast(str | None, value.get("code_repository_url")),
+                    code_commit_path=cast(str | None, value.get("code_commit_path")),
+                    code_entry_point=cast(str | None, value.get("code_entry_point")),
+                    code_parameters=value.get("code_parameters"),
                     generated_code_status=_required_mapping_text(
                         value,
                         "generated_code_status",

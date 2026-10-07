@@ -14,6 +14,14 @@ diagnostics. Candidate validation and persistence limits remain separate. `analy
 relationship validation queries and progress reporting. `profiling.json` bounds
 Profiling query size, concurrency, and execution time.
 
+Both execution modes allow 1–100 agent turns per authoring attempt and 0–25
+validation retries. Defaults are 50 turns and 5 retries; saved user selections
+take precedence. A retry creates another
+authoring attempt with the same selected turn limit; usage and event tracking
+support all 26 attempts. The frontend reads these bounds from the capability API.
+Matching limits also exist in the fresh-install SQL constraints; changing this
+registry alone does not update an installed database or an already-frozen Run.
+
 The default model deployments use these reasoning settings in both execution modes:
 
 | Deployment | Explicit reasoning efforts |

@@ -6,10 +6,15 @@ from uuid import uuid4
 
 from gds_etl_workbench.application.change_sets.model import load_model_physical_scope
 from gds_etl_workbench.application.change_sets.model_apply import ModelMaterializer
-from gds_etl_workbench.application.change_sets.model_validation import validate_future_graph
+from gds_etl_workbench.application.change_sets.model_validation import (
+    validate_future_graph,
+)
 from gds_etl_workbench.application.model_read import ModelReadContext
 from gds_etl_workbench.application.model_snapshot import build_model_snapshot
-from gds_etl_workbench.domain.snapshots.model import ModelChangeSetDataset, model_snapshot_records
+from gds_etl_workbench.domain.snapshots.model import (
+    ModelChangeSetDataset,
+    model_snapshot_records,
+)
 
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.model_test_fixtures import complete_model_graph
@@ -34,7 +39,10 @@ async def test_code_validation_lock_round_trip_and_authoring_barrier(
     for dataset, field in locked.items():
         graph[dataset][0][field] = True
     model = ModelReadContext(
-        model_id=model_id, tenant_id=tenant_id, model_name="Model Tool Round Trip", model_revision=1
+        model_id=model_id,
+        tenant_id=tenant_id,
+        model_name="Model Tool Round Trip",
+        model_revision=1,
     )
     runtime = postgres_database.create_runtime_adapter()
     await runtime.open()
@@ -46,7 +54,9 @@ async def test_code_validation_lock_round_trip_and_authoring_barrier(
                 snapshot=snapshot, staged_documents=graph, physical_scope=physical
             )
             assert authored.valid
-            await ModelMaterializer(transaction, model_id, "a" * 64).apply(authored.records)
+            await ModelMaterializer(transaction, model_id, "a" * 64).apply(
+                authored.records
+            )
         async with runtime.read_transaction() as transaction:
             snapshot = await build_model_snapshot(transaction, model)
             records = model_snapshot_records(snapshot)
@@ -55,12 +65,29 @@ async def test_code_validation_lock_round_trip_and_authoring_barrier(
                 original = records[dataset][0].model_dump(mode="json")
                 assert original[field] is True
                 assert original == graph[dataset][0]
-                for change in (
+                changes = (
                     field,
-                    "is_active" if dataset.startswith("validation") else dataset + "_status",
-                ):
+                    "is_active"
+                    if dataset.startswith("validation")
+                    else dataset + "_status",
+                )
+                if dataset == "generated_code":
+                    changes += (
+                        "code_storage_type",
+                        "code_repository_url",
+                        "code_commit_path",
+                        "code_entry_point",
+                        "code_parameters",
+                    )
+                for change in changes:
                     attempted = deepcopy(original)
-                    attempted[change] = False if isinstance(original[change], bool) else "inactive"
+                    attempted[change] = (
+                        "git"
+                        if change == "code_storage_type"
+                        else False
+                        if isinstance(original[change], bool)
+                        else "inactive"
+                    )
                     rejected = validate_future_graph(
                         snapshot=snapshot,
                         staged_documents={dataset: [attempted]},

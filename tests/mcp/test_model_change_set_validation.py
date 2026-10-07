@@ -889,6 +889,11 @@ def test_generated_code_uses_schema_entity_identity_and_artifact_name_only() -> 
         "modeled_entity_name",
         "artifact_name",
         "artifact_type",
+        "code_storage_type",
+        "code_repository_url",
+        "code_commit_path",
+        "code_entry_point",
+        "code_parameters",
         "generated_code_content",
         "generated_code_status",
         "generated_code_is_locked",
@@ -1022,6 +1027,42 @@ def test_server_derived_validation_context_digests_are_stable() -> None:
     assert mapping_digest is not None and len(mapping_digest) == 64
     assert code_digest is not None and len(code_digest) == 64
     assert mapping_digest != code_digest
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("code_storage_type", "table"),
+        ("code_repository_url", "any repo"),
+        ("code_commit_path", "anything"),
+        ("code_entry_point", "run"),
+        ("code_parameters", ["--full", {"batch": 42}]),
+    ],
+)
+def test_storage_metadata_changes_validation_code_freshness(
+    field: str, value: object
+) -> None:
+    context = CodeGenerationTargetContext(
+        modeled_entity_type="logical_entity",
+        modeled_entity_schema_name="silver",
+        modeled_entity_name="Order",
+        source_system_codes=frozenset({"ERP"}),
+        code_input_digest="a" * 64,
+    )
+    code = SimpleNamespace(
+        modeled_entity_type="logical_entity",
+        modeled_entity_schema_name="silver",
+        modeled_entity_name="Order",
+        artifact_name="Order.sql",
+        artifact_type="sql_file",
+        code_storage_type="git",
+        generated_code_content=None,
+        generated_code_status="active",
+    )
+    original = validation_code_context_digest((context,), (code,), "erp")
+    assert original is not None
+    setattr(code, field, value)
+    assert validation_code_context_digest((context,), (code,), "erp") != original
 
 
 def test_locked_applied_record_cannot_change() -> None:

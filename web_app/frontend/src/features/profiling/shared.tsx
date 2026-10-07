@@ -99,7 +99,7 @@ export function stageLabel(stage: string): string {
 }
 
 export function formatPercent(value: AttributeProfile["percent_populated"]): string {
-  if (value === null) return "—";
+  if (value === null) return "null";
   const parsed = Number(value);
   return Number.isFinite(parsed)
     ? `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(parsed)}%`

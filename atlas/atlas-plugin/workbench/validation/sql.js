@@ -252,7 +252,7 @@
     const issues = [];
     value.pending.forEach((record,index) => {
       const original = originals.get(core.stableStringify(core.key("model", value.definition, record)));
-      if (record.artifact_type !== "sql_file" || core.active(record) !== true || core.stableStringify(original) === core.stableStringify(record)) return;
+      if ((record.code_storage_type ?? "table") !== "table" || record.artifact_type !== "sql_file" || core.active(record) !== true || core.stableStringify(original) === core.stableStringify(record)) return;
       for (const failure of validateGeneratedSql(record.generated_code_content)) issues.push({...failure, dataset:"generated_code", record:index+1,field:"generated_code_content"});
     });
     return issues;

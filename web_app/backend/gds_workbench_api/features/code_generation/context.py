@@ -78,6 +78,11 @@ SELECT target.modeled_entity_id,
                              -> 'entity' ->> 'entity_name',
                          'artifact_name', generated.artifact_name,
                          'artifact_type', generated.artifact_type,
+                         'code_storage_type', generated.code_storage_type,
+                         'code_repository_url', generated.code_repository_url,
+                         'code_commit_path', generated.code_commit_path,
+                         'code_entry_point', generated.code_entry_point,
+                         'code_parameters', generated.code_parameters,
                          'generated_code_content',
                              generated.generated_code_content,
                          'generated_code_is_locked', generated.generated_code_is_locked,
@@ -256,6 +261,14 @@ def _assemble_context(
                 and item.generated_code_source_system_status == "active"
             ]
             assigned_codes = {item.source_system_code.strip().casefold() for item in assignments}
+            if artifact.code_storage_type == "git":
+                preserved_names.add(name)
+                if artifact.generated_code_status == "active" and assigned_codes & selected_codes:
+                    raise InvalidRequestError(
+                        "Selected Systems already use Git-stored Code. Update its assignments "
+                        "through a Model Change Set before generating table-stored SQL."
+                    )
+                continue
             if (
                 artifact.generated_code_is_locked
                 or any(item.generated_code_source_system_is_locked for item in assignments)
@@ -405,7 +418,7 @@ def _applied_generated_code(
         if not isinstance(value, dict):
             raise InvalidRequestError("The Code Generation context is unavailable.")
         artifact = GeneratedCodeRecord.model_validate(
-            {name: value.get(name) for name in GeneratedCodeRecord.model_fields},
+            {name: value[name] for name in GeneratedCodeRecord.model_fields if name in value},
             strict=True,
         )
         if (

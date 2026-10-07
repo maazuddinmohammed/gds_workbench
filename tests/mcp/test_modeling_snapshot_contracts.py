@@ -218,6 +218,11 @@ def test_generated_code_and_validation_public_shapes_are_minimal() -> None:
         "modeled_entity_name",
         "artifact_name",
         "artifact_type",
+        "code_storage_type",
+        "code_repository_url",
+        "code_commit_path",
+        "code_entry_point",
+        "code_parameters",
         "generated_code_content",
         "generated_code_status",
         "generated_code_is_locked",
@@ -261,6 +266,38 @@ def test_code_validation_locks_are_required_in_portable_records(
     del record[lock_field]
     with pytest.raises(ValidationError):
         definition.row_model.model_validate(record, strict=False)
+
+
+@pytest.mark.parametrize(
+    "parameters", [None, {}, {"batch": 42}, ["--full", 2], "custom", False, 0]
+)
+def test_git_code_accepts_flexible_nullable_metadata(parameters: object) -> None:
+    raw = {
+        **complete_model_graph()["generated_code"][0],
+        "code_storage_type": "git",
+        "code_repository_url": "any repository reference",
+        "code_commit_path": "branch/ref or arbitrary text \\ path\nline",
+        "code_entry_point": "",
+        "code_parameters": parameters,
+        "generated_code_content": None,
+    }
+    record = GeneratedCodeRecord.model_validate(raw)
+    assert record.model_dump() == raw
+    assert GeneratedCodeRecord.model_validate({**raw, "code_repository_url": None})
+
+
+def test_code_storage_defaults_and_content_requirements() -> None:
+    raw = complete_model_graph()["generated_code"][0]
+    assert GeneratedCodeRecord.model_validate(raw).code_storage_type == "table"
+    for content in (None, "", "   "):
+        with pytest.raises(ValidationError):
+            GeneratedCodeRecord.model_validate(
+                {**raw, "generated_code_content": content}
+            )
+    with pytest.raises(ValidationError):
+        GeneratedCodeRecord.model_validate({**raw, "code_storage_type": "other"})
+    git = {key: value for key, value in raw.items() if key != "generated_code_content"}
+    assert GeneratedCodeRecord.model_validate({**git, "code_storage_type": "git"})
 
 
 def test_records_reject_database_or_removed_fields() -> None:
@@ -400,7 +437,9 @@ def test_snapshot_archive_catalogs_all_sections_and_datasets(tmp_path: Path) -> 
     assert not any("qa" in name.casefold() or "model_scope" in name for name in names)
 
 
-def test_removed_mapping_dependency_is_absent_and_legacy_snapshot_section_is_rejected() -> None:
+def test_removed_mapping_dependency_is_absent_and_legacy_snapshot_section_is_rejected() -> (
+    None
+):
     snapshot = snapshot_from_graph(complete_model_graph())
     assert "mapping_dependency" not in DATASETS_BY_NAME
     assert set(snapshot.mapping.model_dump()) == {"objects", "attributes"}
@@ -408,4 +447,6 @@ def test_removed_mapping_dependency_is_absent_and_legacy_snapshot_section_is_rej
     legacy["mapping"]["dependencies"] = []
     with pytest.raises(ValidationError) as error:
         ModelSnapshot.model_validate(legacy)
-    assert any(item["loc"] == ("mapping", "dependencies") for item in error.value.errors())
+    assert any(
+        item["loc"] == ("mapping", "dependencies") for item in error.value.errors()
+    )

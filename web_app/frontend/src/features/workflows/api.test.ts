@@ -266,8 +266,8 @@ describe("Foundry agent selection", () => {
         execution_profiles: [{ sdk_code: "openai_agents_sdk", execution_mode: "tool_assisted", reasoning_effort_codes: ["medium", "high"] }] },
     ],
     reasoning_efforts: ["default", "none", "medium", "high"].map((code) => ({ code, name: code })),
-    max_turns: { minimum: 1, default: 10, maximum: 50 },
-    validation_retries: { minimum: 0, default: 2, maximum: 5 },
+    max_turns: { minimum: 1, default: 50, maximum: 100 },
+    validation_retries: { minimum: 0, default: 5, maximum: 25 },
   };
 
   it("keeps model default and explicitly disabled reasoning distinct", () => {
@@ -292,8 +292,9 @@ describe("Foundry agent selection", () => {
   });
 
   it.each([
-    [8, 0, 8, 0], [null, null, 10, 2], [0, -1, 10, 2],
-    [51, 6, 10, 2], [1.5, 1.5, 10, 2], [Number.NaN, Number.NaN, 10, 2],
+    [8, 0, 8, 0], [10, 2, 10, 2], [null, null, 50, 5], [0, -1, 50, 5],
+    [100, 25, 100, 25], [51, 6, 51, 6], [101, 26, 50, 5],
+    [1.5, 1.5, 50, 5], [Number.NaN, Number.NaN, 50, 5],
   ])("resolves hidden limits without clamping: %s / %s", (maxTurns, validationRetryCount, expectedTurns, expectedRetries) => {
     expect(resolveDefaultAgent(capabilities, "tool_assisted", {
       modelCode: "retired-provider", reasoningEffortCode: "high", maxTurns, validationRetryCount,

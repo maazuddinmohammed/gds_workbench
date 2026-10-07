@@ -544,6 +544,7 @@ class CodeTargetTransaction:
         assert "workflow.generated_code" in query
         assert "application.generated_sql_artifact" not in query
         assert "generated.artifact_type = 'sql_file'" in query
+        assert "generated.code_storage_type = 'table'" in query
         assert "generated.code_input_digest = context.code_input_digest" in query
         assert "artifact.model_revision" not in query
         assert "artifact.source_system_id" not in query
@@ -691,6 +692,7 @@ class SqlArtifactTransaction:
             assert "artifact.generated_code_content AS generated_sql" in query
             assert "generated_code_digest" not in query
             assert "artifact.artifact_type = 'sql_file'" in query
+            assert "artifact.code_storage_type = 'table'" in query
             assert "artifact.generated_code_status" in query
             assert "artifact.source_system_id" not in query
             assert parameters == (7, 18, 901)
@@ -992,6 +994,7 @@ class SqlDownloadTransaction:
             assert "artifact.generated_code_content" in query
             assert "artifact.generated_code_id = ANY" in query
             assert "artifact.artifact_type = 'sql_file'" in query
+            assert "artifact.code_storage_type = 'table'" in query
             assert "generated_code_status" not in query
             assert parameters == (7, 18, [901, 902])
             return {"artifact_count": 2, "total_sql_bytes": 72}
@@ -1025,6 +1028,7 @@ class SqlDownloadTransaction:
         assert "artifact.generated_code_content AS generated_sql" in query
         assert "generated_code_digest" not in query
         assert "artifact.artifact_type = 'sql_file'" in query
+        assert "artifact.code_storage_type = 'table'" in query
         assert "generated_code_status" not in query
         assert "artifact.source_system_id" not in query
         assert "target_model.is_active" not in query

@@ -85,8 +85,10 @@ variables/readers remain compatible but expose absent data for Logical runs.
 Current default prompts omit those variables and reader selections; older frozen
 or custom versions retain their registrations.
 The complete snapshot stays private for final graph validation. Logical candidates
-must cover selected physical Objects and non-metadata Attributes through active
-source mappings across the proposed and retained Model. Dimensional candidates
+must cover selected physical Objects through active source mappings across the
+proposed and retained Model. Attribute completeness is not enforced: physical
+Attributes may be omitted or consolidated for the design. Included Attributes
+retain source, reference, lock and key/audit validation. Dimensional candidates
 must cover selected Logical Entities, without requiring every Silver Attribute to
 be copied into an analytical model. Neither rule imposes a minimum output Entity
 count. Coverage failures use the existing repair loop and rejected-draft retention;
@@ -117,6 +119,14 @@ keys belong to Databricks/framework population; source business identifiers rema
 separate mapped fields. Mapping stores transformation dependencies; external Process
 Groups/Processes own execution order and loads. Stable source-System sorting is
 not business precedence.
+
+Code storage is independent of artifact format: `table` requires inline content;
+`git` may omit it. Repository, commit/path and entry point are nullable unrestricted
+text; parameters are nullable JSON of any shape. Change Sets and Snapshots preserve
+these fields. Code-context freshness includes storage metadata as well as the inline
+content digest; it does not inspect Git contents. Web SQL generation/downloads remain
+table-only and regeneration preserves Git artifacts. Source changes describe fresh
+installs, not an upgrade of an installed database.
 
 SQL/orchestration authoring rules belong in the Code Prompt. Frozen run facts are
 structured `artifact_requirements`; validators enforce layout, target/System

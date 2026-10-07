@@ -272,7 +272,7 @@ function TechnicalDictionary({ attributes }: { attributes: ObjectAttribute[] }) 
     <header><h2>Technical Data Dictionary</h2></header>
     <div className="profile-evidence-table-scroll table-scroll" role="region" aria-label="Scrollable technical dictionary" tabIndex={0}>
       <table className="profile-evidence-table"><thead><tr><th>Attribute</th><th>Position</th><th>Metadata type</th>{columns.map(([key, label]) => <th key={key}>{label}</th>)}</tr></thead>
-        <tbody>{attributes.map((attribute) => <tr key={attribute.attribute_id}><th scope="row">{attribute.attribute_name}</th><td>{attribute.attribute_ordinal_position}</td><td>{attribute.attribute_data_type}</td>{columns.map(([key]) => <td key={key}>{attribute.profile?.[key] ?? "Not recorded"}</td>)}</tr>)}</tbody>
+        <tbody>{attributes.map((attribute) => <tr key={attribute.attribute_id}><th scope="row">{attribute.attribute_name}</th><td>{attribute.attribute_ordinal_position}</td><td>{attribute.attribute_data_type}</td>{columns.map(([key]) => <td key={key}>{attribute.profile?.[key] ?? "null"}</td>)}</tr>)}</tbody>
       </table>
     </div>
   </section>;

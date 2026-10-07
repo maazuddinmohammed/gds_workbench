@@ -14,6 +14,13 @@ _CODE_PATTERN = r"^[a-z][a-z0-9_.-]{0,99}$"
 _MODEL_CODE_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,199}$"
 _MAX_CONFIGURATION_BYTES = 1024 * 1024
 
+MAX_AGENT_TURNS = 100
+MAX_VALIDATION_RETRIES = 25
+MAX_AUTHORING_ATTEMPTS = MAX_VALIDATION_RETRIES + 1
+MAX_AGENT_TOOL_CALLS = 1_000
+MAX_AGENT_HTTP_RETRIES = 2
+MAX_AGENT_REQUESTS = MAX_AGENT_TURNS * (MAX_AGENT_HTTP_RETRIES + 1)
+
 type AgentExecutionModeCode = Literal[
     "one_shot",
     "tool_assisted",
@@ -85,8 +92,8 @@ class AgentRunSelection(CapabilityModel):
     provider_code: str = Field(pattern=_CODE_PATTERN, max_length=100)
     model_code: str = Field(pattern=_MODEL_CODE_PATTERN, max_length=200)
     reasoning_effort_code: str = Field(pattern=_CODE_PATTERN, max_length=50)
-    max_turns: int = Field(ge=1, le=50)
-    validation_retry_count: int = Field(ge=0, le=5)
+    max_turns: int = Field(ge=1, le=MAX_AGENT_TURNS)
+    validation_retry_count: int = Field(ge=0, le=MAX_VALIDATION_RETRIES)
 
 
 class AgentCapabilityRegistry(CapabilityModel):
@@ -139,13 +146,15 @@ class AgentCapabilityRegistry(CapabilityModel):
         deployment_keys = [(model.provider_code, model.deployment_name) for model in self.models]
         if len(set(deployment_keys)) != len(deployment_keys):
             raise ValueError("Model deployment names must be unique within a provider")
-        if (self.max_turns.minimum, self.max_turns.maximum) != (1, 50):
-            raise ValueError("max_turns bounds must remain 1 through 50")
+        if (self.max_turns.minimum, self.max_turns.maximum) != (1, MAX_AGENT_TURNS):
+            raise ValueError(f"max_turns bounds must remain 1 through {MAX_AGENT_TURNS}")
         if (self.validation_retries.minimum, self.validation_retries.maximum) != (
             0,
-            5,
+            MAX_VALIDATION_RETRIES,
         ):
-            raise ValueError("validation retry bounds must remain 0 through 5")
+            raise ValueError(
+                f"validation retry bounds must remain 0 through {MAX_VALIDATION_RETRIES}"
+            )
         return self
 
     @classmethod

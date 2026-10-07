@@ -1049,8 +1049,10 @@ async def test_executor_allows_candidate_up_to_stage_batch_payload_envelope() ->
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("locked", [False, True])
+@pytest.mark.parametrize("storage_metadata", [False, True])
 async def test_executor_completes_no_op_when_generated_code_is_unchanged(
     locked: bool,
+    storage_metadata: bool,
 ) -> None:
     agent = _AgentExecutor(
         responses=[
@@ -1069,19 +1071,26 @@ async def test_executor_completes_no_op_when_generated_code_is_unchanged(
         ]
     )
     context = _applied_execution_context()
-    if locked:
+    if locked or storage_metadata:
         context = context.model_copy(
             update={
                 "targets": tuple(
                     target.model_copy(
                         update={
                             "applied_generated_code": tuple(
-                                record.model_copy(update={"generated_code_is_locked": True})
+                                record.model_copy(update={
+                                    "generated_code_is_locked": locked,
+                                    **({"code_repository_url": "any repo",
+                                        "code_commit_path": "any reference",
+                                        "code_entry_point": "entry",
+                                        "code_parameters": [False, {"batch": 42}]}
+                                       if storage_metadata else {}),
+                                })
                                 for record in target.applied_generated_code
                             ),
                             "applied_generated_code_source_systems": tuple(
                                 record.model_copy(
-                                    update={"generated_code_source_system_is_locked": True}
+                                    update={"generated_code_source_system_is_locked": locked}
                                 )
                                 for record in target.applied_generated_code_source_systems
                             ),

@@ -1306,6 +1306,12 @@ function Get-SchemaIssues {
     $recordContract = Get-Property $Schema 'x-gds-record-validation'
     $recordRules = Get-Property $recordContract 'rules'
     if ($issues.Count -eq 0 -and $null -ne $recordContract) {
+        if ($recordRules -ccontains 'generated_code') {
+            $content = Get-Property $Value 'generated_code_content'
+            if ((Get-Property $Value 'code_storage_type') -cne 'git' -and $null -eq $content) {
+                [void]$issues.Add("$Location`: Table-stored Code requires content")
+            }
+        }
         foreach ($layer in @('logical', 'dimensional')) {
             if ($recordRules -ccontains ($layer + '_relationship')) {
                 $from = Get-PolicyTuple @((Get-Property $Value ('from_' + $layer + '_entity_schema_name')), (Get-Property $Value ('from_' + $layer + '_entity_name')), (Get-Property $Value ('from_' + $layer + '_attribute_name')))

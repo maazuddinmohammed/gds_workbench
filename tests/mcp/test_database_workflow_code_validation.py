@@ -129,6 +129,48 @@ def _insert_check(
     )
 
 
+def test_git_code_accepts_nullable_metadata_and_table_code_requires_content(
+    postgres_database: DisposablePostgres,
+) -> None:
+    scope = _seed_code_validation_scope(postgres_database)
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """INSERT INTO workflow.generated_code (
+                   model_id, modeled_entity_type, logical_entity_id, artifact_name,
+                   artifact_type, code_storage_type, code_input_digest,
+                   code_repository_url, code_commit_path, code_entry_point, code_parameters
+               ) VALUES (%s, 'logical_entity', %s, 'Customer.sql', 'sql_file',
+                         'git', %s, '', %s, NULL, %s)
+               RETURNING generated_code_content, code_commit_path, code_parameters,
+                         generated_code_digest""",
+            (
+                scope["model_id"],
+                scope["logical_entity_id"],
+                "a" * 64,
+                "anything \\ a ref\nnot a URL",
+                Jsonb([False, {"batch": 42}]),
+            ),
+        ).fetchone()
+        assert stored == {
+            "generated_code_content": None,
+            "code_commit_path": "anything \\ a ref\nnot a URL",
+            "code_parameters": [False, {"batch": 42}],
+            "generated_code_digest": hashlib.sha256(b"").hexdigest(),
+        }
+        with pytest.raises(CheckViolation), connection.transaction():
+            connection.execute(
+                """UPDATE workflow.generated_code SET code_storage_type = 'table'
+                   WHERE model_id = %s""",
+                (scope["model_id"],),
+            )
+        with pytest.raises(CheckViolation), connection.transaction():
+            connection.execute(
+                """UPDATE workflow.generated_code SET code_storage_type = 'unknown'
+                   WHERE model_id = %s""",
+                (scope["model_id"],),
+            )
+
+
 def test_generated_code_enforces_entity_identity_and_derives_content_digest(
     postgres_database: DisposablePostgres,
 ) -> None:

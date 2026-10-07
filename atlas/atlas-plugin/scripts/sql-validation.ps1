@@ -245,7 +245,8 @@ function Get-AtlasGeneratedCodeIssues($States) {
     foreach ($record in @($state.Pending)) {
         $index++
         $key = Get-CanonicalKey 'model' $state.Dataset $record
-        if ((Get-Property $record 'artifact_type') -cne 'sql_file' -or (Get-Active $record) -ne $true -or
+        if ((Get-Property $record 'code_storage_type') -ceq 'git' -or
+            (Get-Property $record 'artifact_type') -cne 'sql_file' -or (Get-Active $record) -ne $true -or
             ($originals.ContainsKey($key) -and (ConvertTo-StableJson $originals[$key]) -ceq (ConvertTo-StableJson $record))) { continue }
         foreach ($issue in @(Get-AtlasGeneratedSqlIssues (Get-Property $record 'generated_code_content'))) {
             [ordered]@{severity = 'error'; dataset = 'generated_code'; record = $index; code = $issue.code; fields = @('generated_code_content'); message = $issue.message}

@@ -335,7 +335,8 @@
     } else if (rule === "mapping_attribute") {
       if (value.attribute_mapping_transformation_document !== null && jsonBytes(value.attribute_mapping_transformation_document) > 65536) add("Attribute Mapping document exceeds 65,536 bytes");
     } else if (rule === "generated_code") {
-      if ([...value.generated_code_content].some((character) => character.codePointAt(0) < 32 && !["\t", "\n", "\r"].includes(character))) add("Generated Code contains an unsupported control character");
+      if ((value.code_storage_type ?? "table") === "table" && value.generated_code_content == null) add("Table-stored Code requires content");
+      if ([...(value.generated_code_content ?? "")].some((character) => character.codePointAt(0) < 32 && !["\t", "\n", "\r"].includes(character))) add("Generated Code contains an unsupported control character");
       if (value.artifact_name.trim() !== value.artifact_name || value.artifact_name.includes("/") || value.artifact_name.includes("\\")) add("Artifact name must be a file name, not a path");
       if ([".", ".."].includes(value.artifact_name)) add("Artifact name is invalid");
     } else if (rule === "validation_group") {

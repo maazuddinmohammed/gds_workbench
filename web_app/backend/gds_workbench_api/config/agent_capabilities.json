@@ -119,12 +119,12 @@
   ],
   "max_turns": {
     "minimum": 1,
-    "default": 10,
-    "maximum": 50
+    "default": 50,
+    "maximum": 100
   },
   "validation_retries": {
     "minimum": 0,
-    "default": 2,
-    "maximum": 5
+    "default": 5,
+    "maximum": 25
   }
 }

@@ -40,6 +40,7 @@ from openai import (
 from openai.types.shared import Reasoning, ReasoningEffort
 from pydantic import JsonValue, SecretStr, TypeAdapter
 
+from gds_workbench_api.capabilities import MAX_AGENT_HTTP_RETRIES
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AGENT_OUTPUT_CONTRACT_INSTRUCTION,
     AgentContextToolRequestError,
@@ -226,7 +227,7 @@ class OpenAIAgentsSdkAdapter:
                 api_key=refresh_api_key,
                 base_url=credentials.base_url,
                 timeout=connection.timeout_seconds,
-                max_retries=2,
+                max_retries=MAX_AGENT_HTTP_RETRIES,
                 http_client=http_client,
             )
             # GPT-6.1 Sol tools require Responses; GPT-6 Luna also requires it

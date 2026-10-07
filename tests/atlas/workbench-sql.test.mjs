@@ -4,6 +4,13 @@ import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
 const sql=require('../../atlas/atlas-plugin/workbench/validation/sql.js');
 const codes=text=>sql.validateGeneratedSql(text).map(issue=>issue.code);
+test('Git Code references bypass inline SQL checks; table Code still requires valid SQL',()=>{
+ const record={artifact_name:'customer.sql',artifact_type:'sql_file',generated_code_status:'active',generated_code_content:null};
+ const loaded=new Map([['generated_code',{definition:{canonical_key:['artifact_name']},baseline:[],pending:[{...record,code_storage_type:'git'}]}]]);
+ assert.deepEqual(sql.validateCodeRecords(loaded),[]);
+ loaded.get('generated_code').pending=[{...record,code_storage_type:'table'}];
+ assert.ok(sql.validateCodeRecords(loaded).length>0);
+});
 test('generated SQL uses two-part physical sources and self-contained temporary stages',()=>{
  assert.deepEqual(codes('CREATE OR REPLACE TEMP VIEW prepare AS SELECT CustomerID, SourceSystemID FROM bronze.Customer; SELECT CustomerID, SourceSystemID FROM prepare;'),[]);
  assert.deepEqual(codes('SELECT Quantity * Price AS Amount, SourceSystemID FROM silver.OrderLine'),[]);

@@ -30,11 +30,17 @@ not silently change installed or already-running prompts.
 | Object/Attribute Enrichment | Source context, selected physical metadata, ingestion lineage and current Profiles → Model-owned descriptions, inferred types and natural/primary key, nullability and PII findings. Human edits and locks stay Model-specific. |
 | Analysis | Physical Objects/Attributes with available Model-owned enrichment, Profiles, lineage and relevant context → supported relationship inference; measured validation remains separate. |
 | Conceptual | Source context, physical evidence, Analysis and applicable Assertions → business concepts and relationships. |
-| Logical | Physical metadata with available Model-owned enrichment, Profiles, Analysis, Assertions and model naming/key/audit policy → normalized Entity/Attribute/relationship design. Web runs exclude Conceptual records and validate selected source coverage before draft handoff. |
+| Logical | Physical metadata with available Model-owned enrichment, Profiles, Analysis, Assertions and model naming/key/audit policy → normalized Entity/Attribute/relationship design. Web runs exclude Conceptual records and require selected Object coverage; Attribute selection follows the design, with included records validated before draft handoff. |
 | Dimensional | Selected applied Logical Entities/Attributes, their authorized physical support, Profiles, Analysis, Assertions and Gold policy → dimensions, facts, bridges, grains and measures. |
 | Mapping | Modeled target/Attributes, eligible physical or modeled sources, support evidence, Assertions, existing protected Mapping and selected templates → Object/Attribute transformation documents per Entity/System pair. |
 | Code | Applied transformation documents, their exact saved template definitions, modeled target shape, eligible sources and frozen artifact requirements → SQL artifacts with exact source-System assignment. Partial Mapping requires explicit gaps and placeholders. |
 | Validation | Complete Mapping, relevant current Code, metadata and applicable requirements → deterministic Validation Groups/Checks. |
+
+Logical defaults require evidence-based business grain, identity, normalization and
+consolidation decisions. One-shot embeds enrichment, Profiles with provenance and
+Analysis validation in Object/Attribute/Relationship context; tool-assisted readers
+expose the same evidence across complete pages. Recorded conflicts remain visible
+for design decisions; synthetic transport tests do not prove provider reasoning.
 
 Profiling precedes Model-owned Enrichment. The plugin prefers Profiling → Enrichment
 → Analysis → Conceptual → Logical, reusing valid evidence and pending local records.

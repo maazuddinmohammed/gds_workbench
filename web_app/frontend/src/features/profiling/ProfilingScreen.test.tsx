@@ -73,8 +73,8 @@ describe("Model Profiling", () => {
 
     const statusProfile = profileRow(profileTable, "status");
     expect(within(statusProfile).getAllByRole("cell").slice(0, -1).map((cell) => cell.textContent)).toEqual([
-      "2", "string", "Not inferred", "No description", "10", "10", "0", "Not recorded", "Not recorded",
-      "100%", "0%", "—", "—", "—", "Not recorded", "Not recorded", "Not recorded",
+      "2", "string", "Not inferred", "No description", "10", "10", "0", "null", "null",
+      "100%", "0%", "null", "null", "null", "null", "null", "null",
     ]);
     expect(fetcher.mock.calls.filter(([input]) => String(input).endsWith("/profiling/501"))).toHaveLength(1);
     expect(screen.queryByText("Object record details")).not.toBeInTheDocument();

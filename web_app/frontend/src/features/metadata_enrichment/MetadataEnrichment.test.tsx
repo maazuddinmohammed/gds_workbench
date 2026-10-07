@@ -443,7 +443,8 @@ describe("current metadata enrichment workspace", () => {
     const attributes = await screen.findByRole("table", { name: "Attributes for customers" });
     const technical = screen.getByRole("region", { name: "Technical Data Dictionary" });
     expect(within(technical).getByText("0")).toBeVisible();
-    expect(within(technical).getAllByText("Not recorded").length).toBeGreaterThan(0);
+    expect(within(technical).getAllByText("null").length).toBeGreaterThan(0);
+    expect(within(technical).queryByText("Not recorded")).not.toBeInTheDocument();
     await user.click(within(attributes).getByRole("button", { name: "Edit" }));
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
     await user.selectOptions(screen.getByLabelText("Natural key"), "true");

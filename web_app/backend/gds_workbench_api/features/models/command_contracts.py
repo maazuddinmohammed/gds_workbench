@@ -19,7 +19,11 @@ from pydantic import (
     model_validator,
 )
 
-from gds_workbench_api.capabilities import AgentRunSelection
+from gds_workbench_api.capabilities import (
+    MAX_AGENT_TURNS,
+    MAX_VALIDATION_RETRIES,
+    AgentRunSelection,
+)
 
 _MAX_TEMPLATE_BYTES = 32 * 1024
 _MAX_NAMING_INSTRUCTION_BYTES = 32 * 1024
@@ -78,8 +82,10 @@ class CompleteModelRequest(BaseModel):
         pattern=_AGENT_CODE_PATTERN,
         max_length=50,
     )
-    default_max_turns: int | None = Field(default=None, ge=1, le=50)
-    default_validation_retry_count: int | None = Field(default=None, ge=0, le=5)
+    default_max_turns: int | None = Field(default=None, ge=1, le=MAX_AGENT_TURNS)
+    default_validation_retry_count: int | None = Field(
+        default=None, ge=0, le=MAX_VALIDATION_RETRIES
+    )
 
     @field_validator(
         "model_name",

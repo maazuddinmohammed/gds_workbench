@@ -370,6 +370,24 @@ BEGIN
     END IF;
 
     IF (
+        SELECT count(*) FROM information_schema.columns
+         WHERE table_schema = 'workflow' AND table_name = 'generated_code'
+           AND ((column_name = 'code_storage_type' AND data_type = 'character varying'
+                 AND is_nullable = 'NO' AND column_default = '''table''::character varying')
+                OR (column_name IN ('code_repository_url', 'code_commit_path',
+                                    'code_entry_point', 'generated_code_content')
+                    AND data_type = 'text' AND is_nullable = 'YES')
+                OR (column_name = 'code_parameters' AND data_type = 'jsonb'
+                    AND is_nullable = 'YES'))
+    ) <> 6 OR NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_constraint
+         WHERE conrelid = 'workflow.generated_code'::regclass
+           AND conname = 'ck_generated_code_storage_type' AND contype = 'c'
+    ) THEN
+        RAISE EXCEPTION 'Code storage database contract is invalid';
+    END IF;
+
+    IF (
         SELECT count(*)
           FROM information_schema.columns AS column_record
          WHERE column_record.table_schema = 'application'

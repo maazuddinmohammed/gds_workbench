@@ -30,6 +30,7 @@ Code Apply stores artifacts; it does not deploy or execute them. Report authored
 
 ## Targeted exceptions
 
+- Existing Code is stored in Git: use the [Code record storage fields](../../references/model/generated-code.md#artifact-fields). Preserve free-form references and JSON parameters; content may be null. Review and stage metadata through the same governed lifecycle. Do not run inline SQL checks against a Git reference, infer its contents, or convert it to table storage without the requested replacement scope. This does not add Python generation, repository publishing or execution.
 - Existing code is locked: preserve it and report the affected work; no duplicate filename or alternate artifact to bypass the lock.
 - Multiple files need the same source System: the current assignment contract cannot represent that as independent active artifacts for one target. Resolve a supported self-contained artifact layout; no unassigned helper file workaround.
 - A runtime placeholder or cross-catalog access rule is unknown: request the relevant consumer contract/code. Do not invent parameters or grant access. New Python generation follows the deferred first-release boundary.

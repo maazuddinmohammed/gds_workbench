@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 from gds_etl_workbench.domain.errors import DependencyUnavailableError, InvalidRequestError
 from psycopg.types.json import Jsonb
 
+from gds_workbench_api.capabilities import MAX_AGENT_REQUESTS, MAX_AUTHORING_ATTEMPTS
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     LifecycleTransaction,
     workflow_identity_triple,
@@ -97,7 +98,7 @@ class DatabaseWorkflowUsageRecorder:
             or binding.recorder is not self
             or binding.claim.workflow_run_id != workflow_run_id
             or type(authoring_attempt) is not int
-            or not 1 <= authoring_attempt <= 6
+            or not 1 <= authoring_attempt <= MAX_AUTHORING_ATTEMPTS
             or not re.fullmatch(r"[a-z][a-z0-9_]{0,99}", stage_code)
         ):
             raise InvalidRequestError("The model request has no matching Workflow Run claim.")
@@ -115,7 +116,7 @@ class _InvocationRecorder:
         self._request_ids: dict[int, UUID] = {}
 
     async def begin_request(self, request_ordinal: int) -> UUID:
-        if type(request_ordinal) is not int or not 1 <= request_ordinal <= 150:
+        if type(request_ordinal) is not int or not 1 <= request_ordinal <= MAX_AGENT_REQUESTS:
             raise InvalidRequestError("The model request ordinal is invalid.")
         if _CURRENT_RUN.get() is not self._binding:
             raise InvalidRequestError("The model request has no matching Workflow Run claim.")

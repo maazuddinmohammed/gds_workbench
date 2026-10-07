@@ -1498,6 +1498,11 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
             "modeled_entity_name": "Customer",
             "artifact_name": "fragmented_code.sql",
             "artifact_type": "sql_file",
+            "code_storage_type": "table",
+            "code_repository_url": None,
+            "code_commit_path": None,
+            "code_entry_point": None,
+            "code_parameters": None,
             "generated_code_content": code_content,
             "generated_code_status": "active",
         }

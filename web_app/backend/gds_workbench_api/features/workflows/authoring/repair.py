@@ -24,6 +24,11 @@ from jsonschema.exceptions import SchemaError
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
 
+from gds_workbench_api.capabilities import (
+    MAX_AGENT_TOOL_CALLS,
+    MAX_AGENT_TURNS,
+    MAX_AUTHORING_ATTEMPTS,
+)
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AGENT_OUTPUT_CONTRACT_INSTRUCTION,
     AgentExecutionRequest,
@@ -289,10 +294,10 @@ class AgentAuthoringResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     candidate: JsonValue = Field(repr=False)
-    attempt_count: int = Field(ge=1, le=6)
+    attempt_count: int = Field(ge=1, le=MAX_AUTHORING_ATTEMPTS)
     was_repaired: bool
-    turn_count: int = Field(ge=1, le=300)
-    tool_call_count: int = Field(ge=0, le=6_000)
+    turn_count: int = Field(ge=1, le=MAX_AGENT_TURNS * MAX_AUTHORING_ATTEMPTS)
+    tool_call_count: int = Field(ge=0, le=MAX_AGENT_TOOL_CALLS * MAX_AUTHORING_ATTEMPTS)
 
 
 class AgentExecutor(Protocol):
