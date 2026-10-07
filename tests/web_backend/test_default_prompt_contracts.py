@@ -66,11 +66,13 @@ def test_seeded_defaults_render_registered_inputs_and_select_supported_tools(
     if mode == "one_shot":
         assert not tool_names
     else:
-        # The legacy singleton Mapping support reader remains callable by custom
-        # templates; defaults use its fully pageable replacement.
+        # Legacy readers remain callable by existing/custom templates. Defaults
+        # use pageable Mapping support and keep Logical independent of Conceptual.
         assert tool_names == sorted(
-            tool.name for tool in registered_tool_definitions(workflow)
+            tool.name
+            for tool in registered_tool_definitions(workflow)
             if not (workflow == "mapping" and tool.name == "get_mapping_support")
+            and not (workflow == "logical" and "_conceptual_" in tool.name)
         )
     rendered = render_prompt(
         templates=PromptComponentTemplates(
@@ -84,6 +86,8 @@ def test_seeded_defaults_render_registered_inputs_and_select_supported_tools(
                 is_required=False,
             )
             for contract in contracts
+            # New Logical defaults must render without legacy Conceptual inputs.
+            if not (workflow == "logical" and "conceptual" in contract.name)
         ),
         resolver_values={
             contract.resolver_key: contract.example for contract in contracts

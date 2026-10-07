@@ -17,6 +17,39 @@ import { WorkflowCommandCenter, WorkflowCommandTools } from "./WorkflowCommandCe
 
 
 describe("Workflow Run monitor", () => {
+  it.each(["completed", "completed_with_repair", "failed", "cancelled"] as const)(
+    "shows saved start, end and duration for a %s run", async (state) => {
+      const api = monitorApi();
+      const run = { ...workflowRun(false), workflow_run_state: state,
+        started_at: "2026-10-06T23:15:07Z", completed_at: "2026-10-07T01:17:12Z" };
+      api.readWorkflowRun.mockResolvedValue(run);
+      api.listWorkflowRuns.mockResolvedValue({ items: [run], next_cursor: null });
+      renderMonitor(api, vi.fn(async () => undefined));
+      const article = await screen.findByRole("article", { name: "Run 1048 details" });
+      const timing = within(article).getByLabelText("Run timing");
+      expect(within(timing).getByText("2h 2m 5s")).toBeVisible();
+      expect(Array.from(timing.querySelectorAll("time")).map((time) => time.dateTime))
+        .toEqual([run.started_at, run.completed_at]);
+    },
+  );
+
+  it.each([
+    ["queued", null, null, "Not started"],
+    ["running", "2026-10-07T00:00:00Z", null, "In progress"],
+    ["cancelled", null, "2026-10-07T00:00:00Z", "Not started"],
+    ["failed", "2026-10-07T00:00:00Z", null, "Not recorded"],
+    ["completed", "2026-10-07T00:00:00Z", "2026-10-06T23:59:00Z", "Not recorded"],
+    ["completed", "2026-10-07T00:00:00Z", "2026-10-07T00:00:00Z", "0s"],
+  ] as const)("handles timing for %s (%s → %s)", async (state, start, end, duration) => {
+    const api = monitorApi();
+    api.readWorkflowRun.mockResolvedValue({ ...workflowRun(false), workflow_run_state: state,
+      started_at: start, completed_at: end });
+    renderMonitor(api, vi.fn(async () => undefined));
+    const article = await screen.findByRole("article", { name: "Run 1048 details" });
+    const timing = within(article).getByLabelText("Run timing");
+    expect(within(timing).getByText("Duration").nextElementSibling).toHaveTextContent(duration);
+  });
+
   it.each(["analysis", "conceptual", "logical", "dimensional", "mapping", "code_generation", "validation", "metadata_enrichment"] as const)(
     "cancels a running %s run and refreshes its saved status", async (workflow) => {
       const api = monitorApi();
@@ -79,6 +112,7 @@ describe("Workflow Run monitor", () => {
     expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Activity" }));
     expect(screen.getByText("Validated one bounded candidate.")).toBeVisible();
+    expect(screen.getByLabelText("Run timing")).toBeVisible();
     const reads = api.readWorkflowRun.mock.calls.length;
     await user.click(screen.getByRole("button", { name: "Refresh runs" }));
     await waitFor(() => expect(api.readWorkflowRun.mock.calls.length).toBeGreaterThan(reads));

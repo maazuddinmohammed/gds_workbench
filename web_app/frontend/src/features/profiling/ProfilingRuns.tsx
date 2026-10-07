@@ -16,6 +16,8 @@ import {
   RunStateBadge,
   TENANT_WORKFLOW_CONFLICT_MESSAGE,
   WorkflowEventProgress,
+  WorkflowRunTiming,
+  workflowRunDuration,
 } from "../workflows/presentation";
 import { profilingQueryKeys, type ProfilingApi } from "./api";
 import {
@@ -69,6 +71,7 @@ export function ProfilingRuns({
       cell: ({ getValue }) => getValue<string | null>() ?? "Not used",
     },
     { accessorKey: "actor_display_name", header: "Actor" },
+    { id: "duration", header: "Duration", cell: ({ row }) => workflowRunDuration(row.original) },
     {
       accessorKey: "created_at",
       header: "Created",
@@ -138,7 +141,7 @@ export function ProfilingRuns({
         compact ? <ol className="workflow-recent-runs" aria-label="Profiling run list">{items.map((run) => <li key={run.workflow_run_id}>
           <button type="button" id={`profiling-run-trigger-${run.workflow_run_id}`} aria-pressed={selectedRunId === run.workflow_run_id}
             className={selectedRunId === run.workflow_run_id ? "is-selected" : ""} onClick={() => onShowDetails(run.workflow_run_id)}>
-            <span><strong>PR-{run.workflow_run_id}</strong><small>{formatDateTime(run.created_at)} · {run.selected_scope_count} Objects</small></span>
+            <span><strong>PR-{run.workflow_run_id}</strong><small>{formatDateTime(run.created_at)} · {run.selected_scope_count} Objects</small><small>{workflowRunDuration(run)}</small></span>
             <RunStateBadge state={run.workflow_run_state} />
           </button>
         </li>)}</ol> : <WorkflowTable table={table} label="Profiling runs" selectedId={selectedRunId} />
@@ -225,6 +228,7 @@ export function ProfilingRunDrawer({
         </div>
       ) : (
         <>
+          <WorkflowRunTiming run={run} />
           <dl className="drawer-facts run-facts">
             <Fact label="Created" value={formatDateTime(run.created_at)} />
             <Fact label="Actor" value={run.actor_display_name} />

@@ -80,6 +80,18 @@ Later local phases can consume pending findings without per-phase Apply.
 
 ## Partial authoring and protected work
 
+Web Logical authoring receives no Conceptual records. Legacy Conceptual prompt
+variables/readers remain compatible but expose absent data for Logical runs.
+Current default prompts omit those variables and reader selections; older frozen
+or custom versions retain their registrations.
+The complete snapshot stays private for final graph validation. Logical candidates
+must cover selected physical Objects and non-metadata Attributes through active
+source mappings across the proposed and retained Model. Dimensional candidates
+must cover selected Logical Entities, without requiring every Silver Attribute to
+be copied into an analytical model. Neither rule imposes a minimum output Entity
+count. Coverage failures use the existing repair loop and rejected-draft retention;
+they cannot produce a successful handoff or a false no-op on an uncovered selection.
+
 Mapping operates on frozen Entity/System pairs. Supported partial documents are
 useful progress. Omitted selected, unlocked transformations clear on regeneration;
 locked/unselected content stays protected. Protect parent rowset logic when any

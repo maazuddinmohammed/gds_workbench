@@ -156,6 +156,18 @@ async def test_valid_candidate_normalizes_to_exact_dimensional_changes() -> None
     assert sum(len(change.records) for change in changes) == 3
 
 
+async def test_dimensional_coverage_rejects_ignored_selected_logical_entities() -> None:
+    validator = DimensionalCandidateValidator(
+        selected_entity_keys=(_object(), *(_object(f"entity_{i}") for i in range(1, 27))),
+        selected_attribute_keys=(_attribute(),), assertion_record_keys=(), applied=None,
+    )
+    issues = validator.validate_coverage(cast(JsonValue, _candidate()))
+    assert len(issues) == 1
+    assert issues[0].code == "candidate.entity_coverage_incomplete"
+    assert "26 of 27" in issues[0].message
+    assert _validator(applied=_applied()).validate_coverage(cast(JsonValue, _candidate())) == ()
+
+
 async def test_candidate_rejects_silver_evidence_outside_frozen_selection() -> None:
     candidate = _candidate()
     entity = _first_record(candidate, "entities")

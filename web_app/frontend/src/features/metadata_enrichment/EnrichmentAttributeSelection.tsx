@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { SelectAllCheckbox } from "../../shared/ui";
 import type { ModelInputScopeApi, ModelInputScopeDetail } from "../model_input_scope/api";
 import type { CreateWorkflowRunCommand, WorkflowScopeObject } from "../workflows/api";
 
@@ -162,7 +163,12 @@ export function EnrichmentAttributeSelection({
     {selection.complete && !selection.targets.length ? <p className="surface-state compact">Select at least one unlocked Attribute to run enrichment.</p> : null}
     {viewedId === null ? <div className="workflow-table-scroll table-scroll">
       <table className="enrichment-selection-table" aria-label="Objects for Attribute enrichment">
-        <thead><tr><th className="selection-cell"><span className="sr-only">Selected</span></th><th>Schema</th><th>Object</th><th>Attributes</th><th>Locks</th></tr></thead>
+        <thead><tr><th className="selection-cell"><SelectAllCheckbox label="Select all unlocked Objects"
+          selectedCount={chosen.length} totalCount={eligible.length} disabled={disabled || duplicateScope}
+          onChange={(checked) => {
+            setScopeMode("selected");
+            setIncludedIds(new Set(checked ? eligible.map((object) => object.object_id) : []));
+          }} /></th><th>Schema</th><th>Object</th><th>Attributes</th><th>Locks</th></tr></thead>
         <tbody>{objects.map((object) => {
           const entry = details[object.object_id];
           const detail = entry?.status === "ready" && entry.scopeKey === scopeIdentity(object) ? entry.value : undefined;

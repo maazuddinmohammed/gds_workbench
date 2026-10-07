@@ -208,7 +208,6 @@ class DatabaseMetadataEnrichmentExecutor:
         expected_model_revision: int,
         workflow_run_claim_token: UUID,
     ) -> MetadataEnrichmentCompletion:
-        finalization_attempted = False
         try:
             plan, context = await self._repository.load(
                 principal,
@@ -560,7 +559,6 @@ class DatabaseMetadataEnrichmentExecutor:
                 total=None,
                 finding_count=warning_count,
             )
-            finalization_attempted = True
             return await self._repository.complete(
                 principal,
                 context=context,
@@ -576,14 +574,15 @@ class DatabaseMetadataEnrichmentExecutor:
                     message="Metadata enrichment could not complete.",
                 )
             )
-            if not finalization_attempted:
-                with suppress(Exception):
-                    await self._lifecycle.fail(
-                        principal,
-                        workflow_run_id=workflow_run_id,
-                        expected_model_revision=expected_model_revision,
-                        workflow_run_claim_token=workflow_run_claim_token,
-                        failure_code=safe_error.code,
-                        safe_failure_message=safe_error.message,
-                    )
+            # A rolled-back completion must not leave the Run running. The claim
+            # and receipt guards preserve a successful commit if its response was lost.
+            with suppress(Exception):
+                await self._lifecycle.fail(
+                    principal,
+                    workflow_run_id=workflow_run_id,
+                    expected_model_revision=expected_model_revision,
+                    workflow_run_claim_token=workflow_run_claim_token,
+                    failure_code=safe_error.code,
+                    safe_failure_message=safe_error.message,
+                )
             raise safe_error from None

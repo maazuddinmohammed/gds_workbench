@@ -3,16 +3,22 @@
 # Reuse fixture-only setup; never connect to an existing database.
 # pyright: reportPrivateUsage=false
 import json
+from contextlib import nullcontext
 from typing import Any
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
+from gds_etl_workbench.domain.errors import DependencyUnavailableError
 from gds_workbench_api.capabilities import load_default_agent_capabilities
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.metadata_enrichment.contracts import (
     EnrichmentDescriptionTarget,
+    EnrichmentFieldResult,
+    MetadataEnrichmentCompletion,
+    MetadataEnrichmentContext,
 )
 from gds_workbench_api.features.metadata_enrichment.repository import (
     MetadataEnrichmentRepository,
@@ -38,12 +44,12 @@ from gds_workbench_api.features.workflows.commands import (
 from gds_workbench_api.integrations.agents.composition import LocalFakeAgentAdapter
 from pydantic import JsonValue
 
-from tests.mcp.enrichment_test_support import seed_model_enrichment
 from tests.mcp.conftest import DisposablePostgres
 from tests.mcp.conftest import (
     bootstrap_postgres_database as bootstrap_postgres_database,
 )
 from tests.mcp.database_test_support import require_row
+from tests.mcp.enrichment_test_support import seed_model_enrichment
 from tests.mcp.test_database_global_prompt_seed import (
     REFERENCE_SEED,
     _apply_sql,
@@ -199,6 +205,8 @@ class DescriptionAgent(LocalFakeAgentAdapter):
         "regenerate_bulk_attributes",
         "regenerate_existing_type",
         "regenerate_null",
+        "completion_rejected",
+        "completion_response_lost",
     ],
 )
 async def test_shared_executor_completes_physical_enrichment(
@@ -366,6 +374,8 @@ async def test_shared_executor_completes_physical_enrichment(
     )
     await runtime.open()
     agent = DescriptionAgent(behavior)
+    completion_error = behavior in {"completion_rejected", "completion_response_lost"}
+    result = None
     try:
         if behavior == "regenerate_bulk_attributes":
             scope = DatabaseModelInputScopeService(
@@ -406,13 +416,44 @@ async def test_shared_executor_completes_physical_enrichment(
         if behavior == "regenerate_changed":
             with database.connect_owner() as connection:
                 connection.execute(
-                    "UPDATE workflow.attribute_enrichment SET attribute_description='Concurrent edit.' "
+                    "UPDATE workflow.attribute_enrichment "
+                    "SET attribute_description='Concurrent edit.' "
                     "WHERE attribute_id=%s",
                     (first_attribute,),
                 )
         lifecycle = DatabaseAgentWorkflowLifecycle(database=runtime)
+        repository = MetadataEnrichmentRepository(runtime, environment_code="test")
+        completion = repository.complete
+        if completion_error:
+            complete = repository.complete
+
+            async def fail_completion(
+                principal: RequestPrincipal,
+                *,
+                context: MetadataEnrichmentContext,
+                workflow_run_claim_token: UUID,
+                results: tuple[EnrichmentFieldResult, ...],
+            ) -> MetadataEnrichmentCompletion:
+                if behavior == "completion_rejected":
+                    # Exercise a real PostgreSQL rejection and transaction rollback.
+                    results = tuple(
+                        item.model_copy(update={"evidence_method": "none"})
+                        if item.status == "applied"
+                        else item
+                        for item in results
+                    )
+                await complete(
+                    principal,
+                    context=context,
+                    workflow_run_claim_token=workflow_run_claim_token,
+                    results=results,
+                )
+                # The commit succeeded, but its response did not reach the executor.
+                raise DependencyUnavailableError()
+
+            completion = fail_completion
         service = DatabaseMetadataEnrichmentExecutor(
-            repository=MetadataEnrichmentRepository(runtime, environment_code="test"),
+            repository=repository,
             agent_executor=agent,
             lifecycle=lifecycle,
         )
@@ -430,16 +471,60 @@ async def test_shared_executor_completes_physical_enrichment(
                 ]
             )
         )
-        result = await service.execute_started(
-            principal,
-            tenant_id=context.tenant_id,
-            model_id=context.model_id,
-            workflow_run_id=run_id,
-            expected_model_revision=context.model_revision,
-            workflow_run_claim_token=claim,
-        )
+        with (
+            patch.object(repository, "complete", completion),
+            pytest.raises(DependencyUnavailableError) if completion_error else nullcontext(),
+        ):
+            result = await service.execute_started(
+                principal,
+                tenant_id=context.tenant_id,
+                model_id=context.model_id,
+                workflow_run_id=run_id,
+                expected_model_revision=context.model_revision,
+                workflow_run_claim_token=claim,
+            )
     finally:
         await runtime.close()
+    if completion_error:
+        with database.connect_owner() as connection:
+            state = require_row(
+                connection.execute(
+                    "SELECT workflow_run_state, failure_code, "
+                    "metadata_enrichment_receipt_digest IS NOT NULL AS has_receipt "
+                    "FROM application.workflow_run WHERE workflow_run_id=%s",
+                    (run_id,),
+                ).fetchone()
+            )
+            saved = require_row(
+                connection.execute(
+                    "SELECT count(*) AS count FROM application.metadata_enrichment_result "
+                    "WHERE workflow_run_id=%s",
+                    (run_id,),
+                ).fetchone()
+            )["count"]
+            last_event = require_row(
+                connection.execute(
+                    "SELECT model_event_log_status AS status FROM model.model_event_log "
+                    "WHERE workflow_run_id=%s ORDER BY model_event_log_sequence DESC LIMIT 1",
+                    (run_id,),
+                ).fetchone()
+            )["status"]
+        if behavior == "completion_rejected":
+            assert state == {
+                "workflow_run_state": "failed",
+                "failure_code": "dependency_unavailable",
+                "has_receipt": False,
+            }
+            assert saved == 0 and last_event == "failed"
+        else:
+            assert state == {
+                "workflow_run_state": "completed",
+                "failure_code": None,
+                "has_receipt": True,
+            }
+            assert saved > 0 and last_event == "completed"
+        return
+    assert result is not None
     assert result.workflow_run_id == run_id
     assert result.workflow_run_state == (
         "completed_with_repair" if behavior == "repair" else "completed"
@@ -448,8 +533,11 @@ async def test_shared_executor_completes_physical_enrichment(
     with database.connect_owner() as connection:
         attribute = require_row(
             connection.execute(
-                "SELECT attribute_data_type,enrichment.attribute_inferred_data_type,enrichment.attribute_description,enrichment.is_natural_key,enrichment.is_primary_key,enrichment.is_nullable,enrichment.is_pii "
-                "FROM core.attribute JOIN workflow.attribute_enrichment AS enrichment USING(attribute_id) "
+                "SELECT attribute_data_type,enrichment.attribute_inferred_data_type,"
+                "enrichment.attribute_description,enrichment.is_natural_key,"
+                "enrichment.is_primary_key,enrichment.is_nullable,enrichment.is_pii "
+                "FROM core.attribute JOIN workflow.attribute_enrichment AS enrichment "
+                "USING(attribute_id) "
                 "WHERE attribute_id=%s AND enrichment.model_id=%s",
                 (first_attribute, context.model_id),
             ).fetchone()

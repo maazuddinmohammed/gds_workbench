@@ -6,6 +6,7 @@ import { useForm, useStore } from "@tanstack/react-form";
 import { useQuery } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
+import { SelectAllCheckbox } from "../../shared/ui";
 import { useWorkflowRunSubmission } from "./useWorkflowRunSubmission";
 import type { ModelDetail } from "../models/api";
 import type { CreateWorkflowRunCommand } from "./api";
@@ -404,6 +405,16 @@ export function WorkflowRunDialog({
               <form.Field name="selectedObjectIds">
                 {(field) => (
                   <div className="run-object-list">
+                    <label className="run-selection-all">
+                      <SelectAllCheckbox label={`Select all ${isEnrichment ? "unlocked " : ""}${recordName}`}
+                        selectedCount={effectiveRows.length} totalCount={scopeRows.length}
+                        disabled={runMutation.isPending || pendingStart !== null}
+                        onChange={(checked) => {
+                          form.setFieldValue("scopeMode", "selected");
+                          field.handleChange(checked ? scopeRows.map((item) => item.id) : []);
+                        }} />
+                      <span>Select all {isEnrichment ? "unlocked " : ""}{recordName}</span>
+                    </label>
                     {scopeRows.map((item) => (
                       <label key={item.id}>
                         <input

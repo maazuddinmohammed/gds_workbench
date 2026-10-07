@@ -1,5 +1,31 @@
 import { ApiError } from "../../core/http";
+import { formatDateTime } from "../../shared/presentation";
 import type { WorkflowRunEvent, WorkflowRunRecord } from "./api";
+
+export function workflowRunDuration(run: WorkflowRunRecord): string {
+  if (!run.started_at) return "Not started";
+  if (isActiveRun(run)) return "In progress";
+  const elapsed = Date.parse(run.completed_at ?? "") - Date.parse(run.started_at);
+  if (!Number.isFinite(elapsed) || elapsed < 0) return "Not recorded";
+  if (elapsed > 0 && elapsed < 1000) return "<1s";
+  const seconds = Math.floor(elapsed / 1000);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return [hours ? `${hours}h` : "", hours || minutes ? `${minutes}m` : "", `${seconds % 60}s`]
+    .filter(Boolean).join(" ");
+}
+
+export function WorkflowRunTiming({ run }: { run: WorkflowRunRecord }) {
+  const timestamp = (value: string | null, fallback: string) => {
+    const formatted = formatDateTime(value, { year: "numeric", second: "2-digit", timeZoneName: "short" });
+    return formatted && value ? <time dateTime={value}>{formatted}</time> : fallback;
+  };
+  return <dl className="workflow-run-timing" aria-label="Run timing">
+    <div><dt>Started</dt><dd>{timestamp(run.started_at, "Not started")}</dd></div>
+    <div><dt>Ended</dt><dd>{timestamp(run.completed_at, isActiveRun(run) ? "—" : "Not recorded")}</dd></div>
+    <div><dt>Duration</dt><dd>{workflowRunDuration(run)}</dd></div>
+  </dl>;
+}
 
 export const TENANT_WORKFLOW_CONFLICT_MESSAGE = (
   "Another Workflow Run is already active for this Tenant. "

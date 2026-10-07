@@ -32,7 +32,12 @@ defaults and operator pricing retain their selected tier. The historical Luna ke
 now selects GPT-6 Luna. New runs with an unsupported saved effort use the existing
 provider-default fallback; this includes Sol's former `none` setting. Stored
 defaults and frozen run selections are not rewritten. The request/transport timeout
-remains 60 minutes; an explicit `GDS_WEB_AGENT_TIMEOUT_SECONDS` override still wins.
+defaults to 120 minutes (7200 seconds); an explicit `GDS_WEB_AGENT_TIMEOUT_SECONDS`
+override still wins. This is a per-model-call timeout, not a total Workflow Run
+deadline. Provider credentials refresh before every HTTP request, including retries
+and tool turns. Worker claims renew independently every 10 seconds by default.
+Tenant Locks remain separate: their default is 60 minutes, and a long run needs a
+lock lasting through completion (up to 240 minutes, or explicit renewal).
 
 Mapping stores flexible transformation documents. Output templates provide
 advisory field guidance; the backend derives Entity identity, provenance,

@@ -119,6 +119,10 @@ Workflow lists, details, events, results and section statuses refresh manually.
 Fetch on navigation/selection or explicit Refresh. A successful mutation may invalidate
 once. Never introduce hidden polling, `setInterval` or recurring query refetch.
 An active Run can remain visually stale until Refresh by design.
+Run activity shows saved start/end timestamps and execution duration above its tabs.
+Unstarted runs say Not started; missing end timestamps never imply completion.
+Run history uses flat rows; token totals stay visible with breakdown and pricing
+evidence available on demand.
 
 Backend authorization, lock, revision, normalization and validation remain authoritative.
 Explain disabled prerequisites. Retain original request identity after uncertain saves.
@@ -131,6 +135,8 @@ correlation reference; never expose raw provider diagnostics or model payloads.
   readable prompt names/version; internal identifiers/digests belong in Details.
 - Selection survives search and nested Attribute selection. Complete selection data
   must load before a Run starts; failed loading must not create a partial selection.
+  Multi-select run pickers provide select-all/clear controls. Header checkboxes show
+  partial selection, affect eligible records only, and preserve nested Attribute choices.
 - Profiling precedes Enrichment. Enrichment opens on current Model-owned results; keep
   history separate. Parent Model enrichment locks protect children. Object details allow
   description edits; Attribute details allow description/type and nullable key/PII flag edits.

@@ -126,12 +126,91 @@ class LogicalCandidateValidator:
 
     def output_schema(self) -> dict[str, JsonValue]:
         schema = cast(dict[str, JsonValue], deepcopy(_LogicalCandidate.model_json_schema()))
+        schema["description"] = (
+            "Author the complete selected physical scope using metadata, enrichment, profiling "
+            "and Analysis evidence. Conceptual records are not Logical inputs. Every selected "
+            "Object and non-metadata Attribute must have active source coverage in the resulting "
+            "Logical Model, including unchanged applied records. Normalization and consolidation "
+            "are allowed; arbitrary samples, silent omissions and invented source mappings are not."
+        )
         _set_lock_fields_false(schema)
         enrich_agent_output_model_definitions(schema)
         return schema
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
         return AgentCandidateValidation(issues=self._normalize(candidate).issues)
+
+    def validate_coverage(
+        self,
+        candidate: JsonValue,
+        *,
+        metadata_attribute_keys: tuple[PhysicalAttributeKey, ...] = (),
+    ) -> tuple[AgentValidationIssue, ...]:
+        """Check the effective graph, including retained history, before draft handoff."""
+        normalized = self._normalize(candidate)
+        if normalized.issues:
+            return normalized.issues
+        entities = {
+            **self._applied_entities,
+            **{_entity_key(record): record for record in normalized.entities},
+        }
+        attributes = {
+            **self._applied_attributes,
+            **{_attribute_key(record): record for record in normalized.attributes},
+        }
+        active_entities = {
+            key for key, record in entities.items() if record.logical_entity_status == "active"
+        }
+        covered_objects = {
+            _physical_object_key(source.source_object)
+            for key, record in entities.items()
+            if key in active_entities
+            for source in record.sources
+            if isinstance(source, LogicalObjectSourceRecord) and source.status == "active"
+        }
+        covered_attributes = {
+            _physical_attribute_key(source.source_attribute)
+            for key, record in attributes.items()
+            if key[:2] in active_entities and record.logical_attribute_status == "active"
+            for source in record.sources
+            if isinstance(source, AttributePhysicalSourceRecord) and source.status == "active"
+        }
+        # Framework metadata is projected by policy; it need not become business Attributes.
+        required_attributes = self._selected_attribute_keys - {
+            _physical_attribute_key(key) for key in metadata_attribute_keys
+        }
+        missing_objects = self._selected_object_keys - covered_objects
+        missing_attributes = required_attributes - covered_attributes
+        issues: list[AgentValidationIssue] = []
+        if missing_objects:
+            issues.append(
+                AgentValidationIssue(
+                    code="candidate.object_coverage_incomplete",
+                    path=("logical_entity",),
+                    message=(
+                        f"{len(missing_objects)} of {len(self._selected_object_keys)} "
+                        "selected Objects have no active Logical Entity source mapping in the "
+                        "resulting Model. Cover the complete selection; consolidation may map "
+                        "several Objects to one Entity when their business meaning and grain "
+                        "agree. Do not return a sample."
+                    ),
+                )
+            )
+        if missing_attributes:
+            issues.append(
+                AgentValidationIssue(
+                    code="candidate.attribute_coverage_incomplete",
+                    path=("logical_attribute",),
+                    message=(
+                        f"{len(missing_attributes)} of {len(required_attributes)} "
+                        "selected business Attributes have no active Logical Attribute source "
+                        "mapping in the resulting "
+                        "Model. Preserve source coverage through normalization and consolidation; "
+                        "do not silently omit columns or invent unrelated source mappings."
+                    ),
+                )
+            )
+        return tuple(issues)
 
     def parse_validated(self, candidate: JsonValue) -> tuple[StageModelChange, ...]:
         normalized = self._normalize(candidate)

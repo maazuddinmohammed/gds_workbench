@@ -32,14 +32,15 @@
 .workflow-activity-body .workflow-run-monitor-body > .workflow-run-monitor-layout { flex: 1; min-height: 0; }
 .workflow-activity-body .workflow-run-monitor-header { display: none; }
 .workflow-activity-body .workflow-run-monitor-layout { grid-template-columns: 13rem minmax(0, 1fr); }
-.workflow-activity-body .workflow-run-browser { overflow: auto; background: var(--soft); }
+.workflow-activity-body .workflow-run-browser { overflow: auto; background: var(--surface); }
 .workflow-activity-body .workflow-run-monitor-detail { min-width: 0; overflow: auto; }
-.workflow-activity-body .workflow-recent-runs { grid-template-columns: minmax(0, 1fr); padding: .5rem; }
-.workflow-activity-body .workflow-recent-runs li { border: 0; margin-bottom: .3rem; }
-.workflow-activity-body .workflow-recent-runs button { flex-direction: column; align-items: flex-start; border: 1px solid transparent; border-radius: var(--radius-small); }
+.workflow-activity-body .workflow-run-events ol { max-height: none; overflow: visible; }
+.workflow-activity-body .workflow-recent-runs { grid-template-columns: minmax(0, 1fr); padding: 0; }
+.workflow-activity-body .workflow-recent-runs li { border-bottom: 1px solid var(--line); }
+.workflow-activity-body .workflow-recent-runs button { flex-direction: column; align-items: flex-start; gap: .45rem; border: 0; border-radius: 0; }
 .workflow-activity-body .workflow-recent-runs button > span:first-child { width: 100%; }
 .workflow-activity-body .workflow-recent-runs small { white-space: normal; overflow-wrap: anywhere; }
-.workflow-activity-body .workflow-recent-runs button.is-selected { border-color: var(--line-strong); background: var(--surface); }
+.workflow-activity-body .workflow-recent-runs button.is-selected { background: var(--soft); }
 .workflow-activity-body .workflow-run-state-filter { display: grid; gap: .35rem; padding: .75rem; font-size: .7rem; }
 @keyframes activity-arrive { from { opacity: 0; transform: translateX(1rem); } to { opacity: 1; transform: none; } }
 @media(max-width:58rem) {
@@ -75,9 +76,6 @@
 .model-workspace > .workflow-command-center { padding-top: 1.25rem; }
 .model-lock-control { min-height: 2.1rem; padding: .35rem .65rem; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--soft); color: var(--muted); }
 .model-lock-control.is-held { border-color: var(--line-strong); color: var(--green); background: var(--green-soft); }
-.workflow-activity-tabs { display: flex; gap: 1.2rem; margin-bottom: 1rem; border-bottom: 1px solid var(--line); }
-.workflow-activity-tabs button { border: 0; border-bottom: 2px solid transparent; padding: .6rem 0; color: var(--muted); background: none; font-size: .75rem; cursor: pointer; }
-.workflow-activity-tabs button[aria-pressed=true] { color: var(--blue-dark); border-bottom-color: var(--blue); }
 .workflow-activity-body [hidden] { display: none !important; }
 .tenant-lock-dialog .lock-heading { padding: 1rem .5rem 1.25rem; }
 .tenant-lock-dialog .lock-details { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); margin: 0 .5rem; padding: 1.2rem 0; border-color: var(--line); }

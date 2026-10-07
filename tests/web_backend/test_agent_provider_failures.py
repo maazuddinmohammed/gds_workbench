@@ -19,7 +19,7 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
     LocalAgentToolDefinition,
 )
 from gds_workbench_api.integrations.agents import LocalFakeAgentAdapter, adapters
-from pydantic import JsonValue
+from pydantic import JsonValue, SecretStr
 
 from tests.web_backend import (
     test_analysis_executor as analysis,
@@ -44,6 +44,7 @@ from tests.web_backend import (
 )
 from tests.web_backend.mapping_fixtures import mapping_preparation
 from tests.web_backend.test_agent_usage import (
+    FixtureAuthentication,
     FixtureCatalog,
     MemoryRecorder,
     _request,
@@ -54,7 +55,7 @@ from tests.web_backend.test_agent_usage import (
 
 
 @pytest.mark.parametrize("tools, reasoning", [(False, "default"), (False, "none"), (True, "none")])
-@pytest.mark.parametrize("timeout_seconds", [480, 900])
+@pytest.mark.parametrize("timeout_seconds", [480, 900, 7200])
 async def test_real_sdk_uses_the_configured_model_request_timeout(
     monkeypatch: pytest.MonkeyPatch,
     tools: bool,
@@ -94,6 +95,76 @@ async def test_real_sdk_uses_the_configured_model_request_timeout(
     assert result.candidate == {"result": "valid"}
     assert sends == (2 if tools else 1)
     assert settings_seen and all(item.timeout == timeout_seconds for item in settings_seen)
+
+
+@pytest.mark.parametrize("tools, retry", [(True, False), (False, True), (True, True)])
+async def test_real_sdk_refreshes_expired_credentials_after_an_hour(
+    monkeypatch: pytest.MonkeyPatch,
+    tools: bool,
+    retry: bool,
+) -> None:
+    elapsed_seconds = 0
+    sends = 0
+
+    async def authenticate(_self: FixtureAuthentication) -> adapters.OpenAIProviderCredentials:
+        return adapters.OpenAIProviderCredentials(
+            api_key=SecretStr(f"fixture-token-{elapsed_seconds // 3600}"),
+            base_url="https://fixture.services.ai.azure.com/openai/v1/",
+        )
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal elapsed_seconds, sends
+        sends += 1
+        if request.headers["authorization"] != f"Bearer fixture-token-{elapsed_seconds // 3600}":
+            return httpx2.Response(401, json={"error": {"code": "expired_token"}})
+        response_factory = _responses_response if tools else _response
+        if sends == 1:
+            elapsed_seconds = 3601
+            if retry:
+                return httpx2.Response(
+                    503,
+                    headers={"retry-after-ms": "1"},
+                    json={"error": {"code": "temporarily_unavailable"}},
+                )
+            return httpx2.Response(200, json=response_factory(None, tool=True))
+        return httpx2.Response(200, json=response_factory(None))
+
+    monkeypatch.setattr(FixtureAuthentication, "authenticate", authenticate)
+    result = await _router(monkeypatch, None, handler, timeout_seconds=7200).execute(
+        _request(tools=tools)
+    )
+
+    assert result.candidate == {"result": "valid"}
+    assert sends == 2
+
+
+async def test_real_sdk_redacts_authentication_failure_during_a_later_tool_turn(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    sends = 0
+
+    async def authenticate(_self: FixtureAuthentication) -> adapters.OpenAIProviderCredentials:
+        if sends:
+            raise ClientAuthenticationError(message="private-refresh-marker")
+        return adapters.OpenAIProviderCredentials(
+            api_key=SecretStr("fixture-key"),
+            base_url="https://fixture.services.ai.azure.com/openai/v1/",
+        )
+
+    def handler(_: httpx2.Request) -> httpx2.Response:
+        nonlocal sends
+        sends += 1
+        return httpx2.Response(200, json=_responses_response(None, tool=True))
+
+    monkeypatch.setattr(FixtureAuthentication, "authenticate", authenticate)
+    with pytest.raises(WorkbenchError) as captured:
+        await _router(monkeypatch, None, handler).execute(_request(tools=True))
+
+    assert captured.value.code == "agent_authentication_failed"
+    assert sends == 1
+    assert "private-refresh-marker" not in str(captured.value)
+    assert "private-refresh-marker" not in caplog.text
 
 
 @pytest.mark.parametrize(

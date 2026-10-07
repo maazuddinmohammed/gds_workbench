@@ -131,6 +131,7 @@ describe("Model Profiling", () => {
 
     const drawer = await screen.findByRole("complementary", { name: "Profiling run details" });
     expect(within(drawer).getByText("PR-1048", { exact: true })).toBeVisible();
+    expect(within(drawer).getByLabelText("Run timing")).toHaveTextContent("1m 11s");
     expect(within(drawer).getByText("Prepare selected Objects")).toBeVisible();
     expect(within(drawer).getByText("8 of 8")).toBeVisible();
     expect(within(drawer).getByRole("region", { name: "Token usage" }))
@@ -183,7 +184,14 @@ describe("Model Profiling", () => {
     await user.click(screen.getByRole("button", { name: "Run profiling" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Configure profiling run" });
-    await user.click(within(dialog).getByRole("radio", { name: /^Selected Objects/ }));
+    const selectAll = within(dialog).getByRole("checkbox", { name: "Select all Objects" });
+    expect(selectAll).toBeChecked();
+    await user.click(selectAll);
+    expect(within(dialog).getByRole("radio", { name: /^Selected Objects/ })).toBeChecked();
+    expect(within(dialog).getByRole("button", { name: "Create queued run" })).toBeDisabled();
+    await user.click(selectAll);
+    expect(selectAll).toBeChecked();
+    await user.click(selectAll);
     await user.click(within(dialog).getByRole("checkbox", { name: /customer_raw/ }));
     await user.type(within(dialog).getByLabelText("Batch ID (optional)"), " 10428 ");
     await user.click(within(dialog).getByRole("button", { name: "Create queued run" }));

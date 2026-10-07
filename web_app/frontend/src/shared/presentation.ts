@@ -11,7 +11,7 @@ export function shortCode(code: string): string {
   return code.replace(/[^a-zA-Z0-9]/g, "").slice(0, 2).toLocaleUpperCase() || "G";
 }
 
-export function formatDateTime(value: string | null): string | null {
+export function formatDateTime(value: string | null, options: Intl.DateTimeFormatOptions = {}): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
@@ -20,6 +20,7 @@ export function formatDateTime(value: string | null): string | null {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    ...options,
   }).format(date);
 }
 

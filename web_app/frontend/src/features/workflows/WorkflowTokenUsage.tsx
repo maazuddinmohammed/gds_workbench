@@ -24,9 +24,9 @@ export function WorkflowTokenUsage({ usage }: { usage: TokenUsage | undefined })
       <header><h3>Token usage</h3><span className={`status-badge ${usage?.status === "complete" ? "is-success" : usage?.status === "partial" ? "is-warning" : "is-neutral"}`}>{status}</span></header>
       {!available ? <p>Token usage was not recorded for this run.</p> : <>
         <dl className="workflow-token-totals">
+          <div><dt>Total tokens</dt><dd>{tokenCount(usage.total_tokens)}</dd></div>
           <div><dt>Input tokens</dt><dd>{tokenCount(usage.input_tokens)}</dd></div>
           <div><dt>Output tokens</dt><dd>{tokenCount(usage.output_tokens)}</dd></div>
-          <div><dt>Total tokens</dt><dd>{tokenCount(usage.total_tokens)}</dd></div>
         </dl>
         <p>
           {usage.status === "complete" && usage.request_count === 0
@@ -43,7 +43,7 @@ export function WorkflowTokenUsage({ usage }: { usage: TokenUsage | undefined })
         {usage.history_incomplete ? <p>Earlier requests may not be included.</p> : null}
         <details>
           <summary>Token breakdown</summary>
-          <dl className="workflow-token-totals">
+          <dl className="workflow-token-breakdown">
             <div><dt>Cached input</dt><dd>{tokenCount(usage.cached_input_tokens)}</dd></div>
             <div><dt>Cache-write input</dt><dd>{tokenCount(usage.cache_write_input_tokens)}</dd></div>
             <div><dt>Reasoning output</dt><dd>{tokenCount(usage.reasoning_output_tokens)}</dd></div>

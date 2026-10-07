@@ -3,7 +3,7 @@
 # pyright: reportPrivateUsage=false
 from copy import deepcopy
 from dataclasses import replace
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pytest
 from gds_etl_workbench.application.change_sets.model_validation import (
@@ -37,6 +37,40 @@ from tests.web_backend.test_dimensional_executor import (
     _principal,
     _service,
 )
+
+
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+async def test_uncovered_logical_entity_cannot_reach_successful_handoff(
+    mode: Literal["one_shot", "tool_assisted"],
+) -> None:
+    bundle = _context_bundle(mode=mode)
+    first = bundle.context.selected_logical_entities[0]
+    second = first.model_copy(update={
+        "entity": first.entity.model_copy(update={"logical_entity_name": "Other Entity"}),
+        "attributes": tuple(attribute.model_copy(update={
+            "logical_entity_name": "Other Entity"
+        }) for attribute in first.attributes),
+    })
+    context = bundle.context.model_copy(update={"selected_logical_entities": (first, second)})
+    catalog = InMemoryAgentContextToolCatalog(
+        context=context, max_result_bytes=128 * 1024,
+        max_catalog_bytes=128 * 1024, max_page_records=20,
+    ) if mode == "tool_assisted" else None
+    bundle = replace(bundle, context=context, tool_catalog=catalog,
+                     embedded_context=catalog.manifest if catalog else cast(JsonValue, context.model_dump(mode="json")))
+    agent = _AgentExecutor(responses=[_candidate(), _candidate()])
+    service, _, _, handoff, _ = _service(
+        agent=agent, plan=_plan(mode=mode), context=bundle,
+    )
+    with pytest.raises(AgentCandidateValidationError):
+        await service.execute_started(
+            _principal(), tenant_id=7, model_id=18, workflow_run_id=1048,
+            expected_model_revision=7, workflow_run_claim_token=_CLAIM_TOKEN,
+        )
+    assert len(agent.requests) == 2
+    assert handoff.calls == [] and len(handoff.retained) == 1
+    assert any(issue.code == "entity_coverage_incomplete"
+               for issue in handoff.retained[0]["issues"])
 
 
 def _complete_model_candidate() -> dict[str, JsonValue]:

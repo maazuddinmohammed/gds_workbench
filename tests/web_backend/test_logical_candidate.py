@@ -129,6 +129,78 @@ async def test_valid_candidate_normalizes_to_exact_logical_changes() -> None:
     assert sum(len(change.records) for change in changes) == 3
 
 
+async def test_large_selection_cannot_be_silently_reduced_to_one_source() -> None:
+    objects = (_object(), *(_object(f"source_{index}") for index in range(1, 27)))
+    attributes = (_attribute(), *(
+        PhysicalAttributeKey(
+            **objects[index % 27].model_dump(), attribute_name=f"column_{index}"
+        )
+        for index in range(882)
+    ))
+    validator = LogicalCandidateValidator(
+        selected_object_keys=objects,
+        selected_attribute_keys=attributes,
+        assertion_record_keys=(),
+        applied=None,
+    )
+    issues = validator.validate_coverage(cast(JsonValue, _candidate()))
+    assert {issue.code for issue in issues} == {
+        "candidate.object_coverage_incomplete", "candidate.attribute_coverage_incomplete"
+    }
+    assert "26 of 27" in issues[0].message
+    assert "882 of 883" in issues[1].message
+
+
+async def test_coverage_allows_consolidation_and_previously_applied_sources() -> None:
+    candidate = _candidate()
+    entity = _first_record(candidate, "entities")
+    attribute = _first_record(candidate, "attributes")
+    other_object = _object("other_customer_raw")
+    other_attribute = PhysicalAttributeKey(
+        **other_object.model_dump(), attribute_name="customer_id"
+    )
+    cast(list[object], entity["sources"]).append({
+        **deepcopy(cast(list[dict[str, object]], entity["sources"])[0]),
+        "source_object": other_object.model_dump(mode="json"), "source_order": 2,
+    })
+    cast(list[object], attribute["sources"]).append({
+        **deepcopy(cast(list[dict[str, object]], attribute["sources"])[0]),
+        "source_attribute": other_attribute.model_dump(mode="json"), "source_order": 2,
+    })
+    validator = LogicalCandidateValidator(
+        selected_object_keys=(_object(), other_object),
+        selected_attribute_keys=(_attribute(), other_attribute),
+        assertion_record_keys=(), applied=None,
+    )
+    assert validator.validate_coverage(cast(JsonValue, candidate)) == ()
+    applied = LogicalSection.model_validate_json(json.dumps(candidate), strict=True)
+    validator = LogicalCandidateValidator(
+        selected_object_keys=(_object(), other_object),
+        selected_attribute_keys=(_attribute(), other_attribute),
+        assertion_record_keys=(), applied=applied,
+    )
+    assert validator.validate_coverage({
+        "submodels": [], "entities": [], "attributes": [], "relationships": []
+    }) == ()
+    entity["logical_entity_status"] = "inactive"
+    assert validator.validate_coverage(cast(JsonValue, candidate))
+
+
+async def test_coverage_exempts_only_backend_identified_metadata_attributes() -> None:
+    technical = _attribute("batch_id")
+    validator = LogicalCandidateValidator(
+        selected_object_keys=(_object(),),
+        selected_attribute_keys=(_attribute(), technical),
+        assertion_record_keys=(), applied=None,
+    )
+    candidate = cast(JsonValue, _candidate())
+    assert validator.validate_coverage(candidate)[0].code == "candidate.attribute_coverage_incomplete"
+    assert validator.validate_coverage(candidate, metadata_attribute_keys=(technical,)) == ()
+    source = cast(list[dict[str, object]], _first_record(cast(dict[str, object], candidate), "attributes")["sources"])[0]
+    source["status"] = "inactive"
+    assert validator.validate_coverage(candidate, metadata_attribute_keys=(technical,))
+
+
 async def test_candidate_rejects_physical_evidence_outside_frozen_selection() -> None:
     candidate = _candidate()
     entity = _first_record(candidate, "entities")

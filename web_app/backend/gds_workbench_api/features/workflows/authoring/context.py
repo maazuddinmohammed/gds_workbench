@@ -1359,7 +1359,8 @@ def _applicable_applied_records(
     if plan.model_workflow == "conceptual":
         conceptual = snapshot.conceptual
     elif plan.model_workflow == "logical":
-        conceptual = snapshot.conceptual
+        # Logical authoring uses physical evidence independently of Conceptual.
+        # Keep the full snapshot private for final graph validation only.
         logical = snapshot.logical
     elif plan.model_workflow == "dimensional":
         logical = snapshot.logical

@@ -259,9 +259,9 @@ def test_production_requires_the_exact_web_runtime_database_login() -> None:
 
 @pytest.mark.parametrize(
     "configured, expected",
-    [(None, 3600), ("", 3600), (" 480 ", 480), ("90", 90), ("3600", 3600)],
+    [(None, 7200), ("", 7200), (" 480 ", 480), ("90", 90), ("3600", 3600), ("7200", 7200)],
 )
-def test_agent_request_timeout_defaults_to_sixty_minutes_and_allows_overrides(
+def test_agent_request_timeout_defaults_to_two_hours_and_allows_overrides(
     configured: str | None, expected: int
 ) -> None:
     source = {

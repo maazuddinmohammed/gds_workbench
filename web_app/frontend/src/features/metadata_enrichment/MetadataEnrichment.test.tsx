@@ -123,7 +123,12 @@ describe("Metadata enrichment scope and run creation", () => {
     setup(<WorkflowRunDialog api={api} tenantId={7} model={model} kind="inference" workflow="metadata_enrichment" onClose={vi.fn()} onCreated={vi.fn(async () => undefined)} />);
     const submit = await screen.findByRole("button", { name: "Run object enrichment" });
     await waitFor(() => expect(submit).toBeEnabled());
-    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(screen.getAllByRole("checkbox")).toHaveLength(2);
+    const selectAll = screen.getByRole("checkbox", { name: "Select all unlocked Objects" });
+    expect(selectAll).toBeChecked();
+    await user.click(selectAll);
+    expect(submit).toBeDisabled();
+    await user.click(selectAll);
     await user.click(submit);
     expect(api.createWorkflowRun.mock.calls[0]?.[2].description_targets).toEqual([{ object_id: 501, attribute_id: null, expected_revision: "a".repeat(64) }]);
   });
@@ -333,6 +338,35 @@ describe("current metadata enrichment workspace", () => {
     setup(<MetadataEnrichmentScreen api={enrichmentApi} tenantId={7} model={model} hasTenantLock />);
     return enrichmentApi;
   }
+
+  it("refreshes saved Attribute enrichment when refreshing completed runs", async () => {
+    const api = metadataFixture(); const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Show details for customers" }));
+    const attributes = await screen.findByRole("table", { name: "Attributes for customers" });
+    expect(within(attributes).getByText("Customer identifier.")).toBeVisible();
+    const before: ModelInputScopeDetail = await api.readEnrichmentObject.mock.results[0]!.value;
+    await user.click(screen.getByRole("button", { name: "← Back to Objects" }));
+    api.readEnrichmentObject.mockResolvedValue({
+      ...before,
+      attributes: before.attributes.map((attribute) => ({
+        ...attribute, attribute_description: "Stable customer identifier.",
+        enrichment: { is_natural_key: true, is_primary_key: true, is_nullable: false, is_pii: false },
+      })),
+    });
+    api.readMetadataEnrichmentResults.mockResolvedValue(page());
+    await user.click(screen.getByRole("button", { name: "Show Metadata enrichment run activity" }));
+    const refreshRuns = await screen.findByRole("button", { name: "Refresh runs" });
+    await waitFor(() => expect(refreshRuns).toBeEnabled());
+    await user.click(refreshRuns);
+    await waitFor(() => expect(api.readWorkflowRun).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(refreshRuns).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Close activity" }));
+    await user.click(screen.getByRole("button", { name: "Show details for customers" }));
+    const refreshed = await screen.findByRole("table", { name: "Attributes for customers" });
+    expect(await within(refreshed).findByText("Stable customer identifier.")).toBeVisible();
+    expect(within(refreshed).getAllByText("Yes")).toHaveLength(2);
+    expect(within(refreshed).getAllByText("No")).toHaveLength(2);
+  });
 
   it("locks selected Objects together with only Edit in row actions", async () => {
     const api = metadataFixture({ secondObject: true }); const user = userEvent.setup();
@@ -569,6 +603,34 @@ describe("bulk Attribute enrichment selection", () => {
     await user.click(submit);
     expect(api.createWorkflowRun.mock.calls[0]?.[2]).toMatchObject({ selected_object_ids: [501],
       description_targets: [{ object_id: 501, attribute_id: 5010000, expected_revision: "b".repeat(64) }] });
+  });
+
+  it("selects and clears eligible Objects by keyboard while preserving Attribute choices", async () => {
+    const { api, user } = bulk([detail(501), detail(502), detail(503, 1, { is_locked: true }),
+      detail(504, 1, { source_tenant_id: 8 })]);
+    const submit = screen.getByRole("button", { name: "Run attribute enrichment" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Choose Attributes for customer_501" }));
+    await user.click(screen.getByRole("checkbox", { name: "Include Attribute field_1" }));
+    await user.click(screen.getByRole("button", { name: "Back to Objects" }));
+    const selectAll = screen.getByRole("checkbox", { name: "Select all unlocked Objects" });
+    expect(selectAll).toBeChecked();
+    selectAll.focus();
+    await user.keyboard(" ");
+    expect(selectAll).not.toBeChecked();
+    expect(submit).toBeDisabled();
+    expect(screen.getByRole("radio", { name: "Selected Objects" })).toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: "Include Object customer_502" }));
+    expect(selectAll).toBePartiallyChecked();
+    await user.click(selectAll);
+    expect(selectAll).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Include Object customer_503" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Include Object customer_504" })).not.toBeChecked();
+    await user.click(submit);
+    expect(api.createWorkflowRun.mock.calls[0]?.[2]).toMatchObject({ selected_object_ids: [501, 502],
+      description_targets: [5010000, 5020000, 5020001].map((id) => ({
+        object_id: Math.floor(id / 10000), attribute_id: id, expected_revision: "b".repeat(64),
+      })) });
   });
 
   it("respects page preselection and never changes an empty selection to All", async () => {

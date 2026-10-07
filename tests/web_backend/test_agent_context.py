@@ -606,6 +606,8 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
     assert "PRIVATE_MAPPING_BODY" not in provider_text + repr(result)
     assert "PRIVATE_CODE_BODY" not in provider_text + repr(result)
     if model_workflow == "logical":
+        assert result.context.applied.conceptual is None
+        assert "Legacy Customer" not in provider_text
         assert {item.dataset for item in result.context.read_only_dependencies} == {
 
             "mapping_object",
@@ -614,6 +616,8 @@ async def test_full_validation_state_stays_private_while_dependencies_are_readab
         if execution_mode == "tool_assisted":
             catalog = result.tool_catalog
             assert catalog is not None
+            with pytest.raises(AgentContextToolRequestError):
+                catalog.invoke("get_conceptual_objects", {})
             code = catalog.invoke(
                 "get_agent_context_dataset",
                 {

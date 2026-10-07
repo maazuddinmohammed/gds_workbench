@@ -207,7 +207,15 @@ class OpenAIAgentsSdkAdapter:
         http_client = None
         hooks = ProviderUsageHooks(request.model_request_recorder)
         try:
-            credentials = await self._authentication(connection).authenticate()
+            authentication = self._authentication(connection)
+            credentials = await authentication.authenticate()
+
+            async def refresh_api_key() -> str:
+                # The SDK calls this for every request, including retries and tool turns.
+                # Azure Identity caches valid tokens and refreshes expiring ones.
+                current = await authentication.authenticate()
+                return current.api_key.get_secret_value()
+
             tools = cast(Sequence[Tool], _openai_tools(self._tool_catalog(request), hooks))
             http_client = DefaultAsyncHttpxClient(
                 # Keep transport and model-call deadlines aligned.
@@ -215,7 +223,7 @@ class OpenAIAgentsSdkAdapter:
                 event_hooks={"request": [hooks.on_request], "response": [hooks.on_response]},
             )
             client = AsyncOpenAI(
-                api_key=credentials.api_key.get_secret_value(),
+                api_key=refresh_api_key,
                 base_url=credentials.base_url,
                 timeout=connection.timeout_seconds,
                 max_retries=2,

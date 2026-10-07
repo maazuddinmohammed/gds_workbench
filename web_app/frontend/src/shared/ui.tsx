@@ -3,6 +3,20 @@ import { Link } from "@tanstack/react-router";
 
 import { initials } from "./presentation";
 
+export function SelectAllCheckbox({ label, selectedCount, totalCount, disabled, onChange }: {
+  label: string;
+  selectedCount: number;
+  totalCount: number;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return <input type="checkbox" aria-label={label}
+    checked={totalCount > 0 && selectedCount === totalCount}
+    ref={(element) => { if (element) element.indeterminate = selectedCount > 0 && selectedCount < totalCount; }}
+    disabled={disabled || totalCount === 0}
+    onChange={(event) => onChange(event.target.checked)} />;
+}
+
 export function WorkspaceToolbar({ children, actions }: {
   children?: ReactNode;
   actions: ReactNode;

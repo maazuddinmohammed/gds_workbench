@@ -309,9 +309,23 @@ class DimensionalWorkflow:
                     },
                     physical_scope=physical_scope,
                 )
-                if checked.issues:
-                    rejected.changes, rejected.issues = candidate_changes, checked.issues
-                return AgentCandidateValidation(issues=model_validation_issues(checked.issues))
+                coverage = validator.validate_coverage(value)
+                coverage_issues = tuple(
+                    ModelValidationIssue(
+                        code=issue.code.removeprefix("candidate."),
+                        dataset="dimensional_entity",
+                        record_number=None,
+                        fields=(),
+                        message=issue.message,
+                    )
+                    for issue in coverage
+                )
+                if checked.issues or coverage_issues:
+                    rejected.changes = candidate_changes
+                    rejected.issues = checked.issues + coverage_issues
+                return AgentCandidateValidation(
+                    issues=model_validation_issues(checked.issues) + coverage
+                )
 
             resolver_values: dict[str, object] = {
                 (

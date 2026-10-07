@@ -429,14 +429,15 @@ def _validation_context(
     return replace(bundle, snapshot=snapshot, physical_scope=physical_scope)
 
 
-def _mapped_context_bundle(mode: str) -> AgentContextBundle:
+def _mapped_context_bundle(mode: str, *, include_audit_columns: bool = True) -> AgentContextBundle:
     bundle = _context_bundle(mode=mode)
     bundle = replace(
         bundle,
         context=bundle.context.model_copy(
             update={
                 "model_details": bundle.context.model_details.model_copy(
-                    update={"silver_model_audit_columns_template": None}
+                    update={"silver_model_audit_columns_template": None if include_audit_columns
+                            else {"schema_version": "1.0", "columns": []}}
                 ),
             }
         ),
@@ -760,6 +761,7 @@ def _service(
     plan: AgentRunPlan | None = None,
     no_op: _NoOp | None = None,
     context_bundle: AgentContextBundle | None = None,
+    context_policy: AgentContextPolicy | None = None,
 ) -> tuple[LogicalWorkflow, _Database, _Authorizer, _Handoff, _Lifecycle]:
     selected_plan = plan or _plan()
     database = _Database()
@@ -781,7 +783,7 @@ def _service(
                     mode=selected_plan.workflow_execution_mode or "one_shot"
                 )
             ),
-            context_policy=AgentContextPolicy(
+            context_policy=context_policy or AgentContextPolicy(
                 one_shot_max_context_bytes=128 * 1024,
                 stage_max_context_bytes=128 * 1024,
                 max_candidate_bytes=128 * 1024,
@@ -875,11 +877,12 @@ async def test_one_shot_projects_audit_columns_then_hands_off_once() -> None:
 
 
 @pytest.mark.asyncio
-async def test_empty_candidate_completes_with_atomic_no_op_receipt() -> None:
+async def test_empty_candidate_completes_only_when_applied_sources_cover_selection() -> None:
     no_op = _NoOp()
     service, _database, _authorizer, handoff, lifecycle = _service(
         agent=_AgentExecutor(responses=[_empty_candidate()]),
         no_op=no_op,
+        context_bundle=_mapped_context_bundle("one_shot", include_audit_columns=False),
     )
 
     result = await service.execute_started(
@@ -917,6 +920,7 @@ async def test_repaired_empty_candidate_preserves_attempt_and_warning() -> None:
             responses=[cast(JsonValue, {"invalid": True}), _empty_candidate()]
         ),
         no_op=no_op,
+        context_bundle=_mapped_context_bundle("one_shot", include_audit_columns=False),
     )
 
     result = await service.execute_started(
@@ -945,6 +949,7 @@ async def test_no_op_error_never_marks_the_run_failed(
     service, _database, _authorizer, handoff, lifecycle = _service(
         agent=_AgentExecutor(responses=[_empty_candidate()]),
         no_op=no_op,
+        context_bundle=_mapped_context_bundle("one_shot", include_audit_columns=False),
     )
 
     with (
@@ -1056,7 +1061,7 @@ async def test_full_graph_mapping_failure_is_repaired_before_handoff(mode: str) 
         repaired["original_context"]
         == cast(dict[str, Any], agent.requests[0].context)["original_context"]
     )
-    assert repaired["repair"]["validation_issues"] == [
+    assert repaired["repair"]["validation_issues"][:3] == [
         {
             "code": "candidate.active_dependency_invalid",
             "path": ["logical_attribute", "logical_entity_name"],

@@ -23,6 +23,8 @@ import {
   RunStateBadge,
   WorkflowEventProgress,
   workflowStageLabel,
+  WorkflowRunTiming,
+  workflowRunDuration,
 } from "./presentation";
 import { MetadataEnrichmentResults } from "../metadata_enrichment/MetadataEnrichmentResults";
 import { enrichmentResultKey, type MetadataEnrichmentTransport } from "../metadata_enrichment/api";
@@ -246,6 +248,8 @@ export function WorkflowRunMonitor({
       recentQuery.refetch(),
       queryClient.invalidateQueries({ queryKey: ["model-overview", tenantId, modelId] }),
     ];
+    // Enrichment saves during execution, so refreshing runs must also reload saved values.
+    if (workflow === "metadata_enrichment") refreshes.push(onApplied());
     if (selectedRunId !== null) {
       refreshes.push(runQuery.refetch(), eventsQuery.refetch());
       if (workflow === "metadata_enrichment") {
@@ -364,6 +368,7 @@ export function WorkflowRunMonitor({
                     <span>
                       <strong>Run {item.workflow_run_id}</strong>
                       <small>{runKind(item.workflow_execution_mode, workflow)}</small>
+                      <small>{formatDateTime(item.created_at)} · {workflowRunDuration(item)}</small>
                     </span>
                     <RunStateBadge state={item.workflow_run_state} partial={isPartialMappingRun(item)} />
                   </button>
@@ -534,7 +539,8 @@ function WorkflowRunDetailView({
         </div>
         <RunStateBadge state={run.workflow_run_state} partial={partialMapping} />
       </header>
-      {tabbed ? <nav className="workflow-activity-tabs" aria-label="Run detail sections">
+      <WorkflowRunTiming run={run} />
+      {tabbed ? <nav className="workspace-tabs workflow-activity-tabs" aria-label="Run detail sections">
         {["Overview", "Activity", "Usage", physicalMetadata ? "Results" : "Draft"].map((name) => <button key={name} type="button"
           aria-pressed={tab === name} onClick={() => setTab(name)}>{name}</button>)}
       </nav> : null}
@@ -710,7 +716,7 @@ function WorkflowRunDetailView({
                       ) : null}
                     </small>
                   </div>
-                  <time>{formatDateTime(event.created_at)}</time>
+                  <time dateTime={event.created_at}>{formatDateTime(event.created_at)}</time>
                 </li>
               ))}
             </ol>

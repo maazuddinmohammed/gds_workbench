@@ -45,7 +45,7 @@
 .model-workspace > :is(.workflow-command-center, .model-overview, .model-settings-page, .model-prompt-settings) { padding-top: var(--workspace-content-gap); }
 
 /* One segmented navigation treatment for page views and Settings. */
-:is(.workflow-command-center, .model-workspace, .models-page) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) {
+:is(.workflow-command-center, .model-workspace, .models-page, .workflow-activity-panel) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) {
   display: inline-flex;
   flex: 0 1 auto;
   align-items: center;
@@ -61,7 +61,7 @@
   background: var(--soft);
 }
 
-:is(.workflow-command-center, .model-workspace, .models-page) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button) {
+:is(.workflow-command-center, .model-workspace, .models-page, .workflow-activity-panel) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button) {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
@@ -79,13 +79,45 @@
   box-shadow: none;
 }
 
-:is(.workflow-command-center, .model-workspace, .models-page) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button):is(.is-active, [aria-current="page"]) {
+:is(.workflow-command-center, .model-workspace, .models-page, .workflow-activity-panel) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button):is(.is-active, [aria-current="page"], [aria-pressed="true"]) {
   border-color: var(--line-strong);
   color: var(--orange-dark);
   background: var(--surface);
 }
 :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button)::after { display: none; }
 :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button):hover { background: var(--surface); }
+
+/* Run inspection follows the same readable, unboxed detail rhythm. */
+.workflow-activity-panel .workflow-activity-tabs { margin-bottom: var(--workspace-content-gap); }
+.workflow-run-detail-header strong { font-size: .95rem; overflow-wrap: anywhere; }
+:is(.workflow-run-timing, .workflow-run-facts) dt,
+.workflow-token-totals dt,
+.workflow-token-breakdown dt,
+.workflow-cost-estimate dt { font-size: var(--workspace-label-size); text-transform: none; }
+:is(.workflow-run-timing, .workflow-run-facts) dd,
+.workflow-token-breakdown dd,
+.workflow-run-id-navigation label,
+.workflow-run-events :is(p, small),
+.workflow-recent-runs small,
+.workflow-token-usage :is(p, summary),
+.workflow-cost-estimate ul { font-size: var(--workspace-text-size); line-height: 1.55; }
+.workflow-token-totals dd,
+.workflow-cost-estimate dd { font-size: 1.1rem; line-height: 1.5; }
+.workflow-token-usage h3,
+.workflow-run-events :is(h3, strong) { font-size: .85rem; }
+.workflow-run-events time,
+.workflow-run-detail-header small { font-size: var(--workspace-label-size); }
+.workflow-run-id-navigation input {
+  min-height: var(--workspace-control-height);
+  padding: .5rem .65rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-small);
+  color: var(--ink);
+  background: var(--surface);
+  font-size: var(--workspace-text-size);
+}
+.workflow-run-id-navigation { align-items: end; }
+.run-object-list .run-selection-all { position: sticky; top: 0; z-index: 1; background: var(--soft); }
 
 /* Every list filter uses the same collapsible panel and labelled controls. */
 .workflow-filter-panel {

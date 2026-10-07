@@ -175,6 +175,69 @@ async def test_worker_renews_a_live_claim_until_execution_completes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_worker_keeps_renewing_through_two_hours_of_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claim = _claim()
+    dispatcher = BlockingDispatcher()
+    elapsed_seconds = 0
+    expires_at = claim.workflow_run_claim_expires_time
+    loop = asyncio.get_running_loop()
+    started_at = loop.time()
+    original_sleep = asyncio.sleep
+
+    async def advance_time(delay: float) -> None:
+        nonlocal elapsed_seconds
+        assert delay == 10
+        elapsed_seconds += 10
+        await original_sleep(0)
+
+    class ExpiringClaimRepository(FakeClaimRepository):
+        async def renew(
+            self,
+            *,
+            workflow_run_id: int,
+            workflow_run_claim_token: UUID,
+            lease_duration_seconds: int,
+        ) -> WorkflowClaimLease:
+            nonlocal expires_at
+            now = claim.workflow_run_claimed_time + timedelta(seconds=elapsed_seconds)
+            assert now < expires_at
+            assert workflow_run_id == claim.workflow_run_id
+            assert workflow_run_claim_token == claim.workflow_run_claim_token
+            self.renew_calls.append(
+                (workflow_run_id, workflow_run_claim_token, lease_duration_seconds)
+            )
+            expires_at = now + timedelta(seconds=lease_duration_seconds)
+            if elapsed_seconds >= 7200:
+                dispatcher.finish.set()
+            return WorkflowClaimLease(
+                workflow_run_id=workflow_run_id,
+                workflow_run_claim_heartbeat_time=now,
+                workflow_run_claim_expires_time=expires_at,
+            )
+
+    repository = ExpiringClaimRepository(claim)
+    worker = WorkflowExecutionWorker(
+        claims=repository,
+        dispatcher=dispatcher,
+        lease_duration_seconds=30,
+        heartbeat_interval_seconds=10,
+    )
+    # Advance both the heartbeat clock and asyncio deadlines without waiting two hours.
+    with monkeypatch.context() as clock:
+        clock.setattr(loop, "time", lambda: started_at + elapsed_seconds)
+        clock.setattr(asyncio, "sleep", advance_time)
+        result = await worker.run_once()
+
+    assert result is WorkerRunResult.COMPLETED
+    assert len(repository.renew_calls) == 720
+    assert dispatcher.claims == [claim]
+    assert not dispatcher.cancelled.is_set()
+    assert repository.release_calls == []
+
+
+@pytest.mark.asyncio
 async def test_worker_leaves_an_unexpected_failure_claimed_for_bounded_recovery() -> None:
     repository = FakeClaimRepository(_claim())
     dispatcher = BlockingDispatcher()

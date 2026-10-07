@@ -126,12 +126,52 @@ class DimensionalCandidateValidator:
 
     def output_schema(self) -> dict[str, JsonValue]:
         schema = cast(dict[str, JsonValue], deepcopy(_DimensionalCandidate.model_json_schema()))
+        schema["description"] = (
+            "Address every selected Logical Entity through active source mappings in the "
+            "resulting Dimensional Model, including unchanged applied records. Consolidation "
+            "is allowed when supported by grain and business meaning. Do not return a sample "
+            "or invent source mappings merely to claim coverage. Dimensional Attributes may "
+            "select and aggregate relevant Logical Attributes for the analytical design."
+        )
         _set_lock_fields_false(schema)
         enrich_agent_output_model_definitions(schema)
         return schema
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
         return AgentCandidateValidation(issues=self._normalize(candidate).issues)
+
+    def validate_coverage(self, candidate: JsonValue) -> tuple[AgentValidationIssue, ...]:
+        normalized = self._normalize(candidate)
+        if normalized.issues:
+            return normalized.issues
+        entities = {
+            **self._applied_entities,
+            **{_entity_key(record): record for record in normalized.entities},
+        }
+        covered = {
+            _logical_entity_key(source.source_logical_entity)
+            for record in entities.values()
+            if record.dimensional_entity_status == "active"
+            for source in record.sources
+            if isinstance(source, DimensionalLogicalEntitySourceRecord)
+            and source.status == "active"
+        }
+        missing = self._selected_entity_keys - covered
+        if not missing:
+            return ()
+        return (
+            AgentValidationIssue(
+                code="candidate.entity_coverage_incomplete",
+                path=("dimensional_entity",),
+                message=(
+                    f"{len(missing)} of {len(self._selected_entity_keys)} selected Logical "
+                    "Entities have no active Dimensional Entity source mapping in the "
+                    "resulting Model. "
+                    "Address the complete selection; consolidate only when business meaning and "
+                    "grain support it. Do not return a sample or invent unrelated source mappings."
+                ),
+            ),
+        )
 
     def parse_validated(self, candidate: JsonValue) -> tuple[StageModelChange, ...]:
         normalized = self._normalize(candidate)

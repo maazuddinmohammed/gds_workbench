@@ -189,22 +189,33 @@
 
 .workflow-run-detail-header > div {
   display: grid;
+  min-width: 0;
   gap: 0.15rem;
 }
+
+.workflow-run-timing {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(6rem, .7fr);
+  gap: 1rem;
+  margin: 1rem 0;
+  padding-block: 1rem;
+  border-block: 1px solid var(--line);
+}
+
+.workflow-run-timing > div { min-width: 0; }
+.workflow-run-timing dt { color: var(--muted); }
+.workflow-run-timing dd { margin: .35rem 0 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 
 .workflow-run-facts {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin: 0.85rem 0;
-  border-top: 1px solid var(--line);
-  border-left: 1px solid var(--line);
+  gap: 1rem;
 }
 
 .workflow-run-facts div {
   min-width: 0;
-  padding: 0.55rem 0.65rem;
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
+  padding-block: 0.35rem;
 }
 
 .workflow-run-facts dt {
@@ -214,18 +225,15 @@
 }
 
 .workflow-run-facts dd {
-  overflow: hidden;
   margin: 0.18rem 0 0;
   font-size: 0.62rem;
   font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .workflow-token-usage {
   margin: 0.85rem 0;
   padding: 0.65rem 0;
-  border-top: 1px solid var(--line);
 }
 
 .workflow-token-usage > header {
@@ -250,8 +258,10 @@
 .workflow-token-totals {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.65rem;
-  margin: 0.6rem 0;
+  gap: 1rem;
+  margin: 1rem 0;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
 }
 
 .workflow-token-totals dt {
@@ -278,6 +288,11 @@
   font-size: 0.58rem;
 }
 
+.workflow-token-breakdown { margin: .5rem 0; }
+.workflow-token-breakdown > div { display: flex; justify-content: space-between; gap: 1rem; padding-block: .4rem; }
+.workflow-token-breakdown dt { color: var(--muted); }
+.workflow-token-breakdown dd { margin: 0; font-variant-numeric: tabular-nums; }
+
 .workflow-cost-estimate {
   margin-top: 0.65rem;
   padding-top: 0.65rem;
@@ -285,6 +300,12 @@
 }
 
 .workflow-cost-estimate dl {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: .35rem 1rem;
+  min-width: 0;
   margin: 0;
 }
 
@@ -535,6 +556,7 @@
 
 .workflow-run-events li {
   display: grid;
+  align-items: start;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 0.65rem;
   padding: 0.65rem 0;
@@ -669,6 +691,7 @@
 
   .workflow-recent-runs,
   .workflow-run-facts,
+  .workflow-run-timing,
   .workflow-run-failure dl {
     grid-template-columns: 1fr;
   }

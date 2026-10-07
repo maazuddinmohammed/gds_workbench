@@ -9,7 +9,7 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import WorkbenchError
+from gds_etl_workbench.domain.errors import DependencyUnavailableError, WorkbenchError
 from gds_workbench_api.features.metadata_enrichment.contracts import (
     EnrichmentObject,
     MetadataEnrichmentContext,
@@ -239,3 +239,24 @@ async def test_progress_failure_stops_sibling_before_marking_run_failed() -> Non
     assert len(stage.inputs) == 2
     repository.complete.assert_not_awaited()
     lifecycle.fail.assert_awaited_once()
+
+
+async def test_completion_failure_marks_run_failed_after_authoring_finishes() -> None:
+    executor, repository, lifecycle = executor_fixture()
+    stage = ControlledStage()
+    executor._stage = cast(AgentStageRunner, stage)
+    for released in stage.release.values():
+        released.set()
+    repository.complete.side_effect = DependencyUnavailableError()
+
+    with pytest.raises(DependencyUnavailableError):
+        await execute(executor)
+
+    assert len(stage.inputs) == 6
+    repository.complete.assert_awaited_once()
+    events = [call.kwargs["event"] for call in lifecycle.append_event.await_args_list]
+    assert events[-1].stage == "metadata_enrichment"
+    lifecycle.fail.assert_awaited_once()
+    assert lifecycle.fail.await_args is not None
+    assert lifecycle.fail.await_args.kwargs["workflow_run_claim_token"] == UUID(int=3)
+    assert lifecycle.fail.await_args.kwargs["failure_code"] == "dependency_unavailable"

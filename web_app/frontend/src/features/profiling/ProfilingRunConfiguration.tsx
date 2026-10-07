@@ -3,6 +3,7 @@ import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import type { ModelDetail } from "../models/api";
+import { SelectAllCheckbox } from "../../shared/ui";
 import { loadWorkflowScope } from "../workflows/api";
 import { profilingQueryKeys, type ProfilingApi } from "./api";
 import { DrawerHeader } from "./shared";
@@ -152,6 +153,16 @@ export function ProfilingRunConfiguration({
               <form.Field name="selectedObjectIds">
                 {(field) => (
                   <div className="run-object-list">
+                    <label className="run-selection-all">
+                      <SelectAllCheckbox label="Select all Objects"
+                        selectedCount={effectiveObjects.length} totalCount={scopeQuery.data.items.length}
+                        disabled={createMutation.isPending}
+                        onChange={(checked) => {
+                          form.setFieldValue("scopeMode", "selected");
+                          field.handleChange(checked ? scopeQuery.data.items.map((item) => item.object_id) : []);
+                        }} />
+                      <span>Select all Objects</span>
+                    </label>
                     {scopeQuery.data.items.map((item) => {
                       const checked = scopeMode === "all"
                         || field.state.value.includes(item.object_id);

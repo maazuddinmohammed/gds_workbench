@@ -63,6 +63,15 @@ projects these columns; agents cannot omit them. Settings display effective defa
 and allow per-Model overrides or reset; explicit empty audit columns disable audits.
 Existing saved Models change only through reviewed authoring, never a backfill.
 
+Web Logical authoring is independent of Conceptual. It uses selected physical
+metadata, enrichment, Profiles, Analysis, Assertions and applicable Logical history.
+Before a successful draft handoff, active source mappings must cover every selected
+Object and business Attribute; registered metadata Attributes are policy-owned.
+Consolidation may map several physical inputs to one modeled record. Existing
+active applied coverage counts, but silent omissions trigger repair or a rejected
+draft. Dimensional checks coverage of selected Logical Entities; analytical
+Attribute selection and aggregation remain valid.
+
 Missing information, measured zero, failed validation and contradictory evidence
 are different states. Preserve each. An Assertion can explain required behavior;
 it cannot invent physical columns or executable lineage. Saved Analysis confidence
@@ -106,7 +115,10 @@ Analysis Excel export includes all findings matching the active filters, fenced 
 the current Model revision. Databricks DDL downloads use applied active Logical or
 Dimensional fields; Conceptual downloads use one export-only ConceptID per concept.
 Downloads do not execute SQL or change physical metadata. Agent call/transport
-timeout defaults to 60 minutes (previously 15); an explicit configured override wins.
+timeout defaults to 120 minutes; an explicit configured override wins. This limits
+each model call, not total Workflow Run duration. Provider credentials refresh
+before requests, retries and tool turns; worker claim heartbeats remain independent.
+Long runs still require a valid Tenant Lock through completion.
 
 ## Governed work
 
