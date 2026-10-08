@@ -96,7 +96,9 @@ CREATE FUNCTION application.create_model(
     p_default_validation_retry_count INTEGER,
     p_default_mapping_source_system_id BIGINT DEFAULT NULL,
     p_logical_entity_scd_type VARCHAR(10) DEFAULT NULL,
-    p_dimensional_entity_scd_type VARCHAR(10) DEFAULT NULL
+    p_dimensional_entity_scd_type VARCHAR(10) DEFAULT NULL,
+    p_logical_coverage_threshold_percent INTEGER DEFAULT 70,
+    p_dimensional_coverage_threshold_percent INTEGER DEFAULT 60
 )
 RETURNS SETOF model.model
 LANGUAGE plpgsql
@@ -150,7 +152,9 @@ BEGIN
         default_validation_retry_count,
         default_mapping_source_system_id,
         logical_entity_scd_type,
-        dimensional_entity_scd_type
+        dimensional_entity_scd_type,
+        logical_coverage_threshold_percent,
+        dimensional_coverage_threshold_percent
     ) VALUES (
         p_tenant_id,
         p_model_name,
@@ -170,7 +174,9 @@ BEGIN
         p_default_validation_retry_count,
         p_default_mapping_source_system_id,
         p_logical_entity_scd_type,
-        p_dimensional_entity_scd_type
+        p_dimensional_entity_scd_type,
+        coalesce(p_logical_coverage_threshold_percent, 70),
+        coalesce(p_dimensional_coverage_threshold_percent, 60)
     )
     RETURNING target_model.* INTO v_created;
 
@@ -208,7 +214,9 @@ REVOKE ALL ON FUNCTION application.create_model(
     INTEGER,
     BIGINT,
     VARCHAR,
-    VARCHAR
+    VARCHAR,
+    INTEGER,
+    INTEGER
 ) FROM PUBLIC;
 
 CREATE FUNCTION application.update_model(
@@ -234,7 +242,9 @@ CREATE FUNCTION application.update_model(
     p_default_validation_retry_count INTEGER,
     p_default_mapping_source_system_id BIGINT DEFAULT NULL,
     p_logical_entity_scd_type VARCHAR(10) DEFAULT NULL,
-    p_dimensional_entity_scd_type VARCHAR(10) DEFAULT NULL
+    p_dimensional_entity_scd_type VARCHAR(10) DEFAULT NULL,
+    p_logical_coverage_threshold_percent INTEGER DEFAULT 70,
+    p_dimensional_coverage_threshold_percent INTEGER DEFAULT 60
 )
 RETURNS SETOF model.model
 LANGUAGE plpgsql
@@ -301,7 +311,9 @@ BEGIN
         v_existing.default_validation_retry_count,
         v_existing.default_mapping_source_system_id,
         v_existing.logical_entity_scd_type,
-        v_existing.dimensional_entity_scd_type
+        v_existing.dimensional_entity_scd_type,
+        v_existing.logical_coverage_threshold_percent,
+        v_existing.dimensional_coverage_threshold_percent
     ) IS NOT DISTINCT FROM ROW(
         p_model_name,
         p_model_description,
@@ -320,7 +332,9 @@ BEGIN
         p_default_validation_retry_count,
         p_default_mapping_source_system_id,
         p_logical_entity_scd_type,
-        p_dimensional_entity_scd_type
+        p_dimensional_entity_scd_type,
+        coalesce(p_logical_coverage_threshold_percent, 70),
+        coalesce(p_dimensional_coverage_threshold_percent, 60)
     ) THEN
         RETURN NEXT v_existing;
         RETURN;
@@ -353,6 +367,8 @@ BEGIN
            default_mapping_source_system_id = p_default_mapping_source_system_id,
            logical_entity_scd_type = p_logical_entity_scd_type,
            dimensional_entity_scd_type = p_dimensional_entity_scd_type,
+           logical_coverage_threshold_percent = coalesce(p_logical_coverage_threshold_percent, 70),
+           dimensional_coverage_threshold_percent = coalesce(p_dimensional_coverage_threshold_percent, 60),
            updated_time = v_updated_time,
            updated_by = CURRENT_USER
      WHERE target_model.model_id = p_model_id
@@ -393,7 +409,9 @@ REVOKE ALL ON FUNCTION application.update_model(
     INTEGER,
     BIGINT,
     VARCHAR,
-    VARCHAR
+    VARCHAR,
+    INTEGER,
+    INTEGER
 ) FROM PUBLIC;
 
 CREATE FUNCTION application.archive_model(

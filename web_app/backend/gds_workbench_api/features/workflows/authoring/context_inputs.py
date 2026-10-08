@@ -189,6 +189,9 @@ def project_context_inputs(
     details = context["model_details"]
     if workflow in {"logical", "dimensional"}:
         layer = "silver" if workflow == "logical" else "gold"
+        values["coverage_threshold_percent"] = details.get(
+            f"{workflow}_coverage_threshold_percent", 70 if workflow == "logical" else 60
+        )
         values["naming_instructions"] = effective_naming_instructions(
             workflow, details[f"{layer}_model_naming_instructions"]
         )

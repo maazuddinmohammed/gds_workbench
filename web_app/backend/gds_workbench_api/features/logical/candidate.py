@@ -29,6 +29,7 @@ from gds_etl_workbench.domain.snapshots.model import LogicalSection
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from gds_workbench_api.features.workflows.authoring.repair import (
+    MAX_COVERAGE_SOURCE_REFS,
     AgentCandidateValidation,
     AgentValidationIssue,
     enrich_agent_output_model_definitions,
@@ -81,12 +82,21 @@ class LogicalCandidateValidator:
         selected_attribute_keys: tuple[PhysicalAttributeKey, ...],
         assertion_record_keys: tuple[str, ...],
         applied: LogicalSection | None,
+        coverage_threshold_percent: int = 70,
     ) -> None:
+        if (
+            type(coverage_threshold_percent) is not int
+            or not 1 <= coverage_threshold_percent <= 100
+        ):
+            raise ValueError("Coverage threshold must be a whole number from 1 to 100")
+        self._coverage_threshold_percent = coverage_threshold_percent
         if not selected_object_keys or len(selected_object_keys) > 50_000:
             raise ValueError("Logical Object selection must be bounded and nonempty")
         if len(selected_attribute_keys) > 50_000:
             raise ValueError("Logical Attribute selection must be bounded")
-        self._selected_object_keys = {_physical_object_key(item) for item in selected_object_keys}
+        self._selected_object_keys = {
+            _physical_object_key(item): item for item in selected_object_keys
+        }
         self._selected_attribute_keys = {
             _physical_attribute_key(item) for item in selected_attribute_keys
         }
@@ -128,13 +138,47 @@ class LogicalCandidateValidator:
         schema = cast(dict[str, JsonValue], deepcopy(_LogicalCandidate.model_json_schema()))
         schema["description"] = (
             "Author the complete selected physical scope using metadata, enrichment, profiling "
-            "and Analysis evidence. Conceptual records are not Logical inputs. Every selected "
-            "Object must have active source coverage in the resulting "
-            "Logical Model, including unchanged applied records. Normalization and consolidation "
+            "and Analysis evidence. Conceptual records are not Logical inputs. Aim to cover all "
+            "selected Objects through active source mappings in the resulting Logical Model. "
+            f"The backend coverage target is {self._coverage_threshold_percent}% of distinct "
+            "Objects selected for this run, rounded up, including unchanged applied records. "
+            "Below this target, use repair feedback to improve supported coverage. "
+            "Repair source_refs lists up to 50 missing input identities per attempt. "
+            "Normalization and consolidation "
             "are allowed. Select Attributes for the Logical design; coverage does not require "
             "copying or mapping every physical Attribute. Included Attributes must have valid "
             "references and evidence. Do not silently omit selected Objects or invent "
-            "source mappings."
+            "source mappings.\n\n"
+            "Coverage repair instructions:\n"
+            "1. Read context.repair.validation_issues. The coverage message states the "
+            "covered/selected count, required count and number of additional distinct inputs "
+            "needed. At the default 70% target, 18/30 requires 3 more Objects to reach 21/30, "
+            "not "
+            "3 more output Entities and not necessarily all 12 missing Objects.\n"
+            "2. Each source_refs entry is a missing selected Object's complete identity. "
+            "Match all identity fields to the supplied metadata, enrichment, Profiles, "
+            "Analysis and Assertions; use enabled readers when needed. Check whether its "
+            "support is absent, inactive, on an inactive Entity or attached to the wrong "
+            "identity. The list is bounded and may be shortened further when "
+            "source_refs_truncated is true; do not treat it as the entire selection.\n"
+            "3. Where the evidence supports an existing or proposed Entity's meaning and "
+            "grain, add or correct its entities[].sources entry with support_source_type "
+            "'object', the exact source_object identity and status 'active'; its parent "
+            "logical_entity_status must also be 'active'. Otherwise create a separate "
+            "well-supported Entity with its required Attributes and valid references. "
+            "Preserve locks and deliberate inactive records; never reactivate them, merge "
+            "unrelated grains or invent links merely to increase coverage.\n"
+            "4. Preserve valid work from repair.previous_candidate. Attempts are not "
+            "automatically accumulated: return the complete corrected candidate, not a "
+            "patch containing only the missing inputs. Unchanged applied records need not "
+            "be repeated. If previous_candidate_omitted is true, rebuild from the rendered "
+            "evidence and enabled readers.\n"
+            "5. Recount distinct selected Objects across active proposed and retained "
+            "support, and resolve every other validation issue. Repeated references, "
+            "unselected sources, Assertion-only support and Attribute-only mappings do not "
+            "increase Object coverage. Keep unsupported gaps unresolved using existing "
+            "definition/rationale fields where appropriate. Return only the candidate JSON; "
+            "do not add a coverage report or new output fields."
         )
         _set_lock_fields_false(schema)
         enrich_agent_output_model_definitions(schema)
@@ -147,7 +191,7 @@ class LogicalCandidateValidator:
         self,
         candidate: JsonValue,
     ) -> tuple[AgentValidationIssue, ...]:
-        """Require selected Object coverage; Attribute selection is a modeling decision."""
+        """Measure distinct selected Object coverage across the resulting Model."""
         normalized = self._normalize(candidate)
         if normalized.issues:
             return normalized.issues
@@ -165,19 +209,25 @@ class LogicalCandidateValidator:
             for source in record.sources
             if isinstance(source, LogicalObjectSourceRecord) and source.status == "active"
         }
-        missing_objects = self._selected_object_keys - covered_objects
+        missing_objects = self._selected_object_keys.keys() - covered_objects
+        total = len(self._selected_object_keys)
+        covered = total - len(missing_objects)
+        required = (total * self._coverage_threshold_percent + 99) // 100
         issues: list[AgentValidationIssue] = []
-        if missing_objects:
+        if covered < required:
             issues.append(
                 AgentValidationIssue(
                     code="candidate.object_coverage_incomplete",
                     path=("logical_entity",),
                     message=(
-                        f"{len(missing_objects)} of {len(self._selected_object_keys)} "
-                        "selected Objects have no active Logical Entity source mapping in the "
-                        "resulting Model. Cover the complete selection; consolidation may map "
-                        "several Objects to one Entity when their business meaning and grain "
-                        "agree. Do not return a sample."
+                        f"Coverage {covered}/{total} is below "
+                        f"{self._coverage_threshold_percent}%; at least {required} distinct "
+                        f"selected Objects are required ({required - covered} more). "
+                        f"{len(missing_objects)} of {total} selected Objects lack active support."
+                    ),
+                    source_refs=tuple(
+                        self._selected_object_keys[key].model_dump(mode="json")
+                        for key in sorted(missing_objects)[:MAX_COVERAGE_SOURCE_REFS]
                     ),
                 )
             )

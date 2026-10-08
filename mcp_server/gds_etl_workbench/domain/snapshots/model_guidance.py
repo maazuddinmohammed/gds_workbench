@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import cast
 
-from gds_etl_workbench.domain.model_policy import GoldAuditPolicy, GoldTechnicalPolicy
+from gds_etl_workbench.domain.model_policy import (
+    DimensionalAuditPolicy,
+    GoldAuditPolicy,
+    GoldTechnicalPolicy,
+)
 from gds_etl_workbench.domain.snapshots.description import (
     DatasetColumnAcceptedValues,
     DatasetColumnDescription,
@@ -245,7 +249,7 @@ def enrich_model_dataset_schema(dataset: str, schema: dict[str, object]) -> None
         definitions = cast(dict[str, object], schema.setdefault("$defs", {}))
         for field, model in (
             ("silver_model_audit_columns_template", GoldAuditPolicy),
-            ("gold_model_audit_columns_template", GoldAuditPolicy),
+            ("gold_model_audit_columns_template", DimensionalAuditPolicy),
             ("gold_model_technical_columns_template", GoldTechnicalPolicy),
         ):
             template_schema = model.model_json_schema()

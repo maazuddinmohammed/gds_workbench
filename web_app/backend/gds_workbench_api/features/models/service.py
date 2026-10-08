@@ -1,7 +1,7 @@
 """Tenant-owned Model read authorization and persistence."""
 
 from contextlib import AbstractAsyncContextManager
-from typing import Protocol
+from typing import Protocol, cast
 
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.cursor import CursorCodec
@@ -18,6 +18,7 @@ from gds_workbench_api.features.models.contracts import (
     ModelNotFoundError,
     ModelStatus,
 )
+from gds_workbench_api.features.workflows.authoring.gold_policy import effective_gold_templates
 
 _MODELS_SQL = """
 SELECT model.model_id,
@@ -97,6 +98,8 @@ SELECT model.model_id,
        model.default_mapping_source_system_id,
        model.logical_entity_scd_type,
        model.dimensional_entity_scd_type,
+       model.logical_coverage_threshold_percent,
+       model.dimensional_coverage_threshold_percent,
        model.silver_model_naming_instructions,
        model.silver_model_audit_columns_template,
        model.gold_model_naming_instructions,
@@ -222,4 +225,19 @@ class DatabaseModelService:
             )
         if row is None:
             raise ModelNotFoundError()
-        return ModelDetail.model_validate(row)
+        detail = ModelDetail.model_validate(row)
+        if (
+            detail.gold_model_technical_columns_template is not None
+            or detail.gold_model_audit_columns_template is not None
+        ):
+            technical, audit = effective_gold_templates(
+                cast(dict[str, object] | None, detail.gold_model_technical_columns_template),
+                cast(dict[str, object] | None, detail.gold_model_audit_columns_template),
+            )
+            detail = detail.model_copy(
+                update={
+                    "gold_model_audit_columns_template": {**technical, **audit},
+                    "gold_model_technical_columns_template": None,
+                }
+            )
+        return detail

@@ -608,6 +608,33 @@ async def test_large_previous_candidate_uses_a_bounded_repair_summary() -> None:
     assert all(agent_request_envelope_bytes(item) <= budget for item in executor.requests)
 
 
+async def test_missing_source_refs_fit_repair_budget_without_mutating_diagnostics() -> None:
+    request = _request(retries=1)
+    budget = agent_request_envelope_bytes(request.model_copy(update={"context": None})) + 900
+    refs = tuple(
+        {"logical_entity_schema_name": "silver", "logical_entity_name": f"entity_{i}"}
+        for i in range(50)
+    )
+    issue = AgentValidationIssue(
+        code="candidate.entity_coverage_incomplete", path=("dimensional_entity",),
+        message="Coverage 1/51 is below 60%; at least 31 selected Entities are required.",
+        source_refs=refs,
+    )
+    executor = FakeExecutor(candidates=[{}, {}])
+    result = await ValidationRepairRunner(
+        executor=executor, policy=_policy(one_shot_bytes=budget),
+    ).run(request=request, validator=FakeValidator(outcomes=[(issue,), ()]))
+    assert result.attempt_count == 2
+    context = cast(dict[str, JsonValue], executor.requests[1].context)
+    repair = cast(dict[str, JsonValue], context["repair"])
+    feedback = cast(list[dict[str, JsonValue]], repair["validation_issues"])[0]
+    assert feedback["message"] == issue.message
+    assert 0 < len(cast(list[JsonValue], feedback["source_refs"])) < 50
+    assert feedback["source_refs_truncated"] is True
+    assert issue.source_refs == refs
+    assert all(agent_request_envelope_bytes(item) <= budget for item in executor.requests)
+
+
 @pytest.mark.asyncio
 async def test_repair_gives_each_adapter_attempt_a_fresh_original_context() -> None:
     issue = AgentValidationIssue(

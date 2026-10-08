@@ -475,7 +475,7 @@ describe("Models ledger", () => {
     await user.click(within(naming.parentElement!).getByRole("button", { name: "Customize" }));
     await user.clear(naming);
     await user.type(naming, "Use business names.");
-    for (const label of ["Gold technical columns template", "Gold audit columns template"]) {
+    for (const label of ["Gold audit columns template"]) {
       const template = within(dialog).getByRole("textbox", { name: new RegExp(label) });
       await user.click(within(template.parentElement!).getByRole("button", { name: "Customize" }));
       await user.clear(template);
@@ -511,7 +511,7 @@ describe("Models ledger", () => {
       logical_schemas: [{ schema_name: "silver_shared", description: "Shared logical design" }],
       dimensional_schemas: [{ schema_name: "gold_analytics", description: null }],
       model_name: "New model", gold_model_naming_instructions: "Use business names.",
-      gold_model_technical_columns_template: { columns: [] }, gold_model_audit_columns_template: { columns: [] },
+      gold_model_technical_columns_template: null, gold_model_audit_columns_template: { columns: [] },
       default_agent_sdk_code: "openai_agents_sdk", default_agent_provider_code: "microsoft_foundry", default_agent_model_code: "foundry-primary",
       default_reasoning_effort_code: "medium", default_max_turns: 100, default_validation_retry_count: 25,
     });

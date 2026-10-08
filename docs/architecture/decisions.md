@@ -85,14 +85,20 @@ variables/readers remain compatible but expose absent data for Logical runs.
 Current default prompts omit those variables and reader selections; older frozen
 or custom versions retain their registrations.
 The complete snapshot stays private for final graph validation. Logical candidates
-must cover selected physical Objects through active source mappings across the
-proposed and retained Model. Attribute completeness is not enforced: physical
+default to 70% coverage of distinct physical Objects selected for the run through active
+source mappings on active Entities across the proposed and retained Model.
+Required counts round up; repeated and unselected sources do not inflate coverage.
+Attribute completeness is not enforced: physical
 Attributes may be omitted or consolidated for the design. Included Attributes
 retain source, reference, lock and key/audit validation. Dimensional candidates
-must cover selected Logical Entities, without requiring every Silver Attribute to
+default to 60% coverage of selected Logical Entities, without requiring every Silver Attribute to
 be copied into an analytical model. Neither rule imposes a minimum output Entity
-count. Coverage failures use the existing repair loop and rejected-draft retention;
-they cannot produce a successful handoff or a false no-op on an uncovered selection.
+count. Below target, the existing repair loop receives counts, the shortfall and up
+to 50 complete missing-source identities per attempt (fewer if the context budget
+requires it). An otherwise valid final candidate is returned after the last configured
+attempt even below target, with an explicit coverage warning. An empty Logical result
+can complete as no effective change with a zero-coverage warning. Schema, reference,
+lock, policy and full-graph failures remain blocking and retain existing recovery rules.
 
 Mapping operates on frozen Entity/System pairs. Supported partial documents are
 useful progress. Omitted selected, unlocked transformations clear on regeneration;
@@ -210,3 +216,17 @@ Local reads support manifest/draft-bound continuation and field projection retai
 canonical identity. Task status defaults to bounded active-task context, with explicit
 detail/history retrieval. Node and native PowerShell share this command contract;
 neither surface grants additional access or proves business correctness.
+
+
+### Model coverage and unified Gold audit settings
+
+Logical and Dimensional coverage are Model-owned integer percentages (1–100),
+with NOT NULL database defaults of 70 and 60. Governed create/update commands
+resolve omitted/null inputs to those defaults and preserve revision/lock checks.
+Snapshots carry the values; validators and prompts share the frozen run value.
+Gold audit settings include key and Type 2 history rules in one editable template.
+Existing separate key/history templates are combined on read; combined audit
+settings take precedence. Internal key projection retains its surrogate/foreign
+roles. Type 2 history uses the audit role and sits after SourceSystemID, before
+GDSBatchID. Locked Attributes remain protected during reclassification/reordering.
+These are fresh-install schema changes; no populated-database migration is added.

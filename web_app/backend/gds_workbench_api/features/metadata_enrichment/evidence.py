@@ -43,7 +43,6 @@ class MetadataEvidenceReader:
     async def collect(self, objects: tuple[EnrichmentObject, ...]) -> None:
         if self._executor is None:
             return
-        schema_columns: dict[PhysicalRelation, set[str]] = defaultdict(set)
         candidates: list[tuple[EnrichmentObject, EnrichmentAttribute]] = []
         for item in objects:
             if not item.is_active or item.is_locked:
@@ -51,18 +50,67 @@ class MetadataEvidenceReader:
             for attribute in item.attributes:
                 if not attribute.is_active or attribute.is_locked:
                     continue
-                if (
-                    attribute.attribute_description or ""
-                ).strip() and attribute.attribute_inferred_data_type:
+                # Physical reads only resolve missing types. Description and flag
+                # authoring use the frozen prompt evidence, not schema comments.
+                if attribute.attribute_inferred_data_type:
                     continue
-                source = attribute.source
-                if source and source.is_active and source.relation and source.relation_column:
-                    schema_columns[source.relation].add(source.relation_column)
-                if item.relation and attribute.relation_column:
-                    schema_columns[item.relation].add(attribute.relation_column)
-                if not attribute.attribute_inferred_data_type:
-                    candidates.append((item, attribute))
+                candidates.append((item, attribute))
 
+        # Complete source evidence first. Bronze is only needed when that
+        # evidence cannot settle the type; source STRING alone is not decisive.
+        schema_reads: set[tuple[PhysicalRelation, str]] = set()
+        sample_reads: set[tuple[PhysicalRelation, str]] = set()
+        for source_stage in (True, False):
+            selected_columns: list[tuple[PhysicalRelation, str, EnrichmentAttribute]] = []
+            schema_columns: dict[PhysicalRelation, set[str]] = defaultdict(set)
+            for item, attribute in candidates:
+                if source_stage:
+                    source = attribute.source
+                    if source is None or not source.is_active:
+                        continue
+                    relation, column = source.relation, source.relation_column
+                else:
+                    evidence = self.infer_type(item, attribute)
+                    if evidence.method in {"registered_type", "source_sample"} or (
+                        evidence.method == "source_schema" and evidence.data_type != "STRING"
+                    ):
+                        continue
+                    relation, column = item.relation, attribute.relation_column
+                if relation is None or not column:
+                    continue
+                selected_columns.append((relation, column, attribute))
+                key = (relation, column.casefold())
+                if key not in schema_reads:
+                    schema_reads.add(key)
+                    schema_columns[relation].add(column)
+            await self._collect_schemas(schema_columns)
+
+            sample_columns: dict[PhysicalRelation, set[str]] = defaultdict(set)
+            for relation, column, attribute in selected_columns:
+                source = attribute.source
+                if (
+                    attribute.is_pii is True
+                    or attribute.is_masking_required
+                    or (source is not None and source.is_masking_required)
+                ):
+                    continue
+                key = (relation, column.casefold())
+                schema = self._schemas.get(key)
+                if schema and schema.data_type not in {None, "STRING"}:
+                    continue
+                if (
+                    source_stage
+                    and schema is None
+                    and self._registered_source_type(attribute) not in {None, "STRING"}
+                ):
+                    continue
+                if key not in sample_reads:
+                    sample_reads.add(key)
+                    sample_columns[relation].add(column)
+            await self._collect_samples(sample_columns)
+
+    async def _collect_schemas(self, schema_columns: dict[PhysicalRelation, set[str]]) -> None:
+        assert self._executor is not None
         for relation, selected in schema_columns.items():
             connection = await self._connection(relation.connection_id)
             if connection is None:
@@ -119,32 +167,8 @@ class MetadataEvidenceReader:
                     # Connector details and schema/tool rows never enter diagnostics.
                     continue
 
-        sample_columns: dict[PhysicalRelation, set[str]] = defaultdict(set)
-        for item, attribute in candidates:
-            source = attribute.source
-            if (
-                attribute.is_pii is True
-                or attribute.is_masking_required
-                or (source is not None and source.is_masking_required)
-            ):
-                continue
-            source_schema = self.source_schema(attribute)
-            if source_schema and source_schema.data_type not in {None, "STRING"}:
-                continue
-            if source_schema is None and self._registered_source_type(attribute) not in {
-                None,
-                "STRING",
-            }:
-                continue
-            if source and source.is_active and source.relation and source.relation_column:
-                sample_columns[source.relation].add(source.relation_column)
-            if item.relation and attribute.relation_column:
-                bronze_schema = self._schemas.get(
-                    (item.relation, attribute.relation_column.casefold())
-                )
-                if not bronze_schema or bronze_schema.data_type in {None, "STRING"}:
-                    sample_columns[item.relation].add(attribute.relation_column)
-
+    async def _collect_samples(self, sample_columns: dict[PhysicalRelation, set[str]]) -> None:
+        assert self._executor is not None
         for relation, selected in sample_columns.items():
             connection = await self._connection(relation.connection_id)
             if connection is None:
@@ -227,7 +251,13 @@ class MetadataEvidenceReader:
             and not attribute.is_masking_required
             and not (source and source.is_masking_required)
         )
-        if allow_samples and source and source.relation and source.relation_column:
+        if (
+            allow_samples
+            and source
+            and source.is_active
+            and source.relation
+            and source.relation_column
+        ):
             sampled = self._samples.get((source.relation, source.relation_column.casefold()))
             if sampled and sampled.data_type is not None:
                 return TypeEvidence(sampled.data_type, "source_sample", sampled.sample_count)

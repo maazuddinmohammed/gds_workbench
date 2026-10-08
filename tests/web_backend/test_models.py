@@ -96,13 +96,14 @@ def test_shared_templates_are_visible_through_the_authorized_models_route() -> N
         response = client.get("/api/v1/tenants/7/models/templates")
     assert response.status_code == 200
     templates = response.json()
+    assert "gold_model_technical_columns_template" not in templates
     assert "PascalCase" in templates["silver_model_naming_instructions"]
-    assert templates["silver_model_audit_columns_template"] == templates["gold_model_audit_columns_template"]
+    assert templates["silver_model_audit_columns_template"]["columns"] == templates["gold_model_audit_columns_template"]["columns"]
     assert [column["semantic_name"] for column in templates["silver_model_audit_columns_template"]["columns"]] == [
         "SourceSystemID", "IsDataValid", "HashKey", "IsActive", "GDSBatchID", "PipelineRunID",
         "CreatedDate", "UpdatedDate", "CreatedBy", "UpdatedBy",
     ]
-    assert templates["gold_model_technical_columns_template"]["type_2"]["is_current"]["semantic_name"] == "IsCurrentRecord"
+    assert templates["gold_model_audit_columns_template"]["type_2"]["is_current"]["semantic_name"] == "IsCurrentRecord"
 
 
 def test_model_ledger_is_tenant_scoped_and_contains_current_workflow_state() -> None:

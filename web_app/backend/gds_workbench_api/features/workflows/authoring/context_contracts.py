@@ -3320,6 +3320,14 @@ INPUT_SHAPES: dict[str, Any] = {
         "setting does not migrate previously applied data.",
         "schema": {"enum": ["type_1", "type_2", None]},
     },
+    "coverage_threshold_percent": {
+        "description": "Frozen Model coverage target, a whole percentage from 1 to 100. "
+        "Count distinct inputs selected for this run with active support on active Entities, "
+        "including retained applied support; round the required input count up. "
+        "Below target, repair the missing sources listed by backend validation. "
+        "Only after the final retry may the backend return otherwise valid partial coverage.",
+        "schema": {"type": "integer", "minimum": 1, "maximum": 100},
+    },
     "logical.logical_entity_scd_type": {
         "description": "Frozen Model guidance for Logical Entity change history. type_1 means "
         "overwrite current values; type_2 means preserve versions. Null means unspecified. "
@@ -3991,6 +3999,7 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         "audit_columns": "logical.audit_columns",
         "schemas": "logical.schemas",
         "logical_entity_scd_type": "logical.logical_entity_scd_type",
+        "coverage_threshold_percent": "coverage_threshold_percent",
     },
     "dimensional": {
         "source_context": "source_context",
@@ -4022,6 +4031,7 @@ WORKFLOW_INPUTS: dict[str, dict[str, str]] = {
         "schemas": "dimensional.schemas",
         "selected_logical_entities": "selected_logical_entities",
         "dimensional_entity_scd_type": "dimensional.dimensional_entity_scd_type",
+        "coverage_threshold_percent": "coverage_threshold_percent",
     },
 }
 
@@ -4954,9 +4964,11 @@ INPUT_EXAMPLES: dict[str, dict[str, Any]] = {
         },
         "schemas": [{"schema_name": "silver", "description": "Logical model schema."}],
         "logical_entity_scd_type": "type_2",
+        "coverage_threshold_percent": 70,
     },
     "dimensional": {
         "dimensional_entity_scd_type": "type_2",
+        "coverage_threshold_percent": 60,
         "gds_context": [
             {
                 "tenant_code": "GDS",

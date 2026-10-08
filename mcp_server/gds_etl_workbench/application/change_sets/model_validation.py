@@ -13,7 +13,11 @@ from pydantic import ValidationError
 
 from gds_etl_workbench.domain.databricks_sql import validate_databricks_sql
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.model_policy import GoldAuditPolicy, GoldTechnicalPolicy
+from gds_etl_workbench.domain.model_policy import (
+    DimensionalAuditPolicy,
+    GoldAuditPolicy,
+    GoldTechnicalPolicy,
+)
 from gds_etl_workbench.domain.modeling_records import (
     AttributeEnrichmentRecord,
     ModelDetailsRecord,
@@ -104,12 +108,12 @@ def validate_staged_records(
             encoded = json.dumps(raw, ensure_ascii=False, separators=(",", ":"))
             record = definition.row_model.model_validate_json(encoded, strict=True)
             if isinstance(record, ModelDetailsRecord):
-                for template in (
-                    record.silver_model_audit_columns_template,
-                    record.gold_model_audit_columns_template,
+                for template, policy in (
+                    (record.silver_model_audit_columns_template, GoldAuditPolicy),
+                    (record.gold_model_audit_columns_template, DimensionalAuditPolicy),
                 ):
                     if template is not None:
-                        GoldAuditPolicy.model_validate_json(json.dumps(template), strict=True)
+                        policy.model_validate_json(json.dumps(template), strict=True)
                 if record.gold_model_technical_columns_template is not None:
                     GoldTechnicalPolicy.model_validate_json(
                         json.dumps(record.gold_model_technical_columns_template), strict=True

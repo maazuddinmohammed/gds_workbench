@@ -163,6 +163,37 @@ def _reader(executor: _Executor | None) -> MetadataEvidenceReader:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("description", [None, "", "Saved description."])
+async def test_existing_inferred_type_needs_no_physical_reads(
+    description: str | None,
+) -> None:
+    item = _object()
+    item = item.model_copy(
+        update={
+            "attributes": (
+                item.attributes[0].model_copy(
+                    update={
+                        "attribute_inferred_data_type": "BIGINT",
+                        "attribute_description": description,
+                    }
+                ),
+            )
+        }
+    )
+    executor = _Executor({"source_catalog": "STRING", "bronze_catalog": "STRING"})
+
+    async def no_connection_needed(connection_id: int) -> DatabricksSqlConnection:
+        raise AssertionError("An existing inferred type must not load a connection")
+
+    reader = MetadataEvidenceReader(
+        executor=executor, connection_loader=no_connection_needed
+    )
+    await reader.collect((item,))
+    assert executor.calls == []
+    assert item.attributes[0].attribute_inferred_data_type == "BIGINT"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("registered", ["STRING", "BIGINT"])
 async def test_actual_source_schema_overrides_registered_metadata(
     registered: str,
@@ -176,7 +207,7 @@ async def test_actual_source_schema_overrides_registered_metadata(
     assert reader.infer_type(item, item.attributes[0]) == TypeEvidence(
         "DECIMAL(18,2)", "source_schema"
     )
-    assert all(kind == "schema" for kind, _, _ in executor.calls)
+    assert executor.calls == [("schema", "source_catalog", ("column_000",))]
     source = reader.source_schema(item.attributes[0])
     assert source is not None and source.comment == "Synthetic schema comment."
 
@@ -193,6 +224,10 @@ async def test_source_string_samples_override_conflicting_registered_numeric() -
     assert reader.infer_type(item, item.attributes[0]) == TypeEvidence(
         "DECIMAL(38,2)", "source_sample", 2
     )
+    assert executor.calls == [
+        ("schema", "source_catalog", ("column_000",)),
+        ("sample", "source_catalog", ("column_000",)),
+    ]
 
 
 @pytest.mark.asyncio
@@ -212,7 +247,9 @@ async def test_unavailable_source_uses_registered_type_without_sampling(
     assert reader.infer_type(item, item.attributes[0]) == TypeEvidence(
         "INT", "registered_type"
     )
-    assert all(kind == "schema" for kind, _, _ in executor.calls)
+    assert executor.calls == (
+        [("schema", "source_catalog", ("column_000",))] if connector_available else []
+    )
 
 
 @pytest.mark.asyncio
@@ -226,6 +263,119 @@ async def test_leading_zero_source_identifiers_remain_string() -> None:
     await reader.collect((item,))
     assert reader.infer_type(item, item.attributes[0]) == TypeEvidence(
         "STRING", "source_sample", 2
+    )
+    assert all(catalog == "source_catalog" for _, catalog, _ in executor.calls)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bronze_type,expected",
+    [
+        ("DATE", TypeEvidence("DATE", "bronze_schema")),
+        ("STRING", TypeEvidence("BIGINT", "bronze_sample", 2)),
+    ],
+)
+async def test_empty_source_samples_still_use_bronze_fallback(
+    bronze_type: str, expected: TypeEvidence
+) -> None:
+    item = _object()
+    executor = _Executor(
+        {"source_catalog": "STRING", "bronze_catalog": bronze_type},
+        {"bronze_catalog": ("12", "34")},
+    )
+    reader = _reader(executor)
+    await reader.collect((item,))
+    assert reader.infer_type(item, item.attributes[0]) == expected
+    expected_calls = [
+        ("schema", "source_catalog", ("column_000",)),
+        ("sample", "source_catalog", ("column_000",)),
+        ("schema", "bronze_catalog", ("column_000",)),
+    ]
+    if bronze_type == "STRING":
+        expected_calls.append(("sample", "bronze_catalog", ("column_000",)))
+    assert executor.calls == expected_calls
+
+
+@pytest.mark.asyncio
+async def test_bronze_queries_only_include_columns_unresolved_by_source() -> None:
+    def mixed_samples(
+        kind: str, result: DatabricksSqlExecutionResult
+    ) -> DatabricksSqlExecutionResult:
+        if kind == "sample" and len(result.columns) == 2:
+            return replace(result, rows=(("12", None), ("34", None)))
+        return result
+
+    item = _object(columns=2)
+    executor = _Executor(
+        {"source_catalog": "STRING", "bronze_catalog": "STRING"},
+        {"bronze_catalog": ("1.25", "20.50")},
+        transform=mixed_samples,
+    )
+    reader = _reader(executor)
+    await reader.collect((item,))
+    assert reader.infer_type(item, item.attributes[0]) == TypeEvidence(
+        "BIGINT", "source_sample", 2
+    )
+    assert reader.infer_type(item, item.attributes[1]) == TypeEvidence(
+        "DECIMAL(38,2)", "bronze_sample", 2
+    )
+    assert executor.calls == [
+        ("schema", "source_catalog", ("column_000", "column_001")),
+        ("sample", "source_catalog", ("column_000", "column_001")),
+        ("schema", "bronze_catalog", ("column_001",)),
+        ("sample", "bronze_catalog", ("column_001",)),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("schema_available", [True, False])
+async def test_source_and_bronze_sharing_relation_are_read_once(
+    schema_available: bool,
+) -> None:
+    item = _object()
+    source = item.attributes[0].source
+    assert source is not None
+    item = item.model_copy(update={"relation": source.relation})
+    executor = _Executor(
+        {
+            "source_catalog": "STRING"
+            if schema_available
+            else RuntimeError("Unavailable")
+        }
+    )
+    reader = _reader(executor)
+    await reader.collect((item,))
+    assert reader.infer_type(item, item.attributes[0]) == (
+        TypeEvidence("STRING", "source_schema")
+        if schema_available
+        else TypeEvidence(None)
+    )
+    assert executor.calls == [
+        ("schema", "source_catalog", ("column_000",)),
+        ("sample", "source_catalog", ("column_000",)),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_inactive_source_does_not_consume_cached_active_source_samples() -> None:
+    active = _object()
+    attribute = active.attributes[0]
+    assert attribute.source is not None
+    attribute = attribute.model_copy(
+        update={"source": attribute.source.model_copy(update={"is_active": False})}
+    )
+    inactive = active.model_copy(update={"object_id": 21, "attributes": (attribute,)})
+    executor = _Executor(
+        {"source_catalog": "STRING", "bronze_catalog": "DATE"},
+        {"source_catalog": ("12", "34")},
+    )
+    reader = _reader(executor)
+    await reader.collect((active, inactive))
+    assert reader.infer_type(active, active.attributes[0]) == TypeEvidence(
+        "BIGINT", "source_sample", 2
+    )
+    assert reader.infer_type(inactive, attribute) == TypeEvidence(
+        "DATE", "bronze_schema"
     )
 
 

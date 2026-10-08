@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from typing import Literal
 
@@ -248,9 +249,9 @@ def test_projection_adds_type_2_columns_only_when_dimension_historizes() -> None
     ]
     assert [item["dimensional_attribute_role"] for item in [attributes[0], *attributes[2:5]]] == [
         "technical",
-        "technical",
-        "technical",
-        "technical",
+        "audit",
+        "audit",
+        "audit",
     ]
 
 
@@ -743,3 +744,48 @@ def test_dimension_scd_policy_preserves_business_behavior_and_excludes_fact_hist
     history = [row for row in rows if row["dimensional_attribute_name"] == "Effective From"]
     assert len(history) == (1 if scd_type == "type_2" else 0)
     assert all(row["dimensional_entity_name"] == "Customer Dimension" for row in history)
+
+
+def test_combined_audit_template_projects_history_in_audit_order() -> None:
+    from gds_workbench_api.features.models.templates import default_model_templates
+    from gds_workbench_api.features.workflows.authoring.gold_policy import effective_gold_templates
+
+    combined = default_model_templates()["gold_model_audit_columns_template"]
+    assert isinstance(combined, dict)
+    technical, audit = effective_gold_templates(None, combined)
+    projected = project_dimensional_gold_policy(
+        changes=(StageModelChange(dataset="dimensional_entity", records=[_entity().model_dump(mode="json")]),),
+        applied=None, raw_technical_template=technical, raw_audit_template=audit, scd_type="type_2",
+    )
+    attributes = _attribute_records(projected)
+    names = [item["dimensional_attribute_name"] for item in attributes]
+    source_index = names.index("SourceSystemID")
+    assert names[source_index + 1:source_index + 4] == ["IsCurrentRecord", "RecordStartTime", "RecordEndTime"]
+    assert names.index("RecordEndTime") < names.index("GDSBatchID")
+    for item in attributes[source_index + 1:source_index + 4]:
+        assert item["dimensional_attribute_role"] == "audit"
+        assert item["dimensional_attribute_is_audit_column"] is True
+
+
+@pytest.mark.parametrize("locked", [False, True])
+def test_existing_history_can_join_audit_group_only_when_unlocked(locked: bool) -> None:
+    entity = _entity()
+    projected = project_dimensional_gold_policy(
+        changes=(StageModelChange(dataset="dimensional_entity", records=[entity.model_dump(mode="json")]),),
+        applied=None, raw_technical_template=_technical_template(), raw_audit_template=_audit_template(), scd_type="type_2",
+    )
+    attributes = [DimensionalAttributeRecord.model_validate_json(json.dumps(row)) for row in _attribute_records(projected)]
+    old = tuple(row.model_copy(update={
+        "dimensional_attribute_role": "technical",
+        "dimensional_attribute_is_audit_column": False,
+        "dimensional_attribute_is_locked": locked,
+    }) if row.dimensional_attribute_name in {"Is Current", "Effective From", "Effective To"} else row for row in attributes)
+    baseline = DimensionalSection(submodels=(), entities=(entity,), attributes=old, relationships=())
+    if locked:
+        with pytest.raises(DimensionalProjectionConflictError):
+            project_dimensional_gold_policy(changes=(), applied=baseline, raw_technical_template=_technical_template(), raw_audit_template=_audit_template(), scd_type="type_2")
+    else:
+        result = project_dimensional_gold_policy(changes=(), applied=baseline, raw_technical_template=_technical_template(), raw_audit_template=_audit_template(), scd_type="type_2")
+        history = [row for row in _attribute_records(result) if row["dimensional_attribute_name"] in {"Is Current", "Effective From", "Effective To"}]
+        assert len(history) == 3
+        assert all(row["dimensional_attribute_role"] == "audit" and row["dimensional_attribute_is_audit_column"] for row in history)

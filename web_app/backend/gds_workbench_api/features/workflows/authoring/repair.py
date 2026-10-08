@@ -36,6 +36,8 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
     agent_input_payload,
 )
 
+MAX_COVERAGE_SOURCE_REFS = 50
+
 
 class AgentValidationIssue(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -43,6 +45,13 @@ class AgentValidationIssue(BaseModel):
     code: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,99}$")
     path: tuple[str | int, ...] = Field(max_length=20)
     message: str = Field(min_length=1, max_length=500)
+    # Bounded metadata identities for coverage repair; never physical row values.
+    source_refs: tuple[dict[str, str], ...] = Field(
+        default=(),
+        max_length=MAX_COVERAGE_SOURCE_REFS,
+        repr=False,
+        exclude_if=lambda value: not value,
+    )
 
     @field_validator("path")
     @classmethod
@@ -464,7 +473,7 @@ def _bounded_attempt_context(
             "repair": deepcopy(repair),
         },
     )
-    if maximum_bytes is None or _json_bytes({"repair": repair}) <= maximum_bytes:
+    if maximum_bytes is None or _json_bytes(attempt) <= maximum_bytes:
         return attempt
     if repair is None:
         raise AgentContextTooLargeError()
@@ -490,12 +499,20 @@ def _bounded_attempt_context(
     )
     accepted_issues: list[JsonValue] = []
     for issue in raw_issues:
+        issue = deepcopy(issue)
         compact_repair["validation_issues"] = [*accepted_issues, issue]
-        if _json_bytes({"repair": compact_repair}) > maximum_bytes:
+        if isinstance(issue, dict) and isinstance(issue.get("source_refs"), list | tuple):
+            refs = list(cast(list[JsonValue] | tuple[JsonValue, ...], issue["source_refs"]))
+            issue["source_refs"] = refs
+            # Preserve the coverage counts and as many complete identities as fit.
+            while refs and _json_bytes(compact_attempt) > maximum_bytes:
+                refs.pop()
+                issue["source_refs_truncated"] = True
+        if _json_bytes(compact_attempt) > maximum_bytes:
             compact_repair["validation_issues"] = accepted_issues
             break
         accepted_issues.append(issue)
-    if not accepted_issues or _json_bytes({"repair": compact_repair}) > maximum_bytes:
+    if not accepted_issues or _json_bytes(compact_attempt) > maximum_bytes:
         raise AgentCandidateValidationError()
     return compact_attempt
 

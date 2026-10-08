@@ -40,6 +40,8 @@ export interface ModelDetail {
   silver_model_audit_columns_template: unknown;
   logical_entity_scd_type?: ModelEntityScdType | null;
   dimensional_entity_scd_type?: ModelEntityScdType | null;
+  logical_coverage_threshold_percent: number;
+  dimensional_coverage_threshold_percent: number;
   gold_model_naming_instructions: string | null;
   gold_model_technical_columns_template: unknown;
   gold_model_audit_columns_template: unknown;
@@ -115,6 +117,8 @@ export interface CreateModelCommand {
   silver_model_audit_columns_template: JsonObject | null;
   logical_entity_scd_type: ModelEntityScdType | null;
   dimensional_entity_scd_type?: ModelEntityScdType | null;
+  logical_coverage_threshold_percent?: number | null;
+  dimensional_coverage_threshold_percent?: number | null;
   gold_model_naming_instructions: string | null;
   gold_model_technical_columns_template: JsonObject | null;
   gold_model_audit_columns_template: JsonObject | null;

@@ -466,5 +466,5 @@ async def test_model_settings_apply_resolves_system_and_preserves_identity() -> 
     query, parameters = transaction.calls[-1][1:]
     assert "SET model_name" not in query
     assert "AND model_name = %s" in query
-    assert parameters[-5:] == ("type_2", "type_1", 5, 7, record.model_name)
+    assert parameters[-7:] == ("type_2", "type_1", 70, 60, 5, 7, record.model_name)
     transaction.assert_complete()

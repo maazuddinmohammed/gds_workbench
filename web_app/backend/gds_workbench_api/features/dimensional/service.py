@@ -337,24 +337,43 @@ class DimensionalWorkflow:
                 "dimensional",
                 context.context.model_details.gold_model_naming_instructions,
             )
-            outcome = await self._stage_runner.run(
-                plan=plan,
-                stage_code="candidate_authoring",
-                resolver_values=resolver_values,
-                context=context.embedded_context,
-                output_schema=validator.output_schema(),
-                allowed_tool_names=(
-                    context.tool_catalog.allowed_tool_names
-                    if context.tool_catalog is not None
-                    else ()
-                ),
-                local_tool_catalog=context.tool_catalog,
-                validator=validator,
-                final_validation=validate_complete_candidate,
-            )
-            candidate = outcome.candidate
-            final_attempt = outcome.attempt_count
-            warning = outcome.was_repaired or bool(outcome.warning_codes)
+            coverage_warning: str | None = None
+            try:
+                outcome = await self._stage_runner.run(
+                    plan=plan,
+                    stage_code="candidate_authoring",
+                    resolver_values=resolver_values,
+                    context=context.embedded_context,
+                    output_schema=validator.output_schema(),
+                    allowed_tool_names=(
+                        context.tool_catalog.allowed_tool_names
+                        if context.tool_catalog is not None
+                        else ()
+                    ),
+                    local_tool_catalog=context.tool_catalog,
+                    validator=validator,
+                    final_validation=validate_complete_candidate,
+                )
+            except AgentCandidateValidationError as error:
+                # The shared runner attaches a checked candidate only after all attempts.
+                # Coverage alone may fall short; every other validation remains blocking.
+                if (
+                    error.candidate is None
+                    or not error.issues
+                    or any(
+                        issue.code != "candidate.entity_coverage_incomplete"
+                        for issue in error.issues
+                    )
+                ):
+                    raise
+                candidate = error.candidate
+                final_attempt = plan.selection.validation_retry_count + 1
+                coverage_warning = error.issues[0].message
+                warning = True
+            else:
+                candidate = outcome.candidate
+                final_attempt = outcome.attempt_count
+                warning = outcome.was_repaired or bool(outcome.warning_codes)
             changes = _project_dimensional_changes(
                 validator=validator,
                 candidate=candidate,
@@ -378,7 +397,12 @@ class DimensionalWorkflow:
                             attempt=final_attempt,
                             stage="dimensional.backend_validation",
                             status=("warning" if warning else "running"),
-                            message=("Dimensional authoring completed with no effective change."),
+                            message=(
+                                "Dimensional final attempt produced no effective change; "
+                                f"coverage target remains unmet. {coverage_warning}"
+                                if coverage_warning
+                                else "Dimensional authoring completed with no effective change."
+                            ),
                             current=1,
                             total=1,
                             finding_count=0,
@@ -391,7 +415,12 @@ class DimensionalWorkflow:
                 attempt=final_attempt,
                 stage="dimensional.backend_validation",
                 status="warning" if warning else "running",
-                message="Dimensional candidate is ready in a validated draft.",
+                message=(
+                    "Dimensional draft returned after the final attempt with partial coverage. "
+                    f"{coverage_warning}"
+                    if coverage_warning
+                    else "Dimensional candidate is ready in a validated draft."
+                ),
                 current=1,
                 total=1,
                 finding_count=staged_record_count,
@@ -525,6 +554,7 @@ def _candidate_validator(context: AgentContextBundle) -> DimensionalCandidateVal
         selected_attribute_keys=selected_attributes,
         assertion_record_keys=assertion_keys,
         applied=context.context.applied.dimensional,
+        coverage_threshold_percent=context.context.model_details.dimensional_coverage_threshold_percent,
     )
 
 

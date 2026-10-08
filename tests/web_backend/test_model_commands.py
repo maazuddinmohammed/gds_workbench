@@ -359,6 +359,8 @@ async def test_database_create_model_authorizes_lock_and_passes_full_identity_co
         32,
         "type_2",
         "type_1",
+        None,
+        None,
     )
 
 
@@ -490,6 +492,8 @@ async def test_revision_commands_precheck_path_tenant_and_call_only_governed_fun
         32,
         "type_2",
         "type_1",
+        None,
+        None,
     )
     assert archive_call == ("archive", identity + (18, 5))
 
@@ -823,3 +827,17 @@ def test_model_lock_route_accepts_only_lock_and_expected_revision() -> None:
         assert response.json()["model_revision"] == 5
         assert client.put("/api/v1/tenants/7/models/18/lock", json={"is_locked":False}).status_code == 422
         assert client.put("/api/v1/tenants/7/models/18/lock", json={"expected_model_revision":4, "is_locked":True, "actor":"agent"}).status_code == 422
+
+
+@pytest.mark.parametrize("field", ["logical_coverage_threshold_percent", "dimensional_coverage_threshold_percent"])
+@pytest.mark.parametrize("value", [0, 101, -1, 69.5, 70.0, True, "70"])
+def test_coverage_settings_reject_non_integer_or_out_of_range_values(field: str, value: object) -> None:
+    with pytest.raises(ValueError):
+        CompleteModelRequest.model_validate({"model_name": "Coverage", field: value})
+
+
+@pytest.mark.parametrize("value", [1, 69, 70, 100, None])
+def test_coverage_settings_preserve_valid_values_and_database_default(value: int | None) -> None:
+    request = CompleteModelRequest(model_name="Coverage", logical_coverage_threshold_percent=value)
+    assert request.logical_coverage_threshold_percent == value
+    assert request.dimensional_coverage_threshold_percent is None

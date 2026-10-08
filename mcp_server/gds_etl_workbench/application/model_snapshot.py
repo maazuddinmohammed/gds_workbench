@@ -52,6 +52,8 @@ SELECT model_name,
        dimensional_schemas,
        logical_entity_scd_type,
        dimensional_entity_scd_type,
+       logical_coverage_threshold_percent,
+       dimensional_coverage_threshold_percent,
        (SELECT system_code FROM core.system
          WHERE system_id = target_model.default_mapping_source_system_id)
            AS default_mapping_source_system_code,

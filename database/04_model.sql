@@ -56,6 +56,8 @@ CREATE TABLE model.model (
     default_mapping_source_system_id BIGINT,
     logical_entity_scd_type VARCHAR(10),
     dimensional_entity_scd_type VARCHAR(10),
+    logical_coverage_threshold_percent INTEGER NOT NULL DEFAULT 70,
+    dimensional_coverage_threshold_percent INTEGER NOT NULL DEFAULT 60,
     silver_model_naming_instructions TEXT,
     silver_model_audit_columns_template JSONB,
     gold_model_naming_instructions TEXT,
@@ -84,6 +86,8 @@ CREATE TABLE model.model (
         OR reference.is_nonblank(model_description)
     ),
     CONSTRAINT ck_model_revision CHECK (model_revision > 0),
+    CONSTRAINT ck_model_logical_coverage CHECK (logical_coverage_threshold_percent BETWEEN 1 AND 100),
+    CONSTRAINT ck_model_dimensional_coverage CHECK (dimensional_coverage_threshold_percent BETWEEN 1 AND 100),
     CONSTRAINT ck_model_logical_schemas CHECK (model.valid_schema_list(logical_schemas)),
     CONSTRAINT ck_model_logical_entity_scd_type CHECK (
         logical_entity_scd_type IS NULL OR logical_entity_scd_type IN ('type_1', 'type_2')

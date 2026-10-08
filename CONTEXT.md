@@ -52,26 +52,28 @@ Logical and Dimensional SCD policies are independent Model settings (`type_1`,
 `type_2`, or unspecified). Dimensional Type 1 overwrites mutable descriptors;
 Type 2 preserves Dimension versions. Stable identity stays fixed; Fact/Bridge
 behavior is unchanged. Runs freeze both policies and Mapping receives both.
-Blank Gold technical settings use standard surrogate/foreign keys and
+The combined Gold audit template includes standard surrogate/foreign key rules and
 IsCurrentRecord/RecordStartTime/RecordEndTime columns for Type 2 Dimensions.
 Blank audit settings use the shared PascalCase template: SourceSystemID BIGINT,
 IsDataValid BOOLEAN, HashKey STRING, IsActive BOOLEAN, GDSBatchID BIGINT,
 PipelineRunID STRING, CreatedDate/UpdatedDate TIMESTAMP, CreatedBy/UpdatedBy STRING.
 These audit fields default nullable; history current/start fields are required and
-end time nullable. History fields precede the common audit fields. The orchestrator
+end time nullable. History fields follow SourceSystemID, before GDSBatchID. The orchestrator
 projects these columns; agents cannot omit them. Settings display effective defaults
-and allow per-Model overrides or reset; explicit empty audit columns disable audits.
+and allow per-Model overrides or reset; an explicit empty audit column list disables common audit fields.
 Existing saved Models change only through reviewed authoring, never a backfill.
 
 Web Logical authoring is independent of Conceptual. It uses selected physical
 metadata, enrichment, Profiles, Analysis, Assertions and applicable Logical history.
-Before a successful draft handoff, active source mappings must cover every selected
-Object. Physical Attributes may be selected, consolidated or omitted for the Logical
+Logical coverage defaults to 70% of distinct physical Objects selected for the run;
+Dimensional coverage defaults to 60% of selected Logical Entities, rounding counts up.
+Physical Attributes may be selected, consolidated or omitted for the Logical
 design; included Attributes still require valid references and source evidence.
 Consolidation may map several physical inputs to one modeled record. Existing
-active applied coverage counts, but missing Object coverage triggers repair or a rejected
-draft. Dimensional checks coverage of selected Logical Entities; analytical
-Attribute selection and aggregation remain valid.
+active applied coverage counts alongside new mappings. Below target, missing-source
+feedback triggers the configured repair attempts. On the final attempt, otherwise
+valid partial coverage returns with a warning; other validation failures still block
+handoff. Analytical Attribute selection and aggregation remain valid.
 
 Missing information, measured zero, failed validation and contradictory evidence
 are different states. Preserve each. An Assertion can explain required behavior;
@@ -170,3 +172,10 @@ Copy, Process, Copy Group, Process Group, Member Group, Member, Tenant, System,
 Connection and Connection Location. It has no implicit execution semantics.
 Preserve existing details; populate only when requested. Never store credentials
 or secret references there. Foundational records remain read-only in authoring.
+
+Model coverage settings are whole percentages from 1–100, stored with database
+defaults of 70 for Logical and 60 for Dimensional. Run context and validation use
+the same saved setting. Gold settings expose one audit template including generated
+key and Type 2 history rules; older separate stored rules remain readable. Type 2
+history fields are audit Attributes immediately after SourceSystemID and before
+GDSBatchID. Surrogate and foreign keys retain their key semantics.

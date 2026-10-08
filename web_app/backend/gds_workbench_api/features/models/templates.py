@@ -17,7 +17,6 @@ def default_model_templates() -> dict[str, JsonValue]:
             "silver_model_naming_instructions": effective_naming_instructions("logical", None),
             "silver_model_audit_columns_template": effective_audit_template(None),
             "gold_model_naming_instructions": effective_naming_instructions("dimensional", None),
-            "gold_model_technical_columns_template": technical,
-            "gold_model_audit_columns_template": audit,
+            "gold_model_audit_columns_template": {**technical, **audit},
         },
     )

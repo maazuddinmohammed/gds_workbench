@@ -59,6 +59,8 @@ UPDATE model.model
        gold_model_audit_columns_template = %s,
        logical_entity_scd_type = %s,
        dimensional_entity_scd_type = %s,
+       logical_coverage_threshold_percent = %s,
+       dimensional_coverage_threshold_percent = %s,
        default_mapping_source_system_id = %s,
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
@@ -1070,6 +1072,8 @@ class ModelMaterializer:
                     ),
                     record.logical_entity_scd_type,
                     record.dimensional_entity_scd_type,
+                    record.logical_coverage_threshold_percent,
+                    record.dimensional_coverage_threshold_percent,
                     (
                         None
                         if record.default_mapping_source_system_code is None

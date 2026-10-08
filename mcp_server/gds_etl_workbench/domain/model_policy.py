@@ -122,6 +122,14 @@ class GoldAuditPolicy(BaseModel):
         return self
 
 
+class DimensionalAuditPolicy(GoldAuditPolicy):
+    """One editable Gold policy, including generated keys and history columns."""
+
+    dimension_surrogate_key: _DimensionSurrogateKey | None = None
+    fact_bridge_foreign_key: _FactBridgeForeignKey | None = None
+    type_2: _Type2Policy | None = None
+
+
 def _validate_template(
     value: str,
     *,

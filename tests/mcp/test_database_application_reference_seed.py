@@ -111,7 +111,7 @@ EXPECTED_NAMES = {
     "logical": FOUNDATIONAL_NAMES
     | CONCEPTUAL_NAMES
     | LOGICAL_NAMES
-    | {"naming_instructions", "audit_columns", "schemas", "logical_entity_scd_type"},
+    | {"naming_instructions", "audit_columns", "schemas", "logical_entity_scd_type", "coverage_threshold_percent"},
     "dimensional": LOGICAL_NAMES
     | DIMENSIONAL_NAMES
     | (FOUNDATIONAL_NAMES - {"gds_context", "modeling_assertions"})
@@ -124,6 +124,7 @@ EXPECTED_NAMES = {
         "audit_columns",
         "technical_columns",
         "dimensional_entity_scd_type",
+        "coverage_threshold_percent",
     },
     "mapping": {
         "mapping_support",

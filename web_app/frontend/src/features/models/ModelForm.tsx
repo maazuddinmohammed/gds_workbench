@@ -16,7 +16,6 @@ const layerFields = [
   ] },
   { title: "Gold settings", fields: [
     { name: "gold_model_naming_instructions", label: "Gold naming instructions", json: false },
-    { name: "gold_model_technical_columns_template", label: "Gold technical columns template", json: true },
     { name: "gold_model_audit_columns_template", label: "Gold audit columns template", json: true },
   ] },
 ] as const;
@@ -97,6 +96,8 @@ export function ModelForm({
       silver_model_audit_columns_template: null,
       logical_entity_scd_type: logicalScdType || null,
       dimensional_entity_scd_type: dimensionalScdType || null,
+      logical_coverage_threshold_percent: null,
+      dimensional_coverage_threshold_percent: null,
       gold_model_naming_instructions: null,
       gold_model_technical_columns_template: null,
       gold_model_audit_columns_template: null,
@@ -117,6 +118,13 @@ export function ModelForm({
       return;
     }
     for (const layer of ["logical", "dimensional"] as const) {
+      const field = `${layer}_coverage_threshold_percent` as const;
+      const value = text(field);
+      if (value && (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 100)) {
+        invalid(field, "Enter a whole number from 1 to 100, or leave blank for the default.");
+        return;
+      }
+      command[field] = value ? Number(value) : null;
       const rows = layer === "logical" ? logicalSchemas : dimensionalSchemas;
       const invalidIndex = rows.findIndex((item, index) => {
         const name = item.schema_name.trim();
@@ -320,6 +328,20 @@ export function ModelForm({
                     </select>
                     <small id="dimensional-scd-type-help" className="field-help">Controls Dimension history and Mapping generation. Type 1 overwrites changes; Type 2 keeps versions. Facts and Bridges are unaffected.</small>
                   </label> : null}
+                  {(() => {
+                    const layer = group.title === "Silver settings" ? "logical" : "dimensional";
+                    const field = `${layer}_coverage_threshold_percent` as const;
+                    const defaultPercent = layer === "logical" ? 70 : 60;
+                    return <label>
+                      <span id={`${field}-label`}>{layer === "logical" ? "Logical" : "Dimensional"} coverage threshold (%)</span>
+                      <input name={field} type="number" min={1} max={100} step={1}
+                        aria-labelledby={`${field}-label`}
+                        defaultValue={initialModel?.[field] ?? ""} placeholder={String(defaultPercent)}
+                        aria-invalid={validationError?.field === field}
+                        aria-describedby={`${field}-help${validationError?.field === field ? " model-form-error" : ""}`} />
+                      <small id={`${field}-help`} className="field-help">Whole number from 1 to 100. Blank uses {defaultPercent}%. Counts distinct selected {layer === "logical" ? "tables" : "Logical entities"} with active supporting mappings.</small>
+                    </label>;
+                  })()}
                   {group.fields.map((field) => (
                     <div key={field.name}>
                       <label htmlFor={field.name}>{field.label}{field.json ? <small>JSON object</small> : null}</label>

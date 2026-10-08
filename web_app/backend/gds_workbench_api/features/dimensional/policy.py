@@ -140,6 +140,7 @@ def project_dimensional_gold_policy(
                 for record in entity_attributes
             )
         specifications: list[tuple[GoldPolicyColumn, Literal["technical", "audit"], str]] = []
+        history: list[GoldPolicyColumn] = []
         if entity.dimensional_entity_type == "dimension" or is_new_entity:
             try:
                 surrogate = GoldPolicyColumn(
@@ -171,15 +172,26 @@ def project_dimensional_gold_policy(
                     )
                 )
             ):
-                specifications.extend(
-                    (column, "technical", "none")
-                    for column in (
+                history.extend(
+                    (
                         technical.type_2.is_current,
                         technical.type_2.effective_from,
                         technical.type_2.effective_to,
                     )
                 )
-        specifications.extend((column, "audit", "none") for column in audit.columns)
+        # History belongs to the audit group, immediately after SourceSystemID.
+        # With a custom audit list lacking that anchor, history starts the group.
+        audit_columns = list(audit.columns)
+        history_position = next(
+            (
+                index + 1
+                for index, column in enumerate(audit_columns)
+                if normalize_model_key_value(column.semantic_name) == "sourcesystemid"
+            ),
+            0,
+        )
+        audit_columns[history_position:history_position] = history
+        specifications.extend((column, "audit", "none") for column in audit_columns)
         normalized_names = [
             normalize_model_key_value(column.semantic_name) for column, _, _ in specifications
         ]
@@ -550,7 +562,14 @@ def _policy_attribute(
     existing: DimensionalAttributeRecord | None,
 ) -> DimensionalAttributeRecord:
     if existing is not None and (
-        existing.dimensional_attribute_role != role
+        (
+            existing.dimensional_attribute_role != role
+            and not (
+                role == "audit"
+                and existing.dimensional_attribute_role == "technical"
+                and existing.dimensional_attribute_key_role == key_role == "none"
+            )
+        )
         or normalize_model_key_value(existing.dimensional_attribute_data_type)
         != normalize_model_key_value(column.data_type)
         or existing.dimensional_attribute_is_nullable != column.nullable

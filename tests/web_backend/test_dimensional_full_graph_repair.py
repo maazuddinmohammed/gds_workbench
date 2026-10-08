@@ -40,7 +40,7 @@ from tests.web_backend.test_dimensional_executor import (
 
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
-async def test_uncovered_logical_entity_cannot_reach_successful_handoff(
+async def test_sixty_percent_coverage_hands_off_without_retrying_remaining_gaps(
     mode: Literal["one_shot", "tool_assisted"],
 ) -> None:
     bundle = _context_bundle(mode=mode)
@@ -51,26 +51,38 @@ async def test_uncovered_logical_entity_cannot_reach_successful_handoff(
             "logical_entity_name": "Other Entity"
         }) for attribute in first.attributes),
     })
-    context = bundle.context.model_copy(update={"selected_logical_entities": (first, second)})
+    third = first.model_copy(update={
+        "entity": first.entity.model_copy(update={"logical_entity_name": "Third Entity"}),
+        "attributes": (),
+    })
+    context = bundle.context.model_copy(update={"selected_logical_entities": (first, second, third)})
     catalog = InMemoryAgentContextToolCatalog(
         context=context, max_result_bytes=128 * 1024,
         max_catalog_bytes=128 * 1024, max_page_records=20,
     ) if mode == "tool_assisted" else None
     bundle = replace(bundle, context=context, tool_catalog=catalog,
                      embedded_context=catalog.manifest if catalog else cast(JsonValue, context.model_dump(mode="json")))
-    agent = _AgentExecutor(responses=[_candidate(), _candidate()])
+    candidate = cast(dict[str, Any], _candidate())
+    sources = candidate["entities"][0]["sources"]
+    sources.append({
+        **deepcopy(sources[0]),
+        "source_logical_entity": {
+            "logical_entity_schema_name": second.entity.logical_entity_schema_name,
+            "logical_entity_name": second.entity.logical_entity_name,
+        },
+        "source_order": 2,
+    })
+    agent = _AgentExecutor(responses=[cast(JsonValue, candidate)])
     service, _, _, handoff, _ = _service(
         agent=agent, plan=_plan(mode=mode), context=bundle,
     )
-    with pytest.raises(AgentCandidateValidationError):
-        await service.execute_started(
-            _principal(), tenant_id=7, model_id=18, workflow_run_id=1048,
-            expected_model_revision=7, workflow_run_claim_token=_CLAIM_TOKEN,
-        )
-    assert len(agent.requests) == 2
-    assert handoff.calls == [] and len(handoff.retained) == 1
-    assert any(issue.code == "entity_coverage_incomplete"
-               for issue in handoff.retained[0]["issues"])
+    await service.execute_started(
+        _principal(), tenant_id=7, model_id=18, workflow_run_id=1048,
+        expected_model_revision=7, workflow_run_claim_token=_CLAIM_TOKEN,
+    )
+    assert len(agent.requests) == 1
+    assert len(handoff.calls) == 1 and handoff.retained == []
+    assert handoff.final_events[-1].status == "running"
 
 
 def _complete_model_candidate() -> dict[str, JsonValue]:

@@ -65,7 +65,10 @@ from gds_workbench_api.features.workflows.authoring.plan import (
     FrozenAgentStage,
     WorkflowExecutionMode,
 )
-from gds_workbench_api.features.workflows.authoring.repair import AgentContextPolicy
+from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentCandidateValidationError,
+    AgentContextPolicy,
+)
 from gds_workbench_api.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
@@ -76,6 +79,70 @@ from tests.mcp.model_test_fixtures import snapshot_from_graph
 from tests.web_backend.workflow_recovery_fixtures import RetainingHandoff
 
 _CLAIM_TOKEN = UUID("44444444-4444-4444-4444-444444444444")
+
+
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+@pytest.mark.parametrize("retries", [0, 2])
+@pytest.mark.parametrize("final_invalid", [False, True])
+async def test_coverage_shortfall_uses_every_attempt_but_never_waives_other_errors(
+    mode: Literal["one_shot", "tool_assisted"], retries: int, final_invalid: bool
+) -> None:
+    bundle = _context_bundle(mode=mode)
+    raw = bundle.context.model_dump(mode="json")
+    second = deepcopy(raw["selected_logical_entities"][0])
+    second["entity"]["logical_entity_name"] = "other_customer"
+    second["selection_order"] = 2
+    second["attributes"] = []
+    raw["selected_logical_entities"].append(second)
+    context = AgentAuthoringContext.model_validate(raw, strict=False)
+    catalog = (
+        InMemoryAgentContextToolCatalog(
+            context=context, max_result_bytes=128 * 1024,
+            max_catalog_bytes=128 * 1024, max_page_records=20,
+        ) if mode == "tool_assisted" else None
+    )
+    bundle = replace(
+        bundle, context=context, tool_catalog=catalog,
+        embedded_context=catalog.manifest if catalog else cast(JsonValue, raw),
+    )
+    candidates = [_candidate() for _ in range(retries + 1)]
+    if final_invalid:
+        candidates[-1] = _candidate(source_name="unselected")
+    else:
+        # Verify the final attempt is returned, not a saved earlier candidate.
+        cast(dict[str, Any], candidates[-1])["entities"][0]["dimensional_entity_definition"] = (
+            "Final attempt definition."
+        )
+    agent = _AgentExecutor(responses=cast(list[_AgentResponse], candidates))
+    service, _, _, handoff, lifecycle = _service(
+        agent=agent, plan=_plan(mode=mode, retry_count=retries), context=bundle,
+    )
+    execution = service.execute_started(
+        _principal(), tenant_id=7, model_id=18, workflow_run_id=1048,
+        expected_model_revision=7, workflow_run_claim_token=_CLAIM_TOKEN,
+    )
+    if final_invalid:
+        with pytest.raises(AgentCandidateValidationError):
+            await execution
+        assert handoff.calls == []
+    else:
+        await execution
+        assert len(handoff.calls) == 1
+        assert handoff.retained == [] and lifecycle.failed is None
+        event = handoff.final_events[-1]
+        assert event.attempt == retries + 1 and event.status == "warning"
+        assert "1/2" in event.message and "60%" in event.message
+        assert "final attempt" in event.message
+        entities = next(
+            change for change in handoff.calls[0] if change.dataset == "dimensional_entity"
+        )
+        assert entities.records[0]["dimensional_entity_definition"] == "Final attempt definition."
+    assert len(agent.requests) == retries + 1
+    for request in agent.requests[1:]:
+        repair = cast(dict[str, Any], request.context)["repair"]
+        assert repair["validation_issues"][0]["source_refs"] == [
+            {"logical_entity_schema_name": "silver_nwa", "logical_entity_name": "other_customer"}
+        ]
 
 
 def _principal() -> RequestPrincipal:
@@ -1025,8 +1092,10 @@ async def test_dimensional_runs_with_optional_gold_templates_unset(
     ]
     names = {row["dimensional_attribute_name"] for row in dimension}
     assert "Customer DimensionKey" in names
-    assert {"RecordStartTime", "RecordEndTime", "IsCurrentRecord"}.issubset(names) is (scd_type == "type_2")
-    assert sum(bool(row["dimensional_attribute_is_audit_column"]) for row in dimension) == 10
+    assert {"RecordStartTime", "RecordEndTime", "IsCurrentRecord"}.issubset(names) is (
+        scd_type == "type_2"
+    )
+    assert sum(bool(row["dimensional_attribute_is_audit_column"]) for row in dimension) == (13 if scd_type == "type_2" else 10)
 
 
 @pytest.mark.asyncio

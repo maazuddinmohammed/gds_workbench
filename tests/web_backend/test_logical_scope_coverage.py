@@ -8,7 +8,26 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
+from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    agent_input_payload,
+)
+from gds_workbench_api.features.workflows.authoring.context import (
+    AgentAuthoringContext,
+    InMemoryAgentContextToolCatalog,
+)
+from gds_workbench_api.features.workflows.authoring.no_op import AuthoringNoOpReceipt
+from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+    list_prompt_input_contracts,
+)
+from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentContextPolicy,
+)
+from gds_workbench_api.prompt_rendering import (
+    PromptComponentTemplates,
+    PromptVariableDefinition,
+)
 from pydantic import JsonValue
+
 from tests.mcp.model_test_fixtures import complete_model_graph
 from tests.web_backend.test_default_prompt_contracts import DEFAULTS
 from tests.web_backend.test_logical_executor import (
@@ -21,25 +40,6 @@ from tests.web_backend.test_logical_executor import (
     _principal,
     _selected_object,
     _service,
-)
-
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
-    agent_input_payload,
-)
-from gds_workbench_api.features.workflows.authoring.context import (
-    AgentAuthoringContext,
-    InMemoryAgentContextToolCatalog,
-)
-from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
-    list_prompt_input_contracts,
-)
-from gds_workbench_api.features.workflows.authoring.repair import (
-    AgentCandidateValidationError,
-    AgentContextPolicy,
-)
-from gds_workbench_api.prompt_rendering import (
-    PromptComponentTemplates,
-    PromptVariableDefinition,
 )
 
 
@@ -166,13 +166,22 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
         tool_catalog=catalog,
         embedded_context=catalog.manifest if catalog else cast(JsonValue, raw),
     )
+    # Reach the 70% threshold on the second attempt, or use all three attempts.
+    complete["entities"] = complete["entities"][:19]
+    complete["attributes"] = [
+        record for record in complete["attributes"]
+        if record["logical_entity_name"] in {
+            entity["logical_entity_name"] for entity in complete["entities"]
+        }
+    ]
     agent = _AgentExecutor(
         responses=[
             _candidate(),
             cast(JsonValue, complete) if repair_succeeds else _candidate(),
+            _candidate(),
         ]
     )
-    plan = _plan(mode=mode)
+    plan = _plan(mode=mode, retry_count=2)
     default = next(
         row
         for row in DEFAULTS
@@ -223,16 +232,13 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
         expected_model_revision=7,
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
-    if repair_succeeds:
-        await execution
-    else:
-        with pytest.raises(AgentCandidateValidationError):
-            await execution
-    assert len(agent.requests) == 2
+    await execution
+    assert len(agent.requests) == (2 if repair_succeeds else 3)
     repair = cast(dict[str, Any], agent.requests[1].context)["repair"]
     assert {issue["code"] for issue in repair["validation_issues"]} == {
         "candidate.object_coverage_incomplete",
     }
+    assert len(repair["validation_issues"][0]["source_refs"]) == 26
     if mode == "one_shot":
         instruction = agent_input_payload(agent.requests[0])["instruction"]
         assert isinstance(instruction, str)
@@ -302,13 +308,7 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
             dict[str, Any], catalog.invoke("get_object_relationships", {})
         )
         assert relationships["items"][0]["outgoing_relationships"] == [relationship]
-    if not repair_succeeds:
-        assert handoff.calls == []
-        assert len(handoff.retained) == 1
-        assert {issue.dataset for issue in handoff.retained[0]["issues"]} == {
-            "logical_entity",
-        }
-        return
+    assert handoff.retained == []
     assert len(handoff.calls) == 1 and lifecycle.failed is None
     entities = next(
         change for change in handoff.calls[0] if change.dataset == "logical_entity"
@@ -316,23 +316,31 @@ async def test_27_objects_883_attributes_require_object_coverage_with_selected_a
     attributes = next(
         change for change in handoff.calls[0] if change.dataset == "logical_attribute"
     )
-    assert len(entities.records) == 27
-    assert sum(bool(record["sources"]) for record in attributes.records) == 27
-    assert handoff.final_events[0].attempt == 2
+    assert len(entities.records) == (19 if repair_succeeds else 1)
+    assert sum(bool(record["sources"]) for record in attributes.records) == (
+        19 if repair_succeeds else 1
+    )
+    assert handoff.final_events[0].attempt == (2 if repair_succeeds else 3)
+    if not repair_succeeds:
+        assert handoff.final_events[0].status == "warning"
+        assert "1/27" in handoff.final_events[0].message
+        assert "final attempt" in handoff.final_events[0].message
 
 
-async def test_empty_fresh_model_is_rejected_without_success_handoff() -> None:
+async def test_empty_final_candidate_reports_zero_coverage_without_creating_a_draft() -> None:
     agent = _AgentExecutor(responses=[_empty_candidate(), _empty_candidate()])
     service, _, _, handoff, lifecycle = _service(agent=agent)
-    with pytest.raises(AgentCandidateValidationError):
-        await service.execute_started(
-            _principal(),
-            tenant_id=7,
-            model_id=18,
-            workflow_run_id=1048,
-            expected_model_revision=7,
-            workflow_run_claim_token=_CLAIM_TOKEN,
-        )
+    result = await service.execute_started(
+        _principal(),
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_model_revision=7,
+        workflow_run_claim_token=_CLAIM_TOKEN,
+    )
     assert len(agent.requests) == 2
     assert handoff.calls == []
-    assert lifecycle.failed is not None
+    assert lifecycle.failed is None
+    assert isinstance(result, AuthoringNoOpReceipt)
+    assert result.final_event.status == "warning"
+    assert "0/1" in result.final_event.message

@@ -9,11 +9,12 @@ import type { TenantHomeRecord, TenantRole } from "../tenants/api";
 import type { ModelDetail } from "./api";
 
 const model: ModelDetail = {
+  logical_coverage_threshold_percent: 70, dimensional_coverage_threshold_percent: 60,
   model_id: 18, tenant_id: 7, model_name: "Customer", model_description: "Customer domain", model_revision: 8,
   model_input_scope_object_count: 2, logical_schemas: [{ schema_name: "silver", description: "Shared entities" }],
   dimensional_schemas: [{ schema_name: "gold", description: null }],
   silver_model_naming_instructions: "Use snake case", silver_model_audit_columns_template: { columns: ["created_at"] },
-  gold_model_naming_instructions: "Use business names", gold_model_technical_columns_template: { columns: ["is_current"] },
+  gold_model_naming_instructions: "Use business names", gold_model_technical_columns_template: null,
   gold_model_audit_columns_template: { columns: ["updated_at"] },
   default_agent_sdk_code: "openai_agents_sdk", default_agent_provider_code: "microsoft_foundry",
   default_agent_model_code: "foundry-primary", default_reasoning_effort_code: "medium",
@@ -45,7 +46,6 @@ function setup(options: { role?: TenantRole; locked?: boolean; ownedLock?: boole
       gold_model_naming_instructions: "Use PascalCase. Keys end with Key.",
       silver_model_audit_columns_template: { schema_version: "1.0", columns: [{ semantic_name: "SourceSystemID", data_type: "BIGINT", nullable: true, definition: "Source provenance." }] },
       gold_model_audit_columns_template: { schema_version: "1.0", columns: [] },
-      gold_model_technical_columns_template: { schema_version: "1.0" },
     });
     if (url === `${endpoint}/lock` && init?.method === "PUT") {
       const command = JSON.parse(String(init.body));
@@ -74,6 +74,42 @@ function setup(options: { role?: TenantRole; locked?: boolean; ownedLock?: boole
 }
 
 describe("Model Settings", () => {
+  it("saves whole-number coverage and sends blank as the database default", async () => {
+    const { fetcher } = setup();
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "Definition" });
+    await user.click(screen.getByText("Silver settings", { exact: true }));
+    await user.click(screen.getByText("Gold settings", { exact: true }));
+    const logical = screen.getByRole("spinbutton", { name: "Logical coverage threshold (%)" });
+    const dimensional = screen.getByRole("spinbutton", { name: "Dimensional coverage threshold (%)" });
+    expect(logical).toHaveValue(70);
+    expect(dimensional).toHaveValue(60);
+    expect(screen.queryByLabelText(/Gold technical columns template/)).not.toBeInTheDocument();
+    await user.clear(logical);
+    await user.type(logical, "69");
+    await user.clear(dimensional);
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    await screen.findByText("Editing revision 9.");
+    const write = fetcher.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({
+      logical_coverage_threshold_percent: 69, dimensional_coverage_threshold_percent: null,
+    });
+  });
+
+  it.each(["69.5", "0", "101"])("rejects invalid coverage %s before saving", async (value) => {
+    const { fetcher } = setup();
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "Definition" });
+    await user.click(screen.getByText("Silver settings", { exact: true }));
+    const logical = screen.getByRole("spinbutton", { name: "Logical coverage threshold (%)" });
+    await user.clear(logical);
+    await user.type(logical, value);
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(await screen.findByText("Enter a whole number from 1 to 100, or leave blank for the default.")).toBeVisible();
+    expect(logical).toHaveFocus();
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
+  });
+
   it("keeps locked Models readable with lock actions on the Models page", async () => {
     setup({ locked: true, role: "viewer" });
     await screen.findByRole("heading", { name: "Definition" });

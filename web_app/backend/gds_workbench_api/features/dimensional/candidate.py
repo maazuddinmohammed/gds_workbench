@@ -29,6 +29,7 @@ from gds_etl_workbench.domain.snapshots.model import DimensionalSection
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from gds_workbench_api.features.workflows.authoring.repair import (
+    MAX_COVERAGE_SOURCE_REFS,
     AgentCandidateValidation,
     AgentValidationIssue,
     enrich_agent_output_model_definitions,
@@ -81,12 +82,21 @@ class DimensionalCandidateValidator:
         selected_attribute_keys: tuple[LogicalAttributeKey, ...],
         assertion_record_keys: tuple[str, ...],
         applied: DimensionalSection | None,
+        coverage_threshold_percent: int = 60,
     ) -> None:
+        if (
+            type(coverage_threshold_percent) is not int
+            or not 1 <= coverage_threshold_percent <= 100
+        ):
+            raise ValueError("Coverage threshold must be a whole number from 1 to 100")
+        self._coverage_threshold_percent = coverage_threshold_percent
         if not selected_entity_keys or len(selected_entity_keys) > 50_000:
             raise ValueError("Dimensional Object selection must be bounded and nonempty")
         if len(selected_attribute_keys) > 50_000:
             raise ValueError("Dimensional Attribute selection must be bounded")
-        self._selected_entity_keys = {_logical_entity_key(item) for item in selected_entity_keys}
+        self._selected_entity_keys = {
+            _logical_entity_key(item): item for item in selected_entity_keys
+        }
         self._selected_attribute_keys = {
             _logical_attribute_key(item) for item in selected_attribute_keys
         }
@@ -127,11 +137,47 @@ class DimensionalCandidateValidator:
     def output_schema(self) -> dict[str, JsonValue]:
         schema = cast(dict[str, JsonValue], deepcopy(_DimensionalCandidate.model_json_schema()))
         schema["description"] = (
-            "Address every selected Logical Entity through active source mappings in the "
-            "resulting Dimensional Model, including unchanged applied records. Consolidation "
+            "Aim to cover all selected Logical Entities through active source mappings in the "
+            "resulting Dimensional Model. "
+            f"The backend coverage target is {self._coverage_threshold_percent}% of distinct "
+            "Logical Entities selected for this run, rounded up, including unchanged applied "
+            "records. Below this target, use repair feedback to improve supported coverage. "
+            "Repair source_refs lists up to 50 missing input identities per attempt. "
+            "Consolidation "
             "is allowed when supported by grain and business meaning. Do not return a sample "
             "or invent source mappings merely to claim coverage. Dimensional Attributes may "
-            "select and aggregate relevant Logical Attributes for the analytical design."
+            "select and aggregate relevant Logical Attributes for the analytical design.\n\n"
+            "Coverage repair instructions:\n"
+            "1. Read context.repair.validation_issues. The coverage message states the "
+            "covered/selected count, required count and number of additional distinct inputs "
+            "needed. At the default 60% target, 15/30 requires 3 more Logical Entities "
+            "to reach 18/30, "
+            "not 3 more output dimensions/facts and not necessarily all 15 missing inputs.\n"
+            "2. Each source_refs entry is a missing selected Logical Entity's complete "
+            "schema/name identity. Match it to the supplied Logical design, source evidence "
+            "and analytical requirements; use enabled readers when needed. Check whether "
+            "its support is absent, inactive, on an inactive Entity or attached to the wrong "
+            "identity. The list is bounded and may be shortened further when "
+            "source_refs_truncated is true; do not treat it as the entire selection.\n"
+            "3. Where the evidence supports an existing or proposed dimension, fact or "
+            "bridge's analytical role and grain, add or correct its entities[].sources "
+            "entry with support_source_type 'logical_entity', the exact "
+            "source_logical_entity identity and status 'active'; its parent "
+            "dimensional_entity_status must also be 'active'. Otherwise create a separate "
+            "well-supported Entity with its required Attributes and valid references. "
+            "Preserve locks and deliberate inactive records; never reactivate them, merge "
+            "incompatible grains or invent links merely to increase coverage.\n"
+            "4. Preserve valid work from repair.previous_candidate. Attempts are not "
+            "automatically accumulated: return the complete corrected candidate, not a "
+            "patch containing only the missing inputs. Unchanged applied records need not "
+            "be repeated. If previous_candidate_omitted is true, rebuild from the rendered "
+            "evidence and enabled readers.\n"
+            "5. Recount distinct selected Logical Entities across active proposed and "
+            "retained support, and resolve every other validation issue. Repeated "
+            "references, unselected sources, Assertion-only support and Attribute-only "
+            "mappings do not increase Entity coverage. Keep unsupported gaps unresolved "
+            "using existing definition/rationale fields where appropriate. Return only "
+            "the candidate JSON; do not add a coverage report or new output fields."
         )
         _set_lock_fields_false(schema)
         enrich_agent_output_model_definitions(schema)
@@ -156,19 +202,25 @@ class DimensionalCandidateValidator:
             if isinstance(source, DimensionalLogicalEntitySourceRecord)
             and source.status == "active"
         }
-        missing = self._selected_entity_keys - covered
-        if not missing:
+        missing = self._selected_entity_keys.keys() - covered
+        total = len(self._selected_entity_keys)
+        covered_count = total - len(missing)
+        required = (total * self._coverage_threshold_percent + 99) // 100
+        if covered_count >= required:
             return ()
         return (
             AgentValidationIssue(
                 code="candidate.entity_coverage_incomplete",
                 path=("dimensional_entity",),
                 message=(
-                    f"{len(missing)} of {len(self._selected_entity_keys)} selected Logical "
-                    "Entities have no active Dimensional Entity source mapping in the "
-                    "resulting Model. "
-                    "Address the complete selection; consolidate only when business meaning and "
-                    "grain support it. Do not return a sample or invent unrelated source mappings."
+                    f"Coverage {covered_count}/{total} "
+                    f"is below {self._coverage_threshold_percent}%; at least {required} distinct "
+                    f"selected Logical Entities are required ({required - covered_count} more). "
+                    f"{len(missing)} of {total} selected Logical Entities lack active support."
+                ),
+                source_refs=tuple(
+                    self._selected_entity_keys[key].model_dump(mode="json")
+                    for key in sorted(missing)[:MAX_COVERAGE_SOURCE_REFS]
                 ),
             ),
         )

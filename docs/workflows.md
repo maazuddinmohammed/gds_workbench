@@ -30,11 +30,16 @@ not silently change installed or already-running prompts.
 | Object/Attribute Enrichment | Source context, selected physical metadata, ingestion lineage and current Profiles → Model-owned descriptions, inferred types and natural/primary key, nullability and PII findings. Human edits and locks stay Model-specific. |
 | Analysis | Physical Objects/Attributes with available Model-owned enrichment, Profiles, lineage and relevant context → supported relationship inference; measured validation remains separate. |
 | Conceptual | Source context, physical evidence, Analysis and applicable Assertions → business concepts and relationships. |
-| Logical | Physical metadata with available Model-owned enrichment, Profiles, Analysis, Assertions and model naming/key/audit policy → normalized Entity/Attribute/relationship design. Web runs exclude Conceptual records and require selected Object coverage; Attribute selection follows the design, with included records validated before draft handoff. |
-| Dimensional | Selected applied Logical Entities/Attributes, their authorized physical support, Profiles, Analysis, Assertions and Gold policy → dimensions, facts, bridges, grains and measures. |
+| Logical | Physical metadata with available Model-owned enrichment, Profiles, Analysis, Assertions and model naming/key/audit policy → normalized Entity/Attribute/relationship design. Web runs exclude Conceptual records and use the Model coverage setting (default 70%) for distinct selected Objects; below target, retry through the configured limit, then return otherwise valid partial coverage with a warning. Attribute selection follows the design. |
+| Dimensional | Selected applied Logical Entities/Attributes, their authorized physical support, Profiles, Analysis, Assertions and Gold policy → dimensions, facts, bridges, grains and measures. Use the Model coverage setting (default 60%) for distinct selected Logical Entities; retry below target, then return otherwise valid partial coverage with a warning on the final attempt. |
 | Mapping | Modeled target/Attributes, eligible physical or modeled sources, support evidence, Assertions, existing protected Mapping and selected templates → Object/Attribute transformation documents per Entity/System pair. |
 | Code | Applied transformation documents, their exact saved template definitions, modeled target shape, eligible sources and frozen artifact requirements → SQL artifacts with exact source-System assignment. Partial Mapping requires explicit gaps and placeholders. |
 | Validation | Complete Mapping, relevant current Code, metadata and applicable requirements → deterministic Validation Groups/Checks. |
+
+Web Attribute Enrichment reads physical evidence only for missing inferred types.
+It resolves source schema and bounded samples first, then reads Bronze only for
+unresolved columns. PII/masking exclusions and per-query limits still apply.
+Object and Attribute authoring remain separate agent calls.
 
 Logical defaults require evidence-based business grain, identity, normalization and
 consolidation decisions. One-shot embeds enrichment, Profiles with provenance and

@@ -475,6 +475,8 @@ BEGIN
                        ('model.model', 'default_mapping_source_system_id'),
                        ('model.model', 'logical_entity_scd_type'),
                        ('model.model', 'dimensional_entity_scd_type'),
+                       ('model.model', 'logical_coverage_threshold_percent'),
+                       ('model.model', 'dimensional_coverage_threshold_percent'),
                        ('workflow.logical_entity', 'logical_entity_schema_name'),
                        ('workflow.dimensional_entity', 'dimensional_entity_schema_name'),
                        ('model.model', 'silver_model_naming_instructions'),
@@ -1194,6 +1196,8 @@ GRANT UPDATE (
     default_mapping_source_system_id,
     logical_entity_scd_type,
     dimensional_entity_scd_type,
+    logical_coverage_threshold_percent,
+    dimensional_coverage_threshold_percent,
     model_description,
     logical_schemas,
     dimensional_schemas,
@@ -1275,6 +1279,8 @@ GRANT UPDATE (
     default_mapping_source_system_id,
     logical_entity_scd_type,
     dimensional_entity_scd_type,
+    logical_coverage_threshold_percent,
+    dimensional_coverage_threshold_percent,
     model_description,
     logical_schemas,
     dimensional_schemas,
@@ -1342,7 +1348,9 @@ GRANT EXECUTE ON FUNCTION application.create_model(
     INTEGER,
     BIGINT,
     VARCHAR,
-    VARCHAR
+    VARCHAR,
+    INTEGER,
+    INTEGER
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.update_model(
     UUID,
@@ -1367,7 +1375,9 @@ GRANT EXECUTE ON FUNCTION application.update_model(
     INTEGER,
     BIGINT,
     VARCHAR,
-    VARCHAR
+    VARCHAR,
+    INTEGER,
+    INTEGER
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.archive_model(
     UUID,

@@ -143,6 +143,8 @@ class ModelDetailsRecord(ModelingRecord):
     dimensional_schemas: tuple[ModelSchemaDefinition, ...] = Field(default=(), max_length=100)
     logical_entity_scd_type: Literal["type_1", "type_2"] | None = None
     dimensional_entity_scd_type: Literal["type_1", "type_2"] | None = None
+    logical_coverage_threshold_percent: int = Field(default=70, ge=1, le=100, strict=True)
+    dimensional_coverage_threshold_percent: int = Field(default=60, ge=1, le=100, strict=True)
     default_mapping_source_system_code: Code100 | None = None
 
     @model_validator(mode="after")
