@@ -42,6 +42,8 @@ export interface ModelDetail {
   dimensional_entity_scd_type?: ModelEntityScdType | null;
   logical_coverage_threshold_percent: number;
   dimensional_coverage_threshold_percent: number;
+  logical_enforce_coverage_threshold: boolean;
+  dimensional_enforce_coverage_threshold: boolean;
   gold_model_naming_instructions: string | null;
   gold_model_technical_columns_template: unknown;
   gold_model_audit_columns_template: unknown;
@@ -119,6 +121,8 @@ export interface CreateModelCommand {
   dimensional_entity_scd_type?: ModelEntityScdType | null;
   logical_coverage_threshold_percent?: number | null;
   dimensional_coverage_threshold_percent?: number | null;
+  logical_enforce_coverage_threshold?: boolean;
+  dimensional_enforce_coverage_threshold?: boolean;
   gold_model_naming_instructions: string | null;
   gold_model_technical_columns_template: JsonObject | null;
   gold_model_audit_columns_template: JsonObject | null;

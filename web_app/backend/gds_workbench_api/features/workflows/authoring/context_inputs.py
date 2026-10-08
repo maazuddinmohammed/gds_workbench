@@ -135,6 +135,7 @@ def project_context_inputs(
             attributes.append(
                 {
                     **{name: attr[name] for name in ATTRIBUTE_FIELDS},
+                    "registered_is_natural_key": attr["is_natural_key"],
                     **{
                         name: attr.get("enrichment", {}).get(name)
                         for name in ("is_natural_key", "is_primary_key", "is_nullable", "is_pii")

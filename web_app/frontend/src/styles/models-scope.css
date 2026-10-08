@@ -887,7 +887,7 @@
   font-weight: 400;
 }
 
-.create-model-fields input,
+.create-model-fields input:not([type="checkbox"]),
 .create-model-fields select,
 .create-model-fields textarea,
 .model-record-editor input:not([type="checkbox"]),
@@ -904,6 +904,8 @@
   font-size: 0.78rem;
 }
 
+.create-model-fields .checkbox-field { display: flex; align-items: center; gap: 0.5rem; }
+.create-model-fields .checkbox-field input { flex: 0 0 auto; }
 .create-model-fields textarea { resize: vertical; }
 .create-model-fields .field-help { margin: 0; }
 .create-model-dialog [role="alert"] { color: var(--red); font-size: 0.78rem; }

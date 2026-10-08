@@ -98,7 +98,9 @@ CREATE FUNCTION application.create_model(
     p_logical_entity_scd_type VARCHAR(10) DEFAULT NULL,
     p_dimensional_entity_scd_type VARCHAR(10) DEFAULT NULL,
     p_logical_coverage_threshold_percent INTEGER DEFAULT 70,
-    p_dimensional_coverage_threshold_percent INTEGER DEFAULT 60
+    p_dimensional_coverage_threshold_percent INTEGER DEFAULT 60,
+    p_logical_enforce_coverage_threshold BOOLEAN DEFAULT FALSE,
+    p_dimensional_enforce_coverage_threshold BOOLEAN DEFAULT FALSE
 )
 RETURNS SETOF model.model
 LANGUAGE plpgsql
@@ -154,7 +156,9 @@ BEGIN
         logical_entity_scd_type,
         dimensional_entity_scd_type,
         logical_coverage_threshold_percent,
-        dimensional_coverage_threshold_percent
+        dimensional_coverage_threshold_percent,
+        logical_enforce_coverage_threshold,
+        dimensional_enforce_coverage_threshold
     ) VALUES (
         p_tenant_id,
         p_model_name,
@@ -176,7 +180,9 @@ BEGIN
         p_logical_entity_scd_type,
         p_dimensional_entity_scd_type,
         coalesce(p_logical_coverage_threshold_percent, 70),
-        coalesce(p_dimensional_coverage_threshold_percent, 60)
+        coalesce(p_dimensional_coverage_threshold_percent, 60),
+        coalesce(p_logical_enforce_coverage_threshold, FALSE),
+        coalesce(p_dimensional_enforce_coverage_threshold, FALSE)
     )
     RETURNING target_model.* INTO v_created;
 
@@ -216,7 +222,9 @@ REVOKE ALL ON FUNCTION application.create_model(
     VARCHAR,
     VARCHAR,
     INTEGER,
-    INTEGER
+    INTEGER,
+    BOOLEAN,
+    BOOLEAN
 ) FROM PUBLIC;
 
 CREATE FUNCTION application.update_model(
@@ -244,7 +252,9 @@ CREATE FUNCTION application.update_model(
     p_logical_entity_scd_type VARCHAR(10) DEFAULT NULL,
     p_dimensional_entity_scd_type VARCHAR(10) DEFAULT NULL,
     p_logical_coverage_threshold_percent INTEGER DEFAULT 70,
-    p_dimensional_coverage_threshold_percent INTEGER DEFAULT 60
+    p_dimensional_coverage_threshold_percent INTEGER DEFAULT 60,
+    p_logical_enforce_coverage_threshold BOOLEAN DEFAULT FALSE,
+    p_dimensional_enforce_coverage_threshold BOOLEAN DEFAULT FALSE
 )
 RETURNS SETOF model.model
 LANGUAGE plpgsql
@@ -313,7 +323,9 @@ BEGIN
         v_existing.logical_entity_scd_type,
         v_existing.dimensional_entity_scd_type,
         v_existing.logical_coverage_threshold_percent,
-        v_existing.dimensional_coverage_threshold_percent
+        v_existing.dimensional_coverage_threshold_percent,
+        v_existing.logical_enforce_coverage_threshold,
+        v_existing.dimensional_enforce_coverage_threshold
     ) IS NOT DISTINCT FROM ROW(
         p_model_name,
         p_model_description,
@@ -334,7 +346,9 @@ BEGIN
         p_logical_entity_scd_type,
         p_dimensional_entity_scd_type,
         coalesce(p_logical_coverage_threshold_percent, 70),
-        coalesce(p_dimensional_coverage_threshold_percent, 60)
+        coalesce(p_dimensional_coverage_threshold_percent, 60),
+        coalesce(p_logical_enforce_coverage_threshold, FALSE),
+        coalesce(p_dimensional_enforce_coverage_threshold, FALSE)
     ) THEN
         RETURN NEXT v_existing;
         RETURN;
@@ -369,6 +383,8 @@ BEGIN
            dimensional_entity_scd_type = p_dimensional_entity_scd_type,
            logical_coverage_threshold_percent = coalesce(p_logical_coverage_threshold_percent, 70),
            dimensional_coverage_threshold_percent = coalesce(p_dimensional_coverage_threshold_percent, 60),
+           logical_enforce_coverage_threshold = coalesce(p_logical_enforce_coverage_threshold, FALSE),
+           dimensional_enforce_coverage_threshold = coalesce(p_dimensional_enforce_coverage_threshold, FALSE),
            updated_time = v_updated_time,
            updated_by = CURRENT_USER
      WHERE target_model.model_id = p_model_id
@@ -411,7 +427,9 @@ REVOKE ALL ON FUNCTION application.update_model(
     VARCHAR,
     VARCHAR,
     INTEGER,
-    INTEGER
+    INTEGER,
+    BOOLEAN,
+    BOOLEAN
 ) FROM PUBLIC;
 
 CREATE FUNCTION application.archive_model(

@@ -58,6 +58,8 @@ CREATE TABLE model.model (
     dimensional_entity_scd_type VARCHAR(10),
     logical_coverage_threshold_percent INTEGER NOT NULL DEFAULT 70,
     dimensional_coverage_threshold_percent INTEGER NOT NULL DEFAULT 60,
+    logical_enforce_coverage_threshold BOOLEAN NOT NULL DEFAULT FALSE,
+    dimensional_enforce_coverage_threshold BOOLEAN NOT NULL DEFAULT FALSE,
     silver_model_naming_instructions TEXT,
     silver_model_audit_columns_template JSONB,
     gold_model_naming_instructions TEXT,

@@ -84,11 +84,13 @@ _CLAIM_TOKEN = UUID("44444444-4444-4444-4444-444444444444")
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 @pytest.mark.parametrize("retries", [0, 2])
 @pytest.mark.parametrize("final_invalid", [False, True])
+@pytest.mark.parametrize("enforce", [False, True])
 async def test_coverage_shortfall_uses_every_attempt_but_never_waives_other_errors(
-    mode: Literal["one_shot", "tool_assisted"], retries: int, final_invalid: bool
+    mode: Literal["one_shot", "tool_assisted"], retries: int, final_invalid: bool, enforce: bool
 ) -> None:
     bundle = _context_bundle(mode=mode)
     raw = bundle.context.model_dump(mode="json")
+    raw["model_details"]["dimensional_enforce_coverage_threshold"] = enforce
     second = deepcopy(raw["selected_logical_entities"][0])
     second["entity"]["logical_entity_name"] = "other_customer"
     second["selection_order"] = 2
@@ -121,10 +123,14 @@ async def test_coverage_shortfall_uses_every_attempt_but_never_waives_other_erro
         _principal(), tenant_id=7, model_id=18, workflow_run_id=1048,
         expected_model_revision=7, workflow_run_claim_token=_CLAIM_TOKEN,
     )
-    if final_invalid:
+    if final_invalid or enforce:
         with pytest.raises(AgentCandidateValidationError):
             await execution
         assert handoff.calls == []
+        if enforce and not final_invalid:
+            assert handoff.retained == []
+            assert lifecycle.failed is not None
+            assert lifecycle.failed[0] == "agent_candidate_validation_failed"
     else:
         await execution
         assert len(handoff.calls) == 1

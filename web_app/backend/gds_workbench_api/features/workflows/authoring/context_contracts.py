@@ -136,6 +136,11 @@ INPUT_SHAPES: dict[str, Any] = {
                                     "attribute_data_type": {"type": ["string", "null"]},
                                     "attribute_inferred_data_type": {"type": ["string", "null"]},
                                     "attribute_nullability": {"type": ["boolean", "null"]},
+                                    "registered_is_natural_key": {
+                                        "type": "boolean",
+                                        "description": "Registered physical key flag; independent "
+                                        "of the nullable Model-enriched is_natural_key finding.",
+                                    },
                                     "is_natural_key": {"type": ["boolean", "null"]},
                                     "is_primary_key": {"type": ["boolean", "null"]},
                                     "is_nullable": {"type": ["boolean", "null"]},
@@ -5883,17 +5888,20 @@ for _enrichment_workflow in ("metadata_enrichment_object", "metadata_enrichment_
         [] if _enrichment_workflow == "metadata_enrichment_object" else ["CustomerCode"]
     )
 
-# Saved Model findings are distinct from registered physical nullability/masking.
+# Saved Model findings remain distinct from registered physical key/nullability/masking.
 for _examples in INPUT_EXAMPLES.values():
     for _group in _examples.get("object_attribute_context", []):
         for _attribute in _group.get("attributes", []):
+            _attribute["registered_is_natural_key"] = _attribute["is_natural_key"]
             for _flag in ("is_primary_key", "is_nullable", "is_pii"):
                 _attribute.setdefault(_flag, None)
 INPUT_SHAPES["object_attribute_context"]["description"] += (
     " Descriptions, inferred types and is_natural_key/is_primary_key/is_nullable/is_pii "
     "are current Model enrichment. NULL means unknown, not false. Multiple true key flags "
     "identify members of the chosen composite key, not independently unique columns. "
-    "attribute_nullability and is_masking_required remain registered physical metadata. "
+    "registered_is_natural_key, attribute_nullability and is_masking_required remain "
+    "registered physical metadata. Keep registered and enriched key findings separate, "
+    "including disagreements; neither flag alone proves observed uniqueness. "
     "profile contains saved counts, percentages, lengths and measurement scope; batch "
     "profiles cannot establish whole-table uniqueness or non-nullability. PII is an "
     "inferred classification and must not weaken registered masking requirements."

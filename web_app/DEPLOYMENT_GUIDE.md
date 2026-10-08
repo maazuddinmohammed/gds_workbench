@@ -144,6 +144,19 @@ Incompatible defaults need an approved governed Model update, not direct SQL or
 historical Run rewrites. Code/schema compatibility is a separate gate from replaying
 prompt/reference seeds.
 
+Coverage enforcement requires the Logical and Dimensional enforcement columns and
+matching governed Model function signatures from this release. App-only redeployment
+against an older schema fails readiness. Numbered SQL remains fresh-install-only;
+an existing installation needs a separately reviewed schema transition.
+
+After schema compatibility is established, refresh reference seed 04 and publish the
+updated Logical defaults through the documented seed 05 replay or the Prompts UI.
+Seed replay preserves custom defaults; explicitly select a new published version
+when the Model uses a custom assignment. Start a new Run to use the new version.
+Set each layer's Enforce coverage threshold switch in Model Settings as required;
+both default off. Verify rejection below target and review supported Submodels and
+relationships on a representative selection before expanding scope.
+
 ## Acceptance and rollback
 
 Verify in the intended environment using authorized data:

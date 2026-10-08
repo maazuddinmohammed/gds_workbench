@@ -477,6 +477,8 @@ BEGIN
                        ('model.model', 'dimensional_entity_scd_type'),
                        ('model.model', 'logical_coverage_threshold_percent'),
                        ('model.model', 'dimensional_coverage_threshold_percent'),
+                       ('model.model', 'logical_enforce_coverage_threshold'),
+                       ('model.model', 'dimensional_enforce_coverage_threshold'),
                        ('workflow.logical_entity', 'logical_entity_schema_name'),
                        ('workflow.dimensional_entity', 'dimensional_entity_schema_name'),
                        ('model.model', 'silver_model_naming_instructions'),
@@ -1198,6 +1200,8 @@ GRANT UPDATE (
     dimensional_entity_scd_type,
     logical_coverage_threshold_percent,
     dimensional_coverage_threshold_percent,
+    logical_enforce_coverage_threshold,
+    dimensional_enforce_coverage_threshold,
     model_description,
     logical_schemas,
     dimensional_schemas,
@@ -1281,6 +1285,8 @@ GRANT UPDATE (
     dimensional_entity_scd_type,
     logical_coverage_threshold_percent,
     dimensional_coverage_threshold_percent,
+    logical_enforce_coverage_threshold,
+    dimensional_enforce_coverage_threshold,
     model_description,
     logical_schemas,
     dimensional_schemas,
@@ -1350,7 +1356,9 @@ GRANT EXECUTE ON FUNCTION application.create_model(
     VARCHAR,
     VARCHAR,
     INTEGER,
-    INTEGER
+    INTEGER,
+    BOOLEAN,
+    BOOLEAN
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.update_model(
     UUID,
@@ -1377,7 +1385,9 @@ GRANT EXECUTE ON FUNCTION application.update_model(
     VARCHAR,
     VARCHAR,
     INTEGER,
-    INTEGER
+    INTEGER,
+    BOOLEAN,
+    BOOLEAN
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.archive_model(
     UUID,

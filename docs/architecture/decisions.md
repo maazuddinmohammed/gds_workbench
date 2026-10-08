@@ -95,9 +95,11 @@ default to 60% coverage of selected Logical Entities, without requiring every Si
 be copied into an analytical model. Neither rule imposes a minimum output Entity
 count. Below target, the existing repair loop receives counts, the shortfall and up
 to 50 complete missing-source identities per attempt (fewer if the context budget
-requires it). An otherwise valid final candidate is returned after the last configured
-attempt even below target, with an explicit coverage warning. An empty Logical result
-can complete as no effective change with a zero-coverage warning. Schema, reference,
+requires it). Independent Model-owned enforcement switches default off. When off,
+an otherwise valid final candidate returns after the last configured attempt even
+below target, with an explicit coverage warning; an empty Logical result can complete
+as no effective change with a zero-coverage warning. When on, below-target candidates
+fail after repair attempts and never reach Change Set handoff. Schema, reference,
 lock, policy and full-graph failures remain blocking and retain existing recovery rules.
 
 Mapping operates on frozen Entity/System pairs. Supported partial documents are
@@ -221,9 +223,11 @@ neither surface grants additional access or proves business correctness.
 ### Model coverage and unified Gold audit settings
 
 Logical and Dimensional coverage are Model-owned integer percentages (1–100),
-with NOT NULL database defaults of 70 and 60. Governed create/update commands
+with NOT NULL database defaults of 70 and 60. Each layer has a separate NOT NULL
+boolean enforcement setting defaulting false. Governed create/update commands
 resolve omitted/null inputs to those defaults and preserve revision/lock checks.
-Snapshots carry the values; validators and prompts share the frozen run value.
+Snapshots carry the values; validators and prompts share the frozen run threshold,
+and final acceptance uses the frozen enforcement choice.
 Gold audit settings include key and Type 2 history rules in one editable template.
 Existing separate key/history templates are combined on read; combined audit
 settings take precedence. Internal key projection retains its surrogate/foreign

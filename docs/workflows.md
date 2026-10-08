@@ -30,8 +30,8 @@ not silently change installed or already-running prompts.
 | Object/Attribute Enrichment | Source context, selected physical metadata, ingestion lineage and current Profiles → Model-owned descriptions, inferred types and natural/primary key, nullability and PII findings. Human edits and locks stay Model-specific. |
 | Analysis | Physical Objects/Attributes with available Model-owned enrichment, Profiles, lineage and relevant context → supported relationship inference; measured validation remains separate. |
 | Conceptual | Source context, physical evidence, Analysis and applicable Assertions → business concepts and relationships. |
-| Logical | Physical metadata with available Model-owned enrichment, Profiles, Analysis, Assertions and model naming/key/audit policy → normalized Entity/Attribute/relationship design. Web runs exclude Conceptual records and use the Model coverage setting (default 70%) for distinct selected Objects; below target, retry through the configured limit, then return otherwise valid partial coverage with a warning. Attribute selection follows the design. |
-| Dimensional | Selected applied Logical Entities/Attributes, their authorized physical support, Profiles, Analysis, Assertions and Gold policy → dimensions, facts, bridges, grains and measures. Use the Model coverage setting (default 60%) for distinct selected Logical Entities; retry below target, then return otherwise valid partial coverage with a warning on the final attempt. |
+| Logical | Physical metadata with available Model-owned enrichment, Profiles, Analysis, Assertions and model naming/key/audit policy → normalized Entity/Attribute/relationship design. Web runs exclude Conceptual records and use the Model coverage setting (default 70%) for distinct selected Objects. After retries, below-target candidates fail when Logical enforcement is on; otherwise valid partial coverage returns with a warning when off (default). Attribute selection follows the design. |
+| Dimensional | Selected applied Logical Entities/Attributes, their authorized physical support, Profiles, Analysis, Assertions and Gold policy → dimensions, facts, bridges, grains and measures. Use the Model coverage setting (default 60%) for distinct selected Logical Entities. After retries, below-target candidates fail when Dimensional enforcement is on; otherwise valid partial coverage returns with a warning when off (default). |
 | Mapping | Modeled target/Attributes, eligible physical or modeled sources, support evidence, Assertions, existing protected Mapping and selected templates → Object/Attribute transformation documents per Entity/System pair. |
 | Code | Applied transformation documents, their exact saved template definitions, modeled target shape, eligible sources and frozen artifact requirements → SQL artifacts with exact source-System assignment. Partial Mapping requires explicit gaps and placeholders. |
 | Validation | Complete Mapping, relevant current Code, metadata and applicable requirements → deterministic Validation Groups/Checks. |
@@ -46,6 +46,11 @@ consolidation decisions. One-shot embeds enrichment, Profiles with provenance an
 Analysis validation in Object/Attribute/Relationship context; tool-assisted readers
 expose the same evidence across complete pages. Recorded conflicts remain visible
 for design decisions; synthetic transport tests do not prove provider reasoning.
+Registered natural-key metadata and Model enrichment have separate fields, including
+when enrichment is unknown or disagrees. Logical defaults plan business Submodels
+and Entity grain before evaluating relationships. Referenced generated surrogate
+keys must be explicit candidate Attributes so initial reference validation succeeds.
+Common audit fields remain backend-projected.
 
 Profiling precedes Model-owned Enrichment. The plugin prefers Profiling → Enrichment
 → Analysis → Conceptual → Logical, reusing valid evidence and pending local records.

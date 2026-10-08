@@ -123,9 +123,11 @@ async def test_readiness_checks_the_web_schema_and_role(
         "character varying,integer,integer,bigint,character varying,character varying,"
         in readiness_sql
     )
-    assert "'integer,integer)'" in readiness_sql
+    assert "'integer,integer,boolean,boolean)'" in readiness_sql
     assert "logical_coverage_threshold_percent" in readiness_sql
     assert "dimensional_coverage_threshold_percent" in readiness_sql
+    assert "logical_enforce_coverage_threshold" in readiness_sql
+    assert "dimensional_enforce_coverage_threshold" in readiness_sql
     assert "column_name = 'logical_entity_scd_type'" in readiness_sql
     assert "column_name = 'dimensional_entity_scd_type'" in readiness_sql
     assert "workflow.list_tenant_visible_objects" in readiness_sql

@@ -20,6 +20,7 @@ from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
     list_prompt_input_contracts,
 )
 from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentCandidateValidationError,
     AgentContextPolicy,
 )
 from gds_workbench_api.prompt_rendering import (
@@ -344,3 +345,56 @@ async def test_empty_final_candidate_reports_zero_coverage_without_creating_a_dr
     assert isinstance(result, AuthoringNoOpReceipt)
     assert result.final_event.status == "warning"
     assert "0/1" in result.final_event.message
+
+
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+@pytest.mark.parametrize("retries", [0, 2])
+@pytest.mark.parametrize("enforce", [False, True])
+@pytest.mark.parametrize("final_invalid", [False, True])
+async def test_coverage_enforcement_rejects_after_retries_without_handoff(
+    mode: str, retries: int, enforce: bool, final_invalid: bool,
+) -> None:
+    bundle = _context_bundle(mode=mode)
+    raw = bundle.context.model_dump(mode="json")
+    raw["model_details"]["logical_enforce_coverage_threshold"] = enforce
+    second = deepcopy(raw["selected_objects"][0])
+    second["selection_order"] = 2
+    second["object"]["object_name"] = "other_customer"
+    second["attributes"] = []
+    raw["selected_objects"].append(second)
+    context = AgentAuthoringContext.model_validate(raw, strict=False)
+    catalog = (
+        InMemoryAgentContextToolCatalog(
+            context=context, max_result_bytes=128 * 1024,
+            max_catalog_bytes=128 * 1024, max_page_records=20,
+        ) if mode == "tool_assisted" else None
+    )
+    bundle = replace(
+        bundle, context=context, tool_catalog=catalog,
+        embedded_context=catalog.manifest if catalog else cast(JsonValue, raw),
+    )
+    candidates: list[JsonValue | Exception] = [_candidate() for _ in range(retries + 1)]
+    if final_invalid:
+        candidates[-1] = _candidate(source_name="unselected")
+    agent = _AgentExecutor(responses=candidates)
+    service, _, _, handoff, lifecycle = _service(
+        agent=agent, plan=_plan(mode=mode, retry_count=retries), context_bundle=bundle,
+    )
+    execution = service.execute_started(
+        _principal(), tenant_id=7, model_id=18, workflow_run_id=1048,
+        expected_model_revision=7, workflow_run_claim_token=_CLAIM_TOKEN,
+    )
+    if enforce or final_invalid:
+        with pytest.raises(AgentCandidateValidationError):
+            await execution
+        assert handoff.calls == []
+        if enforce and not final_invalid:
+            assert handoff.retained == []
+            assert lifecycle.failed is not None
+            assert lifecycle.failed[0] == "agent_candidate_validation_failed"
+    else:
+        await execution
+        assert len(handoff.calls) == 1 and lifecycle.failed is None
+        assert handoff.final_events[-1].status == "warning"
+        assert "1/2" in handoff.final_events[-1].message
+    assert len(agent.requests) == retries + 1

@@ -259,9 +259,10 @@ class LogicalWorkflow:
                 )
             except AgentCandidateValidationError as error:
                 # The shared runner attaches a checked candidate only after all attempts.
-                # Coverage alone may fall short; every other validation remains blocking.
+                # Only advisory coverage may fall short; all other validation blocks.
                 if (
-                    error.candidate is None
+                    context.context.model_details.logical_enforce_coverage_threshold
+                    or error.candidate is None
                     or not error.issues
                     or any(
                         issue.code != "candidate.object_coverage_incomplete"
@@ -349,6 +350,10 @@ class LogicalWorkflow:
                 isinstance(error, AgentCandidateValidationError)
                 and error.candidate is not None
                 and recovery_context is not None
+                # Coverage is checked only by this workflow, not by draft retention.
+                and any(
+                    issue.code != "candidate.object_coverage_incomplete" for issue in error.issues
+                )
             ):
                 recovery_validator, recovery_bundle = recovery_context
                 changes = project_logical_audit_policy(

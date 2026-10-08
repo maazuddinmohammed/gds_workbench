@@ -93,7 +93,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "uuid, uuid, character varying, bigint, character varying, character varying, "
         "jsonb, jsonb, text, jsonb, text, jsonb, jsonb, character varying, character varying, "
         "character varying, character varying, integer, integer, bigint, character varying, "
-        "character varying, integer, integer",
+        "character varying, integer, integer, boolean, boolean",
     ),
     (
         "create_output_template",
@@ -201,7 +201,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "uuid, uuid, character varying, bigint, bigint, character varying, "
         "character varying, jsonb, jsonb, text, jsonb, text, jsonb, jsonb, character varying, "
         "character varying, character varying, character varying, integer, integer, "
-        "bigint, character varying, character varying, integer, integer",
+        "bigint, character varying, character varying, integer, integer, boolean, boolean",
     ),
     (
         "update_output_template",

@@ -2723,6 +2723,7 @@ BEGIN
                            'attribute_data_type', attribute.attribute_data_type,
                            'attribute_inferred_data_type', attribute.model_inferred_data_type,
                            'attribute_nullability', attribute.attribute_nullability,
+                           'registered_is_natural_key', attribute.is_natural_key,
                            'is_natural_key', attribute.model_is_natural_key,
                            'is_primary_key', attribute.is_primary_key,
                            'is_nullable', attribute.is_nullable, 'is_pii', attribute.is_pii,

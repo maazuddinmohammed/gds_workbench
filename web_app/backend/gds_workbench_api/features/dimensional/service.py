@@ -356,9 +356,10 @@ class DimensionalWorkflow:
                 )
             except AgentCandidateValidationError as error:
                 # The shared runner attaches a checked candidate only after all attempts.
-                # Coverage alone may fall short; every other validation remains blocking.
+                # Only advisory coverage may fall short; all other validation blocks.
                 if (
-                    error.candidate is None
+                    context.context.model_details.dimensional_enforce_coverage_threshold
+                    or error.candidate is None
                     or not error.issues
                     or any(
                         issue.code != "candidate.entity_coverage_incomplete"
@@ -442,7 +443,12 @@ class DimensionalWorkflow:
             retention_issues = (
                 error.issues if isinstance(error, WorkflowChangeSetValidationError) else ()
             )
-            if isinstance(error, AgentCandidateValidationError) and rejected.changes:
+            if (
+                isinstance(error, AgentCandidateValidationError)
+                and rejected.changes
+                # Coverage is checked only by this workflow, not by draft retention.
+                and any(issue.code != "entity_coverage_incomplete" for issue in rejected.issues)
+            ):
                 changes, retention_issues = rejected.changes, rejected.issues
             if retention_issues and changes and isinstance(error, WorkbenchError):
                 try:

@@ -10,6 +10,7 @@ import { ModelWorkspaceShell, type ModelStage } from "./ModelWorkspaceShell";
 
 const model: ModelDetail = {
   logical_coverage_threshold_percent: 70, dimensional_coverage_threshold_percent: 60,
+  logical_enforce_coverage_threshold: false, dimensional_enforce_coverage_threshold: false,
   model_id: 18, tenant_id: 7, model_name: "Customer 360", model_description: "Cross-system customer domain",
   model_revision: 18, model_input_scope_object_count: 0,
   logical_schemas: [], dimensional_schemas: [], silver_model_naming_instructions: null,

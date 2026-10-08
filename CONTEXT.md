@@ -71,14 +71,19 @@ Physical Attributes may be selected, consolidated or omitted for the Logical
 design; included Attributes still require valid references and source evidence.
 Consolidation may map several physical inputs to one modeled record. Existing
 active applied coverage counts alongside new mappings. Below target, missing-source
-feedback triggers the configured repair attempts. On the final attempt, otherwise
-valid partial coverage returns with a warning; other validation failures still block
-handoff. Analytical Attribute selection and aggregation remain valid.
+feedback triggers the configured repair attempts. Each layer has a Model-owned
+Enforce coverage threshold switch, default off. After the final attempt, enabled
+enforcement rejects below-target candidates; disabled enforcement returns otherwise
+valid partial coverage with a warning. Other validation failures always block handoff.
+Analytical Attribute selection and aggregation remain valid.
 
 Missing information, measured zero, failed validation and contradictory evidence
 are different states. Preserve each. An Assertion can explain required behavior;
 it cannot invent physical columns or executable lineage. Saved Analysis confidence
 must not replace observed validation results. Assess relevance at the current grain.
+Prompt Attribute context preserves registered natural-key metadata separately from
+Model enrichment. Unknown enrichment never erases registered evidence; disagreement
+remains visible, and neither flag alone proves measured uniqueness.
 
 ## Mapping, Code and Validation
 
@@ -174,8 +179,9 @@ Preserve existing details; populate only when requested. Never store credentials
 or secret references there. Foundational records remain read-only in authoring.
 
 Model coverage settings are whole percentages from 1–100, stored with database
-defaults of 70 for Logical and 60 for Dimensional. Run context and validation use
-the same saved setting. Gold settings expose one audit template including generated
+defaults of 70 for Logical and 60 for Dimensional. Independent enforcement switches
+default false. Run context and validation use the same saved settings. Gold settings
+expose one audit template including generated
 key and Type 2 history rules; older separate stored rules remain readable. Type 2
 history fields are audit Attributes immediately after SourceSystemID and before
 GDSBatchID. Surrogate and foreign keys retain their key semantics.

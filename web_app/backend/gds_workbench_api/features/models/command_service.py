@@ -45,7 +45,7 @@ SELECT created.model_id,
        created.updated_time AS updated_at
   FROM application.create_model(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS created
 """
 
@@ -65,7 +65,7 @@ SELECT updated.model_id,
        updated.updated_time AS updated_at
   FROM application.update_model(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS updated
 """
 
@@ -319,6 +319,8 @@ def _complete_model_parameters(request: CompleteModelRequest) -> tuple[object, .
         request.dimensional_entity_scd_type,
         request.logical_coverage_threshold_percent,
         request.dimensional_coverage_threshold_percent,
+        request.logical_enforce_coverage_threshold,
+        request.dimensional_enforce_coverage_threshold,
     )
 
 

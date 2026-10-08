@@ -98,6 +98,8 @@ export function ModelForm({
       dimensional_entity_scd_type: dimensionalScdType || null,
       logical_coverage_threshold_percent: null,
       dimensional_coverage_threshold_percent: null,
+      logical_enforce_coverage_threshold: data.has("logical_enforce_coverage_threshold"),
+      dimensional_enforce_coverage_threshold: data.has("dimensional_enforce_coverage_threshold"),
       gold_model_naming_instructions: null,
       gold_model_technical_columns_template: null,
       gold_model_audit_columns_template: null,
@@ -332,7 +334,8 @@ export function ModelForm({
                     const layer = group.title === "Silver settings" ? "logical" : "dimensional";
                     const field = `${layer}_coverage_threshold_percent` as const;
                     const defaultPercent = layer === "logical" ? 70 : 60;
-                    return <label>
+                    const enforcementField = `${layer}_enforce_coverage_threshold` as const;
+                    return <div><label>
                       <span id={`${field}-label`}>{layer === "logical" ? "Logical" : "Dimensional"} coverage threshold (%)</span>
                       <input name={field} type="number" min={1} max={100} step={1}
                         aria-labelledby={`${field}-label`}
@@ -340,7 +343,15 @@ export function ModelForm({
                         aria-invalid={validationError?.field === field}
                         aria-describedby={`${field}-help${validationError?.field === field ? " model-form-error" : ""}`} />
                       <small id={`${field}-help`} className="field-help">Whole number from 1 to 100. Blank uses {defaultPercent}%. Counts distinct selected {layer === "logical" ? "tables" : "Logical entities"} with active supporting mappings.</small>
-                    </label>;
+                    </label>
+                    <label className="checkbox-field">
+                      <input name={enforcementField} type="checkbox"
+                        defaultChecked={initialModel?.[enforcementField] ?? false}
+                        aria-describedby={`${enforcementField}-help`} />
+                      <span>Enforce {layer === "logical" ? "Logical" : "Dimensional"} coverage threshold</span>
+                    </label>
+                    <small id={`${enforcementField}-help`} className="field-help">On: reject results below the threshold after repair attempts. Off: allow them with a warning.</small>
+                    </div>;
                   })()}
                   {group.fields.map((field) => (
                     <div key={field.name}>

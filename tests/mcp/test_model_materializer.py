@@ -458,6 +458,8 @@ async def test_model_settings_apply_resolves_system_and_preserves_identity() -> 
                 **model_details(),
                 "logical_entity_scd_type": "type_2",
                 "dimensional_entity_scd_type": "type_1",
+                "logical_enforce_coverage_threshold": True,
+                "dimensional_enforce_coverage_threshold": False,
                 "default_mapping_source_system_code": "ERP",
             }
         )
@@ -466,5 +468,7 @@ async def test_model_settings_apply_resolves_system_and_preserves_identity() -> 
     query, parameters = transaction.calls[-1][1:]
     assert "SET model_name" not in query
     assert "AND model_name = %s" in query
-    assert parameters[-7:] == ("type_2", "type_1", 70, 60, 5, 7, record.model_name)
+    assert parameters[-9:] == (
+        "type_2", "type_1", 70, 60, True, False, 5, 7, record.model_name,
+    )
     transaction.assert_complete()

@@ -51,6 +51,8 @@ class CompleteModelRequest(BaseModel):
     dimensional_entity_scd_type: Literal["type_1", "type_2"] | None = None
     logical_coverage_threshold_percent: int | None = Field(default=None, ge=1, le=100)
     dimensional_coverage_threshold_percent: int | None = Field(default=None, ge=1, le=100)
+    logical_enforce_coverage_threshold: bool = Field(default=False, strict=True)
+    dimensional_enforce_coverage_threshold: bool = Field(default=False, strict=True)
     silver_model_naming_instructions: str | None = Field(
         default=None,
         min_length=1,

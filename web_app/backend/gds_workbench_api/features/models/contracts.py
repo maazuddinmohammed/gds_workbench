@@ -61,6 +61,8 @@ class ModelDetail(BaseModel):
     dimensional_entity_scd_type: Literal["type_1", "type_2"] | None = None
     logical_coverage_threshold_percent: int = Field(default=70, ge=1, le=100, strict=True)
     dimensional_coverage_threshold_percent: int = Field(default=60, ge=1, le=100, strict=True)
+    logical_enforce_coverage_threshold: bool = Field(default=False, strict=True)
+    dimensional_enforce_coverage_threshold: bool = Field(default=False, strict=True)
     silver_model_naming_instructions: str | None = None
     silver_model_audit_columns_template: JsonValue | None = None
     gold_model_naming_instructions: str | None = None

@@ -361,6 +361,8 @@ async def test_database_create_model_authorizes_lock_and_passes_full_identity_co
         "type_1",
         None,
         None,
+        False,
+        False,
     )
 
 
@@ -494,6 +496,8 @@ async def test_revision_commands_precheck_path_tenant_and_call_only_governed_fun
         "type_1",
         None,
         None,
+        False,
+        False,
     )
     assert archive_call == ("archive", identity + (18, 5))
 
@@ -841,3 +845,19 @@ def test_coverage_settings_preserve_valid_values_and_database_default(value: int
     request = CompleteModelRequest(model_name="Coverage", logical_coverage_threshold_percent=value)
     assert request.logical_coverage_threshold_percent == value
     assert request.dimensional_coverage_threshold_percent is None
+
+
+@pytest.mark.parametrize("field", ["logical_enforce_coverage_threshold", "dimensional_enforce_coverage_threshold"])
+@pytest.mark.parametrize("value", [None, 0, 1, "true", "false"])
+def test_coverage_enforcement_requires_boolean(field: str, value: object) -> None:
+    with pytest.raises(ValueError):
+        CompleteModelRequest.model_validate({"model_name": "Coverage", field: value})
+
+
+def test_coverage_enforcement_defaults_off_and_remains_independent() -> None:
+    request = CompleteModelRequest(model_name="Coverage")
+    assert request.logical_enforce_coverage_threshold is False
+    assert request.dimensional_enforce_coverage_threshold is False
+    request = CompleteModelRequest(model_name="Coverage", logical_enforce_coverage_threshold=True)
+    assert request.logical_enforce_coverage_threshold is True
+    assert request.dimensional_enforce_coverage_threshold is False

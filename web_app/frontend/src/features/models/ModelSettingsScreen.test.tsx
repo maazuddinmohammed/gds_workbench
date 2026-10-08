@@ -10,6 +10,7 @@ import type { ModelDetail } from "./api";
 
 const model: ModelDetail = {
   logical_coverage_threshold_percent: 70, dimensional_coverage_threshold_percent: 60,
+  logical_enforce_coverage_threshold: false, dimensional_enforce_coverage_threshold: false,
   model_id: 18, tenant_id: 7, model_name: "Customer", model_description: "Customer domain", model_revision: 8,
   model_input_scope_object_count: 2, logical_schemas: [{ schema_name: "silver", description: "Shared entities" }],
   dimensional_schemas: [{ schema_name: "gold", description: null }],
@@ -93,6 +94,34 @@ describe("Model Settings", () => {
     const write = fetcher.mock.calls.find(([, init]) => init?.method === "PUT");
     expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({
       logical_coverage_threshold_percent: 69, dimensional_coverage_threshold_percent: null,
+    });
+  });
+
+  it.each(["logical", "dimensional"] as const)("saves independent %s coverage enforcement and can turn it off", async (layer) => {
+    const { fetcher } = setup();
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "Definition" });
+    await user.click(screen.getByText(layer === "logical" ? "Silver settings" : "Gold settings", { exact: true }));
+    const name = `Enforce ${layer === "logical" ? "Logical" : "Dimensional"} coverage threshold`;
+    expect(screen.getByRole("checkbox", { name })).not.toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name }));
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    await screen.findByText("Editing revision 9.");
+    let writes = fetcher.mock.calls.filter(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(String(writes[0]?.[1]?.body))).toMatchObject({
+      logical_enforce_coverage_threshold: layer === "logical",
+      dimensional_enforce_coverage_threshold: layer === "dimensional",
+    });
+    await user.click(screen.getByText(layer === "logical" ? "Silver settings" : "Gold settings", { exact: true }));
+    expect(screen.getByRole("checkbox", { name })).toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name }));
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => {
+      writes = fetcher.mock.calls.filter(([, init]) => init?.method === "PUT");
+      expect(writes).toHaveLength(2);
+    });
+    expect(JSON.parse(String(writes[1]?.[1]?.body))).toMatchObject({
+      logical_enforce_coverage_threshold: false, dimensional_enforce_coverage_threshold: false,
     });
   });
 

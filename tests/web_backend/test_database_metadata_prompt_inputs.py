@@ -63,6 +63,12 @@ async def test_installed_metadata_seed_inputs_reach_real_stage_and_physical_comp
         assert len(inputs["object_attribute_context"]) == 1
         object_row = inputs["object_context"][0]
         attribute_row = inputs["object_attribute_context"][0]
+        # This fixture's registered physical key flags stay false even while
+        # Model-owned enrichment is unknown or populated independently.
+        assert all(
+            attribute["registered_is_natural_key"] is False
+            for attribute in attribute_row["attributes"]
+        )
         key_fields = (
             "tenant_code",
             "system_code",
