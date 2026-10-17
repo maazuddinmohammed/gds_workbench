@@ -24,7 +24,7 @@ describe("tenant entry", () => {
     const selected = screen.getByRole("button", { name: /Northwind Analytics/ });
     await waitFor(() => expect(selected).toHaveAttribute("aria-pressed", "true"));
 
-    await user.click(screen.getByRole("button", { name: /Enter Atlas/ }));
+    await user.click(screen.getByRole("button", { name: /Enter ATLAS/ }));
 
     expect(await screen.findByRole("heading", { name: "Tenant Lock" })).toBeVisible();
     expect(router.state.location.pathname).toBe("/tenants/7");

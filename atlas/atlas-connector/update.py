@@ -96,14 +96,23 @@ def replace_packages(parent: Path, plugin_zip: Path, connector_zip: Path) -> Non
                             "docs": {".md", ".png"},
                             "scripts": {".js", ".ps1", ".sh", ".py"},
                             "contracts": {".json"},
-                            "workbench": {".js", ".html", ".css", ".md", ".json"},
+                            "workbench": {".js", ".html", ".css", ".md", ".json", ".svg"},
                             "assets": {".json"},
                         }
-                        allowed = str(relative) in {"plugin.json", "mcp.json"} or (
-                            len(relative.parts) > 1
-                            and relative.suffix
-                            in families.get(relative.parts[0], set())
-                        )
+                        if relative.parts[:2] == ("workbench", "fonts"):
+                            allowed = str(relative) in {
+                                "workbench/fonts/OpenSans-Regular.woff2",
+                                "workbench/fonts/OpenSans-SemiBold.woff2",
+                                "workbench/fonts/OpenSans_Condensed-Bold.woff2",
+                                "workbench/fonts/OFL.txt",
+                                "workbench/fonts/fonts.css",
+                            }
+                        else:
+                            allowed = str(relative) in {"plugin.json", "mcp.json"} or (
+                                len(relative.parts) > 1
+                                and relative.suffix
+                                in families.get(relative.parts[0], set())
+                            )
                     if not allowed:
                         raise ValueError(
                             "Atlas ZIP contains files outside the release package."

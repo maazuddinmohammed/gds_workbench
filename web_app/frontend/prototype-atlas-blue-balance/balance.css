@@ -1,0 +1,168 @@
+/* Throwaway colour-placement comparison. Layout and Meridian geometry stay fixed. */
+:root {
+  --brand: #00338d;
+  --accent: #1e49e2;
+  --nav: #f5f6fa;
+  --canvas: #fff;
+  --ink: #0c233c;
+  --on-brand-muted: #d9e5fb;
+}
+
+/* 01 — one continuous masthead, including tenant entry and local Workbench. */
+.signature .app-masthead {
+  background: var(--brand);
+  border-color: var(--brand);
+  box-shadow: none;
+}
+.signature .app-masthead .brand,
+.signature .app-masthead .location strong,
+.signature .app-masthead .folder-location {
+  color: #fff;
+}
+.signature .app-masthead .location,
+.signature .app-masthead .local-label,
+.signature .app-masthead .folder-location .meta-line {
+  color: var(--on-brand-muted);
+}
+.signature .app-masthead .slash { color: #9fb9e5; }
+.signature .app-masthead .revision,
+.signature .app-masthead .avatar {
+  background: #164795;
+  border-color: #8ba6d2;
+  color: #fff;
+}
+.signature .bench-header-actions > .btn {
+  background: transparent;
+  border-color: #8ba6d2;
+  color: #fff;
+}
+.signature .bench-header-actions > .btn:hover {
+  background: #fff;
+  border-color: #fff;
+  color: var(--brand);
+}
+.signature .app-masthead :focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 4px;
+}
+
+/* 02 — a blue navigation spine and matching brand corner. */
+.navigator .app-masthead { box-shadow: none; }
+.navigator .app-masthead > .brand {
+  background: var(--brand);
+  color: #fff;
+}
+.navigator .main-rail,
+.navigator .bench-rail {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+.navigator .main-rail .nav-label,
+.navigator .bench-rail .nav-label,
+.navigator .model-shortcut > span,
+.navigator .rail-foot {
+  color: var(--on-brand-muted);
+}
+.navigator .nav-link,
+.navigator .bench-area,
+.navigator .dataset,
+.navigator .model-shortcut strong,
+.navigator .model-shortcut button { color: #fff; }
+.navigator .model-shortcut { border-color: #3f66aa; }
+.navigator .nav-link:hover,
+.navigator .bench-area:hover,
+.navigator .dataset:hover { background: #164795; }
+.navigator .nav-link.active,
+.navigator .bench-area.active,
+.navigator .dataset.active {
+  background: #fff;
+  color: var(--brand);
+}
+.navigator .main-rail .live-dot,
+.navigator .bench-rail .live-dot { background: #a8dfc0; }
+.navigator .main-rail :focus-visible,
+.navigator .bench-rail :focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+.entry.navigator > .app-masthead { padding-left: 0; }
+.entry.navigator .app-masthead > .brand { padding-left: 38px; }
+
+/* 03 — model context carries the colour; records and navigation remain light. */
+.horizon .app-masthead { box-shadow: none; }
+.horizon .model-heading { background: var(--brand); }
+.horizon .model-heading h1 { color: #fff; }
+.horizon .model-heading p,
+.horizon .model-heading .eyebrow,
+.horizon .model-heading .model-status,
+.horizon .model-heading .meta-line { color: var(--on-brand-muted); }
+.horizon .model-heading .live-dot { background: #a8dfc0; }
+.entry.horizon .entry-side {
+  background: var(--brand);
+  box-shadow: 0 0 0 30px var(--brand);
+}
+.entry.horizon .entry-side h1 { color: #fff; }
+.entry.horizon .entry-side .eyebrow,
+.entry.horizon .entry-side p { color: var(--on-brand-muted); }
+.entry.horizon .entry-motif { color: #9fb9e5; }
+
+/* Keep the comparison controls distinct from the app, with all options visible. */
+.review-dock {
+  display: grid;
+  grid-template-columns: 28px minmax(0,1fr) 28px 28px;
+  width: min(660px,calc(100vw - 32px));
+  gap: 3px;
+  padding: 8px 10px 9px;
+  border-radius: 10px;
+}
+.direction-buttons { grid-column: 2; grid-row: 1; gap: 4px; }
+.direction-buttons button { flex: 1; justify-content: center; padding: 11px 12px; }
+.dock-arrow[data-action="previous"] { grid-column: 1; grid-row: 1; }
+.dock-arrow[data-action="next"] { grid-column: 3; grid-row: 1; }
+.dock-info { grid-column: 4; grid-row: 1; margin: 0; }
+.review-dock .dock-separator { display: none; }
+.balance-note {
+  grid-column: 1/-1;
+  grid-row: 2;
+  color: #c9d3e2;
+  font-size: 10px;
+  text-align: center;
+  margin: 6px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid #3a4758;
+  white-space: normal;
+  line-height: 1.4;
+}
+#notice { bottom: 136px; }
+.entry .app-masthead { height: 72px; }
+.entry .app-masthead .brand { flex-shrink: 0; }
+.entry .app-masthead .account { margin-left: auto; }
+
+@media (max-width: 760px) {
+  .navigator .main-rail { border-bottom-color: #3f66aa; }
+  .navigator .bench-rail { border-bottom-color: #3f66aa; }
+  .entry.navigator .app-masthead > .brand { padding: 0 18px; }
+  .entry .app-masthead { height: 62px; }
+  .entry.horizon .entry-side {
+    background: var(--brand) !important;
+    box-shadow: 0 0 0 24px var(--brand);
+    margin-bottom: 48px !important;
+  }
+  .entry.horizon .entry-side h1 { color: #fff; }
+  .review-dock {
+    grid-template-columns: 20px minmax(0,1fr) 20px;
+    width: calc(100vw - 20px);
+    padding: 7px;
+    gap: 3px;
+    bottom: 10px;
+  }
+  .direction-buttons { gap: 2px; }
+  .direction-buttons button { padding: 10px 4px; font-size: 9px; gap: 0; min-height: 38px; }
+  .direction-buttons button small { display: none; }
+  .dock-arrow { width: 20px; }
+  .dock-info { grid-column: 3; grid-row: 2; width: 20px; height: 20px; margin-top: 6px; }
+  .balance-note { grid-column: 1/3; font-size: 9px; margin-top: 3px; padding: 6px 4px 0; }
+  .bench-shell .app-masthead > .brand { padding: 0 13px; }
+  .bench-header-actions { padding-right: 12px; }
+  .folder-location { padding-left: 10px; }
+}

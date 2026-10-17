@@ -7,16 +7,16 @@
 
 .metadata-workspace .button-primary {
   color: white;
-  background: var(--ink);
+  background: var(--accent);
 }
 
 .button-accent {
   color: white;
-  background: var(--orange);
+  background: var(--accent);
 }
 
 .button-accent:hover:not(:disabled) {
-  background: var(--orange-dark);
+  background: var(--accent-dark);
 }
 
 .metadata-commandbar {
@@ -193,8 +193,8 @@
 }
 
 .metadata-staged-badge {
-  color: var(--blue-dark);
-  background: var(--blue-soft);
+  color: var(--accent-dark);
+  background: var(--accent-soft);
 }
 
 .metadata-detail-scrim {
@@ -244,7 +244,7 @@
 }
 
 .metadata-detail-grid dt small {
-  color: var(--blue-dark);
+  color: var(--accent-dark);
   font-size: 0.5rem;
 }
 
@@ -453,29 +453,25 @@ strong {
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 0.75rem;
-  color: var(--ink);
+  gap: 0.6875rem;
+  color: var(--brand);
   white-space: nowrap;
 }
 
 .brand strong {
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  font-size: 1.5625rem;
+  font-family: "Atlas Open Sans", Arial, sans-serif;
+  font-size: 1.4375rem;
   font-weight: 600;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.1125rem;
   line-height: 1;
 }
 
 .brand-mark {
   display: block;
-  width: 2.1875rem;
-  height: 2.1875rem;
+  width: 2rem;
+  height: 2rem;
   flex: 0 0 auto;
-  fill: currentColor;
-}
-
-.brand-mark-accent {
-  fill: var(--orange);
+  object-fit: contain;
 }
 
 .button {
@@ -503,12 +499,12 @@ strong {
 
 .button-primary {
   color: white;
-  background: var(--orange);
+  background: var(--accent);
 }
 
 .button-primary:hover:not(:disabled) {
-  background: var(--orange-dark);
-  box-shadow: 0 5px 14px rgb(183 92 39 / 22%);
+  background: var(--accent-dark);
+  box-shadow: 0 5px 14px rgb(30 73 226 / 18%);
 }
 
 .button-secondary {

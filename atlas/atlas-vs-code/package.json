@@ -1,7 +1,8 @@
 {
   "name": "atlas-stage-runner",
-  "displayName": "Atlas Stage Runner",
-  "description": "Atlas Stage Runner and local Codex bridge using VS Code Microsoft sign-in.",
+  "displayName": "ATLAS Stage Runner",
+  "icon": "assets/atlas.png",
+  "description": "ATLAS Stage Runner and local Codex bridge using VS Code Microsoft sign-in.",
   "version": "0.2.0",
   "publisher": "gds-workbench",
   "license": "UNLICENSED",
@@ -39,21 +40,21 @@
     "commands": [
       {
         "command": "atlasStageRunner.check",
-        "title": "Atlas: Check Stage Runner"
+        "title": "ATLAS: Check Stage Runner"
       },
       {
         "command": "atlasBridge.start",
-        "title": "Atlas: Start Codex Bridge"
+        "title": "ATLAS: Start Codex Bridge"
       },
       {
         "command": "atlasBridge.stop",
-        "title": "Atlas: Stop Codex Bridge"
+        "title": "ATLAS: Stop Codex Bridge"
       }
     ],
     "languageModelTools": [
       {
         "name": "atlas_checkStageRunner",
-        "displayName": "Check Atlas Stage Runner",
+        "displayName": "Check ATLAS Stage Runner",
         "modelDescription": "Read-only readiness check. Returns the configured backend profile and endpoint fingerprint directly; no URLs, credentials or tenant records. Use before local Accept to bind the correct backend.",
         "canBeReferencedInPrompt": true,
         "toolReferenceName": "atlasCheckStageRunner",
@@ -70,7 +71,7 @@
       },
       {
         "name": "atlas_stageApprovedManifest",
-        "displayName": "Stage Approved Atlas Change Set",
+        "displayName": "Stage Approved ATLAS Change Set",
         "modelDescription": "Stages one digest-approved Atlas Metadata or Model Change Set from its local Stage request. Use only after local validation and user acknowledgement. Returns a bounded receipt and never returns payload records.",
         "canBeReferencedInPrompt": true,
         "toolReferenceName": "atlasStageApprovedManifest",
@@ -103,7 +104,7 @@
       }
     ],
     "configuration": {
-      "title": "Atlas Stage Runner",
+      "title": "ATLAS Stage Runner",
       "properties": {
         "atlas.stageRunner.profile": {
           "type": "string",

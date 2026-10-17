@@ -17,12 +17,58 @@ spacing and implementations. This document records decisions worth preserving.
 | Workflow commands and run monitor | `styles/profiling.css`, `styles/workflow-runs.css` |
 | Feature behavior | Matching `features/` package and its tests |
 
-Use warm neutral surfaces, readable dense text and restrained terracotta primary
-accents. Tables/ledgers suit comparable records; cards suit summaries or choices.
+Use the selected **Signature** identity: KPMG-blue mastheads, white Meridian/ATLAS
+lockups, pale neutral navigation, white working areas, blue page headings and actions,
+and readable dense working text.
+Tables/ledgers suit comparable records; cards suit summaries or choices.
 Reuse semantic tokens instead of copying colors. Use shared outline icons, not emoji.
 The current palette is light-only. Use short functional motion and reduced-motion
 support. Every flexible layout child needs `min-width: 0`; wide tables scroll inside
 an intentional container instead of truncating governed values.
+
+## ATLAS Signature / Meridian identity
+
+Selected on 2026-10-16 after prototype review. Keep the Atlas product name and an
+uppercase **ATLAS** wordmark. Use KPMG-inspired colors without the official KPMG logo.
+
+- `--brand: #00338D` for continuous mastheads and blue page headings. Navigation
+  uses `--nav: #F5F6FA`; records, fields and dialogs remain white.
+- Mastheads use `--on-brand: #FFFFFF` and `--on-brand-muted: #D9E5FB` text,
+  `--on-brand-line: #8BA6D2` control borders and `--brand-raised: #164795` badges.
+  Header controls are transparent with white text; hover reverses to white with
+  blue text. Keyboard focus is white, including mobile navigation controls.
+  Reduced-transparency mode retains the solid blue mastheads.
+- `--accent: #1E49E2`, `--accent-dark: #00338D`, `--accent-soft: #EDF2FF`
+  for commands, links, focus and selection, including portaled dialogs.
+- `--ink: #0C233C`, white working surfaces and `--paper: #F5F6FA` canvas.
+  Amber warnings, green success and red failures remain distinct from brand colors.
+- Bundle Open Sans Regular/SemiBold locally for UI, and Open Sans Condensed Bold
+  for blue page titles. Normal-weight working text, navigation, tables and dialogs
+  remain centrally controlled. Tenant entry (26px), selected Model identity (22px)
+  and Tenant Lock (20px) use normal-width Open Sans SemiBold in ink; entry and Model
+  identity reduce to 24px and 20px on mobile.
+- Shared lockup: 32px Meridian symbol, 11px gap, 23px Open Sans SemiBold **ATLAS**
+  with 1.8px tracking. Use identical proportions on tenant entry, web and Workbench.
+- Canonical vector: `web_app/frontend/public/assets/atlas.svg`; Workbench packages
+  an identical `workbench/atlas.svg`. Both headers reference that asset rather than
+  redrawing it. Scope `brightness(0) invert(1)` to header images for the white
+  treatment; keep the canonical blue favicon and light-surface logo. Keep the
+  32×32 viewBox and even-odd aperture. The extension icon is an antialiased
+  512×512 PNG using the same silhouette on a pale tile.
+- Fonts and OFL license ship in web `public/assets/fonts` and Workbench `fonts`.
+  Workbench embeds font data in generated `fonts/fonts.css` for offline file launch;
+  regenerate with `python3 atlas/build_workbench_fonts.py` after changing fonts.
+  Keep plugin builder, Connector setup/updater and web upload allowlists in sync.
+- Preserve desktop navigation collapse and mobile bottom navigation. Mobile web
+  keeps the wordmark above Tenant/Model context. Workbench dataset navigation stays
+  vertical on desktop and horizontal at 58rem and below.
+  Tenant entry keeps clear space around the logo; sign-in details and long Tenant
+  names wrap within their available width at small sizes.
+  On mobile web, the Model ribbon stays in document flow so the taller masthead
+  cannot cover its workflow links.
+
+Rebuild the plugin ZIP, Connector ZIP and extension VSIX when their packaged sources
+change. Brand assets do not change transport, authorization or workflow contracts.
 
 ## Navigation and hierarchy
 
@@ -48,7 +94,9 @@ tables, and normal-weight text. The selected sheet tab supplies its heading.
 Catalogs are read-only; users edit through Excel export/import. Attributes live
 inside Object details, while Excel retains all canonical sheets. Import opens the
 governed Change Set drawer for workbook validation and apply.
-Models use the same normal-weight typography for values, headings and controls.
+Models use normal-weight typography for values and controls; section page titles
+use the shared condensed heading treatment. The selected Model name uses the
+smaller, normal-width identity treatment.
 The Models ledger shows Model, revision, lock status and updated time. Select one
 Model with its radio control; Lock/Unlock sits beside Create Model. Model workspaces
 show the lock status, with lock actions kept on the Models ledger.
@@ -73,9 +121,12 @@ choices cover the Model Input Scope for that System; Dimensional choices retain
 Logical/Silver sources. Filter criteria and sample query belong to Object Mapping;
 transformation logic and default record belong to Attribute Mapping.
 
-Tenant Home keeps the dark Tenant Lock panel central, with normal-weight text,
-owner/expiry/purpose together and compact action controls. History opens on demand
-and displays only the latest three events; no older-page control.
+Tenant Home uses a compact white Tenant Lock panel, with a thin blue top rule,
+neutral border and 6px corners. Keep owner/expiry/purpose together, a 40px owner
+avatar and compact action controls. Acquire/Extend use deep brand blue; secondary
+actions are neutral and confirmed destructive actions remain red. Open/locked
+states retain green/amber badges, including the Model dialog. History opens on
+demand and displays only the latest three events; no older-page control.
 
 Prompts follows the same normal-weight, full-width ledger layout with collapsible
 filters. Instructions are the primary workspace; System and Tool instructions switch

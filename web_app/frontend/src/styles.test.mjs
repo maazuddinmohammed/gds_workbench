@@ -55,7 +55,7 @@ describe("Workflow draft confirmation styling", () => {
     try {
       expect(getComputedStyle(portal.firstChild).backgroundColor).toBe("rgb(255, 255, 255)");
       expect(getComputedStyle(portal.firstChild).overflow).toBe("auto");
-      expect(getComputedStyle(portal.querySelector("button")).backgroundColor).toBe("rgb(183, 92, 39)");
+      expect(getComputedStyle(portal.querySelector("button")).backgroundColor).toBe("rgb(30, 73, 226)");
     } finally {
       portal.remove();
       style.remove();
@@ -87,7 +87,7 @@ describe("Shared workspace design", () => {
     document.body.append(surface);
     try {
       for (const element of surface.querySelectorAll("[data-check]")) {
-        expect(getComputedStyle(element).fontWeight, element.textContent).toBe(weight);
+        expect(getComputedStyle(element).fontWeight, element.textContent).toBe(element.tagName === "H1" ? "700" : weight);
       }
       expect(getComputedStyle(surface.querySelector(".brand strong")).fontWeight).not.toBe(weight);
       const settingsTab = getComputedStyle(surface.querySelector(".workspace-tabs a"));

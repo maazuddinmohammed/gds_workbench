@@ -11,7 +11,7 @@
 .model-identity-symbol {
   display: grid; flex: 0 0 2.65rem; height: 2.65rem; place-items: center;
   border: 1px solid var(--line); border-radius: var(--radius-medium);
-  color: var(--orange); background: var(--blue-soft);
+  color: var(--accent); background: var(--accent-soft);
 }
 .model-identity-symbol svg { width: 1.5rem; height: 1.5rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .model-identity-name { display: block; font-size: 1.4rem; font-weight: 700; letter-spacing: -.035em; overflow-wrap: anywhere; }
@@ -43,7 +43,7 @@
 .model-tab::before { position: absolute; inset: auto .85rem 0; height: 2px; border-radius: 2px 2px 0 0; background: transparent; content: ""; }
 .model-tab:hover { color: var(--ink); }
 .model-tab.is-active { color: var(--ink); font-weight: 400; }
-.model-tab.is-active::before { background: var(--orange); }
+.model-tab.is-active::before { background: var(--accent); }
 .model-tab.is-group-end { margin-right: .8rem; }
 .model-tab::after { position: absolute; top: 1.4rem; left: 2.1rem; right: -.9rem; height: 1px; background: var(--line); content: ""; }
 .model-tab.is-group-end::after, .model-tab:last-child::after { display: none; }
@@ -55,18 +55,18 @@
 .model-stage-circle svg { width: .85rem; height: .85rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .model-stage-circle.is-complete { border-color: var(--green); color: var(--green); background: var(--green-soft); }
 .model-stage-circle.is-failed { border-color: var(--red); color: var(--red); }
-.model-stage-circle.is-running { border-color: var(--orange); border-style: dashed; color: var(--orange); }
+.model-stage-circle.is-running { border-color: var(--accent); border-style: dashed; color: var(--accent); }
 .model-stage-label { margin-top: .12rem; }
 .model-stage-status { min-height: .95rem; font-size: .62rem; font-weight: 450; letter-spacing: 0; line-height: 1.4; color: var(--muted); }
 .model-stage-status.is-failed { color: var(--red); }
-.model-stage-status.is-running { color: var(--orange-dark); }
+.model-stage-status.is-running { color: var(--accent-dark); }
 .model-tab:focus-visible { outline-offset: -3px; }
 .model-navigation-scroll {
   display: grid; flex: none; width: 2rem; height: 2.5rem; place-items: center;
   padding: .35rem; border: 0; border-radius: var(--radius-small); background: transparent;
   color: var(--muted); cursor: pointer;
 }
-.model-navigation-scroll:hover { color: var(--orange-dark); background: var(--soft); }
+.model-navigation-scroll:hover { color: var(--accent-dark); background: var(--soft); }
 .model-navigation-scroll:disabled { opacity: 0; pointer-events: none; }
 .model-navigation-scroll svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .model-workspace { min-width: 0; padding: 0 2rem 4rem; overflow: visible; background: var(--surface); }
@@ -109,7 +109,7 @@
   .model-identity-name { font-size: 1.15rem; }
   .model-identity-status { max-width: 8rem; flex-shrink: 0; font-size: .65rem; }
   .model-identity-main p { font-size: .7rem; }
-  .model-navigation { top: 4.25rem; }
+  .model-navigation { position: static; }
   .model-tab { padding-inline: .65rem; }
   .model-tab::after { left: 1.85rem; right: -.75rem; }
   .model-workspace { padding: 0 .85rem 3rem; }

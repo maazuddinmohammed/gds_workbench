@@ -4,7 +4,7 @@ textarea {
 }
 
 textarea:focus-visible {
-  outline: 3px solid rgb(49 95 207 / 34%);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -172,7 +172,7 @@ textarea:focus-visible {
 
 .prompt-table-scroll tbody tr:focus-within,
 .model-prompts-table-scroll tbody tr:focus-within {
-  box-shadow: inset 3px 0 var(--blue);
+  box-shadow: inset 3px 0 var(--accent);
 }
 
 .prompt-template-name,
@@ -281,7 +281,7 @@ textarea:focus-visible {
 }
 
 .prompt-variable-reference > summary > span:last-child {
-  color: var(--blue-dark);
+  color: var(--accent-dark);
   font-size: 1.2rem;
   transition: transform 140ms ease;
 }
@@ -369,8 +369,8 @@ textarea:focus-visible {
 
 .prompt-ownership-options label:has(input:checked),
 .prompt-assignment-options label:has(input:checked) {
-  border-color: var(--blue);
-  background: var(--blue-soft);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .prompt-ownership-options label > span,
@@ -502,8 +502,8 @@ textarea:focus-visible {
 }
 
 .prompt-history-panel li button.is-active {
-  border-left-color: var(--blue);
-  background: var(--blue-soft);
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .prompt-history-panel li button > span:first-child {
@@ -880,7 +880,7 @@ textarea:focus-visible {
 }
 
 .prompt-input-shape summary {
-  color: var(--blue-dark);
+  color: var(--accent-dark);
   cursor: pointer;
   font-size: 0.7rem;
   padding: 0.5rem 0;
@@ -973,7 +973,7 @@ textarea:focus-visible {
   color: var(--muted);
 }
 
-.prompt-rendering-help summary { color: var(--blue-dark); cursor: pointer; }
+.prompt-rendering-help summary { color: var(--accent-dark); cursor: pointer; }
 .prompt-rendering-help pre { max-width: 100%; overflow-x: auto; padding: 0.75rem; background: var(--soft); }
 .prompt-rendering-help p { max-width: 80ch; }
 .prompt-version-details > label { display: grid; gap: 0.4rem; }
@@ -1029,14 +1029,14 @@ textarea:focus-visible {
 .prompt-history-panel summary { cursor: pointer; padding: .4rem 0; color: var(--muted); font-size: .75rem; }
 .prompt-history-panel summary span, .prompt-tools-disclosure > summary span { margin-left: .5rem; font-size: .7rem; color: var(--muted); }
 .prompt-history-panel ol { max-height: 18rem; max-width: 36rem; margin-top: .5rem; border-top: 1px solid var(--line); }
-.prompt-history-panel li button.is-active { border-left-color: var(--orange); background: var(--orange-soft); }
+.prompt-history-panel li button.is-active { border-left-color: var(--accent); background: var(--accent-soft); }
 .prompt-version-header { min-height: 3.8rem; border: 0; }
 .prompt-version-header h2 { font-size: 1rem; margin: 0; }
 .prompt-body-editor, .prompt-bodies-readonly { gap: .85rem; padding-top: 0; }
 .prompt-body-editor > [hidden], .prompt-bodies-readonly > [hidden] { display: none; }
 .prompt-body-tabs { display: flex; gap: 1.6rem; overflow-x: auto; border-bottom: 1px solid var(--line); }
 .prompt-body-tabs button { flex-shrink: 0; padding: .8rem 0; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: .75rem; cursor: pointer; transition: color 120ms ease, border-color 120ms ease; }
-.prompt-body-tabs button[aria-pressed="true"] { color: var(--orange-dark); border-bottom-color: var(--orange); }
+.prompt-body-tabs button[aria-pressed="true"] { color: var(--accent-dark); border-bottom-color: var(--accent); }
 .prompt-body-tabs button:hover { color: var(--ink); }
 .prompt-text-editor { min-width: 0; }
 .prompt-text-editor > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .2rem 0 .65rem; font-size: .72rem; color: var(--muted); }
@@ -1053,7 +1053,7 @@ textarea:focus-visible {
 .prompt-dialog-scrim .drawer-header h2 { font-size: 1.2rem; }
 .prompt-dialog-scrim .dialog-actions { display: flex; justify-content: flex-end; }
 .prompt-ownership-options label, .prompt-active-toggle, .prompt-assignment-options label { background: transparent; }
-.prompt-ownership-options label:has(input:checked), .prompt-assignment-options label:has(input:checked) { border-color: var(--orange); background: var(--orange-soft); }
+.prompt-ownership-options label:has(input:checked), .prompt-assignment-options label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
 @media (max-width: 58rem) {
   .prompts-workspace, .prompt-detail-workspace { padding-inline: 1rem; }
   .prompts-commandbar, .prompt-detail-commandbar { grid-template-columns: 1fr; gap: 1rem; }

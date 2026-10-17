@@ -8,7 +8,7 @@
 }
 
 .mapping-spreadsheet:focus-visible {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -94,11 +94,11 @@
 }
 
 .mapping-table-scroll.mapping-spreadsheet > table > tbody > tr:has(> td > input:checked) > td {
-  background: var(--blue-soft);
+  background: var(--accent-soft);
 }
 
 .mapping-table-scroll.mapping-spreadsheet > table > tbody > tr:has(> td > input:checked) > td:first-child {
-  box-shadow: inset 3px 0 var(--blue);
+  box-shadow: inset 3px 0 var(--accent);
 }
 
 .mapping-transformation-cell {
@@ -115,7 +115,7 @@
 }
 
 .mapping-cell-document.is-expanded { max-height: none; }
-.mapping-cell-document:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.mapping-cell-document:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .mapping-cell-expand { margin-top: 0.55rem; }
 .mapping-cell-state { display: grid; gap: 0.35rem; color: var(--muted); white-space: normal; }
 .mapping-cell-state.is-error { color: var(--red); }
@@ -191,7 +191,7 @@
   min-width: 0; max-width: 100%; overflow: auto; scrollbar-gutter: auto;
   border: 1px solid var(--line-strong); border-radius: var(--radius-small);
 }
-.mapping-document-table-scroll:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.mapping-document-table-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .mapping-logic-document .mapping-document-table-scroll > table.mapping-document-table {
   width: 100%; min-width: 0; table-layout: auto; border-collapse: separate; border-spacing: 0; font-size: 0.75rem;
 }

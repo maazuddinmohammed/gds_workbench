@@ -94,7 +94,7 @@
 }
 
 .mapping-value-list li::marker {
-  color: var(--blue);
+  color: var(--accent);
 }
 
 .models-mode-tabs {
@@ -131,7 +131,7 @@
   bottom: 0;
   left: 0.8rem;
   height: 3px;
-  background: var(--blue);
+  background: var(--accent);
   content: "";
 }
 
@@ -208,8 +208,8 @@
 }
 
 .status-badge.is-warning {
-  color: #8a451d;
-  background: #fff1e8;
+  color: var(--amber);
+  background: var(--amber-soft);
 }
 
 .status-badge.is-neutral {
@@ -218,14 +218,14 @@
 }
 
 .zone-badge {
-  color: #8a451d;
-  background: #fff1e8;
+  color: var(--accent-dark);
+  background: var(--accent-soft);
 }
 
 .text-action {
   padding: 0;
   border: 0;
-  color: var(--blue-dark);
+  color: var(--accent-dark);
   background: transparent;
   font-size: 0.76rem;
   font-weight: 780;
@@ -234,7 +234,7 @@
 }
 
 .text-action:hover {
-  color: var(--blue);
+  color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 0.2rem;
 }
@@ -268,7 +268,7 @@
 
 .open-model a {
   margin-top: 0.4rem;
-  color: var(--blue-dark);
+  color: var(--accent-dark);
   font-weight: 750;
 }
 
@@ -408,8 +408,8 @@
 
 .workflow-warnings span {
   padding-left: 0.55rem;
-  border-left: 2px solid var(--orange);
-  color: #744123;
+  border-left: 2px solid var(--amber);
+  color: var(--amber);
   font-size: 0.68rem;
   line-height: 1.4;
 }
@@ -521,11 +521,11 @@
 }
 
 .scope-ledger tbody tr.is-active td {
-  background: var(--blue-soft);
+  background: var(--accent-soft);
 }
 
 .scope-ledger tbody tr.is-active td:first-child {
-  box-shadow: inset 3px 0 var(--blue);
+  box-shadow: inset 3px 0 var(--accent);
 }
 
 .scope-object-inspector {

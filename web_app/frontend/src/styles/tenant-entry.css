@@ -1,9 +1,7 @@
 /* Tenant entry */
 .entry-shell {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 15% 0%, rgb(255 255 255 / 95%) 0, rgb(255 255 255 / 0%) 34rem),
-    var(--paper);
+  background: var(--paper);
 }
 
 .entry-topbar {
@@ -11,23 +9,45 @@
   min-height: 4.75rem;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
   padding: 0 clamp(1.25rem, 4vw, 3rem);
-  border-bottom: 1px solid var(--line);
-  background: rgb(255 255 255 / 78%);
-  box-shadow: 0 8px 28px rgb(17 24 39 / 3%);
-  backdrop-filter: blur(24px) saturate(155%);
+  border-bottom: 1px solid var(--brand);
+  color: var(--on-brand);
+  background: var(--brand);
+}
+
+.entry-topbar .brand {
+  flex-shrink: 0;
+  color: var(--on-brand);
+}
+
+.entry-topbar .brand-mark {
+  filter: brightness(0) invert(1);
+}
+
+.entry-topbar .avatar {
+  border: 1px solid var(--on-brand-line);
+  color: var(--on-brand);
+  background: var(--brand-raised);
+  box-shadow: none;
+}
+
+.entry-topbar :focus-visible {
+  outline-color: var(--on-brand);
+  outline-offset: 4px;
 }
 
 .signed-in {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 0.7rem;
-  color: var(--muted);
+  color: var(--on-brand-muted);
   font-size: 0.82rem;
 }
 
 .signed-in strong {
-  color: var(--ink);
+  color: var(--on-brand);
 }
 
 .signed-in-identity {
@@ -87,8 +107,8 @@
 }
 
 .search-field:focus-within {
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgb(37 99 235 / 12%), 0 8px 22px rgb(17 24 39 / 6%);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(30 73 226 / 12%), 0 8px 22px rgb(12 35 60 / 6%);
 }
 
 .search-field svg {
@@ -158,9 +178,9 @@
 }
 
 .tenant-card[aria-pressed="true"] {
-  border-color: var(--blue);
+  border-color: var(--accent);
   background: white;
-  box-shadow: 0 0 0 3px rgb(49 95 207 / 10%), var(--shadow-soft);
+  box-shadow: 0 0 0 3px rgb(30 73 226 / 10%), var(--shadow-soft);
 }
 
 .tenant-code-mark {
@@ -169,8 +189,8 @@
   height: 3.4rem;
   place-items: center;
   border-radius: var(--radius-medium);
-  color: var(--blue);
-  background: var(--blue-soft);
+  color: var(--accent);
+  background: var(--accent-soft);
   font-size: 0.85rem;
   font-weight: 850;
   letter-spacing: 0.02em;
@@ -232,7 +252,7 @@
 }
 
 .tenant-card-indicator {
-  color: var(--blue);
+  color: var(--accent);
   font-size: 1.3rem;
   font-weight: 800;
 }

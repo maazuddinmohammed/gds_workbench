@@ -37,13 +37,22 @@ def build(output: Path | None = None) -> Path:
             "docs": {".md", ".png"},
             "scripts": {".js", ".ps1", ".sh", ".py"},
             "contracts": {".json"},
-            "workbench": {".js", ".html", ".css", ".md", ".json"},
+            "workbench": {".js", ".html", ".css", ".md", ".json", ".svg"},
             "assets": {".json"},
         }
-        if relative not in {Path("plugin.json"), Path("mcp.json")} and (
-            source.suffix not in allowed.get(relative.parts[0], set())
-            or any(part.startswith(".") for part in relative.parts)
-        ):
+        if relative.parts[:2] == ("workbench", "fonts"):
+            reviewed = relative.as_posix() in {
+                "workbench/fonts/OpenSans-Regular.woff2",
+                "workbench/fonts/OpenSans-SemiBold.woff2",
+                "workbench/fonts/OpenSans_Condensed-Bold.woff2",
+                "workbench/fonts/OFL.txt",
+                "workbench/fonts/fonts.css",
+            }
+        else:
+            reviewed = relative in {Path("plugin.json"), Path("mcp.json")} or (
+                source.suffix in allowed.get(relative.parts[0], set())
+            )
+        if not reviewed or any(part.startswith(".") for part in relative.parts):
             raise ValueError(f"outside the reviewed plugin source families: {relative}")
         files.append(source)
 

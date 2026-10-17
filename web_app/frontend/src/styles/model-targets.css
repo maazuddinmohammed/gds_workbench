@@ -3,4 +3,4 @@
 .target-export-form p, .target-export-form .field-help { margin: 0; }
 .target-layer-switch { display: inline-flex; align-items: center; padding: 0.2rem; gap: 0.2rem; background: var(--soft); border: 1px solid var(--line); border-radius: var(--radius-small); }
 .target-layer-switch a { color: var(--muted); text-decoration: none; font-size: 0.8rem; font-weight: 600; padding: 0.55rem 1rem; border-radius: calc(var(--radius-small) - 2px); }
-.target-layer-switch a.is-active { background: var(--surface); color: var(--orange-dark); box-shadow: 0 1px 3px #00000012; }
+.target-layer-switch a.is-active { background: var(--surface); color: var(--accent-dark); box-shadow: 0 1px 3px #00000012; }

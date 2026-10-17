@@ -21,7 +21,7 @@ function metadata(){const root=workspace();snapshot(root,'metadata',[dataset('so
 test('readable table opens a side comparison without losing table context',async()=>{
  const root=metadata();root.directory('metadata-change-set').file('source_object.json',JSON.stringify([{tenant_code:'T',object_name:'Customer',description:'Customer identity used for billing',empty:'',nothing:null,is_active:true}]));
  const {document,dom}=await app(root);
- assert.equal(document.title,'Atlas Local Workbench');assert.equal(document.querySelector('.brand').textContent,'Atlas Local Workbench');assert.equal(document.querySelectorAll('.data-table tbody tr').length,1);
+ assert.equal(document.title,'ATLAS Local Workbench');assert.equal(document.querySelector('.brand').textContent,'ATLAS');assert.equal(document.querySelectorAll('.data-table tbody tr').length,1);
  document.querySelector('[data-row-action]').click();assert.equal(document.querySelectorAll('.data-table tbody tr').length,1);
  assert.match(document.querySelector('.comparison-panel').textContent,/Customer master/);assert.match(document.querySelector('.comparison-panel').textContent,/Customer identity used for billing/);
  assert.match(document.querySelector('.comparison-panel').textContent,/Empty string/);assert.match(document.querySelector('.comparison-panel').textContent,/null/);
@@ -116,7 +116,9 @@ test('compact dataset navigation preserves groups and supports keyboard focus',a
  sheets[0].focus();sheets[0].dispatchEvent(new win.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
  assert.equal(document.activeElement,sheets[1]);
  sheets[1].dispatchEvent(new win.KeyboardEvent('keydown',{key:'Home',bubbles:true}));assert.equal(document.activeElement,sheets[0]);
+ sheets[0].dispatchEvent(new win.KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));assert.equal(document.activeElement,sheets[1]);
+ sheets[1].dispatchEvent(new win.KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true}));assert.equal(document.activeElement,sheets[0]);
  assert.equal(document.querySelector('h1').textContent,'Source Object');
  assert.equal(document.querySelector('#workbench-root').getAttribute('aria-busy'),'false');
- assert.ok(document.querySelector('.brand svg'));dom.window.close();
+ assert.ok(document.querySelector('.brand img[src="atlas.svg"]'));dom.window.close();
 });

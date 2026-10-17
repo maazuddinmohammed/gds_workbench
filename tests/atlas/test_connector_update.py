@@ -52,7 +52,11 @@ def test_both_packages_replace_cleanly_and_keep_configuration_and_backups(tmp_pa
 
 
 @pytest.mark.parametrize(
-    "name", ["../escaped", "atlas/../escaped", "atlas/docs/unsafe.js", "atlas/docs/.env"]
+    "name", [
+        "../escaped", "atlas/../escaped", "atlas/docs/unsafe.js", "atlas/docs/.env",
+        "atlas/workbench/fonts/Other.woff2", "atlas/workbench/fonts/Other.js",
+        "atlas/workbench/fonts/Other.css", "atlas/workbench/unreviewed.txt",
+    ]
 )
 def test_invalid_zip_leaves_both_packages_intact(tmp_path: Path, name: str) -> None:
     parent, plugin, connector = installed_fixture(tmp_path)

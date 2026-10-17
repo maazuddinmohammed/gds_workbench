@@ -1,12 +1,6 @@
 /* Tenant workspace */
 .app-shell {
-  --global-nav-width: 15rem;
-  --workspace-accent-soft: #fff1e8;
-  --workspace-accent: var(--orange);
-  --workspace-accent-strong: var(--orange-dark);
-  --blue-soft: var(--workspace-accent-soft);
-  --blue: var(--workspace-accent);
-  --blue-dark: var(--workspace-accent-strong);
+  --global-nav-width: 13rem;
 
   display: grid;
   min-height: 100vh;
@@ -22,7 +16,7 @@
 .app-shell select:focus-visible,
 .app-shell textarea:focus-visible,
 .app-shell summary:focus-visible {
-  outline-color: var(--workspace-accent);
+  outline-color: var(--accent);
 }
 
 .app-shell.is-global-nav-collapsed {
@@ -46,12 +40,27 @@
   grid-column: 1 / -1;
   grid-template-columns: var(--global-nav-width) minmax(0, 1fr) auto;
   align-items: center;
-  padding: 0 1rem;
-  border-bottom: 1px solid rgb(17 24 39 / 8%);
-  background: rgb(255 255 255 / 82%);
-  box-shadow: 0 8px 28px rgb(17 24 39 / 3%);
-  backdrop-filter: blur(24px) saturate(155%);
+  padding: 0;
+  border-bottom: 1px solid var(--brand);
+  color: var(--on-brand);
+  background: var(--brand);
   transition: grid-template-columns 180ms var(--ease-fluid);
+}
+
+.topbar .brand {
+  height: 100%;
+  padding: 0 1.2rem;
+  color: var(--on-brand);
+  background: transparent;
+}
+
+.topbar .brand-mark {
+  filter: brightness(0) invert(1);
+}
+
+.app-shell .topbar :focus-visible {
+  outline-color: var(--on-brand);
+  outline-offset: 4px;
 }
 
 .tenant-context,
@@ -64,7 +73,7 @@
 .tenant-context {
   gap: 1.5rem;
   margin: 0;
-  padding: 0 1.5rem 0 0.65rem;
+  padding: 0 1.5rem;
 }
 
 .tenant-context-item {
@@ -75,11 +84,11 @@
 
 .tenant-context-item + .tenant-context-item {
   padding-left: 1.5rem;
-  border-left: 1px solid var(--line);
+  border-left: 1px solid var(--on-brand-line);
 }
 
 .tenant-context dt {
-  color: var(--muted);
+  color: var(--on-brand-muted);
   font-size: 0.6rem;
   font-weight: 600;
   letter-spacing: 0.09em;
@@ -97,7 +106,7 @@
 
 .tenant-context strong {
   overflow: hidden;
-  color: var(--ink-2);
+  color: var(--on-brand);
   font-size: 0.875rem;
   font-weight: 550;
   letter-spacing: -0.015em;
@@ -109,8 +118,8 @@
 .tenant-code-badge {
   flex: 0 0 auto;
   padding: 0.12rem 0.38rem;
-  color: var(--muted);
-  background: var(--soft);
+  color: var(--on-brand);
+  background: var(--brand-raised);
   font-size: 0.6rem;
   font-weight: 500;
   letter-spacing: 0;
@@ -122,21 +131,22 @@
   justify-content: flex-end;
   gap: 1rem;
   white-space: nowrap;
+  padding-right: 1rem;
 }
 
 .topbar-actions .avatar {
   width: 2.1rem;
   height: 2.1rem;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  background: var(--soft);
+  border: 1px solid var(--on-brand-line);
+  color: var(--on-brand);
+  background: var(--brand-raised);
   font-size: 0.65rem;
   font-weight: 600;
   box-shadow: none;
 }
 
 .role-badge {
-  color: var(--muted);
+  color: var(--on-brand-muted);
   font-size: 0.72rem;
   font-weight: 500;
   letter-spacing: 0;
@@ -145,10 +155,18 @@
 .switch-tenant {
   min-height: 2.2rem;
   padding: 0.55rem 0.75rem;
-  color: var(--ink-2);
-  border-color: var(--line);
+  color: var(--on-brand);
+  border-color: var(--on-brand-line);
+  background: transparent;
   font-size: 0.75rem;
   font-weight: 400;
+  box-shadow: none;
+}
+
+.switch-tenant:hover {
+  color: var(--brand);
+  border-color: var(--on-brand);
+  background: var(--on-brand);
   box-shadow: none;
 }
 
@@ -161,7 +179,8 @@
   padding: 1.45rem 0.7rem;
   overflow-y: auto;
   border-right: 1px solid var(--line);
-  background: #fbfaf8;
+  background: var(--nav);
+  color: var(--ink);
 }
 
 .sidebar-header {
@@ -207,6 +226,19 @@
 
 .mobile-sidebar-toggle {
   display: none;
+  color: var(--on-brand);
+  border-color: var(--on-brand-line);
+  background: transparent;
+}
+
+.sidebar-toggle {
+  color: var(--muted);
+  border-color: var(--line);
+  background: transparent;
+}
+
+.app-shell .sidebar :is(button, a):focus-visible {
+  outline-color: var(--accent);
 }
 
 .sidebar-toggle:active,
@@ -216,7 +248,7 @@
 
 .sidebar-toggle:focus-visible,
 .mobile-sidebar-toggle:focus-visible {
-  outline-color: var(--workspace-accent);
+  outline-color: var(--accent);
 }
 
 @media (hover: hover) {
@@ -225,6 +257,18 @@
     color: var(--ink);
     border-color: var(--line-strong);
     background: var(--soft);
+  }
+
+  .sidebar-toggle:hover {
+    color: var(--brand);
+    border-color: var(--line-strong);
+    background: var(--accent-soft);
+  }
+
+  .topbar .mobile-sidebar-toggle:hover {
+    color: var(--brand);
+    border-color: var(--on-brand);
+    background: var(--on-brand);
   }
 }
 
@@ -242,22 +286,22 @@
   padding: 0 0.8rem;
   border: 1px solid transparent;
   border-radius: 0.68rem;
-  color: #40505f;
+  color: var(--muted);
   font-size: 0.82rem;
   font-weight: 400;
   transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, transform 150ms var(--ease-fluid);
 }
 
 .nav-item.is-active {
-  color: var(--ink);
+  color: var(--brand);
   border-color: transparent;
-  background: var(--blue-soft);
-  box-shadow: inset 3px 0 var(--blue);
+  background: var(--accent-soft);
+  box-shadow: none;
   font-weight: 400;
 }
 
 .nav-item.is-disabled {
-  color: #53616e;
+  color: var(--faint);
 }
 
 .nav-item svg {
@@ -265,7 +309,7 @@
   height: 1.2rem;
   flex: 0 0 auto;
   fill: none;
-  color: #6f777d;
+  color: currentColor;
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -273,11 +317,11 @@
 }
 
 .nav-item.is-active svg {
-  color: var(--blue);
+  color: var(--brand);
 }
 
 .sidebar .open-model {
-  border-color: var(--line-strong);
+  border-color: var(--line);
 }
 
 .sidebar .open-model small,
@@ -290,7 +334,7 @@
 }
 
 .sidebar .open-model a {
-  color: var(--blue-dark);
+  color: var(--brand);
 }
 
 .nav-item:active {
@@ -299,8 +343,8 @@
 
 @media (hover: hover) {
   .nav-item:hover {
-    color: var(--ink);
-    background: var(--soft);
+    color: var(--brand);
+    background: var(--accent-soft);
     transform: translateX(2px);
   }
 }
@@ -308,6 +352,8 @@
 @media (min-width: 42.001rem) {
   .is-global-nav-collapsed .topbar .brand {
     min-width: 0;
+    justify-content: center;
+    padding: 0;
   }
 
   .is-global-nav-collapsed .topbar .brand > :not(.brand-mark),
@@ -351,10 +397,11 @@
 
 .tenant-lock-focus {
   overflow: hidden;
-  border: 1px solid rgb(255 255 255 / 5%);
-  border-radius: var(--radius-medium);
-  color: white;
-  background: var(--ink);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--brand);
+  border-radius: 0.375rem;
+  color: var(--ink);
+  background: var(--surface);
   box-shadow: none;
 }
 
@@ -363,57 +410,54 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 2rem;
-  padding: 2rem 2.5rem 1.6rem;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
 }
 
 .lock-heading h1 {
   margin-bottom: 0.3rem;
-  font-size: clamp(1.65rem, 3vw, 2.1rem);
-  letter-spacing: -0.05em;
-  line-height: 1;
 }
 
 .lock-heading p:last-child {
   margin-bottom: 0;
-  color: #b9c3cc;
-  font-size: 0.9rem;
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 .lock-status {
   flex: 0 0 auto;
-  padding: 0.6rem 0.75rem;
-  border-radius: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.25rem;
   font-size: 0.72rem;
   font-weight: 800;
 }
 
 .lock-status.is-locked {
-  color: #ffc49f;
-  background: rgb(183 92 39 / 19%);
+  color: var(--amber);
+  background: var(--amber-soft);
 }
 
 .lock-status.is-open {
-  color: #8ce2bf;
-  background: rgb(24 114 82 / 22%);
+  color: var(--green);
+  background: var(--green-soft);
 }
 
 .lock-details {
   display: grid;
-  grid-template-columns: minmax(17rem, 1.7fr) minmax(10rem, 0.72fr) minmax(10rem, 0.9fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 1fr);
   align-items: start;
-  margin: 0 2.5rem;
-  padding: 1.6rem 0;
-  border-top: 1px solid #394550;
-  border-bottom: 1px solid #394550;
+  margin: 0 1.5rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .lock-owner {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 1.1rem;
-  padding-right: 1.5rem;
+  gap: 0.75rem;
+  padding-right: 1rem;
 }
 
 .lock-owner > span:last-child,
@@ -425,19 +469,19 @@
 }
 
 .lock-owner strong {
-  font-size: 1.15rem;
+  font-size: 0.9rem;
   overflow-wrap: anywhere;
 }
 
 .lock-owner > span:last-child > span:last-child {
-  color: #aeb9c3;
+  color: var(--muted);
   font-size: 0.78rem;
 }
 
 .lock-detail {
-  min-height: 3rem;
+  min-height: 2.5rem;
   justify-content: flex-start;
-  padding: 0 1.5rem;
+  padding: 0 1rem;
   border-left: 0;
 }
 
@@ -448,7 +492,7 @@
 }
 
 .detail-label {
-  color: #aeb9c3;
+  color: var(--muted);
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -457,26 +501,27 @@
 
 .lock-actions {
   display: grid;
-  min-height: 5.4rem;
   align-items: end;
   gap: 0.8rem;
-  padding: 1.15rem 2.5rem;
+  padding: 1rem 1.5rem;
 }
 
-.tenant-home-page .lock-owner .avatar { width: 3.4rem; height: 3.4rem; min-width: 3.4rem; border-width: 1px; }
+.tenant-lock-focus .lock-owner .avatar { width: 2.5rem; height: 2.5rem; min-width: 2.5rem; color: var(--brand); background: var(--accent-soft); box-shadow: none; }
 .tenant-home-page .lock-actions { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; }
 .tenant-home-page .lock-actions > .tenant-lock-form:not(.tenant-lock-renew-form),
 .tenant-home-page .lock-actions > p, .tenant-home-page .tenant-lock-override-action { flex-basis: 100%; }
 .tenant-home-page .tenant-lock-release-action { padding-bottom: 1.35rem; }
 .tenant-home-page .tenant-lock-release-action:has(.tenant-lock-release-confirmation) { flex-basis: 100%; padding-bottom: 0; }
-.tenant-home-page .tenant-lock-focus .button-secondary { color: #d6dee5; border-color: #53616d; background: transparent; box-shadow: none; }
-.tenant-home-page .tenant-lock-focus .button-secondary:hover { background: #202b35; color: white; }
-.tenant-home-page .lock-status { padding: .4rem .6rem; }
-.tenant-home-page .lock-actions .button { min-height: 2.7rem; padding: .55rem .8rem; font-size: .75rem; }
+.tenant-lock-focus .button { border-radius: .25rem; }
+.tenant-lock-focus .button-primary { background: var(--brand); box-shadow: none; }
+.tenant-lock-focus .button-primary:hover:not(:disabled) { background: var(--brand-raised); box-shadow: none; }
+.tenant-lock-focus .button-secondary { color: var(--ink-2); border-color: var(--line-strong); background: var(--surface); box-shadow: none; }
+.tenant-lock-focus .button-secondary:hover:not(:disabled) { background: var(--soft); border-color: var(--muted); box-shadow: none; }
+.tenant-home-page .lock-actions .button { min-height: 2.5rem; padding: .5rem .8rem; font-size: .75rem; }
 
 .lock-actions p {
   margin: 0;
-  color: #9eabb6;
+  color: var(--muted);
   font-size: 0.76rem;
 }
 
@@ -528,7 +573,7 @@
 }
 
 .tenant-lock-form label > span {
-  color: #d6dee5;
+  color: var(--ink-2);
   font-size: 0.72rem;
   font-weight: 400;
 }
@@ -538,15 +583,15 @@
   width: 100%;
   min-height: 2.4rem;
   padding: 0.55rem 0.7rem;
-  border: 1px solid #53616d;
-  border-radius: var(--radius-small);
-  color: white;
-  background: #202b35;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.25rem;
+  color: var(--ink);
+  background: var(--surface);
 }
 
 .tenant-lock-form input,
 .tenant-home-page .tenant-lock-form > .button {
-  height: 2.7rem;
+  height: 2.5rem;
 }
 
 .tenant-lock-form textarea {
@@ -556,12 +601,12 @@
 
 .tenant-lock-form input:focus-visible,
 .tenant-lock-form textarea:focus-visible {
-  border-color: #86a7f7;
-  outline-color: rgb(134 167 247 / 45%);
+  border-color: var(--brand);
+  outline-color: var(--accent);
 }
 
 .tenant-lock-form small {
-  color: #909faa;
+  color: var(--muted);
   font-size: 0.66rem;
   line-height: 1.35;
 }
@@ -574,8 +619,8 @@
   min-width: 10.8rem;
 }
 
-.lock-actions .tenant-lock-error {
-  color: #ffb4aa;
+.tenant-lock-focus .tenant-lock-error {
+  color: var(--red);
   text-align: left;
 }
 
@@ -592,7 +637,7 @@
   justify-content: space-between;
   gap: 1rem;
   padding-top: 0.9rem;
-  border-top: 1px solid #394550;
+  border-top: 1px solid var(--line);
 }
 
 .tenant-lock-release-confirmation p {
@@ -601,7 +646,7 @@
 }
 
 .tenant-lock-release-confirmation strong {
-  color: #f5f7f9;
+  color: var(--ink);
 }
 
 .tenant-lock-release-confirmation > div {
@@ -611,13 +656,13 @@
 }
 
 .tenant-lock-destructive-button {
-  border-color: #c77474;
+  border-color: var(--red);
   color: #fff;
-  background: #8d3c3c;
+  background: var(--red);
 }
 
 .tenant-lock-destructive-button:hover:not(:disabled) {
-  background: #a34646;
+  background: #8c1b13;
 }
 
 .tenant-lock-override-action {
@@ -629,13 +674,13 @@
   display: grid;
   gap: 0.25rem;
   padding: 0.8rem 0.9rem;
-  border-left: 3px solid #e0a25b;
-  color: #d7dee4;
-  background: #2f2a24;
+  border-left: 3px solid var(--amber);
+  color: var(--ink);
+  background: var(--amber-soft);
 }
 
 .tenant-lock-override-warning strong {
-  color: #ffe1ba;
+  color: var(--amber);
 }
 
 .tenant-lock-override-warning span {
@@ -650,14 +695,14 @@
 .tenant-lock-history-control {
   display: flex;
   justify-content: flex-end;
-  padding: 0 2.5rem 1.25rem;
+  padding: 0 1.5rem 1rem;
 }
 
 .tenant-lock-history {
-  margin: 0 2.5rem 1.5rem;
-  padding: 1.25rem 0 0;
-  border-top: 1px solid #394550;
-  color: #d7dee4;
+  margin: 0 1.5rem 1rem;
+  padding: 1rem 0 0;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
 }
 
 .tenant-lock-history > header {
@@ -670,7 +715,7 @@
 
 .tenant-lock-history h2 {
   margin: 0.2rem 0 0;
-  color: #fff;
+  color: var(--ink);
   font-size: 1.1rem;
 }
 
@@ -684,11 +729,11 @@
 
 .tenant-lock-history-list > li {
   padding: 1rem 0;
-  border-bottom: 1px solid #394550;
+  border-bottom: 1px solid var(--line);
 }
 
 .tenant-lock-history-list > li:last-child { border-bottom: 0; }
-.tenant-lock-history > header > span { color: #aab6c0; font-size: .72rem; }
+.tenant-lock-history > header > span { color: var(--muted); font-size: .72rem; }
 
 .tenant-lock-history-list > li > header {
   display: flex;
@@ -698,11 +743,11 @@
 }
 
 .tenant-lock-history-list > li > header strong {
-  color: #fff;
+  color: var(--ink);
 }
 
 .tenant-lock-history-list > li > header span {
-  color: #aab6c0;
+  color: var(--muted);
   font-size: 0.74rem;
 }
 
@@ -718,7 +763,7 @@
 }
 
 .tenant-lock-history-list dt {
-  color: #8f9eaa;
+  color: var(--muted);
   font-size: 0.65rem;
   font-weight: 400;
   letter-spacing: 0;
@@ -728,7 +773,7 @@
 .tenant-lock-history-list dd {
   margin: 0.2rem 0 0;
   overflow-wrap: anywhere;
-  color: #ecf1f4;
+  color: var(--ink-2);
   font-size: 0.78rem;
 }
 
@@ -832,7 +877,7 @@ tbody tr:hover {
   height: 2.2rem;
   margin-bottom: 1rem;
   border: 3px solid var(--line);
-  border-top-color: var(--blue);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 750ms linear infinite;
 }
@@ -861,7 +906,7 @@ tbody tr:hover {
 
   .lock-owner {
     grid-column: 1 / -1;
-    padding-bottom: 1.5rem;
+    padding-bottom: 1rem;
   }
 
   .lock-detail {
@@ -871,7 +916,7 @@ tbody tr:hover {
   }
 
   .lock-detail:last-child {
-    border-left: 1px solid #394550;
+    border-left: 1px solid var(--line);
   }
 
   .tenant-lock-form {
@@ -915,7 +960,7 @@ tbody tr:hover {
 
 @media (max-width: 42rem) {
   .entry-topbar {
-    padding: 0 1rem;
+    padding: 0.75rem 1rem;
   }
 
   .entry-topbar .brand {
@@ -960,6 +1005,12 @@ tbody tr:hover {
     flex-direction: column;
   }
 
+  .tenant-name-line strong {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
   .tenant-entry-footer {
     bottom: 0.75rem;
     padding: 1rem;
@@ -976,10 +1027,10 @@ tbody tr:hover {
 
   .topbar {
     position: sticky;
-    display: flex;
+    display: grid;
     min-height: 4.25rem;
-    justify-content: space-between;
-    padding: 0 0.75rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 0.8rem 0.75rem;
   }
 
   .mobile-sidebar-toggle {
@@ -989,20 +1040,23 @@ tbody tr:hover {
 
   .tenant-context {
     display: grid;
-    order: -1;
-    flex: 1;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.35rem;
     padding: 0;
   }
 
   .tenant-context-item { grid-template-columns: 2.6rem minmax(0, 1fr); align-items: center; gap: 0.35rem; }
+  .tenant-context-item:only-child { grid-column: 1 / -1; }
   .tenant-context-item + .tenant-context-item { padding-left: 0; border-left: 0; }
   .tenant-context strong { font-size: 0.75rem; }
   .tenant-context dt { font-size: 0.55rem; }
   .topbar { gap: 0.75rem; }
-  .topbar-actions { gap: 0.5rem; }
+  .topbar-actions { gap: 0.5rem; padding-right: 0; }
 
-  .topbar .brand,
+  .topbar .brand { padding: 0; }
+
   .role-badge,
   .topbar-actions .avatar {
     display: none;
@@ -1021,9 +1075,8 @@ tbody tr:hover {
     padding: 0.35rem max(0.35rem, env(safe-area-inset-right)) calc(0.35rem + env(safe-area-inset-bottom)) max(0.35rem, env(safe-area-inset-left));
     overflow: visible;
     border-top: 1px solid var(--line);
-    background: rgb(255 255 255 / 94%);
-    box-shadow: 0 -10px 32px rgb(17 24 39 / 18%);
-    backdrop-filter: blur(22px) saturate(145%);
+    background: var(--nav);
+    box-shadow: 0 -4px 16px rgb(12 35 60 / 6%);
     transition: visibility 180ms ease, transform 180ms var(--ease-fluid);
   }
 
@@ -1034,7 +1087,7 @@ tbody tr:hover {
 
   .sidebar nav {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.1rem;
   }
 
@@ -1065,7 +1118,7 @@ tbody tr:hover {
   }
 
   .nav-item.is-active {
-    box-shadow: inset 0 -2px var(--blue);
+    box-shadow: inset 0 -2px var(--accent);
   }
 
   .nav-item svg {
@@ -1095,8 +1148,8 @@ tbody tr:hover {
   }
 
   .lock-heading {
-    flex-direction: column;
-    gap: 1rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
   }
 
   .lock-details {
@@ -1112,9 +1165,9 @@ tbody tr:hover {
 
   .lock-detail,
   .lock-detail:last-child {
-    min-height: 3.9rem;
-    padding: 0.85rem 0;
-    border-top: 1px solid #394550;
+    min-height: 0;
+    padding: 0.75rem 0;
+    border-top: 1px solid var(--line);
     border-left: 0;
   }
 
@@ -1179,15 +1232,15 @@ tbody tr:hover {
 
 @media (prefers-reduced-transparency: reduce) {
   .entry-topbar,
-  .topbar,
-  .sidebar {
-    background: white;
+  .topbar {
+    background: var(--brand);
     backdrop-filter: none;
   }
 
   .sidebar {
     color: var(--ink);
-    background: white;
+    background: var(--nav);
+    backdrop-filter: none;
   }
 }
 
@@ -1198,6 +1251,6 @@ tbody tr:hover {
   }
 
   .tenant-card[aria-pressed="true"] {
-    outline: 2px solid var(--blue-dark);
+    outline: 2px solid var(--accent-dark);
   }
 }

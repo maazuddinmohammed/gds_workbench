@@ -5,7 +5,7 @@
 .workflow-command-center .workflow-command-context { gap: .65rem; }
 .workflow-command-center .workflow-command-actions { gap: .5rem; flex-wrap: wrap; }
 .workflow-command-center .workflow-command-actions .button { min-height: 2.2rem; }
-.command-count { display: inline-grid; place-items: center; min-width: 1.25rem; padding: .08rem .3rem; border-radius: .3rem; background: var(--blue-soft); font-size: .65rem; font-variant-numeric: tabular-nums; font-weight: 600; }
+.command-count { display: inline-grid; place-items: center; min-width: 1.25rem; padding: .08rem .3rem; border-radius: .3rem; background: var(--accent-soft); font-size: .65rem; font-variant-numeric: tabular-nums; font-weight: 600; }
 .workflow-command-center .mapping-layer-header > span,
 .workflow-command-center .model-layer-tabs > span { display: none; }
 .workflow-command-center .workflow-surface { border-top: 0; }
@@ -66,7 +66,7 @@
 .workflow-activity-body .run-filterbar > span { font-size: .65rem; }
 .model-lock-control { display: inline-flex; gap: .4rem; align-items: center; cursor: pointer; font: inherit; }
 .model-lock-control svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stroke-width: 1.6; }
-.tenant-lock-dialog { width: min(48rem, calc(100vw - 2rem)); max-height: 90vh; padding: 1.25rem; border: 1px solid var(--line); border-radius: var(--radius-large); color: var(--ink); background: var(--surface); box-shadow: var(--shadow-float); }
+.tenant-lock-dialog { width: min(48rem, calc(100vw - 2rem)); max-height: 90vh; padding: 1.25rem; border: 1px solid var(--line); border-radius: .375rem; color: var(--ink); background: var(--surface); box-shadow: var(--shadow-float); }
 .tenant-lock-dialog::backdrop { background: rgb(23 32 42 / 28%); }
 .tenant-lock-dialog > .panel-close { float: right; position: relative; z-index: 1; }
 .tenant-lock-dialog .tenant-lock-focus { padding: 0; border: 0; box-shadow: none; background: var(--surface); color: var(--ink); }
@@ -82,17 +82,16 @@
 .tenant-lock-dialog .lock-detail { padding: 0 1rem; border-color: var(--line); }
 .tenant-lock-dialog .lock-owner strong { font-size: 1rem; }
 .tenant-lock-dialog .lock-actions { padding: 1.2rem .5rem; }
-.tenant-lock-dialog .lock-status.is-open,.tenant-lock-dialog .lock-status.is-locked { color: var(--green); background: var(--green-soft); }
 .tenant-lock-dialog .tenant-lock-form { grid-template-columns: minmax(7rem, .55fr) minmax(0, 1fr) auto; }
 .tenant-lock-dialog .tenant-lock-renew-form { grid-template-columns: minmax(0, 1fr) auto; }
 .tenant-lock-dialog .tenant-lock-override-form { grid-template-columns: minmax(0, 1fr) auto; }
 .tenant-lock-dialog .tenant-lock-form input,.tenant-lock-dialog .tenant-lock-form textarea { border-color: var(--line-strong); color: var(--ink); background: var(--surface); }
 .tenant-lock-dialog .tenant-lock-form label > span,.tenant-lock-dialog .tenant-lock-release-confirmation strong,.tenant-lock-dialog .tenant-lock-history h2 { color: var(--ink); }
 .tenant-lock-dialog .lock-owner > span:last-child > span:last-child,.tenant-lock-dialog .tenant-lock-form small,.tenant-lock-dialog .lock-actions p { color: var(--muted); }
-.tenant-lock-dialog .tenant-lock-error { color: var(--red); }
+.tenant-lock-dialog .lock-actions .tenant-lock-error { color: var(--red); }
 .tenant-lock-dialog .tenant-lock-release-confirmation { border-color: var(--line); flex-wrap: wrap; }
-.tenant-lock-dialog .tenant-lock-override-warning { color: var(--ink); background: var(--soft); border-color: var(--orange); }
-.tenant-lock-dialog .tenant-lock-override-warning strong { color: var(--orange-dark); }
+.tenant-lock-dialog .tenant-lock-override-warning { color: var(--ink); background: var(--amber-soft); border-color: var(--amber); }
+.tenant-lock-dialog .tenant-lock-override-warning strong { color: var(--amber); }
 .tenant-lock-dialog .tenant-lock-history-control { padding: 0 .5rem 1rem; }
 .tenant-lock-dialog .tenant-lock-history { margin: 0 .5rem; color: var(--ink); background: var(--soft); border-color: var(--line); }
 .tenant-lock-dialog .tenant-lock-history-list > li { color: var(--ink); background: var(--surface); border-color: var(--line); }

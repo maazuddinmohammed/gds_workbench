@@ -10,7 +10,9 @@ export async function prepareCodexPlugin(plugin: string, installation: string, n
   const lock = join(parent, ".atlas-setup.lock");
   let locked = false, moved = false;
   const families: Record<string, string[]> = { skills: [".md"], references: [".md"], templates: [".md"], docs: [".md", ".png"],
-    scripts: [".js", ".ps1", ".sh", ".py"], contracts: [".json"], workbench: [".js", ".html", ".css", ".json", ".md"], assets: [".json"] };
+    scripts: [".js", ".ps1", ".sh", ".py"], contracts: [".json"], workbench: [".js", ".html", ".css", ".json", ".md", ".svg"], assets: [".json"] };
+  const fonts = ["workbench/fonts/OpenSans-Regular.woff2", "workbench/fonts/OpenSans-SemiBold.woff2",
+    "workbench/fonts/OpenSans_Condensed-Bold.woff2", "workbench/fonts/OFL.txt", "workbench/fonts/fonts.css"];
   async function inspect(path: string, tree: string, generated = false, family = "") {
     const entry = await lstat(path);
     if (entry.isSymbolicLink()) throw new Error("plugin symlink");
@@ -24,7 +26,7 @@ export async function prepareCodexPlugin(plugin: string, installation: string, n
       }
     } else if (!entry.isFile() || (!["plugin.json", "mcp.json"].includes(name) &&
         !(generated && [".agents/plugins/marketplace.json", "connector.json"].includes(name)) &&
-        !families[family]?.includes(extname(path)))) throw new Error("unreviewed plugin file");
+        !(name.startsWith("workbench/fonts/") ? fonts.includes(name) : families[family]?.includes(extname(path))))) throw new Error("unreviewed plugin file");
   }
   try {
     await writeFile(lock, "Atlas setup in progress\n", { flag: "wx", mode: 0o600 }).catch(() => {
@@ -63,7 +65,7 @@ export async function prepareCodexPlugin(plugin: string, installation: string, n
     }, null, 2) + "\n");
     const catalog = join(temporary, ".agents", "plugins", "marketplace.json");
     await mkdir(dirname(catalog), { recursive: true });
-    await writeFile(catalog, JSON.stringify({ name: "gds-workbench", interface: { displayName: "Atlas Local Workbench" }, plugins: [{
+    await writeFile(catalog, JSON.stringify({ name: "gds-workbench", interface: { displayName: "ATLAS Local Workbench" }, plugins: [{
       name: "atlas", source: { source: "local", path: "./" },
       policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" }, category: "Productivity",
     }] }, null, 2) + "\n");

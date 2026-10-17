@@ -17373,9 +17373,16 @@ async function prepareCodexPlugin(plugin, installation, node2 = process.execPath
     docs: [".md", ".png"],
     scripts: [".js", ".ps1", ".sh", ".py"],
     contracts: [".json"],
-    workbench: [".js", ".html", ".css", ".json", ".md"],
+    workbench: [".js", ".html", ".css", ".json", ".md", ".svg"],
     assets: [".json"]
   };
+  const fonts = [
+    "workbench/fonts/OpenSans-Regular.woff2",
+    "workbench/fonts/OpenSans-SemiBold.woff2",
+    "workbench/fonts/OpenSans_Condensed-Bold.woff2",
+    "workbench/fonts/OFL.txt",
+    "workbench/fonts/fonts.css"
+  ];
   async function inspect(path, tree, generated = false, family = "") {
     const entry = await (0, import_promises2.lstat)(path);
     if (entry.isSymbolicLink()) throw new Error("plugin symlink");
@@ -17386,7 +17393,7 @@ async function prepareCodexPlugin(plugin, installation, node2 = process.execPath
         if (child.startsWith(".") && !(generated && path === tree && child === ".agents")) throw new Error("hidden plugin file");
         await inspect((0, import_node_path2.join)(path, child), tree, generated, family || child);
       }
-    } else if (!entry.isFile() || !["plugin.json", "mcp.json"].includes(name) && !(generated && [".agents/plugins/marketplace.json", "connector.json"].includes(name)) && !families[family]?.includes((0, import_node_path2.extname)(path))) throw new Error("unreviewed plugin file");
+    } else if (!entry.isFile() || !["plugin.json", "mcp.json"].includes(name) && !(generated && [".agents/plugins/marketplace.json", "connector.json"].includes(name)) && !(name.startsWith("workbench/fonts/") ? fonts.includes(name) : families[family]?.includes((0, import_node_path2.extname)(path)))) throw new Error("unreviewed plugin file");
   }
   try {
     await (0, import_promises2.writeFile)(lock, "Atlas setup in progress\n", { flag: "wx", mode: 384 }).catch(() => {
@@ -17429,7 +17436,7 @@ async function prepareCodexPlugin(plugin, installation, node2 = process.execPath
     }, null, 2) + "\n");
     const catalog = (0, import_node_path2.join)(temporary, ".agents", "plugins", "marketplace.json");
     await (0, import_promises2.mkdir)((0, import_node_path2.dirname)(catalog), { recursive: true });
-    await (0, import_promises2.writeFile)(catalog, JSON.stringify({ name: "gds-workbench", interface: { displayName: "Atlas Local Workbench" }, plugins: [{
+    await (0, import_promises2.writeFile)(catalog, JSON.stringify({ name: "gds-workbench", interface: { displayName: "ATLAS Local Workbench" }, plugins: [{
       name: "atlas",
       source: { source: "local", path: "./" },
       policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },

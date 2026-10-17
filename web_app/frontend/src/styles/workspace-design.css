@@ -11,9 +11,37 @@
 
 /* Include drawers and dialogs; keep the ATLAS brand and code font families intact. */
 .app-shell :is(.workspace, .metadata-catalog, .sidebar, .tenant-context, .topbar-actions, .workflow-activity-panel, .tenant-lock-dialog)
-  :is(h1, h2, h3, h4, strong, b, th, td, label, summary, button, a, span, small, dt, dd, p, li, code, pre, legend, input, select, textarea, .button, .eyebrow, .text-action, .status-badge),
+  :is(h2, h3, h4, strong, b, th, td, label, summary, button, a, span, small, dt, dd, p, li, code, pre, legend, input, select, textarea, .button, .eyebrow, .text-action, .status-badge),
 .dialog-scrim :is(h1, h2, h3, h4, strong, b, th, td, label, summary, button, a, span, small, dt, dd, p, li, code, pre, legend, input, select, textarea, .button, .eyebrow, .text-action, .status-badge) {
   font-weight: var(--workspace-font-weight);
+}
+
+/* Section pages retain blue condensed titles; identity and utility headings are quieter. */
+.app-shell :is(.workspace, .metadata-catalog) h1,
+.message-page h1 {
+  color: var(--brand);
+  font-family: "Atlas Open Sans Condensed", "Arial Narrow", Arial, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.tenant-entry-heading h1,
+.app-shell .workspace .model-identity-name,
+.app-shell .workspace .lock-heading h1 {
+  color: var(--ink);
+  font-family: "Atlas Open Sans", Arial, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+}
+
+.tenant-entry-heading h1 { font-size: 1.625rem; }
+.app-shell .workspace .model-identity-name { font-size: 1.375rem; }
+.app-shell .workspace .lock-heading h1 { font-size: 1.25rem; }
+
+@media (max-width: 42rem) {
+  .tenant-entry-heading h1 { font-size: 1.5rem; }
+  .app-shell .workspace .model-identity-name { font-size: 1.25rem; }
 }
 
 .app-shell .button.button-small,
@@ -81,7 +109,7 @@
 
 :is(.workflow-command-center, .model-workspace, .models-page, .workflow-activity-panel) :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button):is(.is-active, [aria-current="page"], [aria-pressed="true"]) {
   border-color: var(--line-strong);
-  color: var(--orange-dark);
+  color: var(--accent-dark);
   background: var(--surface);
 }
 :is(.workspace-tabs, .workflow-tabs, .target-layer-switch) > :is(a, button)::after { display: none; }

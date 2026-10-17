@@ -30,10 +30,7 @@ export function WorkspaceToolbar({ children, actions }: {
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <div className={compact ? "brand is-compact" : "brand"} aria-label="Atlas">
-      <svg className="brand-mark" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
-        <path d="M4 34 17 5h6l13 29h-7L20 13l-9 21Z" />
-        <path className="brand-mark-accent" d="m14 25 12 0 3 6H11Z" />
-      </svg>
+      <img className="brand-mark" src="/assets/atlas.svg" width="32" height="32" alt="" />
       <strong>ATLAS</strong>
     </div>
   );
@@ -66,7 +63,7 @@ export function DetailState({ label, error = false }: { label: string; error?: b
 export function ErrorPage() {
   return (
     <main className="message-page">
-      <p className="eyebrow">Atlas</p>
+      <Brand />
       <h1>Workspace unavailable</h1>
       <p>The requested information could not be loaded.</p>
       <Link className="button button-primary" to="/">Choose a Tenant</Link>

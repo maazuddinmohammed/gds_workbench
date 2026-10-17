@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
 import shutil
+import struct
 import subprocess
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -16,6 +19,50 @@ from atlas import build_connector, build_plugin
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_ROOT = ROOT / "atlas" / "atlas-plugin"
+
+
+def test_brand_assets_match_across_independent_packages() -> None:
+    """Keep separately shipped favicons, header marks and extension identity aligned."""
+    favicon = (ROOT / "web_app/frontend/public/assets/atlas.svg").read_bytes()
+    assert (PLUGIN_ROOT / "workbench/atlas.svg").read_bytes() == favicon
+    artwork = ET.fromstring(favicon)
+    assert artwork.attrib["viewBox"] == "0 0 32 32"
+    paths = artwork.findall("{http://www.w3.org/2000/svg}path")
+    assert len(paths) == 1
+    assert paths[0].attrib["fill-rule"] == "evenodd"
+    assert paths[0].attrib["fill"] == "#00338D"
+    for header, asset in (
+        (ROOT / "web_app/frontend/src/shared/ui.tsx", "/assets/atlas.svg"),
+        (PLUGIN_ROOT / "workbench/app.js", "atlas.svg"),
+    ):
+        source = header.read_text(encoding="utf-8")
+        assert f'src="{asset}" width="32" height="32"' in source
+        assert ">ATLAS<" in source
+    font_names = {
+        "OpenSans-Regular.woff2",
+        "OpenSans-SemiBold.woff2",
+        "OpenSans_Condensed-Bold.woff2",
+        "OFL.txt",
+    }
+    web_fonts = ROOT / "web_app/frontend/public/assets/fonts"
+    workbench_fonts = PLUGIN_ROOT / "workbench/fonts"
+    assert {path.name for path in web_fonts.iterdir()} == font_names
+    assert {path.name for path in workbench_fonts.iterdir()} == font_names | {"fonts.css"}
+    for name in font_names:
+        assert (workbench_fonts / name).read_bytes() == (web_fonts / name).read_bytes()
+    embedded_fonts = re.findall(
+        r"data:font/woff2;base64,([A-Za-z0-9+/=]+)",
+        (workbench_fonts / "fonts.css").read_text(encoding="utf-8"),
+    )
+    assert len(embedded_fonts) == 3
+    assert {base64.b64decode(font, validate=True) for font in embedded_fonts} == {
+        (web_fonts / name).read_bytes() for name in font_names if name.endswith(".woff2")
+    }
+    extension = ROOT / "atlas/atlas-vs-code"
+    manifest = json.loads((extension / "package.json").read_text(encoding="utf-8"))
+    png = (extension / manifest["icon"]).read_bytes()
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert struct.unpack(">II", png[16:24]) == (512, 512)
 
 
 def test_archive_round_trip_and_reproducibility(tmp_path: Path) -> None:
@@ -258,7 +305,9 @@ def test_connector_archive_is_reproducible_and_excludes_user_state(tmp_path: Pat
         build_connector.build(first)
 
 
-@pytest.mark.parametrize("addition", ["symlink", "private-file", "invalid-manifest"])
+@pytest.mark.parametrize("addition", [
+    "symlink", "private-file", "invalid-manifest", "unreviewed-font", "font-script", "font-stylesheet", "text-file",
+])
 def test_invalid_package_inputs_fail_before_writing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, addition: str
 ) -> None:
@@ -268,6 +317,14 @@ def test_invalid_package_inputs_fail_before_writing(
         (fixture / "docs" / "outside.md").symlink_to(tmp_path / "outside.md")
     elif addition == "private-file":
         (fixture / "docs" / ".env").write_text("synthetic fixture; not package content")
+    elif addition == "unreviewed-font":
+        (fixture / "workbench/fonts/Other.woff2").write_bytes(b"synthetic fixture")
+    elif addition == "font-script":
+        (fixture / "workbench/fonts/Other.js").write_text("synthetic fixture")
+    elif addition == "font-stylesheet":
+        (fixture / "workbench/fonts/Other.css").write_text("synthetic fixture")
+    elif addition == "text-file":
+        (fixture / "workbench/unreviewed.txt").write_text("synthetic fixture")
     else:
         (fixture / "plugin.json").write_text("{}")
     monkeypatch.setattr(build_plugin, "PLUGIN_ROOT", fixture)

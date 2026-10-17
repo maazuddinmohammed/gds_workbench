@@ -11,7 +11,7 @@
 }
 
 .ledger-grid:focus-visible {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -56,11 +56,11 @@
 }
 
 .ledger-grid > table > tbody > tr:is(.is-active, :has(input:checked)) > :is(th, td) {
-  background: var(--blue-soft);
+  background: var(--accent-soft);
 }
 
 .ledger-grid > table > tbody > tr:is(.is-active, :has(input:checked)) > :is(th, td):first-child {
-  box-shadow: inset 3px 0 var(--blue);
+  box-shadow: inset 3px 0 var(--accent);
 }
 
 /* Keep both sticky axes above ordinary headers and cells. */

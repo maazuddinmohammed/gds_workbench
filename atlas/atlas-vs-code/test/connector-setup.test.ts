@@ -18,6 +18,11 @@ test("setup preserves the Copilot source and makes Codex wiring independent of t
   await expect(readFile(join(generated, "connector.json"))).rejects.toMatchObject({ code: "ENOENT" });
   expect(await readFile(join(generated, "skills/atlas/SKILL.md"))).toEqual(await readFile(join(plugin, "skills/atlas/SKILL.md")));
   expect(await readFile(join(generated, "templates/validation-summary.md"))).toEqual(await readFile(join(plugin, "templates/validation-summary.md")));
+  expect(await readFile(join(generated, "workbench/atlas.svg"))).toEqual(await readFile(join(plugin, "workbench/atlas.svg")));
+  for (const font of ["OpenSans-Regular.woff2", "OpenSans-SemiBold.woff2", "OpenSans_Condensed-Bold.woff2", "OFL.txt", "fonts.css"]) {
+    expect(await readFile(join(generated, "workbench/fonts", font))).toEqual(await readFile(join(plugin, "workbench/fonts", font)));
+  }
+  expect(JSON.parse(await readFile(join(generated, ".agents/plugins/marketplace.json"), "utf8")).interface.displayName).toBe("ATLAS Local Workbench");
   expect(await prepareCodexPlugin(plugin, installation)).toBe(generated);
   await expect(readFile(join(generated, "connector.json"))).rejects.toMatchObject({ code: "ENOENT" });
 });
@@ -30,11 +35,12 @@ test("unknown files and symbolic links are not copied into the installed plugin"
   await symlink(fixture, join(installation, "linked"), "junction");
   await expect(prepareCodexPlugin(join(installation, "linked"), installation)).rejects.toMatchObject({ code: "SETUP_FAILED" });
 });
-test("template support does not allow executable files in that family", async () => {
+test.each(["templates/unreviewed.js", "workbench/fonts/Other.woff2", "workbench/fonts/unreviewed.js",
+  "workbench/fonts/unreviewed.txt", "workbench/fonts/Other.css", "workbench/unreviewed.txt", "workbench/Other.woff2"])("reviewed asset families reject %s", async path => {
   const installation = join(await mkdtemp(join(tmpdir(), "atlas-template-install-")), "atlas-connector"), fixture = join(installation, "source");
   await mkdir(installation);
   await cp(plugin, fixture, { recursive: true });
-  await writeFile(join(fixture, "templates/unreviewed.js"), "throw new Error('fixture');");
+  await writeFile(join(fixture, path), "unreviewed fixture");
   await expect(prepareCodexPlugin(fixture, installation)).rejects.toMatchObject({ code: "SETUP_FAILED" });
 });
 test("updates replace removed files without storing authentication configuration", async () => {
