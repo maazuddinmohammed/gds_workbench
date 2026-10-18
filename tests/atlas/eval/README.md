@@ -13,8 +13,9 @@ Use it before and after any skill or reference change; compare reports, not impr
 | `harness.py` | Builds one sandbox per scenario, runs your agent command, scores logs and files. |
 
 Every sandbox has `workspace/` (the agent's working folder), `plugin/atlas/` (packaged
-plugin copy whose helper logs each call), `mcp.json`, `codex-mcp.toml`, `prompt.md`
-(skill catalog + request) and `logs/`. Nothing contacts a real backend, Databricks or Azure.
+plugin copy whose helper logs each call and its exit status), `mcp.json`,
+`codex-mcp.toml`, `prompt.md` (skill catalog + request) and `logs/`. Nothing contacts a
+real backend, Databricks or Azure.
 
 ## Run
 
@@ -53,7 +54,8 @@ Always: no Stage transport tools (`stage_*`, `begin_*`, `put_*`, `commit_*`), no
 lock override, no hand edits to installed Snapshots. Per scenario: required/forbidden MCP
 tools and helper commands, Conceptual datasets not read by downstream work, required or
 forbidden draft files, call budgets, skills read and final-message content (the last two
-only with a transcript).
+only with a transcript). A required helper command needs a run that exited 0; forbidden
+commands and budgets count every attempt.
 
 ## Maintain
 
