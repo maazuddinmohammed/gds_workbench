@@ -18,8 +18,33 @@ Open items:
    `tests/mcp/test_database_project_change_set_round_trip.py` stage both through MCP.
 2. Closed: MCP server bumped to 0.3.0 (version, pins, lockfiles, release note in
    `mcp_server/README.md`); decision in `docs/architecture/decisions.md`.
-3. Live agent evaluations (`tests/atlas/eval/README.md`) have not been run; they call
-   a model and cost money.
+3. Live agent evaluations ran once: Claude Code 2.1.218 headless, Sonnet 5.5 (effort
+   high), 12 scenarios x 3, about $24 at API prices. 27/36 passed. No run used Stage
+   upload, Apply or lock override, or edited a Snapshot. Eight scenarios passed 3/3.
+   Harness defects to fix before the next run:
+   - `physical-description` (0/3): the fixture has no empty descriptions; agents
+     correctly changed nothing.
+   - `code-from-mapping` (0/3): replay demands the optional `expected_project_revision`
+     on `read_mapping_context`. Two runs stopped through `next --error`; one rebuilt
+     Code from Snapshot rows and skipped `validate`.
+   - `helper:<command>` checks count calls, not success: `logical-validate-only`
+     scored 3/3 but validated in 1/3.
+   - The README Claude Code template needs allow rules for `-p` mode:
+     `--allowedTools "mcp__gds-workbench" "Bash(node *)" "Bash(cd *)"`. Inside Claude
+     Code, run the CLI with `env -i` and its own login.
+   Instruction fixes (proposed, not applied):
+   - `validate` requires a task, so agents skip or fail it on no-change requests: it
+     succeeded in 0/3 `mapping-applied-target` and 1/3 `logical-validate-only` runs.
+     State that `task-add` is local bookkeeping, or let `validate` run without a task.
+   - Read records with `select`/`inspect`: 26 of the 27 runs that read records opened
+     Snapshot data files directly.
+   - One helper call per terminal command, with absolute paths: 86 shell commands,
+     mostly compound one-liners, were refused; a host that asks before shell commands
+     prompts for each.
+   - After a failed governed read, run `next --error` and stop; never rebuild from
+     Snapshot rows.
+   `dimension-from-logical` (2/3): one run asked about SCD type and key split before
+   drafting, which is acceptable.
 
 Acceptance:
 
