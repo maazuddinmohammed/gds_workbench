@@ -73,6 +73,18 @@ from mcp.types import CallToolResult, TextContent
 DELEGATED_TOOLS = frozenset({"describe_metadata_dataset", "describe_project_dataset"})
 # Argument names that only page or version a read; replay ignores them when matching.
 IGNORED_ARGUMENTS = frozenset({"schema_version", "page_size", "detail"})
+# Optional read_mapping_context fences: the result field the real server compares each with,
+# and its refusal. An omitted fence reads the current state.
+MAPPING_FENCES = {
+    "expected_project_revision": (
+        "project_revision",
+        "Project revision changed; refresh the Mapping context.",
+    ),
+    "expected_context_digest": (
+        "context_digest",
+        "Mapping context changed; refresh every component before continuing.",
+    ),
+}
 
 
 class ToolFailureError(Exception):
@@ -155,15 +167,15 @@ class EvalWorld:
             return cast(dict[str, Any], handler(arguments))
         return self._replay(tool, arguments)
 
-    def _replay(self, tool: str, arguments: Mapping[str, Any]) -> dict[str, Any]:
-        requested = {key: value for key, value in arguments.items() if key not in IGNORED_ARGUMENTS}
+    def _replay(
+        self, tool: str, arguments: Mapping[str, Any], ignored: frozenset[str] = IGNORED_ARGUMENTS
+    ) -> dict[str, Any]:
+        requested = {key: value for key, value in arguments.items() if key not in ignored}
         for response in self.world["responses"]:
             if response["tool"] != tool:
                 continue
             recorded = {
-                key: value
-                for key, value in response["arguments"].items()
-                if key not in IGNORED_ARGUMENTS
+                key: value for key, value in response["arguments"].items() if key not in ignored
             }
             if recorded == requested:
                 return cast(dict[str, Any], response["result"])
@@ -171,6 +183,15 @@ class EvalWorld:
             "evaluation_world_missing",
             f"No recorded {tool} response matches these arguments in this evaluation world.",
         )
+
+    def _tool_read_mapping_context(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
+        result = self._replay(
+            "read_mapping_context", arguments, IGNORED_ARGUMENTS | frozenset(MAPPING_FENCES)
+        )
+        for name, (current, refusal) in MAPPING_FENCES.items():
+            if arguments.get(name) not in (None, result[current]):
+                raise ToolFailureError("invalid_request", refusal)
+        return result
 
     def _now(self) -> datetime:
         return datetime.now(UTC)
